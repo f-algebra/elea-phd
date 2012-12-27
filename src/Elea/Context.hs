@@ -1,67 +1,73 @@
--- | Type and name (text labels for variables) contexts
 module Elea.Context 
 (
   Context,
-  pushTyVar, pushVar,
-  localTyVar, localVar,
+  pushVar, localVar,
   lookupType, askType,
   typeOf
 )
 where
 
 import Prelude ()
-import Elea.Prelude hiding ( All )
-import Elea.Type ( Type )
+import Elea.Prelude
+import Elea.Type ( Type (..) )
 import Elea.Term ( Term (..) )
+import Elea.Equation ( Equation (..) )
 
 import qualified Elea.Type as Type
 import qualified Elea.Term as Term
 
 data Context 
-  = Context { tyVars :: [Text]
-            , vars :: [(Text, Type)] }
-       
-pushTyVar :: Text -> Context -> Context
-pushTyVar label ctx =
-  ctx { tyVars = label : tyVars ctx }
+  = Context { types :: [Type]
+            , facts :: [Equation] }
 
-pushVar :: Text -> Type -> Context -> Context
-pushVar label ty ctx =
-  ctx { vars = (label, ty) : vars ctx }
+pushVar :: Type -> Context -> Context
+pushVar ty ctx =
+  ctx { types = ty : types ctx
+      , facts = map Term.lift (facts ctx) }
 
-localTyVar :: MonadReader Context m => Text -> m a -> m a
-localTyVar = local . pushTyVar
-
-localVar :: MonadReader Context m => Text -> Type -> m a -> m a
-localVar label = local . pushVar label
+localVar :: MonadReader Context m => Type -> m a -> m a
+localVar = local . pushVar
 
 lookupType :: Term.Index -> Context -> Type
-lookupType idx = snd . (!! fromEnum idx) . vars
+lookupType idx = (!! fromEnum idx) . types
 
 askType :: MonadReader Context m => Term.Index -> m Type
 askType idx = asks (lookupType idx)
 
 -- | Return the 'Type' of a given 'Term' within a 'Context'
-typeOf :: MonadReader Context m => Term -> m Type
-typeOf (Var idx) = 
-  askType idx
+typeOf :: forall m . MonadReader Context m => Term -> m Type
+typeOf (Term.Var idx) = askType idx
+typeOf (Abs ty) = return ty
+typeOf (Inj n ty@(Ind tys)) =
+  return $ Type.unflatten ((tys !! n) ++ [ty])
 typeOf (App lhs rhs) = do
-  Type.Arr arg_ty res_ty <- typeOf lhs
+  Arr arg_ty res_ty <- typeOf lhs
   arg_ty' <- typeOf rhs
-  return 
-    $ assert (arg_ty == arg_ty')
-    $ res_ty
-typeOf (Lam label arg_ty rhs) =     
-  localVar label arg_ty $ do
+  assert (arg_ty == arg_ty')
+    $ return res_ty
+typeOf (Lam arg_ty rhs) =     
+  localVar arg_ty $ do
     rhs_ty <- typeOf rhs
-    return (Type.Arr arg_ty rhs_ty)
-typeOf (TyApp lhs arg_ty) = do
-  Type.All _ res_ty <- typeOf lhs
-  return (Type.substOutermost arg_ty res_ty)
-typeOf (TyLam label rhs) =
-  localTyVar label (typeOf rhs)
-typeOf (In mu) =
-  return (Type.Arr (Type.unfoldLfp mu) mu)
-typeOf (Out mu) = 
-  return (Type.Arr mu (Type.unfoldLfp mu))
+    return (Arr arg_ty rhs_ty)
+typeOf (Fix ty rhs) = 
+  localVar ty $ do
+    fix_ty <- typeOf rhs
+    assert (fix_ty == ty)
+      $ return fix_ty
+typeOf (Case term alts) = do
+  Ind tys <- typeOf term
+  (res_ty:other_tys) <- 
+    assert (length alts == length tys)
+    $ zipWithM typeOfAlt tys alts
+  assert (all (== res_ty) other_tys)
+    $ return res_ty
+  where
+  typeOfAlt :: [Type] -> Term -> m Type
+  typeOfAlt arg_tys alt = do 
+    alt_ty <- Type.flatten `liftM` typeOf alt
+    let (arg_tys', res_tys) = 
+          splitAt (length arg_tys) alt_ty
+    return 
+      $ assert (and $ zipWith (==) arg_tys arg_tys')
+      $ Type.unflatten res_tys
 

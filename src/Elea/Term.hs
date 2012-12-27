@@ -1,13 +1,15 @@
 module Elea.Term
 (
   Term (..), Index,
-  substAt, substTypeAt,
-  substOutermost, substOutermostType,
+  isInj, function,
+  flattenApp, unflattenApp,
+  liftAt, lift,
+  substAt, substTop,
 )
 where
 
 import Prelude ()
-import Elea.Prelude
+import Elea.Prelude hiding ( lift )
 import Elea.Type ( Type )
 
 import qualified Elea.Type as Type
@@ -16,47 +18,59 @@ import qualified Elea.Type as Type
 newtype Index = Index Int
   deriving ( Eq, Ord, Enum )
 
--- | System F terms with general recursion and least fixed point (un)folding.
+-- | System F with general recursion, inductive data-types and absurdity.
 data Term
   = Var !Index
+  | Inj !Int !Type
+  | Abs !Type
   | App !Term !Term
-  | Lam !Text !Type !Term
-  | Fix !Text !Type !Term
-  | TyApp !Term !Type
-  | TyLam !Text !Term
-  
-  -- Folds least fixed points,
-  -- given "Lfp F" is of type "F (Lfp F) -> Lfp F"
-  | In !Type
-  
-  -- Unfolds least fixed points, 
-  -- given "Lfp F" is of type "Lfp F -> F (Lfp F)"
-  | Out !Type
+  | Lam !Type !Term
+  | Fix !Type !Term
+  | Case { caseOfTerm :: !Term
+         , caseOfAlts :: ![Term] }
   deriving ( Eq, Ord )
   
+isInj :: Term -> Bool
+isInj (Inj {}) = True
+isInj _ = False
+
 instance Uniplate Term where
   uniplate (Var idx) = 
     (Zero, \Zero -> Var idx)
+  uniplate (Inj n ty) =
+    (Zero, \Zero -> Inj n ty)
+  uniplate (Abs ty) = 
+    (Zero, \Zero -> Abs ty)
   uniplate (App t1 t2) = 
     (Two (One t1) (One t2), \(Two (One t1) (One t2)) -> App t1 t2)
-  uniplate (Lam lbl ty rhs) = 
-    (One rhs, \(One rhs) -> Lam lbl ty rhs)
-  uniplate (Fix lbl ty rhs) =
-    (One rhs, \(One rhs) -> Fix lbl ty rhs)
-  uniplate (TyApp lhs ty) = 
-    (One lhs, \(One lhs) -> TyApp lhs ty)
-  uniplate (TyLam lbl rhs) =
-    (One rhs, \(One rhs) -> TyLam lbl rhs)
-  uniplate (In ty) =
-    (Zero, \Zero -> In ty)
-  uniplate (Out ty) =
-    (Zero, \Zero -> Out ty)
-    
+  uniplate (Lam ty rhs) = 
+    (One rhs, \(One rhs) -> Lam ty rhs)
+  uniplate (Fix ty rhs) =
+    (One rhs, \(One rhs) -> Fix ty rhs)
+  uniplate (Case lhs alts) = 
+    (Two (One lhs) (listStr alts), 
+      \(Two (One lhs) alts) -> Case lhs (strList alts))
+      
+flattenApp :: Term -> [Term]
+flattenApp (App t1 t2) = t1 : flattenApp t2
+      
+unflattenApp :: [Term] -> Term
+unflattenApp = foldr1 App 
+
+function :: Term -> Term
+function = head . flattenApp
+ 
+-- | Substitute at the outermost De-bruijn index 0
+substTop :: Term -> Term -> Term
+substTop = substAt (toEnum 0)
+      
 -- | Substitute a given De-bruijn 'Index' with a 'Term' within a 'Term'
 substAt :: Index -> Term -> Term -> Term
 substAt at with = subst at
   where
   subst :: Index -> Term -> Term
+  subst _ (Abs ty) = Abs ty
+  subst _ (Inj n ty) = Inj n ty
   subst at (Var var) = 
     case at `compare` var of
       -- Substitution occurs
@@ -66,46 +80,28 @@ substAt at with = subst at
       GT -> Var var
   subst at (t1 `App` t2) = 
     subst at t1 `App` subst at t2
-  subst at (Lam lbl ty rhs) =
-    Lam lbl ty (subst (succ at) rhs)
-  subst at (Fix lbl ty rhs) = 
-    Fix lbl ty (subst (succ at) rhs)
-  subst at (TyApp lhs ty) = 
-    TyApp (subst at lhs) ty
-  subst at (TyLam lbl rhs) =
-    TyLam lbl (subst at rhs)
-  subst at (In ty) = In ty
-  subst at (Out ty) = Out ty
-  
--- | Substitute at the outermost De-bruijn index 0
-substOutermost :: Term -> Term -> Term
-substOutermost = substAt (toEnum 0)
+  subst at (Lam ty rhs) =
+    Lam ty (subst (succ at) rhs)
+  subst at (Fix ty rhs) = 
+    Fix ty (subst (succ at) rhs)
+  subst at (Case lhs alts) = 
+    Case (subst at lhs) (map (subst at) alts)
 
--- | Substitute 'Type's within a 'Term'
-substTypeAt :: Type.Index -> Type -> Term -> Term 
-substTypeAt at with = subst at
-  where
-  substTy :: Type.Index -> Type -> Type
-  substTy at = Type.substAt at with
-  
-  subst :: Type.Index -> Term -> Term
-  subst at (Var var) = Var var
-  subst at (t1 `App` t2) = 
-    subst at t1 `App` subst at t2
-  subst at (Lam lbl ty rhs) =
-    Lam lbl (substTy at ty) (subst at rhs)
-  subst at (Fix lbl ty rhs) = 
-    Fix lbl (substTy at ty) (subst at rhs)
-  subst at (TyApp lhs ty) = 
-    TyApp (subst at lhs) (substTy at ty)
-  subst at (TyLam lbl rhs) =
-    TyLam lbl (subst (succ at) rhs)
-  subst at (In ty) = 
-    In (substTy at ty)
-  subst at (Out ty) =
-    Out (substTy at ty)
-  
--- | Substitute the outermost De-bruijn indexed type variable within a 'Term'
-substOutermostType :: Type -> Term -> Term
-substOutermostType = substTypeAt (toEnum 0)
-    
+lift :: Term -> Term
+lift = liftAt (toEnum 0)
+
+liftAt :: Index -> Term -> Term
+liftAt _ (Inj n ty) = Inj n ty
+liftAt _ (Abs ty) = Abs ty
+liftAt idx (Var x)
+  | idx >= x = Var (succ x)
+  | otherwise = Var x
+liftAt idx (App t1 t2) = 
+  App (liftAt idx t1) (liftAt idx t2)
+liftAt idx (Lam ty rhs) = 
+  Lam ty (liftAt (succ idx) rhs)
+liftAt idx (Fix ty rhs) = 
+  Fix ty (liftAt (succ idx) rhs)
+liftAt idx (Case term alts) =
+  Case (liftAt idx term) (map (liftAt idx) alts)
+

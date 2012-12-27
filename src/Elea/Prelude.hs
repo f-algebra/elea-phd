@@ -47,7 +47,7 @@ module Elea.Prelude
   minimalBy, nubOrd, elemOrd, intersectOrd, countOrd,
   fromRight, fromLeft, traceMe, setAt, firstM, butlast,
   wrapFunctor, unwrapFunctor, FunctorWrapper,
-  takeIndices, isNub, foldl1M,
+  takeIndices, isNub, foldl1M, seqStr, strSeq
 )
 where
 
@@ -78,7 +78,7 @@ import Control.Exception ( assert )
 
 import Data.Maybe
 import Data.Either ( lefts, rights, partitionEithers )
-import Data.Monoid
+import Data.Monoid hiding ( Sum, All )
 import Data.Map ( Map )
 import Data.Sequence ( Seq )
 import Data.Set ( Set )
@@ -103,6 +103,7 @@ import Data.Generics.Str
 import Debug.Trace
 import System.IO.Unsafe
 
+import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
 
 infixr 6 ++
@@ -256,6 +257,12 @@ setAt :: Int -> a -> [a] -> [a]
 setAt _ x [] = [x]
 setAt 0 x xs = x:(tail xs)
 setAt i x (y:ys) = y:(setAt (i - 1) x ys)
+
+seqStr :: Seq a -> Str a
+seqStr =  listStr . toList
+
+strSeq :: Str a -> Seq a
+strSeq = Seq.fromList . strList
 
 wrapFunctor :: f a -> FunctorWrapper f a
 wrapFunctor = WrapFunctor

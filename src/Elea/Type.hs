@@ -1,35 +1,46 @@
 module Elea.Type 
 (
   Type (..), Index,
-  substAt, substOutermost, 
-  unfoldLfp
+  substAt, substOutermost,
+  unflatten, flatten
 )
 where
 
 import Prelude ()
-import Elea.Prelude hiding ( All )
+import Elea.Prelude 
 
 -- | De-bruijn indices for type variables
 newtype Index = Index Int
   deriving ( Eq, Ord, Enum )
 
--- | System F types with least fixed points
-data Type  
+data Type
   = Var !Index
   | Arr !Type !Type
-  | All !Text !Type
-  | Lfp !Text !Type
+  | Ind ![[Type]]
   deriving ( Eq, Ord )
   
+unflatten :: [Type] -> Type
+unflatten = foldl1 Arr
+
+flatten :: Type -> [Type]
+flatten (Arr t1 t2) = t1 : flatten t2
+
 instance Uniplate Type where
   uniplate (Var idx) =
     (Zero, \Zero -> Var idx)
   uniplate (Arr ty1 ty2) = 
     (Two (One ty1) (One ty2), \(Two (One ty1) (One ty2)) -> Arr ty1 ty2)
-  uniplate (All lbl ty) = 
-    (One ty, \(One ty) -> All lbl ty)
-  uniplate (Lfp lbl ty) =
-    (One ty, \(One ty) -> Lfp lbl ty)
+  uniplate (Ind sum) =
+    (listStr (concat sum), 
+      \args -> Ind (splitArgs argCounts (strList args)))
+    where
+    argCounts = map length sum
+    
+    splitArgs [] [] = []
+    splitArgs (len:lens) all = 
+      [tke] ++ splitArgs lens drp
+      where
+      (tke, drp) = splitAt len all
 
 -- | Substitute a given De-bruijn 'Index' with a 'Type' within a 'Type'
 substAt :: Index -> Type -> Type -> Type
@@ -44,16 +55,11 @@ substAt at with = subst at
       GT -> Var var
   subst at (t1 `Arr` t2) = 
     subst at t1 `Arr` subst at t2
-  subst at (All lbl t) =
-    All lbl (subst (succ at) t)
-  subst at (Lfp lbl t) =
-    Lfp lbl (subst (succ at) t)
+  subst at (Ind args) =
+    Ind (map (map (subst (succ at))) args)
     
 -- | Substitute the first De-bruijn index with a 'Type' within a 'Type'
 substOutermost :: Type -> Type -> Type
 substOutermost = substAt (toEnum 0)
 
--- | Takes an "Lfp F" and returns "F (Lfp F)"
-unfoldLfp :: Type -> Type
-unfoldLfp mu@(Lfp _ ty) = substOutermost mu ty
 
