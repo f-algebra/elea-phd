@@ -14,8 +14,6 @@ module Elea.Prelude
   module Control.Monad.Identity,
   module Control.Monad.Trans.Identity,
   module Control.Monad.Trans.Maybe,
-  module Control.Monad.Fix,
-  module Control.Monad.Error,
   module Control.Exception,
   
   module Data.Maybe,
@@ -45,9 +43,10 @@ module Elea.Prelude
   concatEndos, concatEndosM,
   fromJustT, anyM, allM, findM, sortWith, deleteIndices,
   minimalBy, nubOrd, elemOrd, intersectOrd, countOrd,
-  fromRight, fromLeft, traceMe, setAt, firstM, butlast,
+  fromRight, fromLeft, traceMe, setAt, firstM,
   wrapFunctor, unwrapFunctor, FunctorWrapper,
-  takeIndices, isNub, foldl1M, seqStr, strSeq
+  takeIndices, isNub, foldl1M, seqStr, strSeq,
+  mapChildrenBi, plus, isLeft, isRight
 )
 where
 
@@ -73,7 +72,6 @@ import Control.Monad.RWS ( RWS (..), RWST (..), execRWS, evalRWS, runRWS )
 import Control.Monad.Identity ( Identity (..) )
 import Control.Monad.Trans.Identity ( IdentityT (..) )
 import Control.Monad.Fix
-import Control.Monad.Error ( ErrorT (..), Error (..), throwError, catchError )
 import Control.Exception ( assert )
 
 import Data.Maybe
@@ -89,7 +87,7 @@ import Data.Foldable hiding ( concat, concatMap )
 import Data.List ( intersperse, unfoldr, partition,
   isPrefixOf, isSuffixOf, isInfixOf, sort, sortBy, findIndex,
   delete, elemIndices, intersect, union, transpose,
-  (\\), subsequences, isSuffixOf, deleteBy, findIndices )
+  (\\), subsequences, isSuffixOf, deleteBy, findIndices, elemIndex )
 import Data.IORef
 import Data.Char ( isAlpha, isDigit, isAlphaNum, isSpace, chr, ord )
 import Data.IntMap ( IntMap )
@@ -237,18 +235,18 @@ takeIndices is xs = t 0 (sort is) xs
   t i (j:js) (x:xs) 
     | i == j = x : t (i + 1) js xs
     | otherwise = t (i + 1) (j:js) xs
-    
--- | Drops the last element of a list
-butlast :: [a] -> [a]
-butlast [] = error "Zeno.Prelude.butlast given empty list"
-butlast [x] = []
-butlast (x:xs) = x : (butlast xs)
-  
+
 fromRight :: Either a b -> b
 fromRight (Right b) = b
 
 fromLeft :: Either a b -> a
 fromLeft (Left a) = a
+
+isLeft (Left _) = True
+isLeft _ = False
+
+isRight (Right _) = True
+isRight _ = False
 
 traceMe :: Show a => String -> a -> a
 traceMe s x = trace (s ++ ": " ++ show x) x
@@ -270,4 +268,14 @@ wrapFunctor = WrapFunctor
 newtype FunctorWrapper f a = WrapFunctor { unwrapFunctor :: f a }
   deriving ( Functor, Foldable, Traversable, Monad, Applicative )
 
+mapChildrenBi :: Biplate from to => (to -> to) -> from -> from
+mapChildrenBi f x = rmk (map f str) 
+  where
+  (str, rmk) = biplate x
+
+plus :: (Enum a, Num b, Ord b) => a -> b -> a
+plus x n 
+  | n == 0 = x
+  | n > 0 = succ (x `plus` (n - 1))
+  | n < 0 = pred (x `plus` (n + 1))
 

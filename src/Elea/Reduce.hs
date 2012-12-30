@@ -1,37 +1,53 @@
 module Elea.Reduce 
 (
-  beta
+  simplify
 )
 where
 
 import Prelude ()
 import Elea.Prelude
-import Elea.Term ( Term (..) )
+import Elea.Term ( Term (..), Alt (..) )
 
 import qualified Elea.Term as Term
 
-beta :: Term -> Term
-beta = transform step
+simplify :: Term -> Term
+simplify = rewrite step
   where
-  -- The three rules of our beta reduction
-  step :: Term -> Term
+  step :: Term -> Maybe Term
   
-  -- Lambda reduction
-  step (App (Lam _ rhs) arg) =
-    beta $ Term.substTop arg rhs
+  -- Beta reduction
+  step (App (Lam rhs) arg) =
+    Just $ Term.substTop arg rhs
 
-  -- Case-reduction
-  step (Case term alts)
-    | Inj n ty <- inj = 
-        Term.unflattenApp $ (alts !! n) : args
-    where
-    (inj:args) = Term.flattenApp term
+  -- Eta reduction
+  step (Lam (App t (Var x)))
+    | x == toEnum 0 = Just t
     
-  -- Fix-inj reduction
-  step (App fix@(Fix _ rhs) arg) 
-    | Term.isInj $ Term.function arg =
-        beta $ App (Term.substTop fix rhs) arg
+  -- Case-Inj reduction
+  step (Case (Term.flattenApp -> (Inj inj_n : args)) alts) =
+    Just
+    $ assert (length args == alt_n)
+    $ assert (length alts < inj_n)
+    $ foldl Term.substTop alt_t args
+    where
+    Alt alt_n alt_t = alts !! inj_n
+        
+  -- Fixpoint unfolding
+  step (App (Fix fix) arg@(Term.leftmost -> Inj _)) = 
+    Just $ App (Term.substTop (Fix fix) fix) arg
+    
+  -- App-Absurd
+  step (App Absurd _) = 
+    Just Absurd
   
-  step other = other
+  -- Case-Absurd
+  step (Case Absurd _) =
+    Just Absurd
+    
+  -- Absurd-Case
+  step (Case _ alts)
+    | all ((== Absurd) . altTerm) alts = Just Absurd
+
+  step other = Nothing
   
 
