@@ -1,11 +1,18 @@
 module Elea.Testing (
   Test, execute,
-  label, list, run, assert
+  label, list, run, assert, 
+  loadPrelude, term
 ) where
 
 import Prelude ()
 import Elea.Prelude hiding ( assert )
 import Elea.Core ( Elea )
+import Elea.Term ( Term )
+
+import qualified Elea.Core as Elea
+import qualified Elea.Monad.Definitions as Defs
+import qualified Elea.Parser as Parse
+import qualified Elea.Monad.Error as Error
 import qualified Test.HUnit as HUnit
 
 type Test = HUnit.Test
@@ -22,17 +29,22 @@ label :: String -> Test -> Test
 label = HUnit.TestLabel
 
 run :: HUnit.Testable t => Elea t -> Test
-run = HUnit.test . flip evalState mempty
+run = HUnit.test . Elea.unsafe
 
 assert :: HUnit.Assertable t => t -> Test
 assert = HUnit.TestCase . HUnit.assert
 
-
-
-{-
 prelude :: String
 prelude = unsafePerformIO
-  $ readFile "prelude.zthy"
+  $ readFile "prelude.elea"
+
+loadPrelude :: Elea ()
+loadPrelude = Parse.toplevel prelude
+
+term :: String -> Elea (Term Elea.Notes)
+term = Parse.term
+
+{-
   
 run :: HUnit.Testable t => Zeno t -> Test
 run = HUnit.test . flip evalState empty
@@ -56,13 +68,6 @@ newVar name_s typ_s = do
 -- it's a assertion that will dynamically check equality
 assertEq :: ZTerm -> ZTerm -> a -> a
 assertEq t1 t2 x = x
- 
-loadPrelude :: Zeno ()
-loadPrelude =
-  mapM_ process 
-    $ ZML.readLines prelude
-  where
-  process ("let", arg) = ZML.readBinding arg
-  process ("type", arg) = ZML.readTypeDef arg
+
  -}
 

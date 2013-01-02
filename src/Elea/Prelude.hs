@@ -13,6 +13,7 @@ module Elea.Prelude
   module Control.Monad.RWS,
   module Control.Monad.Identity,
   module Control.Monad.Trans.Identity,
+  module Control.Monad.Trans.Either,
   module Control.Monad.Trans.Maybe,
   module Control.Exception,
   
@@ -71,6 +72,7 @@ import Control.Monad.Trans.Maybe
 import Control.Monad.RWS ( RWS (..), RWST (..), execRWS, evalRWS, runRWS )
 import Control.Monad.Identity ( Identity (..) )
 import Control.Monad.Trans.Identity ( IdentityT (..) )
+import Control.Monad.Trans.Either ( EitherT (..) )
 import Control.Monad.Fix
 import Control.Exception ( assert )
 

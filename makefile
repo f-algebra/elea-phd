@@ -1,4 +1,4 @@
-EXTS = -XMultiParamTypeClasses -XFlexibleContexts -XFlexibleInstances -XScopedTypeVariables -XTypeSynonymInstances -XViewPatterns -XTypeFamilies -XBangPatterns -XDeriveFunctor -XDeriveFoldable -XDeriveTraversable -XDoRec -XRankNTypes -XGeneralizedNewtypeDeriving
+EXTS = -XFunctionalDependencies -XGADTs -XMultiParamTypeClasses -XFlexibleContexts -XFlexibleInstances -XScopedTypeVariables -XTypeSynonymInstances -XViewPatterns -XTypeFamilies -XBangPatterns -XDeriveFunctor -XDeriveFoldable -XDeriveTraversable -XDoRec -XRankNTypes -XGeneralizedNewtypeDeriving
 FLAGS = -funbox-strict-fields -hidir obj -odir obj -isrc -itest $(EXTS)
 POWER = -O2
 NORMAL = -O

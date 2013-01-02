@@ -2,5 +2,7 @@ module Main where
 
 import Prelude ()
 import Elea.Prelude
-import Elea.Context
-import Elea.Reduce
+import Elea.Simplifier
+import Elea.Tests.All ( runTests )
+
+test = runTests

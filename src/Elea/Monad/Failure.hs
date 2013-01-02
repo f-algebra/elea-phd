@@ -1,16 +1,14 @@
 -- | Constructing and using computations which can fail.
 -- Like 'MonadPlus' without 'mplus', and with more readably named functions.
 -- Requires qualified import (usually as "Fail").
-module Control.Failure (
+module Elea.Monad.Failure (
   Monad (..), when, unless, toMaybe, 
   success, successM, catchWith, fromEither, has
 ) where
 
-import Prelude hiding ( catch, Monad )
-import Data.Maybe ( fromJust, fromMaybe, isNothing, isJust )
-import Control.Monad ( liftM, mzero )
-import Control.Monad.Trans.Maybe ( MaybeT (..) )
-import qualified Control.Monad as Prelude
+import Prelude ()
+import Elea.Prelude hiding ( catch, Monad, when, unless )
+import qualified Elea.Prelude as Prelude
 
 -- | Use qualified import to get "Fail.Monad"
 class Prelude.Monad m => Monad m where

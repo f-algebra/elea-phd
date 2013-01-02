@@ -1,7 +1,0 @@
-module Control.Logging
-(
-
-)
-where
-
-

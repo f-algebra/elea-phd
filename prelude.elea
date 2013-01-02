@@ -1,0 +1,21 @@
+
+(def 0 in0)
+(def suc in1)
+(def 1 (suc 0))
+(def 2 (suc 1))
+
+(def nil in0)
+(def cons in1)
+
+(def +
+  (fix + x y 
+    (case x
+      (0 -> y)
+      (suc x' -> suc (+ x' y)))))
+      
+(def *
+  (fix * x y
+    (case x
+      (0 -> 1)
+      (suc x' -> + y (* x' y))))) 
+
