@@ -1,5 +1,11 @@
--- | The 'Elea' 'Monad', which handles errors, failing computations, 
+-- | This module defines two major components:
+--
+-- 1. The 'Elea' 'Monad', which handles errors, failing computations, 
 -- logging, and storing/looking-up definitions statefully.
+--
+-- 2. The 'Notes' set of annotations, which are attached to every
+-- term. Currently this only consists of name annotations,
+-- for 'show'ing terms.
 module Elea.Core
 (
   Elea, Notes, unsafe
@@ -10,13 +16,15 @@ import Prelude ()
 import Elea.Prelude hiding ( log )
 import Elea.Term ( Term )
 
+import qualified Elea.Term as Term
 import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Logging as Log
 import qualified Elea.Monad.Error as Error
 import qualified Elea.Monad.Failure as Fail
+import qualified Elea.Notes.Show as Show
 import qualified Data.Map as Map
 
-type Notes = ()
+type Notes = Show.Note
 type Defs = Map String (Term Notes)
 
 data EleaValue a
@@ -91,3 +99,6 @@ instance Log.Monad Elea where
 
 logMsg :: String -> Elea ()
 logMsg msg = Elea $ \ds -> ES ds [msg] (Value ())
+
+instance Term.Notes () where
+

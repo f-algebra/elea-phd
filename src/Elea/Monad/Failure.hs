@@ -68,3 +68,7 @@ instance Prelude.Monad m => Monad (MaybeT m) where
 
 instance Monad Maybe where
   here = mzero
+  
+instance (Monoid w, Monad m) => Monad (WriterT w m) where
+  here = lift here
+  

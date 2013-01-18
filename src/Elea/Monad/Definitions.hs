@@ -13,7 +13,7 @@ import qualified Elea.Term as Term
 
 -- | The 'Definitions' 'Monad' can store and load 'Term' definitions.
 -- Parameterised by the type of term annotations.
-class (Term.Note a, Prelude.Monad m) => Monad a m | m -> a where
+class (Term.Notes a, Prelude.Monad m) => Monad a m | m -> a where
   lookup :: String -> m (Maybe (Term a))
   add :: String -> Term a -> m ()
 

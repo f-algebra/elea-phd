@@ -1,6 +1,7 @@
 module Elea.Testing (
   Test, execute,
-  label, list, run, assert, 
+  label, list, run, 
+  assert, assertEq, 
   loadPrelude, term
 ) where
 
@@ -33,6 +34,9 @@ run = HUnit.test . Elea.unsafe
 
 assert :: HUnit.Assertable t => t -> Test
 assert = HUnit.TestCase . HUnit.assert
+
+assertEq :: (Show a, Eq a) => a -> a -> Test
+assertEq = (HUnit.TestCase .) . HUnit.assertEqual ""
 
 prelude :: String
 prelude = unsafePerformIO

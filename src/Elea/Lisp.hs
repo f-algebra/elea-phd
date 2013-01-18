@@ -1,6 +1,7 @@
 module Elea.Lisp
 (
   Lisp (..), InnerLisp (..),
+  inner, notes, atom, list,
   parse, isAtom, fromAtom
 )
 where
@@ -12,16 +13,19 @@ import Text.Parsec.String ( Parser )
 import qualified Text.Parsec as Parsec
 import qualified Data.Map as Map
 import qualified Elea.Monad.Error as Error
+import qualified Data.Label.Maybe as Maybe
 
 data Lisp
-  = Lisp { notes :: Map String Lisp
-         , inner :: InnerLisp }
+  = Lisp { _notes :: Map String Lisp
+         , _inner :: InnerLisp }
   deriving ( Eq )
  
 data InnerLisp
-  = Atom String
-  | List [Lisp]
+  = Atom { _atom :: String }
+  | List { _list :: [Lisp] }
   deriving ( Eq )
+  
+mkLabels [''Lisp, ''InnerLisp]
   
 addNotes :: Map String Lisp -> Lisp -> Lisp
 addNotes more (Lisp notes inner) =
@@ -31,8 +35,8 @@ isAtom :: Lisp -> Bool
 isAtom (Lisp _ (Atom _)) = True
 isAtom _ = False
 
-fromAtom :: Lisp -> String
-fromAtom (Lisp _ (Atom x)) = x
+fromAtom :: Lisp -> Maybe String
+fromAtom = Maybe.get (atom . inner)
 
 parse :: Error.Monad m => String -> m Lisp
 parse txt = 
@@ -59,7 +63,12 @@ parseNotes = (<|> return ()) $ do
   parseNotes
   
 parseString :: Parser String
-parseString = Parsec.many1 (Parsec.noneOf " :()\t\n") 
+parseString = do
+  c <- Parsec.noneOf (":" ++ excl)
+  cs <- Parsec.many (Parsec.noneOf excl)
+  return (c:cs)
+  where
+  excl = " ()\t\n"
 
 parseAtom :: Parser Lisp
 parseAtom = (Lisp mempty . Atom) <$> parseString

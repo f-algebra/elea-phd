@@ -8,6 +8,8 @@ import Prelude ()
 import Elea.Prelude
 import Elea.Term ( Term (..), InnerTerm (..), Alt (..) )
 
+import qualified Elea.Core as Elea
+import qualified Elea.Term as Term
 import qualified Elea.Testing as Test
 import qualified Elea.Parser as Parse
 import qualified Elea.Monad.Definitions as Defs
@@ -20,14 +22,14 @@ tests = Test.label "Parser"
   Just plus <- Defs.lookup "+"
   return
     $ Test.list
-    [ Test.assert (suc == Term mempty (Inj 1))
-    , Test.assert (plus == plus_def) ]
+    [ Test.assertEq (get Term.inner suc) (Inj 1)
+    , Test.assertEq plus plus_def ]
   where
   t = Term mempty
   idx n = t (Var (toEnum n))
   
   suc_branch = t $ App (t $ Inj 1) $ t 
-    $ App (idx 3) (t $ App (idx 0) (idx 1))
+    $ App (t $ App (idx 3) (idx 0)) (idx 1)
   plus_def = t $ Fix $ t $ Lam $ t $ Lam $ t $ Case (idx 1) 
     [ Alt 0 (idx 0)
     , Alt 1 suc_branch ]

@@ -9,12 +9,16 @@ import qualified Elea.Tests.Prelude as Prelude
 import qualified Elea.Tests.Lisp as Lisp
 import qualified Elea.Tests.Parser as Parser
 import qualified Elea.Tests.Simplifier as Simplifier
+import qualified Elea.Tests.Context as Context
+import qualified Elea.Tests.Floating as Float
 
 tests = Test.list
   [ Prelude.tests
   , Lisp.tests
   , Parser.tests 
   , Simplifier.tests
+  , Context.tests
+  , Float.tests
   ]
   
 runTests :: IO ()

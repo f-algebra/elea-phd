@@ -6,3 +6,4 @@ import Elea.Simplifier
 import Elea.Tests.All ( runTests )
 
 test = runTests
+

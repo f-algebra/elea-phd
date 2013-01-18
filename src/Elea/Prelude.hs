@@ -2,6 +2,7 @@ module Elea.Prelude
 (
   module Prelude,
   
+  module Control.Category,
   module Control.Arrow,
   module Control.Applicative,
   module Control.Monad,
@@ -17,6 +18,8 @@ module Elea.Prelude
   module Control.Monad.Trans.Maybe,
   module Control.Exception,
   
+  module Data.Label.Pure,
+  module Data.Label,
   module Data.Maybe,
   module Data.Either,
   module Data.Monoid,
@@ -41,20 +44,22 @@ module Elea.Prelude
   
   (++), concat, intercalate, map, void,
   concatMap, concatMapM, partitionM,
-  concatEndos, concatEndosM,
+  concatEndos, concatEndosM, empty,
   fromJustT, anyM, allM, findM, sortWith, deleteIndices,
   minimalBy, nubOrd, elemOrd, intersectOrd, countOrd,
   fromRight, fromLeft, traceMe, setAt, firstM,
   wrapFunctor, unwrapFunctor, FunctorWrapper,
   takeIndices, isNub, foldl1M, seqStr, strSeq,
-  mapChildrenBi, plus, isLeft, isRight
+  mapChildrenBi, plus, isLeft, isRight, fst, snd
 )
 where
 
 import Prelude hiding ( mapM, foldl, foldl1, mapM_, minimum, maximum, sequence_,
   foldr, foldr1, sequence, Maybe (..), maybe, all, any, elem, product,
-  and, concat, notElem, or, concatMap, sum, (++), map )
+  and, concat, notElem, or, concatMap, sum, (++), map, (.), id,
+  fst, snd )
 
+import Control.Category ( (.), id )
 import Control.Arrow ( Arrow (..), (>>>), (<<<), (&&&), (***), 
   first, second, Kleisli (..), runKleisli )
 import Control.Applicative hiding ( empty )
@@ -62,7 +67,7 @@ import Control.Monad ( liftM, ap, replicateM, join,
   zipWithM, filterM, when, unless, guard, (>=>), (<=<), MonadPlus (..) )
 import Control.Monad.Trans ( MonadTrans (..), lift, liftIO )
 import Control.Monad.State ( evalStateT, execState, runState, evalState,
-  MonadState (..), State (..), StateT (..), modify, gets )
+  MonadState, State (..), StateT (..) )
 import Control.Monad.Reader ( 
   MonadReader (..), Reader (..), ReaderT (..), asks, runReader )
 import Control.Monad.Writer ( execWriter, runWriter, execWriterT,
@@ -76,6 +81,8 @@ import Control.Monad.Trans.Either ( EitherT (..) )
 import Control.Monad.Fix
 import Control.Exception ( assert )
 
+import Data.Label.Pure
+import Data.Label ( mkLabels )
 import Data.Maybe
 import Data.Either ( lefts, rights, partitionEithers )
 import Data.Monoid hiding ( Sum, All )
@@ -103,10 +110,17 @@ import Data.Generics.Str
 import Debug.Trace
 import System.IO.Unsafe
 
+import qualified Prelude as Pre
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
 
 infixr 6 ++
+
+fst :: (a, b) :-> a
+fst = lens Pre.fst (first . const)
+
+snd :: (a, b) :-> b
+snd = lens Pre.snd (second . const)
 
 void :: Functor f => f a -> f ()
 void = fmap (const ())
@@ -119,6 +133,9 @@ map = fmap
 
 concat :: Monoid m => [m] -> m
 concat = mconcat
+
+empty :: Monoid m => m
+empty = mempty
   
 instance Monad m => Monoid (Kleisli m a a) where
   mempty = arr id
@@ -185,7 +202,7 @@ minimalBy ord xs = y : (takeWhile ((== EQ) . ord y) ys)
   where (y:ys) = sortBy ord xs
 
 nubOrd :: Ord a => [a] -> [a]
-nubOrd = reverse . fst . foldl nubby ([], Set.empty)
+nubOrd = reverse . get fst . foldl nubby ([], Set.empty)
   where
   nubby (acc, set) x 
     | x `Set.member` set = (acc, set)

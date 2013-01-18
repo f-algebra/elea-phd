@@ -7,6 +7,8 @@
 (def nil in0)
 (def cons in1)
 
+(def id (lam x x))
+
 (def +
   (fix + x y 
     (case x
@@ -16,6 +18,7 @@
 (def *
   (fix * x y
     (case x
-      (0 -> 1)
+      (0 -> 0)
       (suc x' -> + y (* x' y))))) 
+
 
