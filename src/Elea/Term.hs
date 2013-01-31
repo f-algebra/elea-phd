@@ -1,251 +1,230 @@
 module Elea.Term
 (
-  Notes (..), Index,
-  Term (..), InnerTerm (..), Alt (..),
-  Liftable (..), liftMany,
-  inner, notes, index,
-  updateNotes, leftmost, 
-  altVarCount, altTerm,
-  caseOfTerm, caseOfAlts,
-  isInj, isFix, isLam,
+  Index, Term (..), Alt (..), Env (..), Liftable (..),
+  inner, index, alts, leftmost, 
+  altBindings, altTerm,
   flattenApp, unflattenApp, flattenLam,
-  liftedTransform, liftedFold,
-  Substitutions, substMany,
-  substAt, substTop,
+  transform, bind,
+  substAt, subst,
 )
 where
 
 import Prelude ()
-import Elea.Prelude hiding ( lift )
-import Elea.Lisp ( Lisp )
+import Elea.Prelude
+import Elea.Type ( Type )
+import qualified Elea.Type as Type
 import qualified Elea.Monad.Error as Error
 import qualified Data.Set as Set
+import qualified Data.Label.Maybe as Maybe
 
 -- | De-bruijn indices for term variables
-newtype Index = Index Int
-  deriving ( Eq, Ord )
+newtype Index = Index Nat
+  deriving ( Eq, Ord, Enum )
 
--- | The annotated, untyped, De-bruijn indexed lambda calculus,
+-- | Bindings for naming and typing a variable.
+data Bind 
+  = Bind  { _label :: !(Maybe String)
+          , _varType :: !Type }
+  
+-- | De-bruijn indexed System F,
 -- with general recursion ('Fix'), 
 -- inductive data types ('Inj' and 'Case'),
 -- and absurdity ('Absurd').
--- It is parameterised by the type of its annotations.
-data Term a
-  = Term  { _notes :: a
-          , _inner :: !(InnerTerm a) }
-  deriving ( Functor )
+data Term
+  = Var   { _index :: !Index }
+  
+  | App   { _inner :: !Term
+          , _argument :: !Term }
+        
+  | Fix   { _binding :: !Bind 
+          , _inner :: !Term }
+        
+  | Lam   { _binding :: !Bind 
+          , _inner :: !Term }
+        
+  | Inj   { _injN :: !Int
+          , _binding :: !Bind }
+        
+  | TyApp { _inner :: !Term
+          , _typeArgument :: !Type }
           
--- | 'Term's without their annotations.
-data InnerTerm a
-  = Var { _index :: !Index }
-  | App !(Term a) !(Term a)
-  | Lam !(Term a)
-  | Fix !(Term a)
-  | Inj !Int
-  | Case { _caseOfTerm :: !(Term a)
-         , _caseOfAlts :: ![Alt a] }
+  | TyLam { _typeBinding :: !Type.Bind
+          , _inner :: !Term }
+          
+  | Case  { _inner :: !Term
+          , _alts :: ![Alt] }
+          
   | Absurd 
-  deriving ( Eq, Ord, Functor )
+  deriving ( Eq, Ord )
   
 -- | The branches of a pattern matching 'Case' expression.
-data Alt a 
-  = Alt { -- | The number of variables this constructor takes.
-          _altVarCount :: !Int
-        , _altTerm :: !(Term a) }
-  deriving ( Eq, Ord, Functor )
+data Alt
+  = Alt { _altBindings :: ![Bind]
+        , _altTerm :: !Term }
+  deriving ( Eq, Ord )
   
-instance Eq (Term a) where
-  (==) = (==) `on` _inner
+instance Eq Bind where
+  (==) = (==) `on` _varType
   
-instance Ord (Term a) where
-  compare = compare `on` _inner
+instance Ord Bind where
+  compare = compare `on` _varType
   
-mkLabels [''Term, ''InnerTerm, ''Alt]
-  
--- | Generalised 'Term' annotations.
--- Annotations form a 'Monoid', where 'mempty' is unannotated code, and 
--- "a ++ b" takes the union of annotations "a" and "b", favouring "a"
--- if there is a clash.
-class Monoid a => Notes a where
-  -- | Process the annotations from the 'Lisp' code that produced this term.
-  notesFromLisp :: Error.Monad m => InnerTerm a -> Map String Lisp -> m a
-  notesFromLisp _ _ = return mempty
-  
-  -- | A term has been transformed into another. 
-  -- Return the new set of notes which should be attached to the new term.
-  transformNotes :: Term a -> Term a -> a
-  transformNotes old new = 
-    get notes new ++ get notes old
-  
-updateNotes :: Notes a => Term a -> Term a -> Term a 
-updateNotes old new = 
-  set notes (transformNotes old new) new
-  
-instance (Notes a, Notes b) => Notes (a, b) where
-  notesFromLisp t m = do
-    x <- notesFromLisp (map (get fst) t) m
-    y <- notesFromLisp (map (get snd) t) m
-    return (x, y)
-    
-  transformNotes t1 t2 =
-    ( transformNotes (map (get fst) t1) (map (get fst) t2)
-    , transformNotes (map (get snd) t1) (map (get snd) t2) )
-  
-isInj :: Term a -> Bool
-isInj (get inner -> Inj _) = True
-isInj _ = False
+mkLabels [''Bind, ''Term, ''Alt]
 
-isFix :: Term a -> Bool
-isFix (get inner -> Fix _) = True
-isFix _ = False
-
-isLam (get inner -> Lam _) = True
-isLam _ = False
-
-flattenApp :: Term a -> [Term a]
-flattenApp (get inner -> App t1 t2) = flattenApp t1 ++ [t2]
+flattenApp :: Term -> [Term]
+flattenApp (App t1 t2) = flattenApp t1 ++ [t2]
 flattenApp other = [other]
 
-unflattenApp :: Monoid a => [Term a] -> Term a
-unflattenApp = foldl1 ((Term mempty .) . App)
+unflattenApp :: [Term] -> Term
+unflattenApp = foldl1 App
 
-flattenLam :: Term a -> ([a], Term a)
-flattenLam (Term n (Lam rhs)) = modify fst (n:) (flattenLam rhs)
-flattenLam other = ([], other)
+flattenLam :: Term -> ([Bind], Term)
+flattenLam (Lam b t) = modify fst (b:) (flattenLam t)
+flattenLam t = ([], t)
 
 -- | Returns the leftmost 'Term' in term application.
 -- E.g. "leftmost (App (App a b) c) == a"
-leftmost :: Notes a => Term a -> Term a
+leftmost :: Term -> Term
 leftmost = head . flattenApp
- 
+
+-- | Applies a 'Term' transformation within a 'Term', supplying a term
+-- and type variable binding environment at each point.
+transform :: (MonadReader r m, Env r) =>
+  (Term -> m Term) -> Term -> m Term
+transform f = mapT
+  where
+  mapT t = f =<< mp t
+  
+  mp (App t1 t2) = do
+    t1' <- mapT t1
+    t2' <- mapT t2
+    return (App t1' t2')
+  mp (TyApp t ty) = 
+    liftM (flip TyApp ty) $ mapT t
+  mp (Fix b t) = 
+    liftM (Fix b) $ local (bind b) $ mapT t
+  mp (Lam b t) =
+    liftM (Lam b) $ local (bind b) $ mapT t
+  mp (TyLam tyb t) = 
+    liftM (TyLam tyb) $ local (Type.bind tyb) $ mapT t
+  mp (Case t alts) = do
+    t' <- mapT t
+    alts' <- mapM mapAlt alts
+    return (Case t' alts')
+    where
+    mapAlt (Alt bs t) = 
+      liftM (Alt bs) $ local (bindMany bs) $ mapT t
+  mp other = 
+    return other
+    
+transformTypes :: (MonadReader r m, Env r) =>
+  (Type -> m Type) -> Term -> m Term
+transformTypes f = transform mapTy
+  where
+  mapBind = modifyM varType f 
+  
+  mapTy (Fix b t) = 
+    liftM (flip Fix t) $ mapBind b
+  mapTy (Lam b t) = 
+    liftM (flip Lam t) $ mapBind b
+  mapTy (TyApp t ty) = 
+    liftM (TyApp t) $ f ty
+  mapTy (Case t alts) =
+    liftM (Case t) $ mapM mapAlt alts
+    where
+    mapAlt = modifyM altBindings (mapM mapBind)
+  mapTy other =
+    return other
+    
 class Liftable a where
-  -- | Creates a new De-Bruijn index 
-  -- by shifting all the later ones up by one.
   liftAt :: Index -> a -> a
-  
-  -- | Increments every free De-Bruijn index by one.
-  -- Equivalent to creating a De-Bruijn index at 0 - see 'liftAt'.
-  lift :: a -> a
-  lift = liftAt (toEnum 0)
-  
-liftMany :: Liftable a => Int -> a -> a
-liftMany 0 = id
-liftMany n | n > 0 = lift . liftMany (n-1)
   
 instance Liftable Index where
   liftAt at x
     | at <= x = succ x
-    | otherwise = x
+    | otherwise = x 
     
-instance (Liftable a, Liftable b) => Liftable (a, b) where
-  liftAt i (x, y) = (liftAt i x, liftAt i y)
-  
-liftedTransform :: (Liftable r, MonadReader r m) => 
-  (Term a -> m (Term a)) -> Term a -> m (Term a)
-liftedTransform f = trns
-  where
-  trns (Term ns iterm) = 
-    f =<< liftM (Term ns) (trnsI iterm)
-  
-  trnsI (App t1 t2) =
-    return App `ap` trns t1 `ap` trns t2
-  trnsI (Lam rhs) = 
-    liftM Lam $ local lift $ trns rhs
-  trnsI (Fix rhs) = 
-    liftM Fix $ local lift $ trns rhs
-  trnsI (Case lhs alts) = do
-    lhs' <- trns lhs
-    alts' <- mapM trnsAlt alts
-    return (Case lhs' alts')
+instance Liftable Term where
+  liftAt at t = runReader (transform liftVar t) at
     where
-    trnsAlt (Alt n rhs) = 
-      liftM (Alt n) $ local (liftMany n) $ trns rhs 
-  trnsI other = 
-    return other
-   
-liftedFold :: (Liftable r, MonadReader r m, Monoid b) =>
-  (Term a -> m b) -> Term a -> m b
-liftedFold f = execWriterT . liftedTransform tellAll  
-  where
-  tellAll t = tell (f t) >> return t
+    liftVar :: MonadReader Index m => Term -> m Term
+    liftVar (Var idx) = do
+      at <- ask
+      return $ Var (liftAt at idx)
+    liftVar other = 
+      return other    
+      
+instance Type.Liftable Term where
+  liftAt at term = runReader (transformTypes liftTypes term) at
+    where
+    liftTypes :: MonadReader Type.Index m => Type -> m Type
+    liftTypes = ap (asks Type.liftAt) . return
+      
+-- | An environment which stores term 'Bind'ings
+class Type.Env a => Env a where
+  bindAt :: Index -> Bind -> a -> a
   
-
--- Here a list of substitutions acts like a "Map Index (Term a)",
--- where the index in the list is the index this term should
--- be substituted for.
-type Substitutions a = [Maybe (Term a)]
-
--- | Apply a series of 'Substitutions' to a term.
-substMany :: Notes a => Substitutions a -> Term a -> Term a
-substMany = go (toEnum 0)
-  where
-  go n [] = id
-  go n (Nothing : subs) = go (succ n) subs
-  go n (Just t : subs) = go n subs . substAt n t
+bind :: Env a => Bind -> a -> a
+bind = bindAt (toEnum 0)
   
--- | Substitute at the outermost De-bruijn index 0
-substTop :: Notes a => Term a -> Term a -> Term a
-substTop = substAt (toEnum 0)
+bindMany :: Env a => [Bind] -> a -> a
+bindMany = concatEndos . map bind
+      
+instance Type.Env Index where
+  -- Term indices are obviously unaffected by binding type indices
+  bindAt at _ = id
+  
+instance Env Type.Index where
+  -- Type indices are obviously unaffected by binding term indices
+  bindAt at _ = id
 
-substAt :: forall a . Notes a => Index -> Term a -> Term a -> Term a
-substAt at with term =
-  runReader (liftedTransform substL term) (at, with)
+instance Env Index where
+  bindAt at _ = liftAt at
+  
+instance Type.Env Term where
+  bindAt at _ = Type.liftAt at
+  
+instance Env Term where
+  bindAt at _ = liftAt at
+  
+instance Env Type where
+  -- Types are obviously unaffected by binding term indices
+  bindAt at _ = id
+  
+instance (Env a, Env b) => Env (a, b) where
+  bindAt at b (x, y) = (bindAt at b x, bindAt at b y)
+
+substAt :: Index -> Term -> Term -> Term
+substAt at with term = runReader (transform substVar term) (at, with)
   where
-  substL :: MonadReader (Index, Term a) m => Term a -> m (Term a)
-  substL term@(get inner -> Var var) = do
+  substVar :: MonadReader (Index, Term) m => Term -> m Term
+  substVar (Var var) = do
     (at, with) <- ask
     return $ case at `compare` var of
       -- Substitution occurs
-      EQ -> updateNotes term with 
+      EQ -> with
       -- Substitution does not occur
-      LT -> set inner (Var (pred var)) term
-      GT -> set inner (Var var) term
-  substL other = 
+      LT -> Var (pred var)
+      GT -> Var var
+  substVar other =
     return other
-
-instance Notes a => Liftable (Term a) where
-  liftAt at term = runReader (liftedTransform liftL term) at
-    where
-    liftL :: MonadReader Index m => Term a -> m (Term a)
-    liftL term@(get inner -> Var x) = do
-      at <- ask
-      return $ set inner (Var (liftAt at x)) term
-    liftL other = 
-      return other
-
-instance Enum Index where
-  succ (Index n) = Index (n + 1)
-  pred (Index n) | n > 0 = Index (n - 1)
-  toEnum n | n >= 0 = Index n
-  fromEnum (Index n) = n
-  
-instance Uniplate (Term a) where
-  uniplate (Term note inner) = 
-    (str, \str -> Term note (rmk str))
-    where
-    (str, rmk) = biplate inner
-  
-instance Biplate (InnerTerm a) (Term a) where
-  biplate (Var idx) = 
-    (Zero, \Zero -> Var idx)
-  biplate (Inj n) =
-    (Zero, \Zero -> Inj n)
-  biplate Absurd = 
-    (Zero, \Zero -> Absurd)
-  biplate (App t1 t2) = 
-    (Two (One t1) (One t2), \(Two (One t1) (One t2)) -> App t1 t2)
-  biplate (Lam rhs) = 
-    (One rhs, \(One rhs) -> Lam rhs)
-  biplate (Fix rhs) =
-    (One rhs, \(One rhs) -> Fix rhs)
-  biplate (Case lhs alts) = 
-    (Two (One lhs) alt_str, 
-      \(Two (One lhs) alt_str) -> Case lhs (mkAlts alt_str))
-    where
-    alt_str = listStr (map (get altTerm) alts)
-    mkAlts alt_str = zipWith mkAlt alts (strList alt_str)
-    mkAlt (Alt n _) t = Alt n t
     
-instance Show Index where
-  show (Index n) = "_" ++ show n
+-- | Substitute at the outermost De-bruijn index 0
+subst :: Term -> Term -> Term
+subst = substAt (toEnum 0)
+
+substTypeAt :: Type.Index -> Type -> Term -> Term
+substTypeAt at for term = 
+  runReader (transformTypes substType term) (at, for)
+  where
+  substType :: MonadReader (Type.Index, Type) m => Type -> m Type
+  substType t = do
+    (at, for) <- ask
+    return (Type.substAt at for t)
+    
+substType :: Type -> Term -> Term
+substType = substTypeAt (toEnum 0)
+
+  
+
 

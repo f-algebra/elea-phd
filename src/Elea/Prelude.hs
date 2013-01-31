@@ -36,7 +36,7 @@ module Elea.Prelude
   module Data.IntSet,
   module Data.Function,
   module Data.Text,
-  module Data.Generics.Uniplate.Operations,
+--  module Data.Generics.Uniplate.Operations,
   module Data.Generics.Str,
   
   module Debug.Trace,
@@ -47,10 +47,9 @@ module Elea.Prelude
   concatEndos, concatEndosM, empty,
   fromJustT, anyM, allM, findM, sortWith, deleteIndices,
   minimalBy, nubOrd, elemOrd, intersectOrd, countOrd,
-  fromRight, fromLeft, traceMe, setAt, firstM,
-  wrapFunctor, unwrapFunctor, FunctorWrapper,
+  fromRight, fromLeft, traceMe, setAt, firstM, Nat,
   takeIndices, isNub, foldl1M, seqStr, strSeq,
-  mapChildrenBi, plus, isLeft, isRight, fst, snd
+  plus, isLeft, isRight, fst, snd, modifyM', modifyM
 )
 where
 
@@ -83,6 +82,7 @@ import Control.Exception ( assert )
 
 import Data.Label.Pure
 import Data.Label ( mkLabels )
+import Data.Label.Maybe ( (:~>) )
 import Data.Maybe
 import Data.Either ( lefts, rights, partitionEithers )
 import Data.Monoid hiding ( Sum, All )
@@ -104,7 +104,7 @@ import Data.IntSet ( IntSet )
 import Data.Function ( on )
 import Data.Text ( Text )
 import Data.String
-import Data.Generics.Uniplate.Operations
+-- import Data.Generics.Uniplate.Operations
 import Data.Generics.Str
 
 import Debug.Trace
@@ -113,6 +113,7 @@ import System.IO.Unsafe
 import qualified Prelude as Pre
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
+import qualified Data.Label.Maybe as Maybe
 
 infixr 6 ++
 
@@ -281,20 +282,31 @@ seqStr =  listStr . toList
 strSeq :: Str a -> Seq a
 strSeq = Seq.fromList . strList
 
-wrapFunctor :: f a -> FunctorWrapper f a
-wrapFunctor = WrapFunctor
-
-newtype FunctorWrapper f a = WrapFunctor { unwrapFunctor :: f a }
-  deriving ( Functor, Foldable, Traversable, Monad, Applicative )
-
-mapChildrenBi :: Biplate from to => (to -> to) -> from -> from
-mapChildrenBi f x = rmk (map f str) 
-  where
-  (str, rmk) = biplate x
-
 plus :: (Enum a, Num b, Ord b) => a -> b -> a
 plus x n 
   | n == 0 = x
   | n > 0 = succ (x `plus` (n - 1))
   | n < 0 = pred (x `plus` (n + 1))
+ 
+newtype Nat = Nat Int
+  deriving ( Eq, Ord, Show )
+  
+instance Enum Nat where
+  succ (Nat n) = Nat (n + 1)
+  pred (Nat n) | n > 0 = Nat (n - 1)
+  toEnum n | n >= 0 = Nat n
+  fromEnum (Nat n) = n
+  
+modifyM' :: Monad m => (f :~> a) -> (a -> m a) -> f -> m f
+modifyM' r g f
+  | Just a <- Maybe.get r f = do
+      a' <- g a
+      return $ fromJust $ Maybe.set r a' f 
+  | otherwise = return f
+  
+modifyM :: Monad m => (f :-> a) -> (a -> m a) -> f -> m f
+modifyM r g f = do
+  x <- g (get r f)
+  return (set r x f)
+  
 
