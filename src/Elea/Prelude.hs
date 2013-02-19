@@ -18,6 +18,7 @@ module Elea.Prelude
   module Control.Monad.Trans.Maybe,
   module Control.Exception,
   
+  module Data.Nat,
   module Data.Label.Pure,
   module Data.Label,
   module Data.Maybe,
@@ -38,6 +39,7 @@ module Elea.Prelude
   module Data.Text,
 --  module Data.Generics.Uniplate.Operations,
   module Data.Generics.Str,
+  module Data.String.Utils,
   
   module Debug.Trace,
   module System.IO.Unsafe,
@@ -47,9 +49,10 @@ module Elea.Prelude
   concatEndos, concatEndosM, empty,
   fromJustT, anyM, allM, findM, sortWith, deleteIndices,
   minimalBy, nubOrd, elemOrd, intersectOrd, countOrd,
-  fromRight, fromLeft, traceMe, setAt, firstM, Nat,
+  fromRight, fromLeft, traceMe, setAt, firstM, 
   takeIndices, isNub, foldl1M, seqStr, strSeq,
-  plus, isLeft, isRight, fst, snd, modifyM', modifyM
+  isLeft, isRight, fst, snd, modifyM', modifyM,
+  insertAt, convertEnum, indent, debugNth
 )
 where
 
@@ -80,6 +83,7 @@ import Control.Monad.Trans.Either ( EitherT (..) )
 import Control.Monad.Fix
 import Control.Exception ( assert )
 
+import Data.Nat
 import Data.Label.Pure
 import Data.Label ( mkLabels )
 import Data.Label.Maybe ( (:~>) )
@@ -106,6 +110,7 @@ import Data.Text ( Text )
 import Data.String
 -- import Data.Generics.Uniplate.Operations
 import Data.Generics.Str
+import Data.String.Utils ( replace )
 
 import Debug.Trace
 import System.IO.Unsafe
@@ -282,21 +287,6 @@ seqStr =  listStr . toList
 strSeq :: Str a -> Seq a
 strSeq = Seq.fromList . strList
 
-plus :: (Enum a, Num b, Ord b) => a -> b -> a
-plus x n 
-  | n == 0 = x
-  | n > 0 = succ (x `plus` (n - 1))
-  | n < 0 = pred (x `plus` (n + 1))
- 
-newtype Nat = Nat Int
-  deriving ( Eq, Ord, Show )
-  
-instance Enum Nat where
-  succ (Nat n) = Nat (n + 1)
-  pred (Nat n) | n > 0 = Nat (n - 1)
-  toEnum n | n >= 0 = Nat n
-  fromEnum (Nat n) = n
-  
 modifyM' :: Monad m => (f :~> a) -> (a -> m a) -> f -> m f
 modifyM' r g f
   | Just a <- Maybe.get r f = do
@@ -308,5 +298,21 @@ modifyM :: Monad m => (f :-> a) -> (a -> m a) -> f -> m f
 modifyM r g f = do
   x <- g (get r f)
   return (set r x f)
+   
+insertAt :: Nat -> a -> [a] -> [a]
+insertAt 0 x ys = x:ys
+insertAt n x (y:ys) = y:(insertAt (n-1) x ys)
+insertAt _ _ [] = 
+  error "Can't insert past the end of a list"
   
+convertEnum :: (Enum a, Enum b) => a -> b
+convertEnum = toEnum . fromEnum
+
+indent :: Int -> String -> String
+indent n = replace "\n" (replicate n ' ')
+
+debugNth :: String -> [a] -> Int -> a
+debugNth msg xs n 
+  | length xs <= n = error msg
+  | otherwise = xs !! n
 

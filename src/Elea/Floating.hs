@@ -14,10 +14,10 @@ import Elea.Term ( Term (..), InnerTerm (..), Alt (..) )
 import qualified Data.Label.Maybe as Maybe
 import qualified Elea.Term as Term
 
-run :: Term.Notes a => Term a -> Term a
-run = rewrite steps
+run :: Term -> Term
+run = Term.rewrite steps
 
-steps :: Term.Notes a => Term a -> Maybe (Term a)
+steps :: Term -> Maybe Term
 steps t = lambdaCaseStep t 
   `mplus` funCaseStep t
   `mplus` argCaseStep t

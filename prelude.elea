@@ -1,24 +1,35 @@
 
-(def 0 in0)
-(def suc in1)
-(def 1 (suc 0))
-(def 2 (suc 1))
-
-(def nil in0)
-(def cons in1)
-
-(def id (lam x x))
-
-(def +
-  (fix + x y 
-    (case x
-      (0 -> y)
-      (suc x' -> suc (+ x' y)))))
-      
-(def *
-  (fix * x y
-    (case x
-      (0 -> 0)
-      (suc x' -> + y (* x' y))))) 
-
-
+type nat: *
+  = 0: nat
+  | Suc: nat -> nat
+  /*
+type list: * -> *
+  = Nil: (a: *) -> list a
+  | Cons: (a: *) -> a -> list a -> list a
+  
+let add = 
+  fix (add: nat -> nat -> nat) (x: nat) (y: nat) -> 
+    match x with
+    | 0 -> y
+    | Suc x' -> Suc (add x' y)
+ 
+let mul = 
+  fix (mul: nat -> nat -> nat) (x: nat) (y: nat) -> 
+    match y with
+    | 0 -> 0
+    | Suc x' -> add y (mul x' y)
+  
+let app = 
+  fun (a: *) ->
+    fix (app: list a -> list a -> list a) (xs: list a) (ys: list a) ->
+      match xs with
+      | Nil -> ys
+      | Cons x xs' -> Cons x (app xs' ys)
+    
+let rev = 
+  fun (a: *) ->
+    fix (rev: list a -> list a) (xs: list a) ->
+      match xs with
+      | Nil -> Nil
+      | Cons x xs' -> app (rev xs') (Cons x Nil)
+*/

@@ -36,6 +36,7 @@ step term =
   stepInner (Case lhs alts)
     | (inj_term : args) <- Term.flattenApp lhs 
     , Inj inj_n <- get inner inj_term 
+    , assert (length alts > inj_n) True
     , Alt alt_n alt_t <- alts !! inj_n = Just
       $ assert (length args == alt_n)
       $ assert (length alts < inj_n)

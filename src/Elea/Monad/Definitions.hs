@@ -7,20 +7,21 @@ where
 
 import Prelude ()
 import Elea.Prelude hiding ( Monad, lookup )
+import Elea.Type ( Type )
 import Elea.Term ( Term )
 import qualified Elea.Prelude as Prelude
-import qualified Elea.Term as Term
 
--- | The 'Definitions' 'Monad' can store and load 'Term' definitions.
--- Parameterised by the type of term annotations.
-class (Term.Notes a, Prelude.Monad m) => Monad a m | m -> a where
-  lookup :: String -> m (Maybe (Term a))
-  add :: String -> Term a -> m ()
+-- | The 'Definitions' 'Monad' can store and load 
+-- 'Term' and 'Type' definitions.
+class Prelude.Monad m => Monad m where
+  lookupTerm :: String -> m (Maybe Term)
+  lookupType :: String -> m (Maybe Type)
+  defineTerm :: String -> Term -> m ()
+  defineType :: String -> Type -> m ()
 
-instance Monad a m => Monad a (ReaderT r m) where
-  lookup = lift . lookup
-  add n = lift . add n
-  
-instance Monad a m => Monad a (EitherT e m) where
-  lookup = lift . lookup
-  add n = lift . add n
+instance Monad m => Monad (ReaderT r m) where
+  lookupTerm = lift . lookupTerm
+  lookupType = lift . lookupType
+  defineTerm n = lift . defineTerm n
+  defineType n = lift . defineType n
+

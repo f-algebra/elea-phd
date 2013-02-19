@@ -7,12 +7,12 @@ module Elea.Testing (
 
 import Prelude ()
 import Elea.Prelude hiding ( assert )
-import Elea.Core ( Elea )
 import Elea.Term ( Term )
+import Elea.Monad.Elea ( Elea )
 
-import qualified Elea.Core as Elea
-import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Parser as Parse
+import qualified Elea.Monad.Elea as Elea
+import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Error as Error
 import qualified Test.HUnit as HUnit
 
@@ -43,9 +43,9 @@ prelude = unsafePerformIO
   $ readFile "prelude.elea"
 
 loadPrelude :: Elea ()
-loadPrelude = Parse.toplevel prelude
+loadPrelude = Parse.program prelude
 
-term :: String -> Elea (Term Elea.Notes)
+term :: String -> Elea Term
 term = Parse.term
 
 {-
