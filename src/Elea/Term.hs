@@ -3,14 +3,15 @@ module Elea.Term
 (
   Term (..), Alt (..),
   FTerm (..), FAlt (..),
+  Facts (..), IgnoreFactsT (..),
   inner, index, alts, argument, 
   inductiveType, binding,
   altBindings, altInner,
   fAltBindings, fAltInner,
-  ignoreFacts,
-  leftmost, flattenApp, unflattenApp, flattenLam, unflattenLam,
+  leftmost, flattenApp, unflattenApp, 
+  flattenLam, unflattenLam,
+  substAt, subst,
   transformTypesM, transformTypes,
-  substAt, subst, typeOf
 )
 where
 
@@ -21,6 +22,7 @@ import Elea.Type ( Type, Bind, Env (..),
                    ReadableEnv (..), bind, bindMany )
 import qualified Elea.Type as Type
 import qualified Elea.Foldable as Fix
+import qualified Elea.Monad.Error as Err
 import qualified Control.Monad.Trans as Trans
 
 -- | A de-Bruijn indexed functional language,
@@ -59,18 +61,18 @@ data Alt
 
 data FTerm a 
   = FVar !Index
-  | FApp !a !a
-  | FLam !Bind !a
+  | FApp a a
+  | FLam !Bind a
   | FType !Type
-  | FFix !Bind !a
+  | FFix !Bind a
   | FInj !Nat !Type
-  | FCase !a !Type ![FAlt a]
+  | FCase a !Type ![FAlt a]
   | FAbsurd
   deriving ( Functor, Foldable, Traversable )
   
 data FAlt a
   = FAlt { _fAltBindings :: ![Bind]
-         , _fAltInner :: !a }
+         , _fAltInner :: a }
   deriving ( Functor, Foldable, Traversable )
   
 mkLabels [''Term, ''Alt, ''FTerm, ''FAlt]
@@ -106,7 +108,7 @@ instance Fix.Unfoldable Term where
 instance Fix.FoldableM Term where
   type FoldM Term m = (Env m, Facts m)
   
-  foldM = fold
+  cataM = fold
     where 
     -- Need to locally scope 'm' and 'a'
     fold :: forall m a . (Env m, Facts m) =>
@@ -137,20 +139,6 @@ instance Fix.FoldableM Term where
           match = unflattenApp (match_con:match_args)
       seq other =
         apply other
-        
-instance Fix.UnfoldableM Term where
-  type UnfoldM Term m = (Env m, Facts m)
-  
-  unfoldM = unfold
-    where
-    unfold :: forall a m . (Env m, Facts m) =>
-      (a -> m (FTerm a)) -> a -> m Term
-    unfold f = descend <=< f
-      where
-      descend :: FTerm a -> m Term
-      descend (FLam b a) =
-        return (Lam b) `ap` bind b (unfold f a)
-      descend _ = error "Function not finished..."
     
 flattenApp :: Term -> [Term]
 flattenApp (App t1 t2) = flattenApp t1 ++ [t2]
@@ -160,7 +148,7 @@ unflattenApp :: [Term] -> Term
 unflattenApp = foldl1 App
 
 flattenLam :: Term -> ([Bind], Term)
-flattenLam (Lam b t) = modify fst (b:) (flattenLam t)
+flattenLam (Lam b t) = first (b:) (flattenLam t)
 flattenLam t = ([], t)
 
 unflattenLam :: [Bind] -> Term -> Term
@@ -190,64 +178,10 @@ instance MonadReader r m => MonadReader r (IgnoreFactsT m) where
 instance Monad m => Facts (IgnoreFactsT m) where
   equals _ _ = id
   
--- | Returns the type of a given term, within a readable type environment
-typeOf :: forall m . ReadableEnv m => Term -> m Type  
-typeOf = ignoreFacts . Fix.foldM ftype
-  where
-  ftype :: FTerm Type -> IgnoreFactsT m Type
-  ftype (FType _) = 
-    return Type.Set
-  ftype FAbsurd =
-    return $ Type.absurd
-  ftype (FVar idx) =  
-    liftM (get Type.boundType) (boundAt idx)
-  ftype (FApp fun_ty arg_ty) =
-    return $ Type.reduce (Type.App fun_ty arg_ty)
-  ftype (FFix b ty) = 
-      assert (get Type.boundType b == ty)
-    $ return ty
-  ftype (FLam b ty) =
-    return (Type.Fun b ty)
-  ftype (FInj n (Type.unfoldInd -> cons)) = 
-    return $ get Type.boundType (cons !! fromEnum n)
-  ftype (FCase ty ind_ty falts) =
-      assert (all (== alt_ty) alt_tys)
-    $ assert (ty == ind_ty)
-    $ return alt_ty
-    where
-    alt_ty:alt_tys = map (get fAltInner) falts
+instance Err.Monad m => Err.Monad (IgnoreFactsT m) where
+  throw = Trans.lift . Err.throw
+  catch m f = Trans.lift (Err.catch (ignoreFacts m) (ignoreFacts . f))
   
--- | Applies the given transformation to top-level types within a term.
-transformTypesM :: Fix.FoldM Term m =>
-  (Type -> m Type) -> Term -> m Term
-transformTypesM f = Fix.transformM mapTy
-  where
-  mapBind = modifyM Type.boundType f 
-  
-  mapBinds [] = return []
-  mapBinds (b:bs) = do
-    b' <- mapBind b
-    bs' <- bind b' (mapBinds bs)
-    return (b':bs')
-  
-  mapTy (Type ty) = 
-    liftM Type (f ty)
-  mapTy (Fix b t) = 
-    liftM (flip Fix t) (mapBind b)
-  mapTy (Lam b t) = 
-    liftM (flip Lam t) (mapBind b)
-  mapTy (Inj n ind_ty) = 
-    liftM (Inj n) (f ind_ty)
-  mapTy (Case t ind_ty alts) = do
-    ind_ty' <- f ind_ty
-    alts' <- mapM mapAltTy alts
-    return (Case t ind_ty' alts')
-    where
-    mapAltTy (Alt bs t) =
-      liftM (flip Alt t) (mapBinds bs)
-  mapTy other =
-    return other
-    
 instance Liftable Term where
   liftAt at t = runReader (ignoreFacts (trans t)) at
     where
@@ -306,10 +240,39 @@ substType = substTypeAt 0
 instance Monad m => Env (ReaderT () m) where
   bindAt _ _ = id
 
+-- | Applies the given transformation to top-level types within a term.
+transformTypesM :: Fix.FoldM Term m =>
+  (Type -> m Type) -> Term -> m Term
+transformTypesM f = Fix.transformM mapTy
+  where
+  mapBind = modifyM Type.boundType f 
+  
+  mapBinds [] = return []
+  mapBinds (b:bs) = do
+    b' <- mapBind b
+    bs' <- bind b' (mapBinds bs)
+    return (b':bs')
+  
+  mapTy (Type ty) = 
+    liftM Type (f ty)
+  mapTy (Fix b t) = 
+    liftM (flip Fix t) (mapBind b)
+  mapTy (Lam b t) = 
+    liftM (flip Lam t) (mapBind b)
+  mapTy (Inj n ind_ty) = 
+    liftM (Inj n) (f ind_ty)
+  mapTy (Case t ind_ty alts) = do
+    ind_ty' <- f ind_ty
+    alts' <- mapM mapAltTy alts
+    return (Case t ind_ty' alts')
+    where
+    mapAltTy (Alt bs t) =
+      liftM (flip Alt t) (mapBinds bs)
+  mapTy other =
+    return other
+  
 transformTypes :: (Type -> Type) -> Term -> Term
 transformTypes f = 
     flip runReader () 
   . ignoreFacts 
   . transformTypesM (return . f)
-
-

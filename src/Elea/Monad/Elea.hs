@@ -9,10 +9,13 @@ where
 
 import Prelude ()
 import Elea.Prelude hiding ( log )
+import Elea.Index
 import Elea.Term ( Term )
 import Elea.Type ( Type, Bind )
 import Elea.Show ( showM )
+import qualified Elea.Term as Term
 import qualified Elea.Type as Type
+import qualified Elea.Typing as Typing
 import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Logging as Log
 import qualified Elea.Monad.Error as Error
@@ -20,12 +23,12 @@ import qualified Elea.Monad.Failure as Fail
 import qualified Data.Map as Map
 
 data Defs 
-  = Defs  { _terms :: Map String Term
-          , _types :: Map String Type }
+  = Defs  { _terms :: !(Map String Term)
+          , _types :: !(Map String Type) }
 
 data EleaValue a
   = Fail
-  | Error !Error.Type
+  | Error !Error.Err
   | Value !a
   
 data EleaState a
@@ -62,27 +65,27 @@ instance Functor Elea where
   
 instance Monad Elea where
   return x = Elea $ \(ds, _) -> ES ds [] (Value x)
-  Elea el >>= f = Elea $ \env ->
-    let el_st = el env in 
+  Elea el >>= f = Elea $ \(ds, bs) ->
+    let el_st = el (ds, bs) in 
     case value el_st of
       Fail -> el_st { value = Fail }
       Error e -> el_st { value = Error e }
       Value x -> 
-        let el_st' = runElea (f x) (set fst (defs el_st) env) in
+        let el_st' = runElea (f x) (defs el_st, bs) in
         el_st' { log = log (el_st) ++ log (el_st') } 
         
 instance MonadReader [Bind] Elea where
   ask = Elea $ \(ds, bs) -> ES ds [] (Value bs)
   local f el = Elea $ \(ds, bs) -> runElea el (ds, f bs)
-        
+
 instance Type.Env Elea where
-  bindAt at b = local (insertAt (convertEnum at) b)
+  bindAt at b = 
+      local 
+    $ insertAt (convertEnum at) (liftAt at b) 
+    . map (liftAt at)
   
 instance Type.ReadableEnv Elea where
-  boundAt at = do
-    bs <- ask
-    bs_s <- liftM show (mapM showM bs)
-    return (debugNth (bs_s ++ " !! " ++ show at) bs (fromEnum at))
+  boundAt at = asks (!! fromEnum at)
   
 eleaLookup :: (Defs :-> Map String a) -> String -> Elea (Maybe a)
 eleaLookup field name = Elea $ \(ds, _) -> 
@@ -99,14 +102,17 @@ instance Defs.Monad Elea where
   lookupType = eleaLookup types
   
   defineTerm name term = do
-   -- term_s <- showM term
+    term_s <- showM term
+    term_ty <- Typing.typeOf term
+    ty_s <- showM term_ty
     eleaDefine terms name term
- --   Log.info $ "\nval " ++ name ++ " = " ++ term_s
-    
+    Log.info
+      $  "\nval " ++ name ++ ": " ++ ty_s ++ " = " ++ term_s
+
   defineType name ty = do
     type_s <- showM ty
     eleaDefine types name ty
-    Log.info $ "\ntype " ++ name ++ " = " ++ type_s
+    Log.info $ "\ntype " ++ name
   
 instance Error.Monad Elea where
   throw e = Elea $ \(ds, _) ->
@@ -121,7 +127,7 @@ instance Fail.Monad Elea where
   here = Elea $ \(ds, _) -> ES ds [] Fail
 
 instance Log.Monad Elea where
-  info = logMsg . ("Info: " ++)
+  info = logMsg
   error = logMsg . ("Error: " ++)
 
 logMsg :: String -> Elea ()

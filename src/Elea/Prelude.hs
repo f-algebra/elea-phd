@@ -51,21 +51,20 @@ module Elea.Prelude
   minimalBy, nubOrd, elemOrd, intersectOrd, countOrd,
   fromRight, fromLeft, traceMe, setAt, firstM, 
   takeIndices, isNub, foldl1M, seqStr, strSeq,
-  isLeft, isRight, fst, snd, modifyM', modifyM,
-  insertAt, convertEnum, indent, debugNth
+  isLeft, isRight, modifyM', modifyM,
+  insertAt, convertEnum, indent, indentBy,
 )
 where
 
 import Prelude hiding ( mapM, foldl, foldl1, mapM_, minimum, maximum, sequence_,
   foldr, foldr1, sequence, Maybe (..), maybe, all, any, elem, product,
-  and, concat, notElem, or, concatMap, sum, (++), map, (.), id,
-  fst, snd )
+  and, concat, notElem, or, concatMap, sum, (++), map, (.), id )
 
 import Control.Category ( (.), id )
 import Control.Arrow ( Arrow (..), (>>>), (<<<), (&&&), (***), 
   first, second, Kleisli (..), runKleisli )
 import Control.Applicative hiding ( empty )
-import Control.Monad ( liftM, ap, replicateM, join,
+import Control.Monad ( liftM, ap, replicateM, join, zipWithM_,
   zipWithM, filterM, when, unless, guard, (>=>), (<=<), MonadPlus (..) )
 import Control.Monad.Trans ( MonadTrans (..), lift, liftIO )
 import Control.Monad.State ( evalStateT, execState, runState, evalState,
@@ -121,12 +120,6 @@ import qualified Data.Set as Set
 import qualified Data.Label.Maybe as Maybe
 
 infixr 6 ++
-
-fst :: (a, b) :-> a
-fst = lens Pre.fst (first . const)
-
-snd :: (a, b) :-> b
-snd = lens Pre.snd (second . const)
 
 void :: Functor f => f a -> f ()
 void = fmap (const ())
@@ -208,7 +201,7 @@ minimalBy ord xs = y : (takeWhile ((== EQ) . ord y) ys)
   where (y:ys) = sortBy ord xs
 
 nubOrd :: Ord a => [a] -> [a]
-nubOrd = reverse . get fst . foldl nubby ([], Set.empty)
+nubOrd = reverse . fst . foldl nubby ([], Set.empty)
   where
   nubby (acc, set) x 
     | x `Set.member` set = (acc, set)
@@ -308,8 +301,11 @@ insertAt _ _ [] =
 convertEnum :: (Enum a, Enum b) => a -> b
 convertEnum = toEnum . fromEnum
 
-indent :: Int -> String -> String
-indent n = replace "\n" (replicate n ' ')
+indentBy :: Int -> String -> String
+indentBy n = replace "\n" ("\n" ++ replicate n ' ')
+
+indent :: String -> String
+indent = indentBy 2
 
 debugNth :: String -> [a] -> Int -> a
 debugNth msg xs n 
