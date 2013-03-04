@@ -1,7 +1,8 @@
 -- | de-Bruijn indices and lifting.
 module Elea.Index
 (
-  Index, Liftable (..), lift
+  Index, Liftable (..), Substitutable (..),
+  lift, subst, lowerAt, lower, lowerMany,
 )
 where
 
@@ -34,3 +35,19 @@ instance (Liftable a, Liftable b) => Liftable (Either a b) where
 
 instance Show Index where
   show (Index n) = "_" ++ show n
+  
+class Substitutable t where
+  substAt :: Index -> t -> t -> t
+
+subst :: Substitutable t => t -> t -> t
+subst = substAt 0
+  
+lowerAt :: Substitutable t => Index -> t -> t
+lowerAt idx = substAt idx undefined
+
+lower :: Substitutable t => t -> t
+lower = lowerAt 0
+
+lowerMany :: Substitutable t => Int -> t -> t
+lowerMany n = concatEndos (replicate n lower)
+

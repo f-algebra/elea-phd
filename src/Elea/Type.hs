@@ -2,21 +2,22 @@
 module Elea.Type
 (
   Bind (..), boundLabel, boundType, 
-  Type (..), FType (..), FBind (..),
+  Type (..), Type' (..), Bind' (..),
   Env (..),  ReadableEnv (..),
-  fBoundLabel, fBoundType,
+  boundLabel', boundType',
+  binding, constructors,
   projectBind, embedBind,
   flattenFun, flattenApp,
   unfoldInd, absurd,
   isInd, isKind, isFun,
-  bind, bindMany,
-  substAt, subst,
+  bind, bindMany, reduce,
 )
 where
 
 import Prelude ()
 import Elea.Prelude
 import Elea.Index
+import qualified Elea.Monad.Error as Err
 import qualified Elea.Foldable as Fix
 
 -- | Binding a de-Bruijn index. Might be named, is always typed.
@@ -30,24 +31,25 @@ data Type
   | Var !Index
   | App !Type !Type
   | Fun !Bind !Type
-  | Ind !Bind ![Bind]
+  | Ind   { _binding :: !Bind
+          , _constructors :: ![Bind] }
   deriving ( Eq, Ord ) 
 
-data FBind a
-  = FBind { _fBoundLabel :: !(Maybe String)
-          , _fBoundType :: a }
+data Bind' a
+  = Bind' { _boundLabel' :: !(Maybe String)
+          , _boundType' :: a }
   deriving ( Functor, Foldable, Traversable )
 
 -- | The functor that underlies 'Type', used for 'Elea.Foldable'.
-data FType a
-  = FSet
-  | FVar !Index
-  | FApp a a
-  | FFun !(FBind a) a
-  | FInd !(FBind a) ![FBind a]
+data Type' a
+  = Set'
+  | Var' !Index
+  | App' a a
+  | Fun' !(Bind' a) a
+  | Ind' !(Bind' a) ![Bind' a]
   deriving ( Functor, Foldable, Traversable )
   
-type instance Fix.Base Type = FType
+type instance Fix.Base Type = Type'
   
 instance Eq Bind where
   (==) = (==) `on` _boundType
@@ -55,29 +57,29 @@ instance Eq Bind where
 instance Ord Bind where
   compare = compare `on` _boundLabel
   
-mkLabels [''Bind, ''FBind]
+mkLabels [''Type, ''Bind, ''Bind']
 
-embedBind :: FBind Type -> Bind
-embedBind (FBind lbl t) = Bind lbl t
+embedBind :: Bind' Type -> Bind
+embedBind (Bind' lbl t) = Bind lbl t
 
-projectBind :: Bind -> FBind Type
-projectBind (Bind lbl t) = FBind lbl t
+projectBind :: Bind -> Bind' Type
+projectBind (Bind lbl t) = Bind' lbl t
 
 instance Fix.Foldable Type where
-  project Set = FSet
-  project (Var x) = FVar x
-  project (App t1 t2) = FApp t1 t2
-  project (Fun b t) = FFun (projectBind b) t
-  project (Ind b cons) = FInd (projectBind b) (map projectBind cons) 
+  project Set = Set'
+  project (Var x) = Var' x
+  project (App t1 t2) = App' t1 t2
+  project (Fun b t) = Fun' (projectBind b) t
+  project (Ind b cons) = Ind' (projectBind b) (map projectBind cons) 
   
 instance Fix.Unfoldable Type where
-  embed FSet = Set
-  embed (FVar x) = Var x
-  embed (FApp t1 t2) = App t1 t2
-  embed (FFun b t) = Fun (embedBind b) t
-  embed (FInd b cons) = Ind (embedBind b) (map embedBind cons)
+  embed Set' = Set
+  embed (Var' x) = Var x
+  embed (App' t1 t2) = App t1 t2
+  embed (Fun' b t) = Fun (embedBind b) t
+  embed (Ind' b cons) = Ind (embedBind b) (map embedBind cons)
   
-recoverBind :: FBind (a, Type) -> Bind 
+recoverBind :: Bind' (a, Type) -> Bind 
 recoverBind = embedBind . fmap snd
 
 instance Fix.FoldableM Type where
@@ -87,21 +89,21 @@ instance Fix.FoldableM Type where
     where
     -- Need to locally scope 'm' and 'a'
     fold :: forall m a . Env m => 
-      (FType a -> m a) -> Type -> m a
+      (Type' a -> m a) -> Type -> m a
     fold f = join . liftM f . sqn . Fix.project
       where
       apply :: Traversable f => f Type -> m (f a)
       apply = sequence . fmap (fold f)
       
-      sqn :: FType Type -> m (FType a)
-      sqn (FFun b t) = do
+      sqn :: Type' Type -> m (Type' a)
+      sqn (Fun' b t) = do
         b' <- apply b
         t' <- bind (embedBind b) (fold f t)
-        return (FFun b' t')
-      sqn (FInd b cons) = do
+        return (Fun' b' t')
+      sqn (Ind' b cons) = do
         b' <- apply b
         cons' <- bind (embedBind b) (mapM apply cons)
-        return (FInd b' cons')
+        return (Ind' b' cons')
       sqn other = 
         apply other
 
@@ -122,9 +124,9 @@ isFun _ = False
 isKind :: Type -> Bool
 isKind = Fix.cata fkind
   where
-  fkind :: FType Bool -> Bool
-  fkind FSet = True
-  fkind (FFun (FBind _ True) True) = True
+  fkind :: Type' Bool -> Bool
+  fkind Set' = True
+  fkind (Fun' (Bind' _ True) True) = True
   fkind _ = False
 
 unfoldInd :: Type -> [Bind]
@@ -138,6 +140,11 @@ flattenFun t = ([], t)
 flattenApp :: Type -> [Type]
 flattenApp (App f x) = flattenApp f ++ [x]
 flattenApp other = [other]
+
+reduce :: Type -> Type
+reduce (App (Fun _ ret_ty) arg_ty) = 
+  arg_ty `subst` ret_ty
+reduce other = other
   
 class Monad m => Env m where
   bindAt :: Index -> Bind -> m a -> m a
@@ -170,23 +177,20 @@ instance Liftable Bind where
 instance Monad m => Env (ReaderT (Index, Type) m) where
   bindAt at _ = local (liftAt at)
   
-substAt :: Index -> Type -> Type -> Type
-substAt at with = 
-    flip runReader (at, with) 
-  . Fix.transformM substVar
-  where
-  substVar :: Type -> Reader (Index, Type) Type
-  substVar (Var idx) = do
-    (at, with) <- ask
-    return $ case at `compare` idx of
-      -- Substitution occurs
-      EQ -> with
-      -- Substitution does not occur
-      LT -> Var (pred idx)
-      GT -> Var idx
-  substVar other = 
-    return other
-
-subst :: Type -> Type -> Type
-subst = substAt 0
+instance Substitutable Type where
+  substAt at with = 
+      flip runReader (at, with) 
+    . Fix.transformM substVar
+    where
+    substVar :: Type -> Reader (Index, Type) Type
+    substVar (Var idx) = do
+      (at, with) <- ask
+      return $ case at `compare` idx of
+        -- Substitution occurs
+        EQ -> with
+        -- Substitution does not occur
+        LT -> Var (pred idx)
+        GT -> Var idx
+    substVar other = 
+      return other
 

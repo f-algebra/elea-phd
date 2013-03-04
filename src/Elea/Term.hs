@@ -2,15 +2,14 @@
 module Elea.Term
 (
   Term (..), Alt (..),
-  FTerm (..), FAlt (..),
+  Term' (..), Alt' (..),
   Facts (..), IgnoreFactsT (..),
   inner, index, alts, argument, 
   inductiveType, binding,
   altBindings, altInner,
-  fAltBindings, fAltInner,
+  altBindings', altInner',
   leftmost, flattenApp, unflattenApp, 
   flattenLam, unflattenLam,
-  substAt, subst,
   transformTypesM, transformTypes,
 )
 where
@@ -59,51 +58,51 @@ data Alt
           , _altInner :: !Term }
   deriving ( Eq, Ord )
 
-data FTerm a 
-  = FVar !Index
-  | FApp a a
-  | FLam !Bind a
-  | FType !Type
-  | FFix !Bind a
-  | FInj !Nat !Type
-  | FCase a !Type ![FAlt a]
-  | FAbsurd
+data Term' a 
+  = Var' !Index
+  | App' a a
+  | Lam' !Bind a
+  | Type' !Type
+  | Fix' !Bind a
+  | Inj' !Nat !Type
+  | Case' a !Type ![Alt' a]
+  | Absurd'
   deriving ( Functor, Foldable, Traversable )
   
-data FAlt a
-  = FAlt { _fAltBindings :: ![Bind]
-         , _fAltInner :: a }
+data Alt' a
+  = Alt' { _altBindings' :: ![Bind]
+         , _altInner' :: a }
   deriving ( Functor, Foldable, Traversable )
   
-mkLabels [''Term, ''Alt, ''FTerm, ''FAlt]
+mkLabels [''Term, ''Alt, ''Term', ''Alt']
   
-type instance Fix.Base Term = FTerm
+type instance Fix.Base Term = Term'
 
-projectAlt :: Alt -> FAlt Term
-projectAlt (Alt bs t) = FAlt bs t
+projectAlt :: Alt -> Alt' Term
+projectAlt (Alt bs t) = Alt' bs t
 
-embedAlt :: FAlt Term -> Alt
-embedAlt (FAlt bs t) = Alt bs t
+embedAlt :: Alt' Term -> Alt
+embedAlt (Alt' bs t) = Alt bs t
 
 instance Fix.Foldable Term where
-  project (Var x) = FVar x
-  project (App t1 t2) = FApp t1 t2
-  project Absurd = FAbsurd
-  project (Type ty) = FType ty
-  project (Lam b t) = FLam b t
-  project (Fix b t) = FFix b t
-  project (Inj n ty) = FInj n ty
-  project (Case t ty alts) = FCase t ty (map projectAlt alts)
+  project (Var x) = Var' x
+  project (App t1 t2) = App' t1 t2
+  project Absurd = Absurd'
+  project (Type ty) = Type' ty
+  project (Lam b t) = Lam' b t
+  project (Fix b t) = Fix' b t
+  project (Inj n ty) = Inj' n ty
+  project (Case t ty alts) = Case' t ty (map projectAlt alts)
   
 instance Fix.Unfoldable Term where
-  embed (FVar x) = Var x
-  embed (FApp t1 t2) = App t1 t2
-  embed FAbsurd = Absurd
-  embed (FType ty) = Type ty
-  embed (FLam b t) = Lam b t
-  embed (FFix b t) = Fix b t
-  embed (FInj n ty) = Inj n ty
-  embed (FCase t ty alts) = Case t ty (map embedAlt alts)
+  embed (Var' x) = Var x
+  embed (App' t1 t2) = App t1 t2
+  embed Absurd' = Absurd
+  embed (Type' ty) = Type ty
+  embed (Lam' b t) = Lam b t
+  embed (Fix' b t) = Fix b t
+  embed (Inj' n ty) = Inj n ty
+  embed (Case' t ty alts) = Case t ty (map embedAlt alts)
   
 instance Fix.FoldableM Term where
   type FoldM Term m = (Env m, Facts m)
@@ -112,24 +111,24 @@ instance Fix.FoldableM Term where
     where 
     -- Need to locally scope 'm' and 'a'
     fold :: forall m a . (Env m, Facts m) =>
-      (FTerm a -> m a) -> Term -> m a
+      (Term' a -> m a) -> Term -> m a
     fold f = join . liftM f . seq . Fix.project
       where
       apply :: Traversable f => f Term -> m (f a)
       apply = sequence . fmap (fold f)
       
-      seq :: FTerm Term -> m (FTerm a)
-      seq t@(FLam b _) =
+      seq :: Term' Term -> m (Term' a)
+      seq t@(Lam' b _) =
         bind b (apply t)
-      seq t@(FFix b _) =
+      seq t@(Fix' b _) =
         bind b (apply t)
-      seq (FCase cse_t ind_ty alts) =
-        return (flip FCase ind_ty)
+      seq (Case' cse_t ind_ty alts) =
+        return (flip Case' ind_ty)
           `ap` fold f cse_t
           `ap` zipWithM seqAlt [0..] alts
         where
-        seqAlt :: Nat -> FAlt Term -> m (FAlt a)
-        seqAlt n alt@(FAlt bs _) =
+        seqAlt :: Nat -> Alt' Term -> m (Alt' a)
+        seqAlt n alt@(Alt' bs _) =
             equals cse_t match
           $ bindMany bs
           $ apply alt
@@ -205,26 +204,22 @@ instance Monad m => Env (ReaderT Term m) where
 instance Monad m => Env (ReaderT (Index, Term) m) where
   bindAt at _ = local (liftAt at)
 
-substAt :: Index -> Term -> Term -> Term
-substAt at with term = 
-  runReader (ignoreFacts (Fix.transformM substVar term)) (at, with)
-  where
-  substVar :: Term -> IgnoreFactsT (Reader (Index, Term)) Term
-  substVar (Var var) = do
-    (at, with) <- ask
-    return $ case at `compare` var of
-      -- Substitution occurs
-      EQ -> with
-      -- Substitution does not occur
-      LT -> Var (pred var)
-      GT -> Var var
-  substVar other =
-    return other
-    
--- | Substitute at the outermost de-Bruijn index 0
-subst :: Term -> Term -> Term
-subst = substAt 0
-
+instance Substitutable Term where
+  substAt at with term = 
+    runReader (ignoreFacts (Fix.transformM substVar term)) (at, with)
+    where
+    substVar :: Term -> IgnoreFactsT (Reader (Index, Term)) Term
+    substVar (Var var) = do
+      (at, with) <- ask
+      return $ case at `compare` var of
+        -- Substitution occurs
+        EQ -> with
+        -- Substitution does not occur
+        LT -> Var (pred var)
+        GT -> Var var
+    substVar other =
+      return other
+      
 substTypeAt :: Index -> Type -> Term -> Term
 substTypeAt at for term = 
   runReader (ignoreFacts (transformTypesM substType term)) (at, for)
@@ -232,7 +227,7 @@ substTypeAt at for term =
   substType :: Type -> IgnoreFactsT (Reader (Index, Type)) Type
   substType t = do
     (at, for) <- ask
-    return (Type.substAt at for t)
+    return (substAt at for t)
     
 substType :: Type -> Term -> Term
 substType = substTypeAt 0

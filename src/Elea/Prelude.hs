@@ -52,7 +52,7 @@ module Elea.Prelude
   fromRight, fromLeft, traceMe, setAt, firstM, 
   takeIndices, isNub, foldl1M, seqStr, strSeq,
   isLeft, isRight, modifyM', modifyM,
-  insertAt, convertEnum, indent, indentBy,
+  insertAt, convertEnum, indent, indentBy, debugNth,
 )
 where
 

@@ -18,7 +18,7 @@ import qualified Elea.Type as Type
 import qualified Elea.Typing as Typing
 import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Logging as Log
-import qualified Elea.Monad.Error as Error
+import qualified Elea.Monad.Error as Err
 import qualified Elea.Monad.Failure as Fail
 import qualified Data.Map as Map
 
@@ -28,7 +28,7 @@ data Defs
 
 data EleaValue a
   = Fail
-  | Error !Error.Err
+  | Error !Err.Err
   | Value !a
   
 data EleaState a
@@ -85,8 +85,12 @@ instance Type.Env Elea where
     . map (liftAt at)
   
 instance Type.ReadableEnv Elea where
-  boundAt at = asks (!! fromEnum at)
-  
+  boundAt at = do
+    bs <- ask
+    Err.when (fromEnum at >= length bs)
+      $ "Index " ++ show at ++ " not bound in " ++ show bs
+    return (bs !! fromEnum at)
+
 eleaLookup :: (Defs :-> Map String a) -> String -> Elea (Maybe a)
 eleaLookup field name = Elea $ \(ds, _) -> 
   ES ds [] (Value (Map.lookup name (get field ds)))
@@ -114,7 +118,7 @@ instance Defs.Monad Elea where
     eleaDefine types name ty
     Log.info $ "\ntype " ++ name
   
-instance Error.Monad Elea where
+instance Err.Monad Elea where
   throw e = Elea $ \(ds, _) ->
     ES ds [] (Error e)
   catch (Elea el) handle = Elea $ \env ->

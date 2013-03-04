@@ -1,29 +1,23 @@
-/*
-type nat: *
-  = 0: nat
-  | Suc: nat -> nat
-*/
 
-type nat = 
-  fix t with 
-  | 0: t 
-  | Suc: t -> t
+type nat =
+  fix nat with 
+  | 0: nat 
+  | Suc: nat -> nat
   end
 
+let 0 = inj0 [nat]
+let Suc = inj1 [nat]
+  
 type list = 
   (a: *) -> 
-    fix t with 
-    | Nil: t 
-    | Cons: a -> t -> t 
+    fix list with 
+    | Nil: list 
+    | Cons: a -> list -> list
     end
 
 let Nil = fun (a: *) -> inj0 [list a]
 let Cons = fun (a: *) -> inj1 [list a]
 
-type list: * -> *
-  = Nil: (a: *) -> list a
-  | Cons: (a: *) -> a -> list a -> list a
-  /*
 let add = 
   fix (add: nat -> nat -> nat) (x: nat) (y: nat) -> 
     match x with 
@@ -37,13 +31,13 @@ let mul =
     | 0 -> 0
     | Suc x' -> add y (mul x' y)
     end
-*/
+
 let app = 
   fun (a: *) ->
     fix (app: list a -> list a -> list a) (xs: list a) (ys: list a) ->
       match xs with
       | Nil -> ys
-      | Cons x xs' -> Cons x (app xs' ys)
+      | Cons x xs' -> Cons [a] x (app xs' ys)
       end
 
 let rev = 
@@ -51,6 +45,6 @@ let rev =
     fix (rev: list a -> list a) (xs: list a) ->
       match xs with
       | Nil -> Nil [a]
-      | Cons x xs' -> app [a] (rev xs') (Cons [a] x Nil)
+      | Cons x xs' -> app [a] (rev xs') (Cons [a] x (Nil [a]))
       end
 
