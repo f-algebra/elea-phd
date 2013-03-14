@@ -43,7 +43,7 @@ mkLabels [''Defs]
  
 unsafe :: Elea a -> a
 unsafe (Elea f) = unsafePerformIO $ do
-  mapM_ putStrLn log
+  -- mapM_ putStrLn log
   case val of
     Fail -> fail "FAIL"
     Error e -> fail ("ERROR: " ++ e)
@@ -131,10 +131,5 @@ instance Fail.Monad Elea where
   here = Elea $ \(ds, _) -> ES ds [] Fail
 
 instance Log.Monad Elea where
-  info = logMsg
-  error = logMsg . ("Error: " ++)
-
-logMsg :: String -> Elea ()
-logMsg msg = Elea $ \(ds, _) -> ES ds [msg] (Value ())
-
+  info msg = Elea $ \(ds, _) -> ES ds [msg] (Value ())
 

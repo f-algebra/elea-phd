@@ -89,7 +89,7 @@ kindOf (App fun arg) =
 -- within a readable type environment.
 -- Can throw type checking errors.
 typeOf :: TypingMonad m => Term -> m Type  
-typeOf term = trace ("showing " ++ show term) $
+typeOf term =
   Err.augmentM (termErr term)
     . Err.check checkType
     . Term.ignoreFacts 

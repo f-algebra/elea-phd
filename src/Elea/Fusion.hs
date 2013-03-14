@@ -1,6 +1,6 @@
 module Elea.Fusion 
 (
- 
+  fusion, fission
 )
 where
 
@@ -13,7 +13,7 @@ import qualified Elea.Term as Term
 import qualified Elea.Context as Context
 import qualified Elea.Simplifier as Simplifier
 import qualified Elea.Monad.Failure as Fail
-
+{-
 potentialConstructorFloat :: forall a m . 
   (Term.Notes a, Fail.Monad m) => 
     Term a -> m (Context a)
@@ -31,3 +31,8 @@ potentialConstructorFloat (Term _ (Fix fixed_term)) = do
       
     
   pcf other = return other
+  -}
+  
+fusion :: Monad m => (Term -> m Term) -> Context -> Term -> m (Maybe Term)
+
+fission :: Monad m => (Term -> m Term) -> Context -> Term -> m (Maybe Term)

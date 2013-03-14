@@ -18,7 +18,8 @@ import Prelude ()
 import Elea.Prelude
 import Elea.Index
 import qualified Elea.Monad.Error as Err
-import qualified Elea.Foldable as Fix
+import qualified Elea.Foldable as Fold
+import qualified Control.Monad.Trans as Trans
 
 -- | Binding a de-Bruijn index. Might be named, is always typed.
 data Bind
@@ -49,7 +50,7 @@ data Type' a
   | Ind' !(Bind' a) ![Bind' a]
   deriving ( Functor, Foldable, Traversable )
   
-type instance Fix.Base Type = Type'
+type instance Fold.Base Type = Type'
   
 instance Eq Bind where
   (==) = (==) `on` _boundType
@@ -65,14 +66,14 @@ embedBind (Bind' lbl t) = Bind lbl t
 projectBind :: Bind -> Bind' Type
 projectBind (Bind lbl t) = Bind' lbl t
 
-instance Fix.Foldable Type where
+instance Fold.Foldable Type where
   project Set = Set'
   project (Var x) = Var' x
   project (App t1 t2) = App' t1 t2
   project (Fun b t) = Fun' (projectBind b) t
   project (Ind b cons) = Ind' (projectBind b) (map projectBind cons) 
   
-instance Fix.Unfoldable Type where
+instance Fold.Unfoldable Type where
   embed Set' = Set
   embed (Var' x) = Var x
   embed (App' t1 t2) = App t1 t2
@@ -82,7 +83,7 @@ instance Fix.Unfoldable Type where
 recoverBind :: Bind' (a, Type) -> Bind 
 recoverBind = embedBind . fmap snd
 
-instance Fix.FoldableM Type where
+instance Fold.FoldableM Type where
   type FoldM Type m = Env m
 
   cataM = fold
@@ -90,7 +91,7 @@ instance Fix.FoldableM Type where
     -- Need to locally scope 'm' and 'a'
     fold :: forall m a . Env m => 
       (Type' a -> m a) -> Type -> m a
-    fold f = join . liftM f . sqn . Fix.project
+    fold f = join . liftM f . sqn . Fold.project
       where
       apply :: Traversable f => f Type -> m (f a)
       apply = sequence . fmap (fold f)
@@ -122,7 +123,7 @@ isFun _ = False
 -- | Our representation unifies types and kinds.
 -- This tests whether a given type is a kind.
 isKind :: Type -> Bool
-isKind = Fix.cata fkind
+isKind = Fold.cata fkind
   where
   fkind :: Type' Bool -> Bool
   fkind Set' = True
@@ -162,7 +163,7 @@ instance Monad m => Env (ReaderT Index m) where
   bindAt at _ = local (liftAt at)
 
 instance Liftable Type where
-  liftAt at ty = runReader (Fix.transformM liftVar ty) at
+  liftAt at ty = runReader (Fold.transformM liftVar ty) at
     where
     liftVar :: Type -> Reader Index Type
     liftVar (Var idx) = do
@@ -177,10 +178,16 @@ instance Liftable Bind where
 instance Monad m => Env (ReaderT (Index, Type) m) where
   bindAt at _ = local (liftAt at)
   
+instance Monad m => Env (ReaderT (Index, Index) m) where
+  bindAt at _ = local (liftAt at)
+  
+instance (Env m, Monoid w) => Env (WriterT w m) where
+  bindAt at b = WriterT . bindAt at b . runWriterT
+  
 instance Substitutable Type where
   substAt at with = 
       flip runReader (at, with) 
-    . Fix.transformM substVar
+    . Fold.transformM substVar
     where
     substVar :: Type -> Reader (Index, Type) Type
     substVar (Var idx) = do

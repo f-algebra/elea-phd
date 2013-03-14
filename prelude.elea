@@ -7,6 +7,8 @@ type nat =
 
 let 0 = inj0 [nat]
 let Suc = inj1 [nat]
+let 1 = Suc 0
+let 2 = Suc 1
   
 type list = 
   (a: *) -> 
@@ -27,7 +29,7 @@ let add =
  
 let mul = 
   fix (mul: nat -> nat -> nat) (x: nat) (y: nat) -> 
-    match y with
+    match x with
     | 0 -> 0
     | Suc x' -> add y (mul x' y)
     end

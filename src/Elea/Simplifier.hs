@@ -6,55 +6,48 @@ where
 
 import Prelude ()
 import Elea.Prelude
-import Elea.Term ( InnerTerm (..), Term (..), Alt (..),
-  inner, notes, altTerm )
-  
-import qualified Elea.Notes.Show as Show
+import Elea.Index
+import Elea.Term ( Term (..), Alt (..) )
+import Elea.Show
 import qualified Elea.Term as Term
+import qualified Elea.Foldable as Fix
 
-run :: Show.HasNote a => Term a -> Term a
-run = rewrite step
+run :: Term -> Term
+run = Fix.rewrite step
   
-step :: forall a . Show.HasNote a => Term a -> Maybe (Term a)
-step term = 
-  updateNote <$> stepInner (get inner term)
-  where
-  updateNote new_term 
-  --  | trace ("\n" ++ show term ++ "\n==>\n" ++ show new_term) False = undefined
-    | otherwise = Term.updateNotes term new_term
+step :: Term -> Maybe Term
+-- Beta reduction
+step (App (Lam _ rhs) arg) = Just (subst arg rhs)
   
-  absurd = Just (set inner Absurd term) 
-  
-  stepInner :: InnerTerm a -> Maybe (Term a)
-  -- Beta reduction
-  stepInner (App (get inner -> Lam rhs) arg) = 
-    Just $ Term.substTop arg rhs
-  -- Eta reduction
-  stepInner (Lam (get inner -> App t (get inner -> Var x)))
-    | x == toEnum 0 = Just t
-  -- Case-Inj reduction
-  stepInner (Case lhs alts)
-    | (inj_term : args) <- Term.flattenApp lhs 
-    , Inj inj_n <- get inner inj_term 
-    , assert (length alts > inj_n) True
-    , Alt alt_n alt_t <- alts !! inj_n = Just
-      $ assert (length args == alt_n)
-      $ assert (length alts < inj_n)
-      $ foldl (flip Term.substTop) alt_t args
-  -- Fixpoint unfolding
-  stepInner (App fix_term@(_inner -> Fix fix_body) arg)
-    | Inj _ <- _inner (Term.leftmost arg) = Just 
-      $ flip (set Term.inner) term
-      $ App (Term.substTop fix_term fix_body) arg
-  -- App-Absurd
-  stepInner (App (get inner -> Absurd) _) = absurd
-  -- Case-Absurd
-  stepInner (Case (get inner -> Absurd) _) = absurd
-  -- Absurd-Case
-  stepInner (Case _ alts)
-    | all ((== Absurd) . get (inner . altTerm)) alts = absurd
-  -- No simplification
-  stepInner other = 
-    Nothing
-  
+-- Eta reduction
+step (Lam _ (App f (Var 0))) = Just f
+
+-- Case-Inj reduction
+step (Case lhs _ alts)
+  | inj_term:args <- Term.flattenApp lhs
+  , Inj (fromEnum -> n) _ <- inj_term
+  , assert (length alts > n) True
+  , Alt bs alt_term <- alts !! n = Just
+    . assert (length args == length bs)
+    $ foldl (flip subst) alt_term args
+
+-- Simple fix unfolding
+step t@(App fix@(Fix _ rhs) arg) 
+  | Term.isInj . Term.leftmost $ arg = 
+    Just (App (subst fix rhs) arg)
+{-
+Need to preserve types here. Absurd is "Absurd `App` Type ty".
+
+-- Absurd function
+step (App Absurd _) = Just Absurd
+
+-- Absurd matching
+step (Case Absurd _ _) = Just Absurd
+
+-- Absurd branched
+step (Case _ _ alts)
+  | all (== Absurd) (map (get Term.altTerm) alts) = Just Absurd  
+-}
+
+step _ = Nothing
 

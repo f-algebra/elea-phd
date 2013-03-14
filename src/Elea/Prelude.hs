@@ -51,7 +51,7 @@ module Elea.Prelude
   minimalBy, nubOrd, elemOrd, intersectOrd, countOrd,
   fromRight, fromLeft, traceMe, setAt, firstM, 
   takeIndices, isNub, foldl1M, seqStr, strSeq,
-  isLeft, isRight, modifyM', modifyM,
+  isLeft, isRight, modifyM', modifyM, removeAt,
   insertAt, convertEnum, indent, indentBy, debugNth,
 )
 where
@@ -65,7 +65,8 @@ import Control.Arrow ( Arrow (..), (>>>), (<<<), (&&&), (***),
   first, second, Kleisli (..), runKleisli )
 import Control.Applicative hiding ( empty )
 import Control.Monad ( liftM, ap, replicateM, join, zipWithM_,
-  zipWithM, filterM, when, unless, guard, (>=>), (<=<), MonadPlus (..) )
+  zipWithM, filterM, when, unless, guard, 
+  (>=>), (<=<), (>>), MonadPlus (..) )
 import Control.Monad.Trans ( MonadTrans (..), lift, liftIO )
 import Control.Monad.State ( evalStateT, execState, runState, evalState,
   MonadState, State (..), StateT (..) )
@@ -297,6 +298,11 @@ insertAt 0 x ys = x:ys
 insertAt n x (y:ys) = y:(insertAt (n-1) x ys)
 insertAt _ _ [] = 
   error "Can't insert past the end of a list"
+  
+removeAt :: Int -> [a] -> [a]
+removeAt _ [] = error "Can't remove past the end of a list"
+removeAt 0 (x:xs) = xs
+removeAt n (x:xs) = x:(removeAt (n-1) xs)
   
 convertEnum :: (Enum a, Enum b) => a -> b
 convertEnum = toEnum . fromEnum

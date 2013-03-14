@@ -4,12 +4,13 @@ module Elea.Term
   Term (..), Alt (..),
   Term' (..), Alt' (..),
   Facts (..), IgnoreFactsT (..),
-  inner, index, alts, argument, 
+  inner, varIndex, alts, argument, 
   inductiveType, binding,
   altBindings, altInner,
   altBindings', altInner',
   leftmost, flattenApp, unflattenApp, 
-  flattenLam, unflattenLam,
+  flattenLam, unflattenLam, 
+  isInj, isLam, isVar,
   transformTypesM, transformTypes,
 )
 where
@@ -30,7 +31,7 @@ import qualified Control.Monad.Trans as Trans
 -- inductive data types ('Inj' and 'Case'),
 -- and absurdity ('Absurd').
 data Term
-  = Var     { _index :: !Index }
+  = Var     { _varIndex :: !Index }
 
   | App     { _inner :: !Term
             , _argument :: !Term }
@@ -138,6 +139,24 @@ instance Fix.FoldableM Term where
           match = unflattenApp (match_con:match_args)
       seq other =
         apply other
+        
+isInj' :: Term' a -> Bool
+isInj' (Inj' {}) = True
+isInj' _ = False
+
+isInj :: Term -> Bool
+isInj = isInj' . Fix.project
+
+isLam' :: Term' a -> Bool
+isLam' (Lam' {}) = True
+isLam' _ = False
+
+isLam :: Term -> Bool
+isLam = isLam' . Fix.project
+
+isVar :: Term -> Bool
+isVar (Var {}) = True
+isVar _ = False
     
 flattenApp :: Term -> [Term]
 flattenApp (App t1 t2) = flattenApp t1 ++ [t2]
@@ -174,6 +193,9 @@ instance MonadReader r m => MonadReader r (IgnoreFactsT m) where
   local f = Trans.lift . local f . ignoreFacts
   ask = Trans.lift ask
   
+instance (Facts m, Monoid w) => Facts (WriterT w m) where
+  equals x y = WriterT . equals x y . runWriterT
+  
 instance Monad m => Facts (IgnoreFactsT m) where
   equals _ _ = id
   
@@ -206,7 +228,10 @@ instance Monad m => Env (ReaderT (Index, Term) m) where
 
 instance Substitutable Term where
   substAt at with term = 
-    runReader (ignoreFacts (Fix.transformM substVar term)) (at, with)
+      transformTypes (lowerAt at)
+    . flip runReader (at, with)
+    . ignoreFacts 
+    $ Fix.transformM substVar term
     where
     substVar :: Term -> IgnoreFactsT (Reader (Index, Term)) Term
     substVar (Var var) = do

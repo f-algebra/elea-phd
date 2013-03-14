@@ -1,3 +1,4 @@
+{-# LANGUAGE UndecidableInstances #-}
 module Elea.Show 
 ( 
   KleisliShow (..)
@@ -9,7 +10,9 @@ import Elea.Prelude
 import Elea.Type ( Type, Bind', Bind, Type' )
 import Elea.Term ( Term, Term', Alt' )
 import GHC.Prim ( Constraint )
+import Elea.Context ( Context )
 import qualified Elea.Term as Term
+import qualified Elea.Context as Context
 import qualified Elea.Type as Type
 import qualified Elea.Foldable as Fix
 
@@ -66,7 +69,7 @@ instance Show (Term' String) where
   show (Term.Lam' b t) =
     indent $ "\nfun " ++ show b ++ mergeFun t
   show (Term.Inj' n (Type.Ind _ cons)) = 
-      fromJust
+      fromMaybe "_"
     . get Type.boundLabel
     $ cons !! fromEnum n
   show (Term.Case' t arg_ty alts) =
@@ -83,7 +86,7 @@ instance Show (Term' String) where
       where
       con = show (Term.Inj n ind_ty)
       bs_s = intercalate " " 
-        $ map (fromJust . get Type.boundLabel) bs
+        $ map (fromMaybe "_" . get Type.boundLabel) bs
           
 instance Show Bind where
   show = show . fmap show . Type.projectBind
@@ -114,8 +117,8 @@ instance KleisliShow Term where
   showM = Term.ignoreFacts . Fix.cataM showF
     where
     showF (Term.Var' x) = 
-    -- return (show x)
-   --   liftM show
+     -- return (show x)
+     -- liftM show
         liftM (fromMaybe (show x) . get Type.boundLabel) 
       $ Type.boundAt x
     showF (Term.Type' ty) = do
@@ -132,3 +135,10 @@ instance KleisliShow Term where
     showF t = 
       return (show t)
 
+instance Show Context where
+  show = show . Context.toLambda
+  
+instance KleisliShow Context where
+  type ShowM Context m = ShowM Term m
+  showM = showM . Context.toLambda
+      

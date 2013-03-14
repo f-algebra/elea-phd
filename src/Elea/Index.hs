@@ -2,7 +2,7 @@
 module Elea.Index
 (
   Index, Liftable (..), Substitutable (..),
-  lift, subst, lowerAt, lower, lowerMany,
+  lift, liftMany, subst, lowerAt, lower, lowerMany,
 )
 where
 
@@ -17,6 +17,9 @@ class Liftable a where
   
 lift :: Liftable a => a -> a
 lift = liftAt 0
+
+liftMany :: Liftable a => Int -> a -> a
+liftMany n = concatEndos (replicate n lift)
    
 instance Liftable () where
   liftAt _ = id

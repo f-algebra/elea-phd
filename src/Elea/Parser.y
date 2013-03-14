@@ -1,7 +1,7 @@
 {
 module Elea.Parser 
 (
-  program, term
+  program, term, ty
 )
 where
 
@@ -59,6 +59,7 @@ mkLabels [''RawProgram, ''Scope, ''RawBind]
 
 %name happyProgram Program
 %name happyTerm Term
+%name happyType Type
 
 %tokentype { Token }
 
@@ -177,11 +178,16 @@ localDef name term =
   $ Map.insert name (Left term)
   
 term :: (Err.Monad m, Defs.Monad m) => String -> m Term
-term = 
-    withEmptyScope 
-  . parseRawTerm 
-  . happyTerm 
-  . lexer
+term = withEmptyScope 
+     . parseRawTerm 
+     . happyTerm 
+     . lexer
+  
+ty :: (Err.Monad m, Defs.Monad m) => String -> m Type
+ty = withEmptyScope
+   . parseRawType
+   . happyType
+   . lexer
   
 program :: (Err.Monad m, Defs.Monad m) => String -> m ()
 program text = withEmptyScope $ do

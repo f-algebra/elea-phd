@@ -6,13 +6,11 @@ where
 
 import Prelude ()
 import Elea.Prelude
-import Elea.Term ( Term, Notes )
-
+import Elea.Term ( Term )
 import qualified Elea.Testing as Test
 import qualified Elea.Floating as Float
-import qualified Elea.Notes.Show as Show
 
-assertFloatEq :: Show.HasNote a => Term a -> Term a -> Test.Test
+assertFloatEq :: Term -> Term -> Test.Test
 assertFloatEq = Test.assertEq `on` Float.run
 
 tests = Test.label "Simplifier"
@@ -26,10 +24,18 @@ tests = Test.label "Simplifier"
   return 
     $ Test.list
     [ test1 ]
-    
   where
-  t1_str = "(fix f x -> case x (0 -> lam y -> y)"
-    ++ "(suc x' -> lam y -> f x' (case y (0 -> 0) (suc y' -> y'))))"
-  aim1_str = "(fix f x y -> case x (0 -> y)"
-    ++ "(suc x -> case y (0 -> f x 0) (suc y -> f x y)))" 
+  t1_str = 
+    "fix (f:nat->nat->nat) (x:nat) -> "
+    ++ "match x with"
+    ++ "| 0 -> fun (y:nat) -> y"
+    ++ "| Suc x -> fun (y:nat) -> f x "
+    ++ "(match y with | 0 -> 0 | Suc y -> y end) end"
+  aim1_str = 
+    "fix (f:nat->nat->nat) (x:nat) (y:nat) ->"
+    ++ "match x with"
+    ++ "| 0 -> y"
+    ++ "| Suc x -> match y with"
+      ++ "| 0 -> f x 0"
+      ++ "| Suc y -> f x y end end"
     
