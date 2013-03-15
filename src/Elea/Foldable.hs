@@ -4,6 +4,7 @@ module Elea.Foldable
   Refoldable, FoldableM (..),
   rewriteM, foldM, allM,
   transform, rewrite, recover,
+  rewriteStepsM, rewriteSteps,
 )
 where
 
@@ -56,6 +57,11 @@ rewriteM :: (FoldableM t, Monad m, FoldM t m) =>
 rewriteM f = 
   transformM $ \t -> 
     join . liftM (maybe (return t) (rewriteM f)) $ f t
+    
+rewriteStepsM :: (FoldableM t, Monad m, FoldM t m) =>
+  [t -> m (Maybe t)] -> t -> m t
+rewriteStepsM  = 
+  rewriteM . (runMaybeT .) . arrowSum . map (MaybeT .)
       
 recover :: Unfoldable t => Base t (a, t) -> t
 recover = embed . fmap snd
@@ -65,3 +71,6 @@ transform f = cata (f . embed)
 
 rewrite :: Refoldable t => (t -> Maybe t) -> t -> t
 rewrite f = transform $ \t -> maybe t (rewrite f) (f t)
+
+rewriteSteps :: Refoldable t => [t -> Maybe t] -> t -> t
+rewriteSteps = rewrite . arrowSum

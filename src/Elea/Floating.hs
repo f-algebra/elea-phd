@@ -4,7 +4,7 @@
 -- be lambdas then cases all at the start of a function.
 module Elea.Floating
 (
-  steps, run,
+  run,
 )
 where
 
@@ -12,19 +12,20 @@ import Prelude ()
 import Elea.Prelude hiding ( lift )
 import Elea.Index
 import Elea.Term ( Term (..), Alt (..) )
+import Elea.Type ( Type )
+import qualified Elea.Type as Type
 import qualified Elea.Term as Term
+import qualified Elea.Simplifier as Simp
 import qualified Elea.Foldable as Fold
 import qualified Data.Monoid as Monoid
 
 run :: Term -> Term
-run = Fold.rewrite steps
-
-steps :: Term -> Maybe Term
-steps t = lambdaCaseStep t 
-  `mplus` funCaseStep t
-  `mplus` argCaseStep t
-  `mplus` constArgStep t
---  `mplus` caseCaseStep t
+run = 
+  Fold.rewriteSteps 
+  [ lambdaCaseStep
+  , funCaseStep
+  , argCaseStep
+  , constArgStep ]
   
 -- | Float lambdas out of the branches of a pattern match
 lambdaCaseStep :: Term -> Maybe Term
@@ -80,10 +81,10 @@ argCaseStep _ = mzero
 constArgStep :: Term -> Maybe Term
 constArgStep (Fix fix_b fix_rhs) = do
   pos <- find isConstArg [0..length arg_binds - 1]
-  return (stripArg pos)
+  return . Simp.run . removeConstArg $ pos
   where
   (arg_binds, inner_rhs) = Term.flattenLam fix_rhs
-  fix_index = 0 + toEnum (length arg_binds)
+  fix_index = toEnum (length arg_binds)
   
   argIndex :: Int -> Index
   argIndex arg_pos = 
@@ -113,23 +114,38 @@ constArgStep (Fix fix_b fix_rhs) = do
 
   -- Returns the original argument to constArgStep, with the given
   -- argument floated outside of the 'Fix'.
-  stripArg :: Int -> Term
-  stripArg arg_pos =
-      Term.unflattenLam outer_binds
-    . applyArgs
-    . Fix fix_b
+  removeConstArg :: Int -> Term
+  removeConstArg arg_pos =
+      stripLam
+    . Fix new_fix_b
     . Term.unflattenLam (removeAt arg_pos arg_binds)
-    . substAt old_index (Term.Var new_index) 
+    . substAt old_index (Term.Var new_index)
+    . substAt fix_index (stripLam (Term.Var fix_index))
     $ inner_rhs
     where
+    -- Lots of fiddly de-Bruijning here, it's right because I say so
     old_index = argIndex arg_pos
-    new_index = toEnum (length arg_binds + 1)
-    outer_binds = take arg_pos arg_binds
+    new_index = toEnum (length arg_binds)
+    outer_binds = take (arg_pos + 1) arg_binds
     
-    applyArgs :: Term -> Term
-    applyArgs f = 
+    -- Update the type of the bound fix variable to have one less argument
+    new_fix_b = modify Type.boundType (removeTypeArg arg_pos) fix_b
+    
+    stripLam = 
+        Term.unflattenLam outer_binds 
+      . applyArgs
+      . liftManyAt (length outer_binds) 1
+   
+    applyArgs t = 
         Term.unflattenApp 
-      $ f : [ Term.Var (toEnum i) | i <- reverse [1..arg_pos] ]
+      $ t : [ Term.Var (toEnum i) | i <- reverse [1..arg_pos] ]
+      
+  removeTypeArg :: Int -> Type -> Type
+  removeTypeArg arg_pos = 
+      uncurry Type.unflattenFun 
+    . first (removeAt arg_pos) 
+    . Type.flattenFun
+
       
 constArgStep _ = mzero
 
@@ -146,3 +162,4 @@ caseCaseStep (Case (Case lhs inner_ty inner_alts) outer_ty outer_alts) =
     
 caseCaseStep _ = Nothing
 -}
+

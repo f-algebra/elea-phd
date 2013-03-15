@@ -8,7 +8,7 @@ module Elea.Type
   binding, constructors,
   projectBind, embedBind,
   flattenFun, flattenApp,
-  unfoldInd, absurd,
+  unfoldInd, absurd, unflattenFun,
   isInd, isKind, isFun,
   bind, bindMany, reduce,
 )
@@ -137,6 +137,9 @@ unfoldInd ty@(Ind _ cons) =
 flattenFun :: Type -> ([Bind], Type)
 flattenFun (Fun b t) = first (b:) (flattenFun t)
 flattenFun t = ([], t)
+
+unflattenFun :: [Bind] -> Type -> Type
+unflattenFun = flip (foldr Fun)
    
 flattenApp :: Type -> [Type]
 flattenApp (App f x) = flattenApp f ++ [x]

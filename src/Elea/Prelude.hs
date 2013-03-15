@@ -53,6 +53,7 @@ module Elea.Prelude
   takeIndices, isNub, foldl1M, seqStr, strSeq,
   isLeft, isRight, modifyM', modifyM, removeAt,
   insertAt, convertEnum, indent, indentBy, debugNth,
+  arrowSum,
 )
 where
 
@@ -317,4 +318,7 @@ debugNth :: String -> [a] -> Int -> a
 debugNth msg xs n 
   | length xs <= n = error msg
   | otherwise = xs !! n
+  
+arrowSum :: MonadPlus m => [a -> m b] -> a -> m b
+arrowSum ms x = msum (map ($ x) ms)
 

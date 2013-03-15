@@ -1,6 +1,6 @@
 module Elea.Simplifier 
 (
-  run, step,
+  run
 )
 where
 
@@ -10,31 +10,32 @@ import Elea.Index
 import Elea.Term ( Term (..), Alt (..) )
 import Elea.Show
 import qualified Elea.Term as Term
-import qualified Elea.Foldable as Fix
+import qualified Elea.Foldable as Fold
 
 run :: Term -> Term
-run = Fix.rewrite step
+run = Fold.rewrite step
   
 step :: Term -> Maybe Term
 -- Beta reduction
-step (App (Lam _ rhs) arg) = Just (subst arg rhs)
+step (App (Lam _ rhs) arg) = return (subst arg rhs)
   
 -- Eta reduction
-step (Lam _ (App f (Var 0))) = Just f
+step (Lam _ (App f (Var 0))) = return f
 
 -- Case-Inj reduction
 step (Case lhs _ alts)
   | inj_term:args <- Term.flattenApp lhs
   , Inj (fromEnum -> n) _ <- inj_term
   , assert (length alts > n) True
-  , Alt bs alt_term <- alts !! n = Just
+  , Alt bs alt_term <- alts !! n = 
+      return
     . assert (length args == length bs)
     $ foldl (flip subst) alt_term args
 
 -- Simple fix unfolding
 step t@(App fix@(Fix _ rhs) arg) 
   | Term.isInj . Term.leftmost $ arg = 
-    Just (App (subst fix rhs) arg)
+    return (App (subst fix rhs) arg)
 {-
 Need to preserve types here. Absurd is "Absurd `App` Type ty".
 
@@ -49,5 +50,5 @@ step (Case _ _ alts)
   | all (== Absurd) (map (get Term.altTerm) alts) = Just Absurd  
 -}
 
-step _ = Nothing
+step _ = mzero
 

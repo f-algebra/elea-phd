@@ -21,21 +21,37 @@ tests = Test.label "Simplifier"
   aim1 <- Test.term aim1_str
   let test1 = assertFloatEq aim1 t1
   
+  t2 <- Test.term t2_str
+  aim2 <- Test.term aim2_str
+  let test2 = assertFloatEq aim2 t2
+  
   return 
     $ Test.list
-    [ test1 ]
+    [ test1, test2 ]
   where
   t1_str = 
-    "fix (f:nat->nat->nat) (x:nat) -> "
+    "fix (f:nat->nat->nat->nat) (x:nat) (y:nat) -> "
     ++ "match x with"
-    ++ "| 0 -> fun (y:nat) -> y"
-    ++ "| Suc x -> fun (y:nat) -> f x "
-    ++ "(match y with | 0 -> 0 | Suc y -> y end) end"
+    ++ "| 0 -> fun (z:nat) -> y"
+    ++ "| Suc x -> fun (z:nat) -> f x y"
+    ++ "(match z with | 0 -> 0 | Suc z -> z end) end"
   aim1_str = 
-    "fix (f:nat->nat->nat) (x:nat) (y:nat) ->"
+    "fun (x:nat) (y:nat) -> "
+    ++ "(fix (f:nat->nat->nat) (x:nat) (z:nat) ->"
     ++ "match x with"
     ++ "| 0 -> y"
-    ++ "| Suc x -> match y with"
+    ++ "| Suc x -> match z with"
       ++ "| 0 -> f x 0"
-      ++ "| Suc y -> f x y end end"
+      ++ "| Suc z -> f x z end end) x"
+      
+  t2_str = "fix (f:nat->nat->nat) (x:nat) (y:nat) ->"
+    ++ "match x with"
+    ++ "| 0 -> y"
+    ++ "| Suc x' -> Suc (f x' y) end"
     
+  aim2_str = "fun (x:nat) (y:nat) ->"
+    ++ "(fix (f:nat->nat) (x:nat) ->"
+    ++ "match x with"
+    ++ "| 0 -> y"
+    ++ "| Suc x' -> Suc (f x') end) x"
+      

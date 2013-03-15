@@ -11,6 +11,7 @@ import Elea.Term ( Term )
 import Elea.Monad.Elea ( Elea )
 
 import qualified Elea.Parser as Parse
+import qualified Elea.Typing as Typing
 import qualified Elea.Monad.Elea as Elea
 import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Error as Error
@@ -46,7 +47,7 @@ loadPrelude :: Elea ()
 loadPrelude = Parse.program prelude
 
 term :: String -> Elea Term
-term = Parse.term
+term = Error.check Typing.checkTerm . Parse.term
 
 {-
   
