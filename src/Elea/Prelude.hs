@@ -46,14 +46,14 @@ module Elea.Prelude
   
   (++), concat, intercalate, map, void,
   concatMap, concatMapM, partitionM,
-  concatEndos, concatEndosM, empty,
+  concatEndos, concatEndosM,
   fromJustT, anyM, allM, findM, sortWith, deleteIndices,
   minimalBy, nubOrd, elemOrd, intersectOrd, countOrd,
   fromRight, fromLeft, traceMe, setAt, firstM, 
   takeIndices, isNub, foldl1M, seqStr, strSeq,
   isLeft, isRight, modifyM', modifyM, removeAt,
   insertAt, convertEnum, indent, indentBy, debugNth,
-  arrowSum,
+  arrowSum, supremum,
 )
 where
 
@@ -134,9 +134,6 @@ map = fmap
 
 concat :: Monoid m => [m] -> m
 concat = mconcat
-
-empty :: Monoid m => m
-empty = mempty
   
 instance Monad m => Monoid (Kleisli m a a) where
   mempty = arr id
@@ -321,4 +318,9 @@ debugNth msg xs n
   
 arrowSum :: MonadPlus m => [a -> m b] -> a -> m b
 arrowSum ms x = msum (map ($ x) ms)
+
+supremum :: Enum a => Set a -> a
+supremum set 
+  | Set.null set = toEnum 0
+  | otherwise = succ . head . Set.toDescList $ set
 

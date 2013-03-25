@@ -16,6 +16,7 @@ import qualified Elea.Type as Type
 import qualified Elea.Term as Term
 import qualified Elea.Foldable as Fix
 import qualified Elea.Monad.Error as Err
+import qualified Data.Set as Set
 
 type TypingMonad m = (Err.Monad m, Type.ReadableEnv m)
 
@@ -112,8 +113,13 @@ typeOf term =
   -- | The type of an pattern match branch has to be lowered by any
   -- indexes bound by the match
   altType :: Alt' (Type, Term) -> Type
-  altType (Alt' bs (ty, _)) = 
-    lowerMany (length bs) ty
+  altType (Alt' bs (ty, t)) 
+    | any ((< length bs) . fromEnum) free_idxs = 
+      error ("MEEP: " ++ show t ++ " :: " ++ show ty)
+    | otherwise =
+      lowerMany (length bs) ty
+    where
+    free_idxs = toList (freeIndices ty)
   
   -- | Checks the term for any type errors.
   -- Is combined with 'ftype' in 'doBoth'

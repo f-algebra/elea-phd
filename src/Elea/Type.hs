@@ -8,9 +8,12 @@ module Elea.Type
   binding, constructors,
   projectBind, embedBind,
   flattenFun, flattenApp,
-  unfoldInd, absurd, unflattenFun,
+  unfoldInd, unflattenFun,
+  absurd, empty,
   isInd, isKind, isFun,
   bind, bindMany, reduce,
+  lowerBind, lowerBindAt,
+  removeArg, liftBindAt, liftBind,
 )
 where
 
@@ -20,6 +23,7 @@ import Elea.Index
 import qualified Elea.Monad.Error as Err
 import qualified Elea.Foldable as Fold
 import qualified Control.Monad.Trans as Trans
+import qualified Data.Set as Set
 
 -- | Binding a de-Bruijn index. Might be named, is always typed.
 data Bind
@@ -56,7 +60,7 @@ instance Eq Bind where
   (==) = (==) `on` _boundType
   
 instance Ord Bind where
-  compare = compare `on` _boundLabel
+  compare = compare `on` _boundType
   
 mkLabels [''Type, ''Bind, ''Bind']
 
@@ -111,6 +115,9 @@ instance Fold.FoldableM Type where
 -- | "forall a . a"
 absurd :: Type
 absurd = Fun (Bind (Just "a") Set) (Var 0)
+
+empty :: Type 
+empty = Ind (Bind (Just "0") Set) []
         
 isInd :: Type -> Bool
 isInd (Ind {}) = True
@@ -149,12 +156,37 @@ reduce :: Type -> Type
 reduce (App (Fun _ ret_ty) arg_ty) = 
   arg_ty `subst` ret_ty
 reduce other = other
-  
+
+lowerBindAt :: Index -> Bind -> Bind
+lowerBindAt at = modify boundType (lowerAt at)
+
+lowerBind :: Bind -> Bind
+lowerBind = lowerBindAt 0
+
+liftBindAt :: Index -> Bind -> Bind
+liftBindAt at = modify boundType (liftAt at)
+
+liftBind :: Bind -> Bind
+liftBind = liftBindAt 0
+ 
+-- | Removes the argument at the given position of a function type.
+-- E.g. @removeArg 1 "A->B->C->D" == "A->C->D"
+removeArg :: Int -> Type -> Type
+removeArg at ty = 
+  unflattenFun (start ++ map lowerBind end) (lower result)
+  where
+  (splitAt at -> (start, mid:end), result) = flattenFun ty
+
 class Monad m => Env m where
   bindAt :: Index -> Bind -> m a -> m a
   
 class Env m => ReadableEnv m where
   boundAt :: Index -> m Bind
+  
+  -- | Returns the greatest index bound within this environment.
+  -- If a 'Term' contains an index that is greater than this value
+  -- that 'Term' will not be typeable.
+  bindingDepth :: m Index
   
 bind :: Env m => Bind -> m a -> m a
 bind = bindAt 0
@@ -184,6 +216,30 @@ instance Monad m => Env (ReaderT (Index, Type) m) where
 instance Monad m => Env (ReaderT (Index, Index) m) where
   bindAt at _ = local (liftAt at)
   
+instance Monad m => Env (ReaderT [Bind] m) where
+  bindAt at b = 
+      local 
+    $ insertAt (convertEnum at) (liftAt at b) 
+    . map (liftAt at)
+  
+instance Monad m => ReadableEnv (ReaderT [Bind] m) where
+  boundAt at = asks (!! fromEnum at)
+  bindingDepth = asks (toEnum . pred . length)   
+
+instance Env m => Env (MaybeT m) where
+  bindAt at b = MaybeT . bindAt at b . runMaybeT
+  
+instance ReadableEnv m => ReadableEnv (MaybeT m) where
+  boundAt = Trans.lift . boundAt
+  bindingDepth = Trans.lift bindingDepth
+  
+instance Env m => Env (EitherT e m) where
+  bindAt at b = EitherT . bindAt at b . runEitherT
+  
+instance ReadableEnv m => ReadableEnv (EitherT e m) where
+  boundAt = Trans.lift . boundAt
+  bindingDepth = Trans.lift bindingDepth
+  
 instance (Env m, Monoid w) => Env (WriterT w m) where
   bindAt at b = WriterT . bindAt at b . runWriterT
   
@@ -203,4 +259,17 @@ instance Substitutable Type where
         GT -> Var idx
     substVar other = 
       return other
+      
+  freeIndices = flip runReader 0 . Fold.foldM free
+    where
+    free :: Type -> Reader Index (Set Index)
+    free (Var x) = do
+      free_var_limit <- ask
+      if x >= free_var_limit
+      then return (Set.singleton x)
+      else return mempty
+    free _ = 
+      return mempty
+      
+  failure = empty
 

@@ -90,6 +90,12 @@ instance Type.ReadableEnv Elea where
     Err.when (fromEnum at >= length bs)
       $ "Index " ++ show at ++ " not bound in " ++ show bs
     return (bs !! fromEnum at)
+    
+  bindingDepth = 
+    asks (toEnum . pred . length)
+    
+instance Term.Facts Elea where
+  equals _ _ = id
 
 eleaLookup :: (Defs :-> Map String a) -> String -> Elea (Maybe a)
 eleaLookup field name = Elea $ \(ds, _) -> 

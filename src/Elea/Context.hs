@@ -1,4 +1,3 @@
-{-# LANGUAGE UndecidableInstances #-}
 module Elea.Context 
 (
   Context, make, apply, toLambda, fromLambda, remove
@@ -14,7 +13,7 @@ import qualified Elea.Index as Index
 import qualified Elea.Term as Term 
 import qualified Elea.Type as Type
 import qualified Elea.Monad.Failure as Fail
-import qualified Data.Set as Set
+import qualified Data.Map as Map
 
 data Context 
   = Context   { _term :: Term
@@ -54,34 +53,9 @@ fromLambda (Lam (Type.Bind _ ty) rhs) =
 -- E.g. "remove (f [_] y) (f x y) == Just x" 
 remove :: forall m . Fail.Monad m => Context -> Term -> m Term
 remove (Context cxt_t _) term = do
-  terms <- execWriterT (rem cxt_t term)
-  if Set.size terms /= 1
-  then Fail.here
-  else return $ head (Set.elems terms)
-  where
-  rem :: Term -> Term -> WriterT (Set Term) m ()
-  rem (Var idx) t2 
-    | idx >= gapIndex = tell (Set.singleton t2)
-  rem Absurd Absurd = return ()
-  rem (Lam b1 t1) (Lam b2 t2) = 
-    assert (b1 == b2) (rem t1 t2)
-  rem (Fix b1 t1) (Fix b2 t2) = 
-    assert (b1 == b2) (rem t1 t2)
-  rem (App l1 r1) (App l2 r2) = do
-    rem l1 l2
-    rem r1 r2
-  rem (Type ty1) (Type ty2) =
-    assert (ty1 == ty2) (return ())
-  rem (Var x) (Var y) = 
-    Fail.when (x /= y)
-  rem (Inj n1 ty1) (Inj n2 ty2) = 
-      assert (ty1 == ty2)
-    $ Fail.when (n1 /= n2)
-  rem (Case lhs1 _ alts1) (Case lhs2 _ alts2) = do
-    Fail.when (length alts1 /= length alts2)
-    rem lhs1 lhs2
-    zipWithM (rem `on` get Term.altInner) alts1 alts2
-    return ()
-  remI _ _ = Fail.here 
-    
-  
+  uni <- unifier cxt_t term
+  Fail.when (Map.size uni /= 1)
+  let [(idx, hole_term)] = Map.toList uni
+  Fail.when (idx /= gapIndex)
+  return hole_term
+

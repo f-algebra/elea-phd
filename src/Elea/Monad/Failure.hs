@@ -72,3 +72,6 @@ instance Monad Maybe where
 instance (Monoid w, Monad m) => Monad (WriterT w m) where
   here = lift here
   
+instance Monad m => Monad (ReaderT r m) where
+  here = lift here
+  

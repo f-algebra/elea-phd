@@ -1,6 +1,6 @@
 module Elea.Simplifier 
 (
-  run
+  run, steps,
 )
 where
 
@@ -11,31 +11,55 @@ import Elea.Term ( Term (..), Alt (..) )
 import Elea.Show
 import qualified Elea.Term as Term
 import qualified Elea.Foldable as Fold
+import qualified Data.Set as Set
 
 run :: Term -> Term
-run = Fold.rewrite step
-  
-step :: Term -> Maybe Term
--- Beta reduction
-step (App (Lam _ rhs) arg) = return (subst arg rhs)
-  
--- Eta reduction
-step (Lam _ (App f (Var 0))) = return f
+run = Fold.rewriteSteps steps
 
--- Case-Inj reduction
-step (Case lhs _ alts)
+steps :: [Term -> Maybe Term]
+steps = 
+  [ betaReduce
+  , etaReduce
+  , caseInjReduce
+  , unfoldFix
+  ]
+  
+betaReduce :: Term -> Maybe Term
+betaReduce (App (Lam _ rhs) (Type ty)) = 
+  return (Term.substType ty rhs)
+betaReduce (App (Lam _ rhs) arg) = 
+  return (subst arg rhs)
+betaReduce _ = mzero
+  
+etaReduce :: Term -> Maybe Term
+etaReduce (Lam _ (App f (Var 0)))
+  | not (0 `Set.member` freeIndices f) = 
+    return (lower f)
+etaReduce _ = mzero
+
+caseInjReduce :: Term -> Maybe Term
+caseInjReduce (Case lhs _ alts)
   | inj_term:args <- Term.flattenApp lhs
   , Inj (fromEnum -> n) _ <- inj_term
   , assert (length alts > n) True
-  , Alt bs alt_term <- alts !! n = 
+  , Alt bs alt_term <- alts !! n =
       return
     . assert (length args == length bs)
-    $ foldl (flip subst) alt_term args
+    . foldr subst alt_term
+    -- When we substitute an constructor argument, 
+    -- it needs to not be affected by the substitution of later arguments.
+    -- So we lift their indices a number of times
+    -- depending on their position in the order of substitution, 
+    -- viz. those substituted first are lifted the most.
+    $ zipWith liftMany [0..] args
+caseInjReduce _ = mzero
 
--- Simple fix unfolding
-step t@(App fix@(Fix _ rhs) arg) 
+unfoldFix :: Term -> Maybe Term
+unfoldFix (App fix@(Fix _ rhs) arg) 
   | Term.isInj . Term.leftmost $ arg = 
     return (App (subst fix rhs) arg)
+unfoldFix _ = mzero
+
 {-
 Need to preserve types here. Absurd is "Absurd `App` Type ty".
 
@@ -49,6 +73,3 @@ step (Case Absurd _ _) = Just Absurd
 step (Case _ _ alts)
   | all (== Absurd) (map (get Term.altTerm) alts) = Just Absurd  
 -}
-
-step _ = mzero
-

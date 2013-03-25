@@ -7,6 +7,7 @@ where
 
 import Prelude ()
 import Elea.Prelude
+import Elea.Index
 import Elea.Type ( Type, Bind', Bind, Type' )
 import Elea.Term ( Term, Term', Alt' )
 import GHC.Prim ( Constraint )
@@ -26,76 +27,50 @@ instance KleisliShow Type where
   
   showM = Term.ignoreFacts . Fix.cataM showF
     where
-    showF (Type.Var' x) =
-        liftM (fromMaybe (show x) . get Type.boundLabel) 
-      $ Type.boundAt x
-    showF ty = 
-      return (show ty)
+    showF Type.Set' = 
+      return "*"
+    showF (Type.Var' x) = 
+      showBoundAt x  
+    showF (Type.Ind' b cons) =
+      return name
+      --return ("fix " ++ name ++ " with" ++ cons_s ++ " end")
+      where
+      cons_s = concatMap ((" | " ++) . show) cons
+      name = fromJust (get Type.boundLabel' b)
+    showF (Type.App' s1 s2) =
+      return (showApp s1 s2)
+    showF (Type.Fun' (show -> bs) s) =
+      return  (bs' ++ " -> " ++ s)
+      where
+      bs' | "->" `isInfixOf` bs = "(" ++ bs ++ ")"
+          | otherwise = bs
 
 instance KleisliShow Bind where
   type ShowM Bind m = Type.ReadableEnv m
   showM = liftM show . mapM showM . Type.projectBind
 
-instance Show (Type' String) where
-  show Type.Set' = "*"
-  show (Type.Var' x) = show x
-  show (Type.Ind' b cons) = name
-   -- "fix " ++ name ++ " with" ++ cons_s ++ " end"
-    where
-    name = fromJust (get Type.boundLabel' b)
-    cons_s = concatMap ((" | " ++) . show) cons
-  show (Type.App' s1 s2) =
-    showApp s1 s2
-  show (Type.Fun' (show -> bs) s) =
-    bs' ++ " -> " ++ s
-    where
-    bs' | "->" `isInfixOf` bs = "(" ++ bs ++ ")"
-        | otherwise = bs
-
 instance Show (Bind' String) where
   show (Type.Bind' Nothing s) = s
   show (Type.Bind' (Just lbl) s) = 
     "(" ++ lbl ++ ": " ++ s ++ ")"
-    
-instance Show (Term' String) where
-  show (Term.Var' x) = show x
-  show (Term.Absurd') = "_|_"
-  show (Term.App' t1 t2) =
-    showApp t1 t2
-  show (Term.Type' ty) = 
-    "[" ++ show ty ++ "]"
-  show (Term.Fix' b t) =
-    indent $ "\nfix " ++ show b ++ mergeFun t
-  show (Term.Lam' b t) =
-    indent $ "\nfun " ++ show b ++ mergeFun t
-  show (Term.Inj' n (Type.Ind _ cons)) = 
-      fromMaybe "_"
-    . get Type.boundLabel
-    $ cons !! fromEnum n
-  show (Term.Case' t arg_ty alts) =
-        indent
-      $ "\nmatch " ++ t 
-      ++ " with" ++ concat alts_s 
-      ++ "\nend"
-    where
-    alts_s = zipWith showAlt' [0..] alts
-    ind_ty@(Type.Ind {}) = head (Type.flattenApp arg_ty)
-    
-    showAlt' n (Term.Alt' bs t) =
-      "\n| " ++ con ++ " " ++ bs_s ++ " -> " ++ t
-      where
-      con = show (Term.Inj n ind_ty)
-      bs_s = intercalate " " 
-        $ map (fromMaybe "_" . get Type.boundLabel) bs
           
+instance Show Type where
+  show = flip runReader ([] :: [Bind]) . showM
+  
 instance Show Bind where
   show = show . fmap show . Type.projectBind
     
-instance Show Type where
-  show = Fix.cata show
-  
 instance Show Term where
-  show = Fix.cata show
+  show = flip runReader ([] :: [Bind]) . showM
+  
+showBoundAt :: Type.ReadableEnv m => Index -> m String
+showBoundAt x = do
+  depth <- Type.bindingDepth
+  if x > depth 
+  then return (show x)
+  else do
+    mby_lbl <- liftM (get Type.boundLabel) (Type.boundAt x)
+    return (fromMaybe (show x) mby_lbl)
   
 showApp :: String -> String -> String
 showApp f x = f' ++ " " ++ x'
@@ -116,11 +91,12 @@ instance KleisliShow Term where
   
   showM = Term.ignoreFacts . Fix.cataM showF
     where
-    showF (Term.Var' x) = 
-     -- return (show x)
-     -- liftM show
-        liftM (fromMaybe (show x) . get Type.boundLabel) 
-      $ Type.boundAt x
+    showF (Term.Var' x) =
+      showBoundAt x
+    showF (Term.Absurd') = 
+      return "_|_"
+    showF (Term.App' t1 t2) =
+      return (showApp t1 t2)
     showF (Term.Type' ty) = do
         liftM (\s -> "[" ++ s ++ "]") 
       $ showM ty
@@ -132,9 +108,33 @@ instance KleisliShow Term where
       b_s <- showM b
       return 
         . indent $ "\nfun " ++ b_s ++ mergeFun t
-    showF t = 
-      return (show t)
-
+    showF (Term.Inj' n ty@(Type.Ind _ cons)) = do
+      ty_s <- showM ty
+      return
+    --    . (\t -> t ++ ": " ++ ty_s  )
+        . fromMaybe "_"
+        . get Type.boundLabel
+        $ cons !! fromEnum n
+    showF (Term.Case' t arg_ty alts) = do
+      ty_s <- showM arg_ty
+      alts_s <- zipWithM showAlt [0..] alts
+      return
+        . indent
+        $ "\nmatch " ++ t 
+    --    ++ ": " ++ ty_s
+        ++ " with" ++ concat alts_s 
+        ++ "\nend"
+      where
+      ind_ty@(Type.Ind {}) = head (Type.flattenApp arg_ty)
+      
+      showAlt n (Term.Alt' bs t) = do
+        con <- showM (Term.Inj n ind_ty)
+     --   bs_s <- liftM (intercalate " ") (mapM showM bs)
+        return $ "\n| " ++ con ++ bs_s ++ " -> " ++ t
+        where
+        bs_s = flip concatMap bs 
+          $ (" " ++) . fromMaybe "_" . get Type.boundLabel
+          
 instance Show Context where
   show = show . Context.toLambda
   

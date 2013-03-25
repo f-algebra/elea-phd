@@ -4,7 +4,7 @@
 -- be lambdas then cases all at the start of a function.
 module Elea.Floating
 (
-  run,
+  run, steps,
 )
 where
 
@@ -20,12 +20,15 @@ import qualified Elea.Foldable as Fold
 import qualified Data.Monoid as Monoid
 
 run :: Term -> Term
-run = 
-  Fold.rewriteSteps 
-  [ lambdaCaseStep
-  , funCaseStep
+run = Fold.rewriteSteps (Simp.steps ++ steps)
+
+steps :: [Term -> Maybe Term]
+steps = 
+  [ lambdaCaseStep 
+  --, funCaseStep
   , argCaseStep
-  , constArgStep ]
+  , constArgStep
+  ]
   
 -- | Float lambdas out of the branches of a pattern match
 lambdaCaseStep :: Term -> Maybe Term
@@ -34,15 +37,17 @@ lambdaCaseStep (Case lhs ind_ty alts)
   | all (Term.isLam . get Term.altInner) alts = 
         return
       . Lam new_b
-      $ Case (lift lhs) ind_ty (map lctAlt alts) 
+      . Case (lift lhs) (lift ind_ty) 
+      $ map lctAlt alts
   where
   -- Use the binding of the first alt's lambda as our new outer binding
-  getBinding (Alt _ (Lam lam_b _)) = lam_b
+  getBinding (Alt bs (Lam lam_b _)) = 
+    modify Type.boundType (lowerMany (length bs)) lam_b
   new_b = getBinding (head alts)
   
   -- Lots of careful de-Bruijn index adjustment here
   lctAlt (Alt bs (Lam lam_b rhs)) = 
-      Alt bs 
+      Alt (map Type.liftBind bs)
     . subst (Var (toEnum (length bs)))
     . liftAt (toEnum (length bs + 1))
     $ rhs
@@ -114,40 +119,44 @@ constArgStep (Fix fix_b fix_rhs) = do
 
   -- Returns the original argument to constArgStep, with the given
   -- argument floated outside of the 'Fix'.
+  -- Code like this makes me hate de-Bruijn indices, particularly since
+  -- it's mostly just me not being clever enough to do it cleanly.
   removeConstArg :: Int -> Term
   removeConstArg arg_pos =
-      stripLam
+      stripLam (map Type.lowerBind strip_bs)
+    . liftManyAt (length strip_bs - 1) 1
     . Fix new_fix_b
-    . Term.unflattenLam (removeAt arg_pos arg_binds)
-    . substAt old_index (Term.Var new_index)
-    . substAt fix_index (stripLam (Term.Var fix_index))
+    . replaceAt 0 (stripLam strip_bs (Term.Var new_index))
+    . Term.unflattenLam (map Type.liftBind left_bs)
+    . subst (Term.Var new_index)
+    . Term.unflattenLam (map Type.liftBind right_bs)
+    . liftAt (toEnum $ length arg_binds + 1)
     $ inner_rhs
     where
-    -- Lots of fiddly de-Bruijning here, it's right because I say so
-    old_index = argIndex arg_pos
-    new_index = toEnum (length arg_binds)
-    outer_binds = take (arg_pos + 1) arg_binds
+    -- Split the lambda bindings up 
+    -- at the position where we are removing one.
+    (left_bs, dropped_b:right_bs) = splitAt arg_pos arg_binds
+    strip_bs = left_bs ++ [dropped_b]
+    
+    new_index = toEnum (length left_bs + 1)
     
     -- Update the type of the bound fix variable to have one less argument
-    new_fix_b = modify Type.boundType (removeTypeArg arg_pos) fix_b
+    new_fix_b = modify Type.boundType (lift . Type.removeArg arg_pos) fix_b
     
-    stripLam = 
-        Term.unflattenLam outer_binds 
-      . applyArgs
-      . liftManyAt (length outer_binds) 1
-   
-    applyArgs t = 
-        Term.unflattenApp 
-      $ t : [ Term.Var (toEnum i) | i <- reverse [1..arg_pos] ]
-      
-  removeTypeArg :: Int -> Type -> Type
-  removeTypeArg arg_pos = 
-      uncurry Type.unflattenFun 
-    . first (removeAt arg_pos) 
-    . Type.flattenFun
-
+    -- Abstracts new_bs, and reapplies all but the last binding,
+    -- like eta-equality which skipped the last binding.
+    -- E.g. @stripLam [A,B,C] f == fun (_:A) (_:B) (_:C) -> f _2 _1@
+    stripLam :: [Type.Bind] -> Term -> Term
+    stripLam bs = 
+        Term.unflattenLam bs 
+      . applyArgs (length bs)
+      where
+      applyArgs n t = 
+          Term.unflattenApp 
+        $ t : [ Term.Var (toEnum i) | i <- reverse [1..n-1] ]    
       
 constArgStep _ = mzero
+
 
 
 {- This needs careful index adjustment for the new inner alts I think

@@ -5,30 +5,32 @@ module Elea.Tests.Context
 where
 
 import Prelude ()
-import Elea.Prelude
+import Elea.Prelude             
 import Elea.Index
 import qualified Elea.Context as Context
 import qualified Elea.Testing as Test
 import qualified Elea.Term as Term
 import qualified Elea.Type as Type
 
-tests = Test.label "Contexts"
+tests = Test.label "Contexts"                                          
     $ Test.run $ do
   Test.loadPrelude
   
-  Term.Lam (Type.Bind _ nat) t1_ctx <- Test.term test1_ctx
-  t1_sub <- Test.term test1_sub
-  t1_aim <- Test.term test1_aim
-  let ctx1 = Context.make nat (flip subst t1_ctx)
-      sub1 = Context.apply ctx1 t1_sub
-      test1 = Test.assertEq t1_aim sub1
+  ctx1 <- liftM Context.fromLambda 
+        $ Test.term t1_ctx
+  sub1 <- Test.term t1_sub
+  let app1 = Context.apply ctx1 sub1
+  aim1 <- Test.term t1_aim
+  let test1 = Test.assertEq aim1 app1
       
-  let Just t1_sub' = Context.remove ctx1 t1_aim
-      test2 = Test.assertEq t1_sub t1_sub'
+  let Just sub1' = Context.remove ctx1 aim1
+      test1' = Test.assertEq sub1 sub1'
       
   return 
-    $ Test.list [ test1, test2 ]
+    $ Test.list [ test1, test1' ]          
   where
-  test1_ctx = "fun (x:nat) (y:nat) -> add x y"
-  test1_sub = "mul 1 2"
-  test1_aim = "fun (y:nat) -> add (mul 1 2) y"
+  t1_ctx = "fun (gap:nat) (y:nat) -> add gap y"
+  t1_sub = "mul 1 2"
+  t1_aim = "fun (y:nat) -> add (mul 1 2) y"
+                                                                                           
+  

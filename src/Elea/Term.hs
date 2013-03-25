@@ -12,18 +12,23 @@ module Elea.Term
   flattenLam, unflattenLam, 
   isInj, isLam, isVar,
   transformTypesM, transformTypes,
+  substTypeAt, substType,
+  lowerTypes, lowerTypesAt,
 )
 where
 
 import Prelude ()
-import Elea.Prelude
+import Elea.Prelude hiding ( lift )
 import Elea.Index
 import Elea.Type ( Type, Bind, Env (..), 
                    ReadableEnv (..), bind, bindMany )
 import qualified Elea.Type as Type
-import qualified Elea.Foldable as Fix
+import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Error as Err
 import qualified Control.Monad.Trans as Trans
+import qualified Data.Map as Map
+import qualified Data.Set as Set
+import qualified Elea.Monad.Failure as Fail
 
 -- | A de-Bruijn indexed functional language,
 -- with term level types ('Type'),
@@ -77,7 +82,7 @@ data Alt' a
   
 mkLabels [''Term, ''Alt, ''Term', ''Alt']
   
-type instance Fix.Base Term = Term'
+type instance Fold.Base Term = Term'
 
 projectAlt :: Alt -> Alt' Term
 projectAlt (Alt bs t) = Alt' bs t
@@ -85,7 +90,7 @@ projectAlt (Alt bs t) = Alt' bs t
 embedAlt :: Alt' Term -> Alt
 embedAlt (Alt' bs t) = Alt bs t
 
-instance Fix.Foldable Term where
+instance Fold.Foldable Term where
   project (Var x) = Var' x
   project (App t1 t2) = App' t1 t2
   project Absurd = Absurd'
@@ -95,7 +100,7 @@ instance Fix.Foldable Term where
   project (Inj n ty) = Inj' n ty
   project (Case t ty alts) = Case' t ty (map projectAlt alts)
   
-instance Fix.Unfoldable Term where
+instance Fold.Unfoldable Term where
   embed (Var' x) = Var x
   embed (App' t1 t2) = App t1 t2
   embed Absurd' = Absurd
@@ -105,7 +110,7 @@ instance Fix.Unfoldable Term where
   embed (Inj' n ty) = Inj n ty
   embed (Case' t ty alts) = Case t ty (map embedAlt alts)
   
-instance Fix.FoldableM Term where
+instance Fold.FoldableM Term where
   type FoldM Term m = (Env m, Facts m)
   
   cataM = fold
@@ -113,7 +118,7 @@ instance Fix.FoldableM Term where
     -- Need to locally scope 'm' and 'a'
     fold :: forall m a . (Env m, Facts m) =>
       (Term' a -> m a) -> Term -> m a
-    fold f = join . liftM f . seq . Fix.project
+    fold f = join . liftM f . seq . Fold.project
       where
       apply :: Traversable f => f Term -> m (f a)
       apply = sequence . fmap (fold f)
@@ -131,7 +136,7 @@ instance Fix.FoldableM Term where
         seqAlt :: Nat -> Alt' Term -> m (Alt' a)
         seqAlt n alt@(Alt' bs _) =
             equals cse_t match
-          $ bindMany bs
+          . bindMany bs
           $ apply alt
           where
           match_args = map (Var . toEnum) [(length bs - 1)..0]
@@ -145,14 +150,14 @@ isInj' (Inj' {}) = True
 isInj' _ = False
 
 isInj :: Term -> Bool
-isInj = isInj' . Fix.project
+isInj = isInj' . Fold.project
 
 isLam' :: Term' a -> Bool
 isLam' (Lam' {}) = True
 isLam' _ = False
 
 isLam :: Term -> Bool
-isLam = isLam' . Fix.project
+isLam = isLam' . Fold.project
 
 isVar :: Term -> Bool
 isVar (Var {}) = True
@@ -196,6 +201,9 @@ instance MonadReader r m => MonadReader r (IgnoreFactsT m) where
 instance (Facts m, Monoid w) => Facts (WriterT w m) where
   equals x y = WriterT . equals x y . runWriterT
   
+instance Facts m => Facts (MaybeT m) where
+  equals x y = MaybeT . equals x y . runMaybeT
+  
 instance Monad m => Facts (IgnoreFactsT m) where
   equals _ _ = id
   
@@ -206,7 +214,7 @@ instance Err.Monad m => Err.Monad (IgnoreFactsT m) where
 instance Liftable Term where
   liftAt at t = runReader (ignoreFacts (trans t)) at
     where
-    trans = transformTypesM liftType <=< Fix.transformM liftVar
+    trans = transformTypesM liftType <=< Fold.transformM liftVar
     
     liftType :: Type -> IgnoreFactsT (Reader Index) Type
     liftType ty = do
@@ -228,10 +236,11 @@ instance Monad m => Env (ReaderT (Index, Term) m) where
 
 instance Substitutable Term where
   substAt at with term = 
-      transformTypes (lowerAt at)
-    . flip runReader (at, with)
+      flip runReader (at, with)
     . ignoreFacts 
-    $ Fix.transformM substVar term
+    . Fold.transformM substVar
+    . lowerTypesAt at
+    $ term
     where
     substVar :: Term -> IgnoreFactsT (Reader (Index, Term)) Term
     substVar (Var var) = do
@@ -245,9 +254,25 @@ instance Substitutable Term where
     substVar other =
       return other
       
+  freeIndices = flip runReader 0 . ignoreFacts . Fold.foldM free
+    where
+    free :: Term -> IgnoreFactsT (Reader Index) (Set Index)
+    free (Var x) = do
+      free_var_limit <- ask
+      if x >= free_var_limit
+      then return (Set.singleton (x - free_var_limit))
+      else return mempty
+    free _ = 
+      return mempty
+    
+  failure = 
+    App Absurd (Type Type.empty)
+      
 substTypeAt :: Index -> Type -> Term -> Term
-substTypeAt at for term = 
-  runReader (ignoreFacts (transformTypesM substType term)) (at, for)
+substTypeAt at for =
+    flip runReader (at, for)
+  . ignoreFacts 
+  . transformTypesM substType
   where
   substType :: Type -> IgnoreFactsT (Reader (Index, Type)) Type
   substType t = do
@@ -257,13 +282,19 @@ substTypeAt at for term =
 substType :: Type -> Term -> Term
 substType = substTypeAt 0
 
+lowerTypesAt :: Index -> Term -> Term
+lowerTypesAt = flip substTypeAt Type.empty
+
+lowerTypes :: Term -> Term
+lowerTypes = lowerTypesAt 0
+
 instance Monad m => Env (ReaderT () m) where
   bindAt _ _ = id
 
 -- | Applies the given transformation to top-level types within a term.
-transformTypesM :: Fix.FoldM Term m =>
+transformTypesM :: Fold.FoldM Term m =>
   (Type -> m Type) -> Term -> m Term
-transformTypesM f = Fix.transformM mapTy
+transformTypesM f = Fold.transformM mapTy
   where
   mapBind = modifyM Type.boundType f 
   
@@ -296,3 +327,54 @@ transformTypes f =
     flip runReader () 
   . ignoreFacts 
   . transformTypesM (return . f)
+  
+instance Unifiable Term where
+  unifier = (flip runReaderT 0 .) . uni
+    where
+    uni :: forall m . Fail.Monad m => 
+      Term -> Term -> ReaderT Index m (Unifier Term)
+    uni (Var x1) (Var x2)
+      | x1 == x2 = return mempty
+    uni (Var idx) t2 = do
+      free_var_limit <- ask
+      -- If the variable on the left is not locally scoped
+      -- then we can substitute it for something.
+      -- We subtract 'free_var_limit' to get the index
+      -- outside the bindings of this term.
+      if idx >= free_var_limit
+      then return (Map.singleton (idx - free_var_limit) t2)
+      else Fail.here
+    uni Absurd Absurd = return mempty
+    uni (Lam b1 t1) (Lam b2 t2) = 
+      assert (b1 == b2)
+      . local lift 
+      $ uni t1 t2
+    uni (Fix b1 t1) (Fix b2 t2) = 
+      assert (b1 == b2)
+      . local lift
+      $ uni t1 t2
+    uni (App l1 r1) (App l2 r2) = do
+      uni1 <- uni l1 l2
+      uni2 <- uni r1 r2
+      unifierUnion uni1 uni2
+    uni (Type ty1) (Type ty2) =
+      assert (ty1 == ty2) (return mempty)
+    uni (Inj n1 ty1) (Inj n2 ty2) =
+      assert (ty1 == ty2) $ do
+        Fail.when (n1 /= n2)
+        return mempty
+    uni (Case match1 _ alts1) (Case match2 _ alts2) = do
+      Fail.when (length alts1 /= length alts2)
+      match_uni <- uni match1 match2
+      alt_unis <- zipWithM (uni `on` get altInner) alts1 alts2
+      -- Take the union of the unifiers of the matched terms and the
+      -- different pattern branches.
+      foldrM unifierUnion match_uni alt_unis
+      where
+      uniAlt :: Alt -> Alt -> ReaderT Index m (Unifier Term)
+      uniAlt (Alt bs1 t1) (Alt bs2 t2) =
+        assert (bs1 == bs2)
+        . local (liftMany (length bs1))
+        $ uni t1 t2
+    uni _ _ = Fail.here 
+  

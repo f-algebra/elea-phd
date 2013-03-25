@@ -43,6 +43,7 @@ data RawTerm
   | TLam [RawBind] RawTerm
   | TType RawType
   | TInj Nat RawType
+  | TAny [RawBind] RawTerm
   | TAbsurd
   | TCase RawTerm [RawAlt]
   | TLet String RawTerm RawTerm
@@ -83,6 +84,7 @@ mkLabels [''RawProgram, ''Scope, ''RawBind]
   type        { TokenType }
   end         { TokenEnd }
   inj         { TokenInj $$ }
+  any         { TokenAny }
   
 %right '->'
 
@@ -129,6 +131,7 @@ Term :: { RawTerm }
   | '(' Term ')'                      { $2 }
   | fun Bindings '->' Term            { TLam $2 $4 }
   | fix Bindings '->' Term            { TFix $2 $4 }
+  | any Bindings '->' Term            { TAny $2 $4 }
   | match Term with Matches end       { TCase $2 $4 }
   | let name '=' Term in Term         { TLet $2 $4 $6 }
   
@@ -280,6 +283,9 @@ parseRawTerm (TLam rbs rt) = do
   bs <- parseRawBinds rbs
   t <- Type.bindMany bs (parseRawTerm rt)
   return (Term.unflattenLam bs t)
+parseRawTerm (TAny rbs rt) = do
+  bs <- parseRawBinds rbs
+  Type.bindMany bs (parseRawTerm rt)
 parseRawTerm (TLet name rt1 rt2) = do
   t1 <- parseRawTerm rt1
   localDef name t1 (parseRawTerm rt2)
@@ -358,6 +364,7 @@ data Token
   | TokenType
   | TokenEnd
   | TokenInj Nat
+  | TokenAny
   
 happyError :: [Token] -> a
 happyError tokens = error $ "Parse error\n" ++ (show tokens)
@@ -399,6 +406,7 @@ lexer (c:cs)
       ("in", rest) -> TokenIn : lexer rest
       ("type", rest) -> TokenType : lexer rest
       ("end", rest) -> TokenEnd : lexer rest
+      ("any", rest) -> TokenAny : lexer rest
       (name, rest) -> TokenName name : lexer rest
 lexer cs = error $ "Unrecognized symbol " ++ take 1 cs
 
@@ -422,6 +430,7 @@ instance Show Token where
   show TokenType = "type"
   show TokenEnd = "end"
   show (TokenInj n) = "inj" ++ show n
+  show TokenAny = "any"
   
   showList = (++) . intercalate " " . map show
 }
