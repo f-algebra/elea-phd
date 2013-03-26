@@ -55,8 +55,8 @@ typeCheck f t = do
         ty_s' <- showM ty'
         error 
           $ "Transformation does not preserve type.\n"
-          ++ "Before: " ++ t_s ++ " :: " ++ ty_s
-          ++ "\nAfter: " ++ t_s' ++ " :: " ++ ty_s'
+          ++ "Before: " ++ t_s ++ ": [" ++ ty_s ++ "]"
+          ++ "\nAfter: " ++ t_s' ++ ": [" ++ ty_s' ++ "]"
 
 simpleFusion :: FusionMonad m => Term -> m (Maybe Term)
 simpleFusion (Term.flattenApp -> outer_f@(Fix outer_b _) : first_arg : args)
@@ -83,11 +83,6 @@ fuse transform outer_ctx inner_t = do
   t_s <- showM inner_t
   let s1 = "FUSING:\n" ++ ctx_s ++ "\nWITH\n" ++ t_s
 
-  -- The label for the function we are creating
-  new_label <-
-      liftM (\t -> Just ("[" ++ t ++ "]"))
-    $ showM fused_t
-
   -- The return type of our new function is the type of the term
   -- we are fusing (fused_t == inner_t inside outer_ctx)
   result_ty <- Err.noneM (Typing.typeOf fused_t)
@@ -97,18 +92,11 @@ fuse transform outer_ctx inner_t = do
   -- The type of our new function, and its new type binding
   let new_fix_ty = Type.unflattenFun var_bs result_ty
       new_fix_b = Type.Bind new_label new_fix_ty
-      
-  -- We create two new indices, the first represents the variable
-  -- for the new function we are creating, the second is a placeholder
-  -- for the old function variable.
-  let new_fix_idx = succ largest_free_index
-      fix_idx = succ new_fix_idx
   
   -- The inner fix unrolled with 'fix_idx' supplied for the
   -- fix variable, and the transformation function applied,
   -- gives us 'transformed_t'
-  transformed_t <- trace s1 $ 
-   --   Type.bindAt new_fix_idx new_fix_b
+  transformed_t <- trace s1 $
     Type.bindAt fix_idx fix_b
     . transform
     . Context.apply outer_ctx
@@ -117,44 +105,46 @@ fuse transform outer_ctx inner_t = do
   
   trn_s <- showM transformed_t
   let s2 = "\nTRANS:\n" ++ trn_s
-    
-  trace s2 $ Fail.here
   
   -- I gave up commenting at this point, it works because it does...
-  replaced_t <- trace s2 $
-      flip runReaderT (fix_idx, new_fix_idx)
-    . Term.ignoreFacts
-    . Fold.transformM replace
-    $ lift transformed_t
+  let replaced_t = trace s2 $
+          flip runReader (fix_idx, new_fix_idx)
+        . Term.ignoreFacts
+        . Fold.transformM replace
+        $ transformed_t
     
   rep_s <- showM replaced_t
   let s3 = "\nREP:\n" ++ rep_s 
     
   trace s3 $ Fail.when (fix_idx `Set.member` freeIndices replaced_t)
-  arg_bs <- mapM Type.boundAt arg_indices
+  let arg_bs = zipWith (modify Type.boundType . liftMany) [1..] var_bs
   
-  return
-    . (\t -> Term.unflattenApp (t : arg_vars))
-    . Fix new_fix_b   
-    . Term.unflattenLam arg_bs
-    $ replaced_t 
+  let done =
+          (\t -> Term.unflattenApp (t : arg_vars))
+        . Fix new_fix_b
+        . Term.unflattenLam arg_bs
+        $ replaced_t 
+  
+  done_s <- showM done
+  let s4 = "\nDONE:\n" ++ done_s
+        
+  trace s4 $ return done
   where
   -- Remember that because this reads @(Index, Index)@, and is passed to
-  -- 'Fold.rewriteM' these indices will be incremented correctly as
+  -- 'Fold.transformM' these indices will be incremented correctly as
   -- the rewrite descends into the term.
-  replace :: Term -> Term.IgnoreFactsT (ReaderT (Index, Index) m) Term
+  replace :: Term -> Term.IgnoreFactsT (Reader (Index, Index)) Term
   replace term = do
     (fix_idx, new_fix_idx) <- ask
-    let replace_t = 
-            Context.apply outer_ctx  
-          . Term.unflattenApp 
-          $ Var fix_idx : inner_args
+    let replace_t = Context.apply outer_ctx 
+          $ Term.unflattenApp (Var fix_idx : inner_args)
     mby_uni <- Fail.toMaybe (unifier replace_t term)
     case mby_uni of
       Nothing -> return term
       Just uni 
         | Map.member fix_idx uni -> return term
-        | otherwise -> return
+        | otherwise -> 
+              return
             . unify uni 
             . Term.unflattenApp 
             $ Var new_fix_idx : arg_vars
@@ -164,10 +154,14 @@ fuse transform outer_ctx inner_t = do
   largest_free_index = (pred . supremum . freeIndices) fused_t
   arg_indices = reverse [0..largest_free_index]
   arg_vars = map Var arg_indices
+  new_fix_idx = succ largest_free_index
+  fix_idx = succ new_fix_idx
+  new_label = 
+    liftM (\t -> "[" ++ t ++ "]")
+    $ get Type.boundLabel fix_b
   
 
 -- Split has a built in "float to the top" operation?
 split :: Fail.Monad m => (Term -> m Term) -> Term -> Term -> m Term
 split = undefined
-
 
