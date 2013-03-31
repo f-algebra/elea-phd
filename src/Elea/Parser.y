@@ -1,50 +1,40 @@
 {
 module Elea.Parser 
 (
-  program, term, ty
+  program, term
 )
 where
 
 import Prelude ()
 import Elea.Prelude
-import Elea.Type ( Type, Bind )
-import Elea.Term ( Term )
+import Elea.Term
 import Elea.Index
 import Elea.Show ( showM )
-import qualified Elea.Type as Type
 import qualified Elea.Term as Term
 import qualified Elea.Typing as Typing
+import qualified Elea.Env as Env
 import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Error as Err
 import qualified Data.Map as Map
 
-data RawProgram 
-  = Program { _programTerms :: [TermDef] 
-            , _programTypes :: [TypeDef] }
-
-type TypeDef = (String, RawType)
 type TermDef = (String, RawTerm)
+type RawProgram = [TermDef]
 
 data RawBind 
   = TBind { _rawLabel :: Maybe String
-          , _rawType :: RawType }
-  
-data RawType
-  = TyVar String
-  | TyApp RawType RawType
-  | TyFun RawBind RawType
-  | TyInd RawBind [RawBind]
-  | TySet
+          , _rawType :: RawTerm }
 
 data RawTerm
   = TVar String
   | TApp RawTerm RawTerm
   | TFix [RawBind] RawTerm
   | TLam [RawBind] RawTerm
-  | TType RawType
-  | TInj Nat RawType
+  | TInj Nat RawTerm
+  | TInd RawBind [RawBind]
   | TAny [RawBind] RawTerm
+  | TPi [RawBind] RawTerm
   | TAbsurd
+  | TSet
   | TCase RawTerm [RawAlt]
   | TLet String RawTerm RawTerm
   
@@ -52,15 +42,14 @@ data RawAlt
   = TAlt [String] RawTerm
   
 data Scope 
-  = Scope { _bindMap :: Map String (Either Term (Index, Type))
+  = Scope { _bindMap :: Map String (Either Term Index)
           , _bindStack :: [Bind] }
   
-mkLabels [''RawProgram, ''Scope, ''RawBind]
+mkLabels [''Scope, ''RawBind]
 }
 
 %name happyProgram Program
 %name happyTerm Term
-%name happyType Type
 
 %tokentype { Token }
 
@@ -69,6 +58,7 @@ mkLabels [''RawProgram, ''Scope, ''RawBind]
   '|'         { TokenBar }
   ':'         { TokenTypeOf }
   '->'        { TokenArr }
+  '=>'        { TokenDArr }
   '*'         { TokenSet }
   '='         { TokenEq }
   '['         { TokenOS }
@@ -84,28 +74,20 @@ mkLabels [''RawProgram, ''Scope, ''RawBind]
   type        { TokenType }
   end         { TokenEnd }
   inj         { TokenInj $$ }
+  ind         { TokenInd }
   any         { TokenAny }
-  
-%right '->'
+  pi          { TokenPi }
 
+%right '->'
+  
 %%
 
 Bind :: { RawBind }
-  : name ':' Type                     { TBind (Just $1) $3 }
-
+  : name ':' Term                     { TBind (Just $1) $3 }
+ 
 Cons :: { [RawBind] }
   : '|' Bind                          { [$2] }
   | Cons '|' Bind                     { $1 ++ [$3] }
-  
-Type :: { RawType }
-  : name                              { TyVar $1 }
-  | '*'                               { TySet }
-  | Type name                         { TyApp $1 (TyVar $2) }
-  | Type '(' Type ')'                 { TyApp $1 $3 }
-  | Type '->' Type                    { TyFun (TBind Nothing $1) $3 }
-  | '(' Bind ')' '->' Type            { TyFun $2 $5 }
-  | '(' Type ')'                      { $2 }
-  | fix name with Cons end            { TyInd (TBind (Just $2) TySet) $4 }
   
 Pattern :: { [String] }
   : name                              { [$1] }
@@ -116,7 +98,7 @@ Matches :: { [RawAlt] }
   | Matches '|' Match                 { $1 ++ [$3] }
   
 Match :: { RawAlt }
-  : Pattern '->' Term                 { TAlt $1 $3 }
+  : Pattern '=>' Term                 { TAlt $1 $3 }
   
 Bindings :: { [RawBind] }
   : '(' Bind ')'                      { [$2] }
@@ -124,35 +106,33 @@ Bindings :: { [RawBind] }
   
 Term :: { RawTerm }
   : name                              { TVar $1 }
-  | inj '[' Type ']'                  { TInj $1 $3 }
+  | '*'                               { TSet }
+  | inj Term                          { TInj $1 $2 }
   | Term name                         { TApp $1 (TVar $2) }
-  | Term '(' Term ')'                 { TApp $1 $3 }
-  | Term '[' Type ']'                 { TApp $1 (TType $3) }
-  | '(' Term ')'                      { $2 }
-  | fun Bindings '->' Term            { TLam $2 $4 }
-  | fix Bindings '->' Term            { TFix $2 $4 }
-  | any Bindings '->' Term            { TAny $2 $4 }
   | match Term with Matches end       { TCase $2 $4 }
+  | ind Bind with Cons end            { TInd $2 $4 }
+  | Term '->' Term                    { TPi [TBind Nothing $1] $3 }
+  | Term '(' Term ')'                 { TApp $1 $3 }  
+  | '(' Term ')'                      { $2 }
+  | fun Bindings '=>' Term            { TLam $2 $4 }
+  | fix Bindings '=>' Term            { TFix $2 $4 }
+  | any Bindings '=>' Term            { TAny $2 $4 }
+  | pi Bindings '=>' Term             { TPi $2 $4 }
   | let name '=' Term in Term         { TLet $2 $4 $6 }
-  
-TypeDef :: { TypeDef }
-  : type name '=' Type                { ($2, $4) }
-  
+
 TermDef :: { TermDef }
   : let name '=' Term                 { ($2, $4) }
-  
+
 Program :: { RawProgram }
-  : TypeDef                           { Program [] [$1] }
-  | TermDef                           { Program [$1] [] }
-  | Program TypeDef                   { modify programTypes (++ [$2]) $1 }
-  | Program TermDef                   { modify programTerms (++ [$2]) $1 }
-  
+  : TermDef                           { [$1] }
+  | Program TermDef                   { $1 ++ [$2] }
+
 {
 
 withEmptyScope :: ReaderT Scope m a -> m a
 withEmptyScope = flip runReaderT (Scope mempty mempty)
 
-instance Monad m => Type.Env (ReaderT Scope m) where
+instance Monad m => Env.Writable (ReaderT Scope m) where
   bindAt at b = 
       local
     $ modify bindMap (addToMap . map (liftAt at))
@@ -162,11 +142,11 @@ instance Monad m => Type.Env (ReaderT Scope m) where
       insertAt (convertEnum at) (liftAt at b)
       
     addToMap 
-      | Type.Bind (Just lbl) ty <- b = 
-          Map.insert lbl (Right (at, ty))
+      | Bind (Just lbl) _ <- b = 
+          Map.insert lbl (Right at)
       | otherwise = id
 
-instance Err.Monad m => Type.ReadableEnv (ReaderT Scope m) where
+instance Err.Monad m => Env.Readable (ReaderT Scope m) where
   boundAt at = 
       asks
     $ (!! fromEnum at)
@@ -181,78 +161,43 @@ localDef name term =
   $ Map.insert name (Left term)
   
 term :: (Err.Monad m, Defs.Monad m) => String -> m Term
-term = withEmptyScope 
-     . parseRawTerm 
-     . happyTerm 
-     . lexer
-  
-ty :: (Err.Monad m, Defs.Monad m) => String -> m Type
-ty = withEmptyScope
-   . parseRawType
-   . happyType
-   . lexer
+term = 
+    withEmptyScope 
+  . parseRawTerm 
+  . happyTerm 
+  . lexer
   
 program :: (Err.Monad m, Defs.Monad m) => String -> m ()
-program text = withEmptyScope $ do
-  mapM_ addTypeDef typedefs
-  mapM_ addTermDef termdefs
+program = 
+    withEmptyScope
+  . mapM_ define
+  . happyProgram 
+  . lexer
   where
-  Program termdefs typedefs = happyProgram (lexer text)
-
-  addTypeDef (name, raw_ty) = do
-    ty <- parseRawType raw_ty
-    Defs.defineType name ty
-
-  addTermDef (name, raw_term) = do
+  define (name, raw_term) = do
     term <- parseRawTerm raw_term
-    Defs.defineTerm name term
+    Defs.add name term
     
 lookupTerm :: String -> ParserMonad m Term
 lookupTerm name = do
   mby_bind <- asks (Map.lookup name . get bindMap)
   case mby_bind of
     Just (Left term) -> return term
-    Just (Right (idx, ty))
-      | Type.isKind ty -> 
-          Err.throw var_err
-      | otherwise ->
-          return (Term.Var idx)
+    Just (Right idx) -> return (Term.Var idx)
     Nothing -> do
-      mby_term <- Defs.lookupTerm name
+      mby_term <- Defs.lookup name
       if (isNothing mby_term)
-      then Err.throw undef_err
+      then Err.throw $ "Undefined term: " ++ name
       else return (fromJust mby_term)
-  where
-  var_err = "Attempted to use type-variable in term position: " ++ name
-  undef_err = "Undefined term: " ++ name
 
-lookupType :: String -> ParserMonad m Type
-lookupType name = do
-  mby_bind <- asks (Map.lookup name . get bindMap)
-  case mby_bind of
-    Just (Left term) -> 
-      Err.throw var_err
-    Just (Right (idx, ty))
-      | not (Type.isKind ty) -> 
-          Err.throw var_err
-      | otherwise ->
-          return (Type.Var idx)
-    Nothing -> do
-      mby_type <- Defs.lookupType name
-      if (isNothing mby_type)
-      then Err.throw undef_err
-      else return (fromJust mby_type)
-  where
-  var_err = "Attempted to use term-variable in type position: " ++ name
-  undef_err = "Undefined type: " ++ name
-      
 parseRawTerm :: RawTerm -> ParserMonad m Term
-parseRawTerm TAbsurd = return Term.Absurd
+parseRawTerm TAbsurd = return Absurd
+parseRawTerm TSet = return Set
 parseRawTerm (TVar var) = lookupTerm var
 parseRawTerm (TInj n rty) = do
-  ty <- parseRawType rty
+  ty <- parseRawTerm rty
   case ty of
-    Type.Ind _ cons 
+    Ind _ cons 
       | fromEnum n >= length cons -> do
           ty_s <- showM ty
           Err.throw 
@@ -260,89 +205,77 @@ parseRawTerm (TInj n rty) = do
             ++ " of [" ++ ty_s ++ "] which only has " 
             ++ show (length cons) ++ " constructors."
       | otherwise -> 
-          return (Term.Inj n ty)
+          return (Inj n ty)
     _ -> do
       ty_s <- showM ty
       Err.throw 
         $ "The argument type of an inj [" ++ ty_s 
         ++ "] must be an inductive type."
-parseRawTerm (TType rty) = do
-  ty <- parseRawType rty
-  return (Term.Type ty)
 parseRawTerm (TApp rt1 rt2) = do
   t1 <- parseRawTerm rt1 
   t2 <- parseRawTerm rt2
-  return (Term.App t1 t2)
+  return (App t1 t2)
 parseRawTerm (TFix rbs rt) = do
   bs <- parseRawBinds rbs
-  t <- Type.bindMany bs (parseRawTerm rt)
+  t <- Env.bindMany bs (parseRawTerm rt)
   return 
-    $ Term.Fix (head bs) 
-    $ Term.unflattenLam (tail bs) t 
+    $ Fix (head bs) 
+    $ unflattenLam (tail bs) t 
 parseRawTerm (TLam rbs rt) = do
   bs <- parseRawBinds rbs
-  t <- Type.bindMany bs (parseRawTerm rt)
-  return (Term.unflattenLam bs t)
+  t <- Env.bindMany bs (parseRawTerm rt)
+  return (unflattenLam bs t)
+parseRawTerm (TPi rbs rt) = do
+  bs <- parseRawBinds rbs
+  t <- Env.bindMany bs (parseRawTerm rt)
+  return (unflattenPi bs t)
 parseRawTerm (TAny rbs rt) = do
   bs <- parseRawBinds rbs
-  Type.bindMany bs (parseRawTerm rt)
+  Env.bindMany bs (parseRawTerm rt)
 parseRawTerm (TLet name rt1 rt2) = do
   t1 <- parseRawTerm rt1
   localDef name t1 (parseRawTerm rt2)
+parseRawTerm (TInd rb rcons) = do
+  b <- parseRawBind rb
+  cons <- Env.bind b (mapM parseRawBind rcons)
+  return (Ind b cons)
 parseRawTerm (TCase rt ralts) = do
   t <- parseRawTerm rt
   ind_ty <- Typing.typeOf t
   alts <- mapM (parseRawAlt ind_ty) ralts
-  return (Term.Case t ind_ty alts)
+  return (Case t ind_ty alts)
   where
   parseRawAlt ind_ty raw_alt = do
-    t <- Type.bindMany var_bs (parseRawTerm rt)
-    return (Term.Alt var_bs t)
+    t <- Env.bindMany var_bs (parseRawTerm rt)
+    return (Alt var_bs t)
     where
     TAlt (con_lbl:var_lbls) rt = raw_alt
-    cons = Type.unfoldInd ind_ty
+    cons = unfoldInd ind_ty
 
     -- Find the type of this particular constructor from looking it up
     -- by name in the description of the inductive type.
-    Just this_con = find ((== Just con_lbl) . get Type.boundLabel) cons
+    Just this_con = find ((== Just con_lbl) . get boundLabel) cons
 
     -- The bindings for this constructor are the arguments for the type
-    con_bs = (fst . Type.flattenFun . get Type.boundType) this_con
+    con_bs = (fst . flattenPi . get boundType) this_con
     
     -- The new variable bindings are the constructor type bindings, 
     -- renamed to the labels given in the pattern match
-    var_bs = zipWith (set Type.boundLabel . Just) var_lbls con_bs
-    
-parseRawType :: RawType -> ParserMonad m Type
-parseRawType (TyVar var) = lookupType var
-parseRawType TySet = return Type.Set
-parseRawType (TyApp rt1 rt2) = do
-  t1 <- parseRawType rt1
-  t2 <- parseRawType rt2
-  return 
-    . Type.reduce
-    $ Type.App t1 t2
-parseRawType (TyFun rb rty) = do
-  b <- parseRawBind rb
-  ty <- Type.bind b (parseRawType rty)
-  return (Type.Fun b ty)
-parseRawType (TyInd rb rcons) = do
-  b <- parseRawBind rb
-  cons <- Type.bind b (mapM parseRawBind rcons)
-  return (Type.Ind b cons)
+    var_bs = zipWith (set boundLabel . Just) var_lbls con_bs
   
 parseRawBinds :: [RawBind] -> ParserMonad m [Bind]
 parseRawBinds [] = return []
 parseRawBinds (rb:rbs) = do
   b <- parseRawBind rb
+  -- Make sure each binding is applied to the latter ones
   liftM (b:)
-    $ Type.bind b
+    $ Env.bind b
     $ parseRawBinds rbs
 
 parseRawBind :: RawBind -> ParserMonad m Bind
 parseRawBind (TBind label raw_ty) = do
-  ty <- parseRawType raw_ty
-  return (Type.Bind label ty)
+  ty <- parseRawTerm raw_ty
+  return (Bind label ty)
 
 data Token
   = TokenBar
@@ -350,6 +283,7 @@ data Token
   | TokenTypeOf
   | TokenSet
   | TokenArr
+  | TokenDArr
   | TokenEq
   | TokenOS
   | TokenCS
@@ -361,10 +295,12 @@ data Token
   | TokenFix
   | TokenLet
   | TokenIn
+  | TokenInd
   | TokenType
   | TokenEnd
   | TokenInj Nat
   | TokenAny
+  | TokenPi
   
 happyError :: [Token] -> a
 happyError tokens = error $ "Parse error\n" ++ (show tokens)
@@ -382,6 +318,7 @@ lexer ('/':'*':cs) = lexer (commentEnd cs)
 lexer (' ':cs) = lexer cs
 lexer ('\n':cs) = lexer cs
 lexer ('-':'>':cs) = TokenArr : lexer cs
+lexer ('=':'>':cs) = TokenDArr : lexer cs
 lexer ('*':cs) = TokenSet : lexer cs
 lexer (':':cs) = TokenTypeOf : lexer cs
 lexer ('(':cs) = TokenOP : lexer cs
@@ -405,8 +342,10 @@ lexer (c:cs)
       ("fix", rest) -> TokenFix : lexer rest
       ("in", rest) -> TokenIn : lexer rest
       ("type", rest) -> TokenType : lexer rest
+      ("ind", rest) -> TokenInd : lexer rest
       ("end", rest) -> TokenEnd : lexer rest
       ("any", rest) -> TokenAny : lexer rest
+      ("pi", rest) -> TokenPi : lexer rest
       (name, rest) -> TokenName name : lexer rest
 lexer cs = error $ "Unrecognized symbol " ++ take 1 cs
 
@@ -416,6 +355,7 @@ instance Show Token where
   show TokenTypeOf = ":"
   show TokenSet = "*"
   show TokenArr = "->"
+  show TokenDArr = "=>"
   show TokenEq = "="
   show TokenOS = "["
   show TokenCS = "]"
@@ -427,10 +367,12 @@ instance Show Token where
   show TokenFix = "fix"
   show TokenLet = "let"
   show TokenIn = "in"
+  show TokenInd = "ind"
   show TokenType = "type"
   show TokenEnd = "end"
   show (TokenInj n) = "inj" ++ show n
   show TokenAny = "any"
+  show TokenPi = "pi"
   
   showList = (++) . intercalate " " . map show
 }

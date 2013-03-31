@@ -1,52 +1,52 @@
 
-type nat =
-  fix nat with 
+let nat =
+  ind nat: * with 
   | 0: nat 
   | Suc: nat -> nat
   end
-
-let 0 = inj0 [nat]
-let Suc = inj1 [nat]
+  
+let 0 = inj0 nat
+let Suc = inj1 nat
 let 1 = Suc 0
 let 2 = Suc 1
-  
-type list = 
-  (a: *) -> 
-    fix list with 
-    | Nil: list 
-    | Cons: a -> list -> list
-    end
 
-let Nil = fun (a: *) -> inj0 [list a]
-let Cons = fun (a: *) -> inj1 [list a]
+list = fun (a: *) => 
+  ind list: * with 
+  | Nil: list 
+  | Cons: a -> list -> list
+  end
+/*
+Nil = fun (a: *) -> inj0 (list a)
+Cons = fun (a: *) -> inj1 (list a)
 
-let add = 
-  fix (add: nat -> nat -> nat) (x: nat) (y: nat) -> 
+add = 
+  fix (add: nat -> nat -> nat) (x: nat) (y: nat) => 
     match x with 
-    | 0 -> y
-    | Suc x' -> Suc (add x' y)
+    | 0 => y
+    | Suc x' => Suc (add x' y)
     end
  
-let mul = 
-  fix (mul: nat -> nat -> nat) (x: nat) (y: nat) -> 
+mul = 
+  fix (mul: nat -> nat -> nat) (x: nat) (y: nat) => 
     match x with
-    | 0 -> 0
-    | Suc x' -> add y (mul x' y)
+    | 0 => 0
+    | Suc x' => add y (mul x' y)
     end
 
-let app = 
-  fun (a: *) ->
-    fix (app: list a -> list a -> list a) (xs: list a) (ys: list a) ->
-      match xs with
-      | Nil -> ys
-      | Cons x xs' -> Cons [a] x (app xs' ys)
-      end
+app = 
+  fun (a: *) =>
+    fix (app: list a -> list a -> list a) =>
+      fun (xs: list a) (ys: list a) =>
+        match xs with
+        | Nil => ys
+        | Cons x xs' => Cons a x (app xs' ys)
+        end
 
-let rev = 
-  fun (a: *) ->
-    fix (rev: list a -> list a) (xs: list a) ->
+rev = 
+  fun (a: *) =>
+    fix (rev: list a -> list a) (xs: list a) =>
       match xs with
-      | Nil -> Nil [a]
-      | Cons x xs' -> app [a] (rev xs') (Cons [a] x (Nil [a]))
+      | Nil => Nil a
+      | Cons x xs' => app a (rev xs') (Cons a x (Nil a))
       end
-
+*/

@@ -1,100 +1,45 @@
 module Elea.Typing
 (
-  Kind (..), fromKind,
-  typeOf, kindOf,
-  checkType, checkTerm,
+  typeOf, check, absurd, empty
 )
 where
 
 import Prelude ()
 import Elea.Prelude
 import Elea.Index
-import Elea.Term ( Term' (..), Term, Alt' (..) )
-import Elea.Type ( Bind' (..), Type' (..), Type (..), Bind (..) )
+import Elea.Term
 import Elea.Show ( showM )
-import qualified Elea.Type as Type
-import qualified Elea.Term as Term
-import qualified Elea.Foldable as Fix
+import qualified Elea.Foldable as Fold
+import qualified Elea.Env as Env
 import qualified Elea.Monad.Error as Err
 import qualified Data.Set as Set
 
-type TypingMonad m = (Err.Monad m, Type.ReadableEnv m)
+type TypingMonad m = (Err.Monad m, Env.Readable m)
 
--- | The kind of a regular type is a kind;
--- the kind of a kind is a 'Sort'.
-data Kind 
-  = Kind !Type 
-  | Sort
-  
-fromKind :: Kind -> Type
-fromKind (Kind ty) = ty
+-- | The type of 'Absurd', "all (a:*) -> a"
+absurd :: Type
+absurd = Pi (Bind (Just "a") Set) (Var 0)
 
-isSort :: Kind -> Bool
-isSort Sort = True
-isSort _ = False
-
-isKind :: Kind -> Bool
-isKind = not . isSort
-
--- | Throws an error if given an invalid type.
-checkType :: TypingMonad m => Type -> m ()
-checkType = liftM (const ()) . kindOf
+-- | The constructorless inductive type, "ind (0:*) with end"
+empty :: Type 
+empty = Ind (Bind (Just "0") Set) []
 
 -- | Throws an error if a term is not correctly typed.
-checkTerm :: TypingMonad m => Term -> m ()
-checkTerm = liftM (const ()) . typeOf
+check :: TypingMonad m => Term -> m ()
+-- 'Type' does not have a type in CoC, but is still correct
+-- under type checking.
+check Type = return ()
+-- Otherwise we just see if 'typeOf' throws an error.
+check other = liftM (const ()) (typeOf other)
 
--- | Returns the 'Kind' of a given type. 
--- Can throw errors if given an invalid type.
--- The kind of a kind is a 'Sort'.
-kindOf :: TypingMonad m  => Type -> m Kind
-kindOf ty = return (Kind Type.Set) {-Fix.cataM fkind
-  where
-  more_err = do
-    ty_s <- showM ty
-    return $ "When kind checking: [" ++ ty_s ++ "]."
-    
-  -- | Check the type for errors, then return the kind
-  doBoth ty = fcheck ty >> fkind ty
-    
-  -- | Check for any errors in the type.
-  -- fcheck (Ind' b cons) =
-  -- ... need to implement a check for proper inductive types
-  fcheck (Fun' (Bind' _ (Kind _)) Sort) =
-    Err.throw "Kinds cannot have a type arguments."
-  fcheck (App' k1 k2) 
-    | isSort k1 || isSort k2 = 
-      Err.throw "Kinds cannot be used in type application."
-  fcheck (App' (Kind fun_k) _) =
-    | not (Type.isFun fun_k) =
-      
-    
-  -- | Find the kind of the given type, 
-  -- expressed as a monadic 'Type''-algebra.
-  fkind :: TypingMonad m => Type' Kind -> m Kind
-  fkind (Fun' _ Sort) = return Sort
-  fkind -}
-  
-{-
-kindOf (Fun (Bind lbl arg) res)
-  | isKind arg = Fun (Bind lbl arg) (kindOf res)
-  | otherwise = assert (not (isKind res)) Set
-kindOf (App fun arg) = 
-  assert (arg_k == arg_k') res_k
-  where
-  arg_k = kindOf arg
-  Fun (Bind _ arg_k') res_k = kindOf fun
--}
-
--- | Returns the 'Type' of a given 'Term',
+-- | Returns the type of a given 'Term',
 -- within a readable type environment.
 -- Can throw type checking errors.
-typeOf :: TypingMonad m => Term -> m Type  
+typeOf :: TypingMonad m => Term -> m Term  
 typeOf term =
   Err.augmentM (termErr term)
-    . Err.check checkType
-    . Term.ignoreFacts 
-    . Fix.paraM doBoth
+    . Err.check check
+    . Fold.paraM doBoth
     $ term
   where
   -- | This is added to the existing error 
@@ -102,29 +47,27 @@ typeOf term =
   termErr :: TypingMonad m => Term -> m Err.Err
   termErr t = do
     t_s <- showM t
-    return $ "When type checking: {" ++ t_s ++ "}."
+    return $ "When type checking: [" ++ t_s ++ "]."
   
   -- | Check the term for type errors, then return the type.
-  doBoth :: (TypingMonad m, Term.Facts m) => Term' (Type, Term) -> m Type
+  doBoth :: TypingMonad m => Term' (Type, Term) -> m Type
   doBoth ft = 
-    Err.augmentM (termErr $ Fix.recover ft)
+    Err.augmentM (termErr $ Fold.recover ft)
       $ fcheck ft >> ftype ft
       
   -- | The type of an pattern match branch has to be lowered by any
   -- indexes bound by the match
   altType :: Alt' (Type, Term) -> Type
-  altType (Alt' bs (ty, t)) 
-    | any ((< length bs) . fromEnum) free_idxs = 
-      error ("MEEP: " ++ show t ++ " :: " ++ show ty)
-    | otherwise =
-      lowerMany (length bs) ty
-    where
-    free_idxs = toList (freeIndices ty)
+  altType (Alt' bs (ty, t)) = 
+    lowerMany (length bs) ty
   
   -- | Checks the term for any type errors.
   -- Is combined with 'ftype' in 'doBoth'
   -- to get the full monadic Term'-algebra for typing.
   fcheck :: TypingMonad m => Term' (Type, Term) -> m ()
+  fcheck Type' = Err.throw "[Type] has no type"
+  fcheck _ = return ()
+  {-
   fcheck (Term.App' (fun_ty, fun_t) (arg_ty, arg_t))
     | Fun (Bind _ arg_ty') _ <- fun_ty
     , arg_ty /= arg_ty' = do
@@ -192,25 +135,34 @@ typeOf term =
     alt_ty:alt_tys = map altType falts
   fcheck _ = 
     return ()
+  -}
   
-  -- | A monadic Term'-algebra which finds the type of a term.
+  -- | A monadic paramorphic Term'-algebra which finds the type of a term.
+  -- These pairs in Term' should be read as: the type of the second
+  -- term is the first.
   ftype :: TypingMonad m => Term' (Type, Term) -> m Type
-  ftype (Type' ty) =
-    liftM fromKind (kindOf ty)
-  ftype Absurd' =
-    return Type.absurd
-  ftype (Term.Var' idx) = 
-    liftM (get Type.boundType) (Type.boundAt idx)
-  ftype (Term.App' (Fun _ ret_ty, _) (_, Term.Type arg_ty)) =
-    return (subst arg_ty ret_ty)
-  ftype (Term.App' (Fun _ ret_ty, _) _) =
-    return (lower ret_ty)
-  ftype (Fix' b _) = 
-    (return . get Type.boundType) b
-  ftype (fmap fst -> Lam' b ty) =
-    return (Type.Fun b ty)
-  ftype (Inj' n (Type.unfoldInd -> cons)) = 
-    return . get Type.boundType $ cons !! fromEnum n
+  ftype Absurd' = 
+    return absurd
+  ftype Set' = 
+    return Type
+  ftype (Pi' _ _) = 
+    return Set
+  ftype (Var' idx) = 
+    liftM (get boundType) (Env.boundAt idx)
+  ftype (Lam' (Bind' lbl (_, arg)) (res, _)) = 
+    return (Pi (Bind lbl arg) res)
+  ftype (App' (Pi _ res, _) (_, arg)) = 
+    return (subst arg res)
+  ftype (Fix' (Bind' _ (_, ty)) _) = 
+    return ty
+  ftype (Ind' (Bind' _ (_, ty)) _) = 
+    return ty
+  ftype (Inj' n (_, ind_ty)) =
+    return
+    . get boundType
+    . (!! fromEnum n)
+    . unfoldInd 
+    $ ind_ty
   ftype (Case' _ _ falts) =
-    (return . altType . head) falts
+    return . altType . head $ falts
 

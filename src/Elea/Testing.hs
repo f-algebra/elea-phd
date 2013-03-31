@@ -47,7 +47,7 @@ loadPrelude :: Elea ()
 loadPrelude = Parse.program prelude
 
 term :: String -> Elea Term
-term = Error.check Typing.checkTerm . Parse.term
+term = Error.check Typing.check . Parse.term
 
 {-
   

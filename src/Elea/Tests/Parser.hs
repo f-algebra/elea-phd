@@ -6,10 +6,7 @@ where
 
 import Prelude ()
 import Elea.Prelude
-import Elea.Type ( Bind (..), Type (..) )
-import Elea.Term ( Term (..), Alt (..) )
-import qualified Elea.Term as Term
-import qualified Elea.Type as Type
+import Elea.Term
 import qualified Elea.Testing as Test
 import qualified Elea.Parser as Parse
 import qualified Elea.Monad.Elea as Elea
@@ -18,7 +15,7 @@ import qualified Elea.Monad.Definitions as Defs
 tests = Test.label "Parser" 
     $ Test.run $ do
   Test.loadPrelude
-  t_nat <- Parse.ty "nat"
+  t_nat <- Parse.term "nat"
   t_suc <- Parse.term "Suc"
   t_add <- Parse.term "add"
   return
@@ -30,16 +27,16 @@ tests = Test.label "Parser"
   bind = Bind Nothing
   
   nat = Ind (bind Set) 
-    [ bind (Type.Var 0)
-    , bind (Fun (bind (Type.Var 0)) (Type.Var 1)) ]
+    [ bind (Var 0)
+    , bind (Pi (bind (Var 0)) (Var 1)) ]
   
   suc = Inj 1 nat
 
-  add_ty = Fun (bind nat) (Fun (bind nat) nat)
+  add_ty = Pi (bind nat) (Pi (bind nat) nat)
   add = Fix (bind add_ty)
     $ Lam (bind nat) 
     $ Lam (bind nat)
-    $ Case (Term.Var 1) nat
-    [ Alt [] (Term.Var 0)
-    , Alt [bind nat] (suc `Term.App` 
-        (Term.unflattenApp [Term.Var 3, Term.Var 0, Term.Var 1])) ]
+    $ Case (Var 1) nat
+    [ Alt [] (Var 0)
+    , Alt [bind nat] (suc `App` 
+        (unflattenApp [Var 3, Var 0, Var 1])) ]

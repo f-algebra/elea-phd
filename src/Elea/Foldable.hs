@@ -2,7 +2,7 @@ module Elea.Foldable
 (
   module Data.Functor.Foldable,
   Refoldable, FoldableM (..),
-  rewriteM, foldM, allM,
+  transformM, rewriteM, foldM, allM,
   transform, rewrite, recover,
   rewriteStepsM, rewriteSteps,
 )
@@ -20,14 +20,12 @@ type Refoldable t = (Foldable t, Unfoldable t)
 class Refoldable t => FoldableM t where
   type FoldM t m :: Constraint 
   type FoldM t m = ()
+ 
+  distM :: (Monad m, FoldM t m) => Base t (m a, t) -> m (Base t a)
   
-  -- This is how I should be implementing cataM I think, but I figured
-  -- this out later, now I can't be bothered to rewrite everything.
-  -- invertM :: (Monad m, FoldM t m) => Base t (m a, t) -> m (Base t a)
-  
-  cataM :: (Monad m, FoldM t m) => 
+  cataM :: forall m a . (Monad m, FoldM t m) => 
     (Base t a -> m a) -> t -> m a
-  -- cataM f = join . liftM f . invertM . fmap (cataM f &&& id) . project
+  cataM f = join . liftM f . distM . fmap (cataM f &&& id) . project
     
   paraM :: forall m a . (Monad m, FoldM t m) =>
     (Base t (a, t) -> m a) -> t -> m a
@@ -38,9 +36,9 @@ class Refoldable t => FoldableM t where
       a <- f x
       return (a, recover x)
   
-  transformM :: (Monad m, FoldM t m) => 
-    (t -> m t) -> t -> m t
-  transformM f = cataM (f . embed)
+transformM :: (FoldableM t, Monad m, FoldM t m) => 
+  (t -> m t) -> t -> m t
+transformM f = cataM (f . embed)
   
 foldM :: (FoldableM t, Monad m, FoldM t (WriterT w m), Monoid w) =>
   (t -> m w) -> t -> m w
@@ -55,8 +53,9 @@ allM p = liftM Monoid.getAll . foldM (liftM Monoid.All . p)
 rewriteM :: (FoldableM t, Monad m, FoldM t m) =>
   (t -> m (Maybe t)) -> t -> m t
 rewriteM f = 
-  transformM $ \t -> 
-    join . liftM (maybe (return t) (rewriteM f)) $ f t
+  transformM rrwt
+  where
+  rrwt t = join . liftM (maybe (return t) (rewriteM f)) . f $ t
     
 rewriteStepsM :: (FoldableM t, Monad m, FoldM t m) =>
   [t -> m (Maybe t)] -> t -> m t

@@ -1,28 +1,25 @@
-{-# LANGUAGE UndecidableInstances #-}
 module Elea.Term
 (
-  Term (..), Alt (..),
-  Term' (..), Alt' (..),
-  Facts (..), IgnoreFactsT (..),
+  Type, Term (..), Alt (..), Bind (..),
+  Term' (..), Alt' (..), Bind' (..),
+  projectAlt, embedAlt, projectBind, embedBind,   
   inner, varIndex, alts, argument, 
   inductiveType, binding,
   altBindings, altInner,
   altBindings', altInner',
-  leftmost, flattenApp, unflattenApp, 
+  boundLabel, boundType,
+  boundLabel', boundType',
+  leftmost, unfoldInd,
+  flattenApp, unflattenApp, 
+  flattenPi, unflattenPi,
   flattenLam, unflattenLam, 
   isInj, isLam, isVar,
-  transformTypesM, transformTypes,
-  substTypeAt, substType,
-  lowerTypes, lowerTypesAt,
 )
 where
 
 import Prelude ()
 import Elea.Prelude hiding ( lift )
 import Elea.Index
-import Elea.Type ( Type, Bind, Env (..), 
-                   ReadableEnv (..), bind, bindMany )
-import qualified Elea.Type as Type
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Error as Err
 import qualified Control.Monad.Trans as Trans
@@ -30,11 +27,24 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Elea.Monad.Failure as Fail
 
--- | A de-Bruijn indexed functional language,
--- with term level types ('Type'),
--- general recursion ('Fix'), 
--- inductive data types ('Inj' and 'Case'),
--- and absurdity ('Absurd').
+-- * Our functional language
+
+-- | Binding a de-Bruijn index. Might be named, is always typed.
+data Bind
+  = Bind  { _boundLabel :: !(Maybe String)
+          , _boundType :: !Term }
+          
+instance Eq Bind where
+  (==) = (==) `on` _boundType
+  
+instance Ord Bind where
+  compare = compare `on` _boundType
+  
+-- | I think CoC was invented mostly for this line.
+type Type = Term
+
+-- | The de-Bruijn indexed Calculus of Inductive Constructions
+-- with general recursion and explicit absurdity.
 data Term
   = Var     { _varIndex :: !Index }
 
@@ -43,107 +53,115 @@ data Term
 
   | Lam     { _binding :: !Bind 
             , _inner :: !Term }
-
-  | Type    !Type
+            
+  | Pi      { _binding :: !Bind
+            , _inner :: !Term }
 
   | Fix     { _binding :: !Bind 
             , _inner :: !Term }
+            
+  | Ind     { _binding :: !Bind
+            , _constructors :: ![Bind] }
 
   | Inj     { _constructorIndex :: !Nat 
-            , _inductiveType :: !Type }
+            , _inductiveType :: !Term }
 
   | Case    { _inner :: !Term
-            , _inductiveType :: !Type
+            , _inductiveType :: !Term
             , _alts :: ![Alt] }
 
   | Absurd
+  | Set
+  | Type
   deriving ( Eq, Ord )
 
 data Alt
   = Alt   { _altBindings :: ![Bind]
           , _altInner :: !Term }
   deriving ( Eq, Ord )
+  
+-- * Our typing and equality environment
+
+-- | The write-only environment.
+class Monad m => Env m where
+  bindAt :: Index -> Bind -> (m a -> m a)
+  equal :: Term -> Term -> (m a -> m a)
+  
+class Env m => ReadableEnv m where
+  boundAt :: Index -> m Bind
+  bindingDepth :: m Index
+
+  
+-- * Base types for generalised cata/para morphisms.
+  
+type instance Fold.Base Term = Term'
 
 data Term' a 
   = Var' !Index
   | App' a a
-  | Lam' !Bind a
-  | Type' !Type
-  | Fix' !Bind a
-  | Inj' !Nat !Type
-  | Case' a !Type ![Alt' a]
+  | Lam' !(Bind' a) a
+  | Fix' !(Bind' a) a
+  | Pi' !(Bind' a) a
+  | Ind' !(Bind' a) ![Bind' a]
+  | Inj' !Nat a
+  | Case' a a ![Alt' a]
   | Absurd'
+  | Set'
+  | Type'
+  deriving ( Functor, Foldable, Traversable )
+  
+data Bind' a
+  = Bind' { _boundLabel' :: !(Maybe String)
+          , _boundType' :: a }
   deriving ( Functor, Foldable, Traversable )
   
 data Alt' a
-  = Alt' { _altBindings' :: ![Bind]
+  = Alt' { _altBindings' :: ![Bind' a]
          , _altInner' :: a }
   deriving ( Functor, Foldable, Traversable )
   
-mkLabels [''Term, ''Alt, ''Term', ''Alt']
-  
-type instance Fold.Base Term = Term'
+mkLabels [''Term, ''Alt, ''Bind, ''Term', ''Alt', ''Bind']
 
 projectAlt :: Alt -> Alt' Term
-projectAlt (Alt bs t) = Alt' bs t
+projectAlt (Alt bs t) = Alt' (map projectBind bs) t
 
 embedAlt :: Alt' Term -> Alt
-embedAlt (Alt' bs t) = Alt bs t
+embedAlt (Alt' bs t) = Alt (map embedBind bs) t
+
+projectBind :: Bind -> Bind' Term
+projectBind (Bind lbl t) = Bind' lbl t
+
+embedBind :: Bind' Term -> Bind
+embedBind (Bind' lbl t) = Bind lbl t
 
 instance Fold.Foldable Term where
   project (Var x) = Var' x
   project (App t1 t2) = App' t1 t2
-  project Absurd = Absurd'
-  project (Type ty) = Type' ty
-  project (Lam b t) = Lam' b t
-  project (Fix b t) = Fix' b t
-  project (Inj n ty) = Inj' n ty
+  project (Lam b t) = Lam' (projectBind b) t
+  project (Fix b t) = Fix' (projectBind b) t
+  project (Pi b t) = Pi' (projectBind b) t
+  project (Ind b cs) = Ind' (projectBind b) (map projectBind cs)
+  project (Inj n t) = Inj' n t
   project (Case t ty alts) = Case' t ty (map projectAlt alts)
+  project Absurd = Absurd'
+  project Set = Set'
+  project Type = Type'
   
 instance Fold.Unfoldable Term where
   embed (Var' x) = Var x
   embed (App' t1 t2) = App t1 t2
-  embed Absurd' = Absurd
-  embed (Type' ty) = Type ty
-  embed (Lam' b t) = Lam b t
-  embed (Fix' b t) = Fix b t
+  embed (Lam' b t) = Lam (embedBind b) t
+  embed (Fix' b t) = Fix (embedBind b) t
+  embed (Pi' b t) = Pi (embedBind b) t
+  embed (Ind' b cs) = Ind (embedBind b) (map embedBind cs)
   embed (Inj' n ty) = Inj n ty
   embed (Case' t ty alts) = Case t ty (map embedAlt alts)
+  embed Absurd' = Absurd
+  embed Set' = Set
+  embed Type' = Type
   
-instance Fold.FoldableM Term where
-  type FoldM Term m = (Env m, Facts m)
-  
-  cataM = fold
-    where 
-    -- Need to locally scope 'm' and 'a'
-    fold :: forall m a . (Env m, Facts m) =>
-      (Term' a -> m a) -> Term -> m a
-    fold f = join . liftM f . seq . Fold.project
-      where
-      apply :: Traversable f => f Term -> m (f a)
-      apply = sequence . fmap (fold f)
-      
-      seq :: Term' Term -> m (Term' a)
-      seq t@(Lam' b _) =
-        bind b (apply t)
-      seq t@(Fix' b _) =
-        bind b (apply t)
-      seq (Case' cse_t ind_ty alts) =
-        return (flip Case' ind_ty)
-          `ap` fold f cse_t
-          `ap` zipWithM seqAlt [0..] alts
-        where
-        seqAlt :: Nat -> Alt' Term -> m (Alt' a)
-        seqAlt n alt@(Alt' bs _) =
-            equals cse_t match
-          . bindMany bs
-          $ apply alt
-          where
-          match_args = map (Var . toEnum) [(length bs - 1)..0]
-          match_con = Inj n ind_ty
-          match = unflattenApp (match_con:match_args)
-      seq other =
-        apply other
+        
+-- * Some generally helpful functions
         
 isInj' :: Term' a -> Bool
 isInj' (Inj' {}) = True
@@ -174,160 +192,26 @@ flattenLam :: Term -> ([Bind], Term)
 flattenLam (Lam b t) = first (b:) (flattenLam t)
 flattenLam t = ([], t)
 
+flattenPi :: Term -> ([Bind], Term)
+flattenPi (Pi b t) = first (b:) (flattenPi t)
+flattenPi t = ([], t)
+
 unflattenLam :: [Bind] -> Term -> Term
 unflattenLam = flip (foldr Lam) 
 
--- | Returns the leftmost 'Term' in term application.
--- E.g. "leftmost (App (App a b) c) == a"
+unflattenPi :: [Bind] -> Term -> Term
+unflattenPi = flip (foldr Pi) 
+
+-- | Returns the leftmost 'Term' in term application,
+-- e.g. @leftmost (App (App a b) c) == a@
 leftmost :: Term -> Term
 leftmost = head . flattenApp
 
-class Monad m => Facts m where
-  equals :: Term -> Term -> m a -> m a
+unfoldInd :: Substitutable Term => Term -> [Bind]
+unfoldInd ty@(Ind _ cons) = 
+  map (modify boundType (subst ty)) cons
   
--- | Our foldM instance for 'Term' tracks local 'Facts', but many methods
--- need to use fold but don't care about these facts. This wrapper
--- will provide an instance of 'Facts' which ignores any facts it is given.
-newtype IgnoreFactsT m a = IgnoreFactsT { ignoreFacts :: m a }
-  deriving ( Functor, Monad, Env, ReadableEnv )
-  
-instance Trans.MonadTrans IgnoreFactsT where
-  lift = IgnoreFactsT
-  
-instance MonadReader r m => MonadReader r (IgnoreFactsT m) where
-  local f = Trans.lift . local f . ignoreFacts
-  ask = Trans.lift ask
-  
-instance (Facts m, Monoid w) => Facts (WriterT w m) where
-  equals x y = WriterT . equals x y . runWriterT
-  
-instance Facts m => Facts (MaybeT m) where
-  equals x y = MaybeT . equals x y . runMaybeT
-  
-instance Monad m => Facts (IgnoreFactsT m) where
-  equals _ _ = id
-  
-instance Err.Monad m => Err.Monad (IgnoreFactsT m) where
-  throw = Trans.lift . Err.throw
-  catch m f = Trans.lift (Err.catch (ignoreFacts m) (ignoreFacts . f))
-  
-instance Liftable Term where
-  liftAt at t = runReader (ignoreFacts (trans t)) at
-    where
-    trans = transformTypesM liftType <=< Fold.transformM liftVar
-    
-    liftType :: Type -> IgnoreFactsT (Reader Index) Type
-    liftType ty = do
-      at <- ask
-      return (liftAt at ty)
-    
-    liftVar :: Term -> IgnoreFactsT (Reader Index) Term
-    liftVar (Var idx) = do
-      at <- ask
-      return $ Var (liftAt at idx)
-    liftVar other = 
-      return other
-      
-instance Monad m => Env (ReaderT Term m) where
-  bindAt at _ = local (liftAt at)
-  
-instance Monad m => Env (ReaderT (Index, Term) m) where
-  bindAt at _ = local (liftAt at)
-
-instance Substitutable Term where
-  substAt at with term = 
-      flip runReader (at, with)
-    . ignoreFacts 
-    . Fold.transformM substVar
-    . lowerTypesAt at
-    $ term
-    where
-    substVar :: Term -> IgnoreFactsT (Reader (Index, Term)) Term
-    substVar (Var var) = do
-      (at, with) <- ask
-      return $ case at `compare` var of
-        -- Substitution occurs
-        EQ -> with
-        -- Substitution does not occur
-        LT -> Var (pred var)
-        GT -> Var var
-    substVar other =
-      return other
-      
-  freeIndices = flip runReader 0 . ignoreFacts . Fold.foldM free
-    where
-    free :: Term -> IgnoreFactsT (Reader Index) (Set Index)
-    free (Var x) = do
-      free_var_limit <- ask
-      if x >= free_var_limit
-      then return (Set.singleton (x - free_var_limit))
-      else return mempty
-    free _ = 
-      return mempty
-    
-  failure = 
-    App Absurd (Type Type.empty)
-      
-substTypeAt :: Index -> Type -> Term -> Term
-substTypeAt at for =
-    flip runReader (at, for)
-  . ignoreFacts 
-  . transformTypesM substType
-  where
-  substType :: Type -> IgnoreFactsT (Reader (Index, Type)) Type
-  substType t = do
-    (at, for) <- ask
-    return (substAt at for t)
-    
-substType :: Type -> Term -> Term
-substType = substTypeAt 0
-
-lowerTypesAt :: Index -> Term -> Term
-lowerTypesAt = flip substTypeAt Type.empty
-
-lowerTypes :: Term -> Term
-lowerTypes = lowerTypesAt 0
-
-instance Monad m => Env (ReaderT () m) where
-  bindAt _ _ = id
-
--- | Applies the given transformation to top-level types within a term.
-transformTypesM :: Fold.FoldM Term m =>
-  (Type -> m Type) -> Term -> m Term
-transformTypesM f = Fold.transformM mapTy
-  where
-  mapBind = modifyM Type.boundType f 
-  
-  mapBinds [] = return []
-  mapBinds (b:bs) = do
-    b' <- mapBind b
-    bs' <- bind b' (mapBinds bs)
-    return (b':bs')
-  
-  mapTy (Type ty) = 
-    liftM Type (f ty)
-  mapTy (Fix b t) = 
-    liftM (flip Fix t) (mapBind b)
-  mapTy (Lam b t) = 
-    liftM (flip Lam t) (mapBind b)
-  mapTy (Inj n ind_ty) = 
-    liftM (Inj n) (f ind_ty)
-  mapTy (Case t ind_ty alts) = do
-    ind_ty' <- f ind_ty
-    alts' <- mapM mapAltTy alts
-    return (Case t ind_ty' alts')
-    where
-    mapAltTy (Alt bs t) =
-      liftM (flip Alt t) (mapBinds bs)
-  mapTy other =
-    return other
-  
-transformTypes :: (Type -> Type) -> Term -> Term
-transformTypes f = 
-    flip runReader () 
-  . ignoreFacts 
-  . transformTypesM (return . f)
-  
+{-
 instance Unifiable Term where
   unifier = (flip runReaderT 0 .) . uni
     where
@@ -377,4 +261,4 @@ instance Unifiable Term where
         . local (liftMany (length bs1))
         $ uni t1 t2
     uni _ _ = Fail.here 
-  
+  -}

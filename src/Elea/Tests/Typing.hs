@@ -19,11 +19,11 @@ tests = Test.label "Typing"
   Test.loadPrelude
   
   add <- Parse.term "add"
-  add_ty <- Parse.ty "nat -> nat -> nat"
+  add_ty <- Parse.term "pi nat nat -> nat"
   add_ty' <- Typing.typeOf add
   
   rev <- Parse.term "rev"
-  rev_ty <- Parse.ty "(a:*) -> list a -> list a"
+  rev_ty <- Parse.term "pi (a:*) (list a) -> list a"
   rev_ty' <- Typing.typeOf rev
   
   return

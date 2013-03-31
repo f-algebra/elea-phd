@@ -10,21 +10,19 @@ where
 import Prelude ()
 import Elea.Prelude hiding ( log )
 import Elea.Index
-import Elea.Term ( Term )
-import Elea.Type ( Type, Bind )
+import Elea.Term ( Term, Bind )
 import Elea.Show ( showM )
 import qualified Elea.Term as Term
-import qualified Elea.Type as Type
+import qualified Elea.Env as Env
 import qualified Elea.Typing as Typing
 import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Logging as Log
 import qualified Elea.Monad.Error as Err
 import qualified Elea.Monad.Failure as Fail
+import qualified Control.Monad.State as State
 import qualified Data.Map as Map
 
-data Defs 
-  = Defs  { _terms :: !(Map String Term)
-          , _types :: !(Map String Type) }
+type Defs = Map String Term
 
 data EleaValue a
   = Fail
@@ -38,8 +36,6 @@ data EleaState a
   
 newtype Elea a 
   = Elea      { runElea :: (Defs, [Bind]) -> EleaState a }
-  
-mkLabels [''Defs]
  
 unsafe :: Elea a -> a
 unsafe (Elea f) = unsafePerformIO $ do
@@ -49,7 +45,7 @@ unsafe (Elea f) = unsafePerformIO $ do
     Error e -> fail ("ERROR: " ++ e)
     Value x -> return x
   where
-  ES _ log val = f (Defs mempty mempty, mempty)
+  ES _ log val = f (mempty, mempty)
   
 instance Functor EleaValue where
   fmap f (Value x) = Value (f x)
@@ -77,14 +73,20 @@ instance Monad Elea where
 instance MonadReader [Bind] Elea where
   ask = Elea $ \(ds, bs) -> ES ds [] (Value bs)
   local f el = Elea $ \(ds, bs) -> runElea el (ds, f bs)
+  
+instance MonadState Defs Elea where
+  get = Elea $ \(ds, _) -> ES ds [] (Value ds)
+  put ds = Elea $ \_ -> ES ds [] (Value ())
 
-instance Type.Env Elea where
+instance Env.Writable Elea where
   bindAt at b = 
       local 
     $ insertAt (convertEnum at) (liftAt at b) 
     . map (liftAt at)
   
-instance Type.ReadableEnv Elea where
+  equals _ _ = id
+    
+instance Env.Readable Elea where
   boundAt at = do
     bs <- ask
     Err.when (fromEnum at >= length bs)
@@ -93,36 +95,17 @@ instance Type.ReadableEnv Elea where
     
   bindingDepth = 
     asks (toEnum . pred . length)
-    
-instance Term.Facts Elea where
-  equals _ _ = id
 
-eleaLookup :: (Defs :-> Map String a) -> String -> Elea (Maybe a)
-eleaLookup field name = Elea $ \(ds, _) -> 
-  ES ds [] (Value (Map.lookup name (get field ds)))
-  
-eleaDefine :: (Defs :-> Map String a) -> String -> a -> Elea ()
-eleaDefine field name el = Elea $ \(ds, _) ->
-  if Map.member name (get field ds) 
-  then ES ds [] (Error $ show name ++ " is already defined")
-  else ES (modify field (Map.insert name el) ds) [] (Value ())
-        
 instance Defs.Monad Elea where
-  lookupTerm = eleaLookup terms
-  lookupType = eleaLookup types
+  lookup name = State.gets (Map.lookup name)
   
-  defineTerm name term = do
+  add name term = do
     term_s <- showM term
     term_ty <- Typing.typeOf term
     ty_s <- showM term_ty
-    eleaDefine terms name term
     Log.info
       $  "\nval " ++ name ++ ": " ++ ty_s ++ " = " ++ term_s
-
-  defineType name ty = do
-    type_s <- showM ty
-    eleaDefine types name ty
-    Log.info $ "\ntype " ++ name
+    State.modify (Map.insert name term)
   
 instance Err.Monad Elea where
   throw e = Elea $ \(ds, _) ->
