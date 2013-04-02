@@ -17,7 +17,7 @@ import qualified Elea.Monad.Definitions as Defs
 tests = Test.label "Typing" 
     $ Test.run $ do
   Test.loadPrelude
-  
+ 
   add <- Parse.term "add"
   add_ty <- Parse.term "pi nat nat -> nat"
   add_ty' <- Typing.typeOf add
@@ -25,9 +25,8 @@ tests = Test.label "Typing"
   rev <- Parse.term "rev"
   rev_ty <- Parse.term "pi (a:*) (list a) -> list a"
   rev_ty' <- Typing.typeOf rev
-  
   return
-    $ Test.list 
+    $ Test.list
     [ Test.assertEq add_ty add_ty'
     , Test.assertEq rev_ty rev_ty' ]
 

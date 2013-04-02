@@ -4,7 +4,7 @@ module Elea.Term
   Term' (..), Alt' (..), Bind' (..),
   projectAlt, embedAlt, projectBind, embedBind,   
   inner, varIndex, alts, argument, 
-  inductiveType, binding,
+  inductiveType, binding, constructors,
   altBindings, altInner,
   altBindings', altInner',
   boundLabel, boundType,
@@ -13,19 +13,14 @@ module Elea.Term
   flattenApp, unflattenApp, 
   flattenPi, unflattenPi,
   flattenLam, unflattenLam, 
-  isInj, isLam, isVar,
+  isInj, isLam, isVar, isPi, isInd,
 )
 where
 
 import Prelude ()
-import Elea.Prelude hiding ( lift )
+import Elea.Prelude
 import Elea.Index
 import qualified Elea.Foldable as Fold
-import qualified Elea.Monad.Error as Err
-import qualified Control.Monad.Trans as Trans
-import qualified Data.Map as Map
-import qualified Data.Set as Set
-import qualified Elea.Monad.Failure as Fail
 
 -- * Our functional language
 
@@ -163,23 +158,25 @@ instance Fold.Unfoldable Term where
         
 -- * Some generally helpful functions
         
-isInj' :: Term' a -> Bool
-isInj' (Inj' {}) = True
-isInj' _ = False
-
 isInj :: Term -> Bool
-isInj = isInj' . Fold.project
-
-isLam' :: Term' a -> Bool
-isLam' (Lam' {}) = True
-isLam' _ = False
+isInj (Inj {}) = True
+isInj _ = False
 
 isLam :: Term -> Bool
-isLam = isLam' . Fold.project
+isLam (Lam {}) = True
+isLam _ = False
 
 isVar :: Term -> Bool
 isVar (Var {}) = True
 isVar _ = False
+
+isPi :: Term -> Bool
+isPi (Pi {}) = True
+isPi _ = False
+
+isInd :: Term -> Bool
+isInd (Ind {}) = True
+isInd _ = False
     
 flattenApp :: Term -> [Term]
 flattenApp (App t1 t2) = flattenApp t1 ++ [t2]
@@ -207,58 +204,9 @@ unflattenPi = flip (foldr Pi)
 leftmost :: Term -> Term
 leftmost = head . flattenApp
 
-unfoldInd :: Substitutable Term => Term -> [Bind]
+unfoldInd :: (Substitutable Term, Show Term) => Term -> [Bind]
 unfoldInd ty@(Ind _ cons) = 
   map (modify boundType (subst ty)) cons
+unfoldInd other = 
+  error $ "Tried to unfold a non inductive type: " ++ show other
   
-{-
-instance Unifiable Term where
-  unifier = (flip runReaderT 0 .) . uni
-    where
-    uni :: forall m . Fail.Monad m => 
-      Term -> Term -> ReaderT Index m (Unifier Term)
-    uni (Var x1) (Var x2)
-      | x1 == x2 = return mempty
-    uni (Var idx) t2 = do
-      free_var_limit <- ask
-      -- If the variable on the left is not locally scoped
-      -- then we can substitute it for something.
-      -- We subtract 'free_var_limit' to get the index
-      -- outside the bindings of this term.
-      if idx >= free_var_limit
-      then return (Map.singleton (idx - free_var_limit) t2)
-      else Fail.here
-    uni Absurd Absurd = return mempty
-    uni (Lam b1 t1) (Lam b2 t2) = 
-      assert (b1 == b2)
-      . local lift 
-      $ uni t1 t2
-    uni (Fix b1 t1) (Fix b2 t2) = 
-      assert (b1 == b2)
-      . local lift
-      $ uni t1 t2
-    uni (App l1 r1) (App l2 r2) = do
-      uni1 <- uni l1 l2
-      uni2 <- uni r1 r2
-      unifierUnion uni1 uni2
-    uni (Type ty1) (Type ty2) =
-      assert (ty1 == ty2) (return mempty)
-    uni (Inj n1 ty1) (Inj n2 ty2) =
-      assert (ty1 == ty2) $ do
-        Fail.when (n1 /= n2)
-        return mempty
-    uni (Case match1 _ alts1) (Case match2 _ alts2) = do
-      Fail.when (length alts1 /= length alts2)
-      match_uni <- uni match1 match2
-      alt_unis <- zipWithM (uni `on` get altInner) alts1 alts2
-      -- Take the union of the unifiers of the matched terms and the
-      -- different pattern branches.
-      foldrM unifierUnion match_uni alt_unis
-      where
-      uniAlt :: Alt -> Alt -> ReaderT Index m (Unifier Term)
-      uniAlt (Alt bs1 t1) (Alt bs2 t2) =
-        assert (bs1 == bs2)
-        . local (liftMany (length bs1))
-        $ uni t1 t2
-    uni _ _ = Fail.here 
-  -}

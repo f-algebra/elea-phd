@@ -9,6 +9,7 @@ import Elea.Prelude
 import Elea.Index
 import Elea.Term
 import Elea.Show ( showM )
+import qualified Elea.Index as Indices
 import qualified Elea.Foldable as Fold
 import qualified Elea.Env as Env
 import qualified Elea.Monad.Error as Err
@@ -38,9 +39,9 @@ check other = liftM (const ()) (typeOf other)
 typeOf :: TypingMonad m => Term -> m Term  
 typeOf term =
   Err.augmentM (termErr term)
-    . Err.check check
-    . Fold.paraM doBoth
-    $ term
+  . Err.check check
+  . Fold.paraM doBoth
+  $ term
   where
   -- | This is added to the existing error 
   -- if a type checking error is thrown.
@@ -58,59 +59,61 @@ typeOf term =
   -- | The type of an pattern match branch has to be lowered by any
   -- indexes bound by the match
   altType :: Alt' (Type, Term) -> Type
-  altType (Alt' bs (ty, t)) = 
-    lowerMany (length bs) ty
+  altType (Alt' bs (ty, t)) =
+    Indices.lowerMany (length bs) ty
   
   -- | Checks the term for any type errors.
   -- Is combined with 'ftype' in 'doBoth'
   -- to get the full monadic Term'-algebra for typing.
   fcheck :: TypingMonad m => Term' (Type, Term) -> m ()
   fcheck Type' = Err.throw "[Type] has no type"
-  fcheck _ = return ()
-  {-
-  fcheck (Term.App' (fun_ty, fun_t) (arg_ty, arg_t))
-    | Fun (Bind _ arg_ty') _ <- fun_ty
+  fcheck (Var' idx) = do
+    depth <- Env.bindingDepth
+    Err.when (idx > depth)
+      $ "Found index: " ++ show idx ++ " in an environment which only "
+      ++ "has type bindings up to index: " ++ show depth
+  fcheck (App' (fun_ty, fun_t) (arg_ty, arg_t))
+    | Pi (Bind _ arg_ty') _ <- fun_ty
     , arg_ty /= arg_ty' = do
         ty_s <- showM arg_ty
         ty_s' <- showM fun_ty
         arg_s <- showM arg_t
         fun_s <- showM fun_t
         Err.throw 
-          $ "Applying {" ++ fun_s ++ "}: [" ++ ty_s'
-          ++ "]\nto {" ++ arg_s ++ "}: [" ++ ty_s 
+          $ "Applying [" ++ fun_s ++ "]: [" ++ ty_s'
+          ++ "]\nto [" ++ arg_s ++ "]: [" ++ ty_s 
           ++ "]\nArgument types do not match."
-  fcheck (Term.App' (fun_ty, fun_t) _) 
-    | not (Type.isFun fun_ty) = do
+    | not (isPi fun_ty) = do
         ty_s <- showM fun_ty
         t_s <- showM fun_t
         Err.throw 
-          $ "Found an applied term {" ++ t_s
-          ++ "} of non-function type [" ++ ty_s ++ "]."
-  fcheck (Type' ty)
-    | Type.isKind ty = do
-        ty_s <- showM ty
-        Err.throw  
-          $ "Attempted to apply a kind [" ++ ty_s 
-          ++ "] in term position (types are allowed, just not kinds)."
-  fcheck fx@(Fix' b (lower -> ty, _))
+          $ "Found an applied term [" ++ t_s
+          ++ "] of non-function type [" ++ ty_s ++ "]."       
+  fcheck fx@(Fix' (Bind' _ (_, b_ty)) (Indices.lower -> ty, _))
     | b_ty /= ty = do
         b_ty_s <- showM b_ty
         ty_s <- showM ty
-        fx_s <- showM (Fix.recover fx)
+        fx_s <- showM (Fold.recover fx)
         Err.throw
-          $ "In the fixpoint {" ++ fx_s ++ "}.\n"
+          $ "In the fixpoint [" ++ fx_s ++ "].\n"
           ++ "The declared type [" ++ b_ty_s
           ++ "] and the type of the body [" ++ ty_s
           ++ "] do not match."
-    where
-    b_ty = get Type.boundType b
-  fcheck (Inj' n ind_ty@(Ind _ cons)) 
-    | not (Type.isInd ind_ty) = do
+  fcheck (Inj' n (_, ind_ty))
+    | not (isInd ind_ty) = do
         ty_s <- showM ind_ty
         Err.throw 
           $ "The type argument of an inj [" ++ ty_s
           ++ "] must be an inductive type."
-  fcheck fcse@(Case' (ty, _) arg_ty falts) 
+    | fromEnum n >= num_cons = do
+        ty_s <- showM ind_ty
+        Err.throw 
+          $ "Trying to inject into constructor " ++ show n
+          ++ " of [" ++ ty_s ++ "] which only has " 
+          ++ show num_cons ++ " constructors."
+    where
+    Ind _ (length -> num_cons) = ind_ty
+  fcheck fcse@(Case' (ty, _) (_, arg_ty) falts) 
     | ty /= arg_ty = do
         ty_s <- showM ty
         arg_ty_s <- showM arg_ty
@@ -118,28 +121,24 @@ typeOf term =
           . Err.throw
           $ "The stored argument type [" ++ arg_ty_s
           ++ "] of a pattern match does not equal "
-          ++ "the actual argument type [" ++ ty_s ++ "].\n"
-          ++ "This should be an assertion error I think, I'm not sure "
-          ++ "how a user could cause this."
+          ++ "the actual argument type [" ++ ty_s ++ "]."
     | Just fail_ty <- find (/= alt_ty) alt_tys = do
         fail_s <- showM fail_ty
         alt_s <- showM alt_ty
         Err.augmentM in_the_cse
           . Err.throw
-          $ "The return types of two branches of a pattern match "
+          $ "The return types of two branches "
           ++ "are not equal: [" ++ alt_s ++ "] /= [" ++ fail_s ++ "]."
     where
     in_the_cse = do
-      cse_s <- showM (Fix.recover fcse)
+      cse_s <- showM (Fold.recover fcse)
       return $ "In the pattern match {" ++ cse_s ++ "}.\n"
     alt_ty:alt_tys = map altType falts
   fcheck _ = 
     return ()
-  -}
+ 
   
-  -- | A monadic paramorphic Term'-algebra which finds the type of a term.
-  -- These pairs in Term' should be read as: the type of the second
-  -- term is the first.
+  -- | Returns the type of a term, given the type of its subterms.
   ftype :: TypingMonad m => Term' (Type, Term) -> m Type
   ftype Absurd' = 
     return absurd
@@ -147,7 +146,7 @@ typeOf term =
     return Type
   ftype (Pi' _ _) = 
     return Set
-  ftype (Var' idx) = 
+  ftype (Var' idx) =
     liftM (get boundType) (Env.boundAt idx)
   ftype (Lam' (Bind' lbl (_, arg)) (res, _)) = 
     return (Pi (Bind lbl arg) res)

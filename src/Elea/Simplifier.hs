@@ -1,14 +1,15 @@
 module Elea.Simplifier 
 (
-  run, steps,
+  run, steps, safe,
 )
 where
 
 import Prelude ()
 import Elea.Prelude
 import Elea.Index
-import Elea.Term ( Term (..), Alt (..) )
+import Elea.Term
 import Elea.Show
+import qualified Elea.Index as Indices
 import qualified Elea.Term as Term
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
@@ -16,17 +17,20 @@ import qualified Data.Set as Set
 run :: Term -> Term
 run = Fold.rewriteSteps steps
 
+safe :: Term -> Term
+safe = Fold.rewriteSteps safeSteps 
+
 steps :: [Term -> Maybe Term]
-steps = 
+steps = safeSteps ++ [ unfoldFix ]
+
+safeSteps :: [Term -> Maybe Term]
+safeSteps = 
   [ betaReduce
   , etaReduce
   , caseInjReduce
-  , unfoldFix
   ]
   
 betaReduce :: Term -> Maybe Term
-betaReduce (App (Lam _ rhs) (Type ty)) = 
-  return (Term.substType ty rhs)
 betaReduce (App (Lam _ rhs) arg) = 
   return (subst arg rhs)
 betaReduce _ = mzero
@@ -34,15 +38,15 @@ betaReduce _ = mzero
 etaReduce :: Term -> Maybe Term
 etaReduce (Lam _ (App f (Var 0)))
   | not (0 `Set.member` freeIndices f) = 
-    return (lower f)
+    return (Indices.lower f)
 etaReduce _ = mzero
 
 caseInjReduce :: Term -> Maybe Term
 caseInjReduce (Case lhs _ alts)
-  | inj_term:args <- Term.flattenApp lhs
+  | inj_term:args <- flattenApp lhs
   , Inj (fromEnum -> n) _ <- inj_term
   , assert (length alts > n) True
-  , Alt bs alt_term <- alts !! n =
+  , Alt bs alt_term <- debugNth "yoyo" alts n =
       return
     . assert (length args == length bs)
     . foldr subst alt_term
@@ -56,7 +60,7 @@ caseInjReduce _ = mzero
 
 unfoldFix :: Term -> Maybe Term
 unfoldFix (App fix@(Fix _ rhs) arg) 
-  | Term.isInj . Term.leftmost $ arg = 
+  | isInj (leftmost arg) = 
     return (App (subst fix rhs) arg)
 unfoldFix _ = mzero
 

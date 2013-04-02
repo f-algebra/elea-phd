@@ -9,8 +9,6 @@ import Elea.Prelude
 import Elea.Index
 import qualified Elea.Context as Context
 import qualified Elea.Testing as Test
-import qualified Elea.Term as Term
-import qualified Elea.Type as Type
 
 tests = Test.label "Contexts"                                          
     $ Test.run $ do

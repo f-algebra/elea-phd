@@ -7,11 +7,10 @@ where
 import Prelude ()
 import Elea.Prelude
 import Elea.Index
-import Elea.Type ( Type )
-import Elea.Term ( Term (..), Alt (..) )
-import qualified Elea.Index as Index
-import qualified Elea.Term as Term 
-import qualified Elea.Type as Type
+import Elea.Term
+import qualified Elea.Env as Env
+import qualified Elea.Unifier as Unifier
+import qualified Elea.Index as Indices
 import qualified Elea.Monad.Failure as Fail
 import qualified Data.Map as Map
 
@@ -28,7 +27,7 @@ gapIndex :: Index
 gapIndex = 10000000
 
 gap :: Term
-gap = Term.Var gapIndex
+gap = Var gapIndex
 
 make :: Type -> (Term -> Term) -> Context
 make ty mk_t = Context (mk_t gap) ty
@@ -38,14 +37,14 @@ apply = flip (substAt gapIndex) . get term
 
 toLambda :: Context -> Term
 toLambda (Context term ty) = 
-  Term.Lam (Type.Bind (Just "[_]") ty) inner_t
+  Lam (Bind (Just "[_]") ty) inner_t
   where
   inner_t = 
       substAt (succ gapIndex) (Var 0) 
-    $ Index.lift term
+    $ Indices.lift term
     
 fromLambda :: Term -> Context
-fromLambda (Lam (Type.Bind _ ty) rhs) = 
+fromLambda (Lam (Bind _ ty) rhs) = 
   Context (subst gap rhs) ty
 
 -- | If the given term is within the given context, then return
@@ -53,7 +52,7 @@ fromLambda (Lam (Type.Bind _ ty) rhs) =
 -- E.g. "remove (f [_] y) (f x y) == Just x" 
 remove :: forall m . Fail.Monad m => Context -> Term -> m Term
 remove (Context cxt_t _) term = do
-  uni <- unifier cxt_t term
+  uni <- Unifier.find cxt_t term
   Fail.when (Map.size uni /= 1)
   let [(idx, hole_term)] = Map.toList uni
   Fail.when (idx /= gapIndex)

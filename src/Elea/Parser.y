@@ -12,6 +12,7 @@ import Elea.Index
 import Elea.Show ( showM )
 import qualified Elea.Term as Term
 import qualified Elea.Typing as Typing
+import qualified Elea.Simplifier as Simp
 import qualified Elea.Env as Env
 import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Error as Err
@@ -77,17 +78,20 @@ mkLabels [''Scope, ''RawBind]
   ind         { TokenInd }
   any         { TokenAny }
   pi          { TokenPi }
-
-%right '->'
   
 %%
 
-Bind :: { RawBind }
+NamedBind :: { RawBind }
   : name ':' Term                     { TBind (Just $1) $3 }
+  
+Bind :: { RawBind }
+  : name                              { TBind Nothing (TVar $1) }
+  | '(' Term ')'                      { TBind Nothing $2 }
+  | '(' NamedBind ')'                 { $2 }
  
 Cons :: { [RawBind] }
-  : '|' Bind                          { [$2] }
-  | Cons '|' Bind                     { $1 ++ [$3] }
+  : '|' NamedBind                     { [$2] }
+  | Cons '|' NamedBind                { $1 ++ [$3] }
   
 Pattern :: { [String] }
   : name                              { [$1] }
@@ -98,27 +102,28 @@ Matches :: { [RawAlt] }
   | Matches '|' Match                 { $1 ++ [$3] }
   
 Match :: { RawAlt }
-  : Pattern '=>' Term                 { TAlt $1 $3 }
+  : Pattern '->' Term                 { TAlt $1 $3 }
   
 Bindings :: { [RawBind] }
-  : '(' Bind ')'                      { [$2] }
-  | Bindings '(' Bind ')'             { $1 ++ [$3] }
+  : Bind                              { [$1] }
+  | Bindings Bind                     { $1 ++ [$2] }
   
 Term :: { RawTerm }
   : name                              { TVar $1 }
   | '*'                               { TSet }
   | inj Term                          { TInj $1 $2 }
   | Term name                         { TApp $1 (TVar $2) }
-  | match Term with Matches end       { TCase $2 $4 }
-  | ind Bind with Cons end            { TInd $2 $4 }
-  | Term '->' Term                    { TPi [TBind Nothing $1] $3 }
   | Term '(' Term ')'                 { TApp $1 $3 }  
   | '(' Term ')'                      { $2 }
-  | fun Bindings '=>' Term            { TLam $2 $4 }
-  | fix Bindings '=>' Term            { TFix $2 $4 }
-  | any Bindings '=>' Term            { TAny $2 $4 }
-  | pi Bindings '=>' Term             { TPi $2 $4 }
+  | fun Bindings '->' Term            { TLam $2 $4 }
+  | fix Bindings '->' Term            { TFix $2 $4 }
+  | any Bindings '->' Term            { TAny $2 $4 }
+  | pi Bindings '->' Term             { TPi $2 $4 }
   | let name '=' Term in Term         { TLet $2 $4 $6 }
+  | match Term with Matches end       { TCase $2 $4 }
+  | ind name with Cons end            { TInd (TBind (Just $2) TSet) $4 }
+  | ind NamedBind with Cons end       { TInd $2 $4 }
+  
 
 TermDef :: { TermDef }
   : let name '=' Term                 { ($2, $4) }
@@ -145,12 +150,17 @@ instance Monad m => Env.Writable (ReaderT Scope m) where
       | Bind (Just lbl) _ <- b = 
           Map.insert lbl (Right at)
       | otherwise = id
+      
+  equals _ _ = id
 
 instance Err.Monad m => Env.Readable (ReaderT Scope m) where
   boundAt at = 
       asks
-    $ (!! fromEnum at)
+    $ (\bs -> debugNth ("asking " ++ show at ++ " from " ++ show bs) bs (fromEnum at))
     . get bindStack
+    
+  bindingDepth = 
+    asks (toEnum . pred . length . get bindStack)
   
 type ParserMonad m a = (Err.Monad m, Defs.Monad m) => ReaderT Scope m a
     
@@ -163,7 +173,7 @@ localDef name term =
 term :: (Err.Monad m, Defs.Monad m) => String -> m Term
 term = 
     withEmptyScope 
-  . parseRawTerm 
+  . parseAndCheckTerm 
   . happyTerm 
   . lexer
   
@@ -175,7 +185,7 @@ program =
   . lexer
   where
   define (name, raw_term) = do
-    term <- parseRawTerm raw_term
+    term <- parseAndCheckTerm raw_term
     Defs.add name term
     
 lookupTerm :: String -> ParserMonad m Term
@@ -189,6 +199,12 @@ lookupTerm name = do
       if (isNothing mby_term)
       then Err.throw $ "Undefined term: " ++ name
       else return (fromJust mby_term)
+      
+parseAndCheckTerm :: RawTerm -> ParserMonad m Term
+parseAndCheckTerm =
+    Err.check Typing.check
+  . liftM Simp.safe
+  . parseRawTerm
 
 parseRawTerm :: RawTerm -> ParserMonad m Term
 parseRawTerm TAbsurd = return Absurd
@@ -196,25 +212,11 @@ parseRawTerm TSet = return Set
 parseRawTerm (TVar var) = lookupTerm var
 parseRawTerm (TInj n rty) = do
   ty <- parseRawTerm rty
-  case ty of
-    Ind _ cons 
-      | fromEnum n >= length cons -> do
-          ty_s <- showM ty
-          Err.throw 
-            $ "Trying to inject into constructor " ++ show n
-            ++ " of [" ++ ty_s ++ "] which only has " 
-            ++ show (length cons) ++ " constructors."
-      | otherwise -> 
-          return (Inj n ty)
-    _ -> do
-      ty_s <- showM ty
-      Err.throw 
-        $ "The argument type of an inj [" ++ ty_s 
-        ++ "] must be an inductive type."
+  return (Inj n ty)
 parseRawTerm (TApp rt1 rt2) = do
   t1 <- parseRawTerm rt1 
   t2 <- parseRawTerm rt2
-  return (App t1 t2)
+  return (Simp.safe (App t1 t2))
 parseRawTerm (TFix rbs rt) = do
   bs <- parseRawBinds rbs
   t <- Env.bindMany bs (parseRawTerm rt)

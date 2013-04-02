@@ -11,10 +11,7 @@ where
 import Prelude ()
 import Elea.Prelude hiding ( lift )
 import Elea.Index
-import Elea.Term ( Term (..), Alt (..) )
-import Elea.Type ( Type )
-import qualified Elea.Type as Type
-import qualified Elea.Term as Term
+import Elea.Term
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Foldable as Fold
 import qualified Data.Monoid as Monoid
@@ -25,7 +22,7 @@ run = Fold.rewriteSteps (Simp.steps ++ steps)
 steps :: [Term -> Maybe Term]
 steps = 
   [ lambdaCaseStep 
-  --, funCaseStep
+  , funCaseStep
   , argCaseStep
   , constArgStep
   ]
@@ -34,7 +31,7 @@ steps =
 lambdaCaseStep :: Term -> Maybe Term
 lambdaCaseStep (Case lhs ind_ty alts)
   -- This step only works if every branch has a lambda topmost
-  | all (Term.isLam . get Term.altInner) alts = 
+  | all (isLam . get altInner) alts = 
         return
       . Lam new_b
       . Case (lift lhs) (lift ind_ty) 
@@ -42,12 +39,12 @@ lambdaCaseStep (Case lhs ind_ty alts)
   where
   -- Use the binding of the first alt's lambda as our new outer binding
   getBinding (Alt bs (Lam lam_b _)) = 
-    modify Type.boundType (lowerMany (length bs)) lam_b
+    modify boundType (lowerMany (length bs)) lam_b
   new_b = getBinding (head alts)
   
   -- Lots of careful de-Bruijn index adjustment here
   lctAlt (Alt bs (Lam lam_b rhs)) = 
-      Alt (map Type.liftBind bs)
+      Alt (map lift bs)
     . subst (Var (toEnum (length bs)))
     . liftAt (toEnum (length bs + 1))
     $ rhs
@@ -80,7 +77,7 @@ argCaseStep (App fun (Case lhs ind_ty alts)) =
     
 argCaseStep _ = mzero
 
-
+{-
 -- | If an argument to a 'Fix' never changes in any recursive call
 -- then we should float that lambda abstraction outside the 'Fix'.
 constArgStep :: Term -> Maybe Term
@@ -156,7 +153,7 @@ constArgStep (Fix fix_b fix_rhs) = do
         $ t : [ Term.Var (toEnum i) | i <- reverse [1..n-1] ]    
       
 constArgStep _ = mzero
-
+-}
 
 
 {- This needs careful index adjustment for the new inner alts I think

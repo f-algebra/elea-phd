@@ -15,6 +15,7 @@ import Elea.Show ( showM )
 import qualified Elea.Term as Term
 import qualified Elea.Env as Env
 import qualified Elea.Typing as Typing
+import qualified Elea.Simplifier as Simp
 import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Logging as Log
 import qualified Elea.Monad.Error as Err
@@ -91,7 +92,7 @@ instance Env.Readable Elea where
     bs <- ask
     Err.when (fromEnum at >= length bs)
       $ "Index " ++ show at ++ " not bound in " ++ show bs
-    return (bs !! fromEnum at)
+    return (debugNth "here" bs $ fromEnum at)
     
   bindingDepth = 
     asks (toEnum . pred . length)

@@ -31,9 +31,9 @@ tests = Test.label "Simplifier"
   let test3 = assertSimplifyEq two_times_two two_plus_two
   
   rev_simple <- Test.term
-    "rev [nat] (Cons [nat] 1 (Cons [nat] 2 (Nil [nat])))"
+    "rev nat (Cons nat 1 (Cons nat 2 (Nil nat)))"
   rev_aim <- Test.term
-    "Cons [nat] 2 (Cons [nat] 1 (Nil [nat]))"
+    "Cons nat 2 (Cons nat 1 (Nil nat))"
   let test4 = assertSimplifyEq rev_aim rev_simple
   
   return

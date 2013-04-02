@@ -2,7 +2,6 @@
 module Elea.Index
 (
   Index, Liftable (..), Substitutable (..),
-  Unifiable (..), Unifier, unifierUnion, unify,
   lift, liftMany, liftManyAt, subst, 
   lowerAt, lower, lowerMany, replaceAt,
 )
@@ -71,28 +70,4 @@ lower = lowerAt 0
 lowerMany :: Substitutable t => Int -> t -> t
 lowerMany n = concatEndos (replicate n lower)
 
--- | Applies the given unifier to the given term.
-unify :: Substitutable t => Unifier t -> t -> t
-unify uni_map = 
-  flip (foldr (uncurry substAt)) (Map.toAscList uni_map)
-
--- | Fails if the two unifiers have conflicting substitutions.
-unifierUnion :: (Eq t, Fail.Monad m) => Unifier t -> Unifier t -> m (Unifier t)
-unifierUnion uni1 uni2 = do
-  Fail.unless all_eq
-  return (uni1 `Map.union` uni2)
-  where
-  -- Returns whether all of the elements subsituted for equal indices
-  -- are equal elements. If so then you can take the union of the 
-  -- two substitution maps safely.
-  all_eq = and 
-    . Map.elems
-    $ Map.intersectionWith (==) uni1 uni2
- 
-type Unifier a = Map Index a
-
-class Substitutable t => Unifiable t where
-  -- | Returns the unifier that should be applied to the first argument
-  -- to produce the second, fails if no such unifier exists. 
-  unifier :: Fail.Monad m => t -> t -> m (Unifier t)
 

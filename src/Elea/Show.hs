@@ -45,11 +45,11 @@ instance Show (Term' String) where
     where 
     x' | ' ' `elem` x = "(" ++ x ++ ")"
        | otherwise = x
-    f' | "->" `isInfixOf` f = "(" ++ f ++ ")"
+    f' | "->" `isInfixOf` f || "end" `isInfixOf` f = "(" ++ f ++ ")"
        | otherwise = f
   show (Ind' b cons) =
     name
-    --"fix " ++ show b ++ " with" ++ cons_s ++ " end"
+  --  "(ind " ++ show b ++ " with" ++ cons_s ++ " end)"
     where
     cons_s = concatMap ((" | " ++) . show) cons
     name = fromJust (get boundLabel' b)
@@ -75,16 +75,16 @@ instance KleisliShow Term where
         return (fromMaybe (show x) mby_lbl)
     fshow (Inj' n (ind_s, ind@(Ind _ cons))) =
       return
-    --    . (\t -> t ++ ": " ++ ind_s )
-        . fromMaybe "_"
-        . get boundLabel
-        $ cons !! fromEnum n
-    fshow (Case' (t, _) (_, arg_ty) alts) = do
+    --  . (\t -> t ++ ": " ++ ind_s )
+      . fromMaybe "_"
+      . get boundLabel
+      $ cons !! fromEnum n
+    fshow (Case' (t, _) (ty_s, arg_ty) alts) = do
       alts_s <- zipWithM showAlt [0..] alts
       return
         . indent
         $ "\nmatch " ++ t 
-    --    ++ ": " ++ ty_s
+        ++ ": " ++ ty_s
         ++ " with" ++ concat alts_s 
         ++ "\nend"
       where
@@ -94,6 +94,9 @@ instance KleisliShow Term where
         con <- showM (Inj n ind_ty)
         return $ "\n| " ++ con ++ bs_s ++ " -> " ++ t
         where
+        showB (Bind' (Just lbl) (ty_s, ty)) = 
+          Just $ "(" ++ lbl ++ ": " ++ ty_s ++ ")"
+        
         bs_s = flip concatMap bs 
           $ (" " ++) . fromMaybe "_" . get boundLabel'
     fshow other = 
