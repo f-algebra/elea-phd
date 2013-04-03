@@ -27,8 +27,8 @@ tests = Test.label "Contexts"
   return 
     $ Test.list [ test1, test1' ]          
   where
-  t1_ctx = "fun (gap:nat) (y:nat) -> add gap y"
+  t1_ctx = "fun (gap:nat) (y:nat) -> add y gap"
   t1_sub = "mul 1 2"
-  t1_aim = "fun (y:nat) -> add (mul 1 2) y"
+  t1_aim = "fun (y:nat) -> add y (mul 1 2)"
                                                                                            
   

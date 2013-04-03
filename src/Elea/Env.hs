@@ -132,6 +132,10 @@ instance Monad m => Writable (ReaderT (Index, Term) m) where
   bindAt at _ = local (liftAt at)
   equals _ _ = id
   
+instance Monad m => Writable (ReaderT (Index, Index) m) where
+  bindAt at _ = local (liftAt at)
+  equals _ _ = id
+  
 instance (Monoid w, Writable m) => Writable (WriterT w m) where
   bindAt at b = WriterT . bindAt at b . runWriterT
   equals t1 t2 = WriterT . equals t1 t2 . runWriterT

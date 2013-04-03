@@ -21,8 +21,8 @@ data Context
   
 mkLabels [''Context]
 
--- | This is a bit of a hack, but as long as no-one tries a 
--- 10000000 deep nesting of lambdas it should be fine :)
+-- This is a bit of a hack, but as long as no-one tries a 
+-- 10000000 deep nesting of bindings it should be fine :)
 gapIndex :: Index
 gapIndex = 10000000
 
@@ -43,7 +43,7 @@ toLambda (Context term ty) =
       substAt (succ gapIndex) (Var 0) 
     $ Indices.lift term
     
-fromLambda :: Term -> Context
+fromLambda :: Show Term => Term -> Context
 fromLambda (Lam (Bind _ ty) rhs) = 
   Context (subst gap rhs) ty
 

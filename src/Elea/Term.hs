@@ -13,6 +13,7 @@ module Elea.Term
   flattenApp, unflattenApp, 
   flattenPi, unflattenPi,
   flattenLam, unflattenLam, 
+  removeArgAt,
   isInj, isLam, isVar, isPi, isInd,
 )
 where
@@ -20,6 +21,7 @@ where
 import Prelude ()
 import Elea.Prelude
 import Elea.Index
+import qualified Elea.Index as Indices
 import qualified Elea.Foldable as Fold
 
 -- * Our functional language
@@ -75,17 +77,6 @@ data Alt
           , _altInner :: !Term }
   deriving ( Eq, Ord )
   
--- * Our typing and equality environment
-
--- | The write-only environment.
-class Monad m => Env m where
-  bindAt :: Index -> Bind -> (m a -> m a)
-  equal :: Term -> Term -> (m a -> m a)
-  
-class Env m => ReadableEnv m where
-  boundAt :: Index -> m Bind
-  bindingDepth :: m Index
-
   
 -- * Base types for generalised cata/para morphisms.
   
@@ -198,6 +189,15 @@ unflattenLam = flip (foldr Lam)
 
 unflattenPi :: [Bind] -> Term -> Term
 unflattenPi = flip (foldr Pi) 
+
+-- | Removes the nth argument of a provided Pi term. We need to lower indices
+-- in every binding after the removed one.
+removeArgAt :: Substitutable Term => Int -> Term -> Term
+removeArgAt n (flattenPi -> (binds, result))  = 
+  unflattenPi (start ++ map lowerBind end) (Indices.lower result)
+  where
+  lowerBind = modify boundType Indices.lower
+  (start, mid:end) = splitAt n binds
 
 -- | Returns the leftmost 'Term' in term application,
 -- e.g. @leftmost (App (App a b) c) == a@
