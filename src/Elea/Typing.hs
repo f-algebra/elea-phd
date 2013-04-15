@@ -69,7 +69,7 @@ typeOf term =
   fcheck Type' = Err.throw "[Type] has no type"
   fcheck (Var' idx) = do
     depth <- Env.bindingDepth
-    Err.when (idx > depth)
+    Err.when (fromEnum idx >= depth)
       $ "Found index: " ++ show idx ++ " in an environment which only "
       ++ "has type bindings up to index: " ++ show depth
   fcheck (App' (fun_ty, fun_t) (arg_ty, arg_t))

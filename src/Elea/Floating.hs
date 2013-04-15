@@ -115,8 +115,8 @@ constArgStep (Fix fix_b fix_rhs) = do
     isConst _ = 
       return True
 
-  -- Returns the original argument to constArgStep, with the given
-  -- argument floated outside of the 'Fix'.
+  -- Returns the original argument to constArgStep, with the argument
+  -- at the given index floated outside of the 'Fix'.
   -- Code like this makes me hate de-Bruijn indices, particularly since
   -- it's mostly just me not being clever enough to do it cleanly.
   removeConstArg :: Int -> Term
@@ -154,6 +154,10 @@ constArgStep (Fix fix_b fix_rhs) = do
         $ t : [ Var (toEnum i) | i <- reverse [1..n-1] ]    
       
 constArgStep _ = mzero
+
+
+-- freeCaseFix floats cases out that
+-- contain only variables free outside the term
 
 
 {- This needs careful index adjustment for the new inner alts I think

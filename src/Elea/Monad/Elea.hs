@@ -95,7 +95,7 @@ instance Env.Readable Elea where
     return (debugNth "here" bs $ fromEnum at)
     
   bindingDepth = 
-    asks (toEnum . pred . length)
+    asks length
 
 instance Defs.Monad Elea where
   lookup name = State.gets (Map.lookup name)

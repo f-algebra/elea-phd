@@ -160,7 +160,7 @@ instance Err.Monad m => Env.Readable (ReaderT Scope m) where
     . get bindStack
     
   bindingDepth = 
-    asks (toEnum . pred . length . get bindStack)
+    asks (length . get bindStack)
   
 type ParserMonad m a = (Err.Monad m, Defs.Monad m) => ReaderT Scope m a
     

@@ -9,8 +9,10 @@ import Prelude ()
 import Elea.Prelude
 import Elea.Index
 import Elea.Term
+import Elea.Context ( Context )
 import GHC.Prim ( Constraint )
 import qualified Elea.Env as Env
+import qualified Elea.Context as Context
 import qualified Elea.Foldable as Fold
 
 -- | A monadic variant of 'show'.
@@ -48,8 +50,8 @@ instance Show (Term' String) where
     f' | "->" `isInfixOf` f || "end" `isInfixOf` f = "(" ++ f ++ ")"
        | otherwise = f
   show (Ind' b cons) =
-    name
-  --  "(ind " ++ show b ++ " with" ++ cons_s ++ " end)"
+    --name
+    "(ind " ++ show b ++ " with" ++ cons_s ++ " end)"
     where
     cons_s = concatMap ((" | " ++) . show) cons
     name = fromJust (get boundLabel' b)
@@ -68,7 +70,7 @@ instance KleisliShow Term where
     fshow :: Env.Readable m => Term' (String, Term) -> m String
     fshow (Var' x) = do
       depth <- Env.bindingDepth
-      if x > depth 
+      if fromEnum x >= depth
       then return (show x)
       else do
         mby_lbl <- liftM (get boundLabel) (Env.boundAt x)
@@ -84,7 +86,7 @@ instance KleisliShow Term where
       return
         . indent
         $ "\nmatch " ++ t 
-        ++ ": " ++ ty_s
+    --    ++ ": " ++ ty_s
         ++ " with" ++ concat alts_s 
         ++ "\nend"
       where
@@ -101,4 +103,11 @@ instance KleisliShow Term where
           $ (" " ++) . fromMaybe "_" . get boundLabel'
     fshow other = 
       return . show . fmap fst $ other
+      
+instance KleisliShow Context where
+  type ShowM Context m = ShowM Term m
+  showM = showM . Context.toLambda
+  
+instance Show Context where
+  show = show . Context.toLambda
       

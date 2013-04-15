@@ -26,12 +26,12 @@ tests = Test.label "Fusion"
   where
   revapp_s =  
     "fun (a:*) (y:a) (zs:list a) -> "
-    ++ "rev [a] (app [a] zs (Cons [a] y (Nil [a])))" 
+    ++ "rev a (app a zs (Cons a y (Nil a)))" 
 
   revapp_aim_s = 
     "fun (a:*) (y:a) ->"
-    ++ "fix (f:list a->list a) (xs:list a) ->"
+    ++ "fix (f: pi (list a)->list a) (xs:list a) ->"
     ++ "match xs with"
-    ++ "| Nil -> Cons [a] y (Nil [a])"
-    ++ "| Cons x xs -> app [a] (f xs) (Cons [a] x (Nil [a])) end"
+    ++ "| Nil -> Cons a y (Nil a)"
+    ++ "| Cons x xs -> app a (f xs) (Cons a x (Nil a)) end"
 

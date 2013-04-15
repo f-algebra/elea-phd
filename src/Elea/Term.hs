@@ -14,7 +14,7 @@ module Elea.Term
   flattenPi, unflattenPi,
   flattenLam, unflattenLam, 
   removeArgAt,
-  isInj, isLam, isVar, isPi, isInd,
+  isInj, isLam, isVar, isPi, isInd, isFix,
 )
 where
 
@@ -168,6 +168,10 @@ isPi _ = False
 isInd :: Term -> Bool
 isInd (Ind {}) = True
 isInd _ = False
+
+isFix :: Term -> Bool
+isFix (Fix {}) = True
+isFix _ = False
     
 flattenApp :: Term -> [Term]
 flattenApp (App t1 t2) = flattenApp t1 ++ [t2]

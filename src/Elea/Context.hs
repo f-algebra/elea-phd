@@ -57,4 +57,10 @@ remove (Context cxt_t _) term = do
   let [(idx, hole_term)] = Map.toList uni
   Fail.when (idx /= gapIndex)
   return hole_term
-
+  
+instance Liftable Context where
+  liftAt at (Context t ty) = 
+    Context (liftAt at t') (liftAt at ty)
+    where
+    t' = substAt gapIndex (lower gap) t
+   

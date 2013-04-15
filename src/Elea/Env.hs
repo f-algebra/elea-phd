@@ -1,3 +1,4 @@
+{-# LANGUAGE UndecidableInstances #-}
 -- | Type environments, but also a lot of class instances for 'Term',
 -- since they require type environments.
 module Elea.Env 
@@ -17,6 +18,7 @@ import qualified Elea.Index as Indices
 import qualified Elea.Unifier as Unifier 
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
+import qualified Control.Monad.Trans as Trans
 
 class Monad m => Writable m where
   bindAt :: Index -> Bind -> m a -> m a
@@ -30,7 +32,9 @@ bindMany = concatEndos . map bind
 
 class Writable m => Readable m where
   boundAt :: Index -> m Bind
-  bindingDepth :: m Index
+  
+  -- | Returns the number of indices that have been bound.
+  bindingDepth :: m Int
   
 instance Fold.FoldableM Term where
   type FoldM Term m = Writable m
@@ -151,6 +155,22 @@ instance Monad m => Readable (ReaderT [Bind] m) where
   boundAt at = asks (flip (debugNth "there") $ fromEnum at)
   bindingDepth = asks (toEnum . pred . length)   
   
+instance Writable m => Writable (MaybeT m) where
+  bindAt at b = MaybeT . bindAt at b . runMaybeT
+  equals x y = MaybeT . equals x y . runMaybeT
+  
+instance Readable m => Readable (MaybeT m) where
+  boundAt = Trans.lift . boundAt
+  bindingDepth = Trans.lift bindingDepth
+  
+instance Writable m => Writable (EitherT e m) where
+  bindAt at b = EitherT . bindAt at b . runEitherT
+  equals x y = EitherT . equals x y . runEitherT
+  
+instance Readable m => Readable (EitherT e m) where
+  boundAt = Trans.lift . boundAt
+  bindingDepth = Trans.lift bindingDepth
+  
 instance Unifiable Term where
   find = (flip runReaderT 0 .) . uni
     where
@@ -171,9 +191,12 @@ instance Unifiable Term where
       -- then we can substitute it for something.
       -- We subtract 'free_var_limit' to get the index
       -- outside the bindings of this term.
-      if idx >= free_var_limit
-      then return (Unifier.singleton (idx - free_var_limit) t2)
-      else Fail.here
+      if idx < free_var_limit
+      then Fail.here
+      else do
+        let lowered_idx = idx - free_var_limit
+            lowered_t2 = Indices.lowerMany (fromEnum free_var_limit) t2
+        return (Unifier.singleton lowered_idx lowered_t2)
     uni (Lam b1 t1) (Lam b2 t2) = do
       ub <- b1 `uniBind` b2
       ut <- local Indices.lift (t1 `uni` t2)
@@ -195,22 +218,23 @@ instance Unifiable Term where
       uni t1 t2
     uni (Ind b1 cs1) (Ind b2 cs2) = do
       ub <- uniBind b1 b2
-      ucs <- zipWithM uniBind cs1 cs2
+      ucs <- local Indices.lift (zipWithM uniBind cs1 cs2)
       Unifier.unions (ub:ucs)
     uni (Case t1 ty1 alts1) (Case t2 ty2 alts2) = do
       Fail.when (length alts1 /= length alts2)
       ut <- uni t1 t2
       uty <- uni ty1 ty2
-      ualts <- zipWithM (uni `on` get altInner) alts1 alts2
-      -- Take the union of the unifiers of the matched terms and the
-      -- different pattern branches.
+      ualts <- zipWithM uniAlt alts1 alts2
       Unifier.unions (ut:uty:ualts)
       where
       uniAlt :: Alt -> Alt -> ReaderT Index m (Unifier Term)
       uniAlt (Alt bs1 t1) (Alt bs2 t2) = do
-        ubs <- zipWithM uniBind bs1 bs2
+        ubs <- zipWithM uniBindL [0..] (bs1 `zip` bs2)
         ut <- local (Indices.liftMany (length bs1)) 
           $ uni t1 t2
         Unifier.unions (ut:ubs)
+        where
+        uniBindL n (b1, b2) = do
+          local (Indices.liftMany n) (b1 `uniBind` b2)
     uni _ _ = Fail.here 
   

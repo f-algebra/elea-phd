@@ -7,6 +7,7 @@ where
 import Prelude ()
 import Elea.Prelude             
 import Elea.Index
+import Elea.Monad.Elea ( Elea )
 import qualified Elea.Context as Context
 import qualified Elea.Testing as Test
 
@@ -14,21 +15,32 @@ tests = Test.label "Contexts"
     $ Test.run $ do
   Test.loadPrelude
   
-  ctx1 <- liftM Context.fromLambda 
-        $ Test.term t1_ctx
-  sub1 <- Test.term t1_sub
-  let app1 = Context.apply ctx1 sub1
-  aim1 <- Test.term t1_aim
-  let test1 = Test.assertEq aim1 app1
-      
-  let Just sub1' = Context.remove ctx1 aim1
-      test1' = Test.assertEq sub1 sub1'
-      
-  return 
-    $ Test.list [ test1, test1' ]          
+  test1 <- contextTest ctx1 sub1 aim1
+  test2 <- contextTest ctx2 sub2 aim2
+  
+  return $ Test.list [test1, test2]       
   where
-  t1_ctx = "fun (gap:nat) (y:nat) -> add y gap"
-  t1_sub = "mul 1 2"
-  t1_aim = "fun (y:nat) -> add y (mul 1 2)"
-                                                                                           
+  ctx1 = "fun (gap:nat) (y:nat) -> add y gap"
+  sub1 = "mul 1 2"
+  aim1 = "fun (y:nat) -> add y (mul 1 2)"
+  
+  ctx2 = "fun (gap:nat) (x:nat) -> "
+    ++ "match x with | 0 -> fun (y:nat) -> mul gap y "
+    ++ "| Suc x' -> fun (y:nat) -> mul x' gap end"
+  sub2 = "add 2 2"
+  aim2 = "fun (x:nat) -> match x with "
+    ++ "| 0 -> fun (y:nat) -> mul (add 2 2) y "
+    ++ "| Suc x' -> fun (y:nat) -> mul x' (add 2 2) end"
+                                    
+  
+contextTest :: String -> String -> String -> Elea Test.Test
+contextTest ctx_s sub_s aim_s = do
+  ctx <- liftM Context.fromLambda (Test.term ctx_s)
+  sub <- Test.term sub_s
+  aim <- Test.term aim_s
+  let app = Context.apply ctx sub
+      test1 = Test.assertEq aim app
+      Just sub' = Context.remove ctx aim
+      test2 = Test.assertEq sub sub'
+  return $ Test.list [test1, test2]
   
