@@ -3,18 +3,21 @@ module Elea.Index
 (
   Index, Liftable (..), Substitutable (..),
   lift, liftMany, liftManyAt, subst, 
-  lowerAt, lower, lowerMany, replaceAt,
+  lowerAt, lower, lowerMany, replaceAt, omega,
 )
 where
 
 import Prelude ()
 import Elea.Prelude hiding ( lift )
+import qualified Data.Nat as Nat
 import qualified Data.Map as Map
 import qualified Elea.Monad.Failure as Fail
 
 -- | A de-Bruijn index.
+-- We use the natural numbers with omega, in order to leverage some tricks 
+-- using omega as a temporary index.
 newtype Index 
-  = Index Nat
+  = Index CoNat
   deriving ( Eq, Ord, Enum, Num )
   
 class Liftable a where
@@ -70,4 +73,8 @@ lower = lowerAt 0
 lowerMany :: Substitutable t => Int -> t -> t
 lowerMany n = concatEndos (replicate n lower)
 
+-- The magic index. Equal only to itself, greater than every other index,
+-- and unchanged by lifting or lowering.
+omega :: Index
+omega = Index Nat.omega
 

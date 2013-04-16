@@ -12,8 +12,7 @@ module Elea.Term
   leftmost, unfoldInd,
   flattenApp, unflattenApp, 
   flattenPi, unflattenPi,
-  flattenLam, unflattenLam, 
-  removeArgAt,
+  flattenLam, unflattenLam,
   isInj, isLam, isVar, isPi, isInd, isFix,
 )
 where
@@ -193,15 +192,6 @@ unflattenLam = flip (foldr Lam)
 
 unflattenPi :: [Bind] -> Term -> Term
 unflattenPi = flip (foldr Pi) 
-
--- | Removes the nth argument of a provided Pi term. We need to lower indices
--- in every binding after the removed one.
-removeArgAt :: Substitutable Term => Int -> Term -> Term
-removeArgAt n (flattenPi -> (binds, result))  = 
-  unflattenPi (start ++ map lowerBind end) (Indices.lower result)
-  where
-  lowerBind = modify boundType Indices.lower
-  (start, mid:end) = splitAt n binds
 
 -- | Returns the leftmost 'Term' in term application,
 -- e.g. @leftmost (App (App a b) c) == a@

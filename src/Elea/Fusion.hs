@@ -77,6 +77,7 @@ simpleFusion (flattenApp -> outer_f@(Fix outer_b _) : first_arg : args)
       
 simpleFusion _ = return mzero
 
+-- REWRITE to use Indices.omega rather than random offsets we remove?
 
 fuse :: forall m . (FusionMonad m, Fail.Monad m) => 
   (Term -> m Term) -> Context -> Term -> m Term

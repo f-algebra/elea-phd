@@ -120,15 +120,17 @@ constArgStep (Fix fix_b fix_rhs) = do
   -- Code like this makes me hate de-Bruijn indices, particularly since
   -- it's mostly just me not being clever enough to do it cleanly.
   removeConstArg :: Int -> Term
-  removeConstArg arg_pos =
-      stripLam (map (modify boundType Indices.lower) strip_bs)
-    . liftManyAt (length strip_bs - 1) 1
+  removeConstArg arg_pos = id
+    . Indices.lower
+    . stripLam strip_bs
+    . liftManyAt (length strip_bs) 1
     . Fix new_fix_b
-    . replaceAt 0 (stripLam strip_bs (Var new_index))
-    . unflattenLam (map Indices.lift left_bs)
-    . subst (Var new_index)
-    . unflattenLam (map Indices.lift right_bs)
-    . liftAt (toEnum $ length arg_binds + 1)
+    . replaceAt 0 (stripLam strip_bs (Var (toEnum $ length strip_bs)))
+    . substAt Indices.omega (Var 1)
+    . Indices.liftAt 1
+    . unflattenLam left_bs
+    . subst (Var Indices.omega)
+    . unflattenLam right_bs
     $ inner_rhs
     where
     -- Split the lambda bindings up 
@@ -136,11 +138,19 @@ constArgStep (Fix fix_b fix_rhs) = do
     (left_bs, dropped_b:right_bs) = splitAt arg_pos arg_binds
     strip_bs = left_bs ++ [dropped_b]
     
-    new_index = toEnum (length left_bs + 1)
-    
-    -- Update the type of the bound fix variable to have one less argument
-    new_fix_b = modify boundType (Indices.lift . removeArgAt arg_pos) fix_b
-    
+    -- Generate the type of our new fix binding from the old one
+    new_fix_b = id
+      . Bind lbl
+      . substAt Indices.omega (Var 0)
+      . Indices.lift
+      . unflattenPi start_bs
+      . subst (Var Indices.omega)
+      . unflattenPi end_bs
+      $ result_ty
+      where
+      Bind lbl (flattenPi -> (arg_tys, result_ty)) = fix_b
+      (start_bs, _:end_bs) = splitAt arg_pos arg_tys
+
     -- Abstracts new_bs, and reapplies all but the last binding,
     -- like eta-equality which skipped the last binding.
     -- E.g. @stripLam [A,B,C] f == fun (_:A) (_:B) (_:C) -> f _2 _1@

@@ -19,7 +19,7 @@ type TypingMonad m = (Err.Monad m, Env.Readable m)
 
 -- | The type of 'Absurd', "all (a:*) -> a"
 absurd :: Type
-absurd = Pi (Bind (Just "a") Set) (Var 0)
+absurd = Pi (Bind (Just "FAIL") Set) (Var 0)
 
 -- | The constructorless inductive type, "ind (0:*) with end"
 empty :: Type 

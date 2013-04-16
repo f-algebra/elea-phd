@@ -70,7 +70,7 @@ instance KleisliShow Term where
     fshow :: Env.Readable m => Term' (String, Term) -> m String
     fshow (Var' x) = do
       depth <- Env.bindingDepth
-      if fromEnum x >= depth
+      if fromEnum x > depth
       then return (show x)
       else do
         mby_lbl <- liftM (get boundLabel) (Env.boundAt x)

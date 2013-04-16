@@ -84,7 +84,7 @@ import Control.Monad.Trans.Either ( EitherT (..) )
 import Control.Monad.Fix
 import Control.Exception ( assert )
 
-import Data.Nat
+import Data.Nat ( Nat, CoNat )
 import Data.Label.Pure
 import Data.Label ( mkLabels )
 import Data.Label.Maybe ( (:~>) )
