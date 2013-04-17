@@ -1,6 +1,6 @@
 module Elea.Typing
 (
-  typeOf, check, absurd, empty
+  typeOf, unfoldInd, check, absurd, empty
 )
 where
 
@@ -33,12 +33,18 @@ check Type = return ()
 -- Otherwise we just see if 'typeOf' throws an error.
 check other = liftM (const ()) (typeOf other)
 
+unfoldInd :: Term -> [Bind]
+unfoldInd ty@(Ind _ cons) = 
+  map (subst ty) cons
+unfoldInd other = 
+  error $ "Tried to unfold a non inductive type: " ++ show other
+
 -- | Returns the type of a given 'Term',
 -- within a readable type environment.
 -- Can throw type checking errors.
 typeOf :: TypingMonad m => Term -> m Term  
-typeOf term =
-  Err.augmentM (termErr term)
+typeOf term = id
+  . Err.augmentM (termErr term)
   . Err.check check
   . Fold.paraM doBoth
   $ term

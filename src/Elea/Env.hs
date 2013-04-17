@@ -98,6 +98,8 @@ instance Liftable Bind where
   liftAt at (Bind l t) = Bind l (liftAt at t)
       
 instance Substitutable Term where
+  type Inner Term = Term
+
   substAt at with term = 
       flip runReader (at, with)
     . Fold.transformM substVar
@@ -115,18 +117,22 @@ instance Substitutable Term where
     substVar other =
       return other
       
-  freeIndices = flip runReader 0 . Fold.foldM free
+  free = flip runReader 0 . Fold.foldM freeR
     where
-    free :: Term -> Reader Index (Set Index)
-    free (Var x) = do
+    freeR :: Term -> Reader Index (Set Index)
+    freeR (Var x) = do
       free_var_limit <- ask
       if x >= free_var_limit
       then return (Set.singleton (x - free_var_limit))
       else return mempty
-    free _ = 
+    freeR _ = 
       return mempty
-      
-  failure = Absurd
+  
+instance Substitutable Bind where
+  type Inner Bind = Term
+  
+  substAt at with = modify boundType (substAt at with)
+  free = Indices.free . get boundType
   
 instance Monad m => Writable (ReaderT Index m) where
   bindAt at _ = local (liftAt at)

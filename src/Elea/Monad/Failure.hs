@@ -9,6 +9,7 @@ module Elea.Monad.Failure (
 import Prelude ()
 import Elea.Prelude hiding ( catch, Monad, when, unless )
 import qualified Elea.Prelude as Prelude
+import qualified Data.Monoid as Monoid
 
 -- | Use qualified import to get "Fail.Monad"
 class Prelude.Monad m => Monad m where
@@ -75,3 +76,9 @@ instance (Monoid w, Monad m) => Monad (WriterT w m) where
 instance Monad m => Monad (ReaderT r m) where
   here = lift here
   
+instance Prelude.Monad Monoid.First where
+  return = Monoid.First . return
+  Monoid.First x >>= f = Monoid.First (x >>= (getFirst . f))
+  
+instance Monad Monoid.First where
+  here = Monoid.First mzero

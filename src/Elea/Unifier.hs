@@ -13,7 +13,7 @@ import qualified Data.Map as Map
 
 type Unifier a = Map Index a
 
-apply :: Substitutable t => Unifier t -> t -> t
+apply :: Substitutable t => Unifier (Inner t) -> t -> t
 apply = flip (foldr (uncurry substAt)) . Map.toAscList
 
 singleton :: Index -> a -> Unifier a
@@ -38,5 +38,5 @@ unions = foldrM union mempty
 class Substitutable t => Unifiable t where
   -- | Returns the unifier that should be applied to the first argument
   -- to produce the second, fails if no such unifier exists. 
-  find :: Fail.Monad m => t -> t -> m (Unifier t)
+  find :: Fail.Monad m => t -> t -> m (Unifier (Inner t))
 

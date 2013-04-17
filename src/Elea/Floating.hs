@@ -41,7 +41,7 @@ lambdaCaseStep (Case lhs ind_ty alts)
   where
   -- Use the binding of the first alt's lambda as our new outer binding
   getBinding (Alt bs (Lam lam_b _)) = 
-    modify boundType (Indices.lowerMany (length bs)) lam_b
+    Indices.lowerMany (length bs) lam_b
   new_b = getBinding (head alts)
   
   -- Lots of careful de-Bruijn index adjustment here

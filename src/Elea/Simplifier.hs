@@ -37,7 +37,7 @@ betaReduce _ = mzero
   
 etaReduce :: Term -> Maybe Term
 etaReduce (Lam _ (App f (Var 0)))
-  | not (0 `Set.member` freeIndices f) = 
+  | not (0 `Set.member` Indices.free f) = 
     return (Indices.lower f)
 etaReduce _ = mzero
 

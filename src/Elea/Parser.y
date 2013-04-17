@@ -252,7 +252,7 @@ parseRawTerm (TCase rt ralts) = do
     return (Alt var_bs t)
     where
     TAlt (con_lbl:var_lbls) rt = raw_alt
-    cons = unfoldInd ind_ty
+    cons = Typing.unfoldInd ind_ty
 
     -- Find the type of this particular constructor from looking it up
     -- by name in the description of the inductive type.

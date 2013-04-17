@@ -9,7 +9,7 @@ module Elea.Term
   altBindings', altInner',
   boundLabel, boundType,
   boundLabel', boundType',
-  leftmost, unfoldInd,
+  leftmost, returnType,
   flattenApp, unflattenApp, 
   flattenPi, unflattenPi,
   flattenLam, unflattenLam,
@@ -198,9 +198,9 @@ unflattenPi = flip (foldr Pi)
 leftmost :: Term -> Term
 leftmost = head . flattenApp
 
-unfoldInd :: (Substitutable Term, Show Term) => Term -> [Bind]
-unfoldInd ty@(Ind _ cons) = 
-  map (modify boundType (subst ty)) cons
-unfoldInd other = 
-  error $ "Tried to unfold a non inductive type: " ++ show other
+returnType :: Type -> Type
+returnType = snd . flattenPi
   
+instance Failure Term where
+  failure = Absurd
+

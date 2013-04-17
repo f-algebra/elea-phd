@@ -1,6 +1,6 @@
 module Elea.Context 
 (
-  Context, make, apply, toLambda, fromLambda, remove
+  Context, make, apply, toLambda, fromLambda, strip
 )
 where
 
@@ -46,8 +46,8 @@ fromLambda (Lam (Bind _ ty) rhs) =
 -- | If the given term is within the given context, then return
 -- the value which has filled the context gap.
 -- E.g. "remove (f [_] y) (f x y) == Just x" 
-remove :: forall m . Fail.Monad m => Context -> Term -> m Term
-remove (Context cxt_t _) term = do
+strip :: forall m . Fail.Monad m => Context -> Term -> m Term
+strip (Context cxt_t _) term = do
   uni <- Unifier.find cxt_t term
   Fail.when (Map.size uni /= 1)
   let [(idx, hole_term)] = Map.toList uni
@@ -59,4 +59,13 @@ instance Liftable Context where
     Context (liftAt at t') (liftAt at ty)
     where
     t' = substAt Indices.omega gap t
+    
+instance Substitutable Context where
+  type Inner Context = Term
+
+  substAt at with = id
+    . modify term (substAt at with)
+    . modify gapType (substAt at with)
+    
+  free = Indices.free . get term
    

@@ -1,7 +1,7 @@
 -- | de-Bruijn indices, lifting, substitution, and unification.
 module Elea.Index
 (
-  Index, Liftable (..), Substitutable (..),
+  Index, Liftable (..), Substitutable (..), Failure (..),
   lift, liftMany, liftManyAt, subst, 
   lowerAt, lower, lowerMany, replaceAt, omega,
 )
@@ -15,7 +15,8 @@ import qualified Elea.Monad.Failure as Fail
 
 -- | A de-Bruijn index.
 -- We use the natural numbers with omega, in order to leverage some tricks 
--- using omega as a temporary index.
+-- using omega as a temporary index. The omega index is greater than every
+-- other, has decidable equality, and is unaffected by lifting/lowering.
 newtype Index 
   = Index CoNat
   deriving ( Eq, Ord, Enum, Num )
@@ -50,27 +51,30 @@ instance (Liftable a, Liftable b) => Liftable (Either a b) where
 instance Show Index where
   show (Index n) = "_" ++ show n
   
-class Liftable t => Substitutable t where
-  substAt :: Index -> t -> t -> t
-  freeIndices :: t -> Set Index
- 
-  -- | For debugging purposes only.
+-- | This is for debugging. It is used in places that should really be 
+-- undefined, but it's nicer to use a value we can actually observe/print out.
+class Failure t where
   failure :: t
   
-subst :: Substitutable t => t -> t -> t
+class Liftable t => Substitutable t where
+  type Inner t
+  substAt :: Index -> Inner t -> t -> t
+  free :: t -> Set Index
+  
+subst :: Substitutable t => Inner t -> t -> t
 subst = substAt 0
 
 -- | Performs substitution without the accompanying lowering of indices.
-replaceAt :: Substitutable t => Index -> t -> t -> t
+replaceAt :: Substitutable t => Index -> Inner t -> t -> t
 replaceAt at with = substAt at with . liftAt (succ at)
 
-lowerAt :: Substitutable t => Index -> t -> t
+lowerAt :: (Substitutable t, Failure (Inner t)) => Index -> t -> t
 lowerAt idx = substAt idx failure --(error "Lowered an existing index")
 
-lower :: Substitutable t => t -> t
+lower :: (Substitutable t, Failure (Inner t)) => t -> t
 lower = lowerAt 0
 
-lowerMany :: Substitutable t => Int -> t -> t
+lowerMany :: (Substitutable t, Failure (Inner t)) => Int -> t -> t
 lowerMany n = concatEndos (replicate n lower)
 
 -- The magic index. Equal only to itself, greater than every other index,

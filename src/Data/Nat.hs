@@ -4,11 +4,11 @@ module Data.Nat
 )
 where
 
--- | Natural numbers.
+-- | Natural numbers. Use 'toEnum' to construct.
 newtype Nat = Nat Int
   deriving ( Eq, Ord )
 
--- | Co-inductive natural numbers
+-- | Co-inductive natural numbers with decidable equality (magic).
 data CoNat = Omega | CoNat Nat
   deriving ( Eq )
   
