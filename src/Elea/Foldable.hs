@@ -52,8 +52,7 @@ allM p = liftM Monoid.getAll . foldM (liftM Monoid.All . p)
   
 rewriteM :: (FoldableM t, Monad m, FoldM t m) =>
   (t -> m (Maybe t)) -> t -> m t
-rewriteM f = 
-  transformM rrwt
+rewriteM f = transformM rrwt
   where
   rrwt t = join . liftM (maybe (return t) (rewriteM f)) . f $ t
     

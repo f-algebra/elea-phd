@@ -6,11 +6,11 @@ module Elea.Fusion
 where
 
 import Prelude ()
-import Elea.Prelude hiding ( lift )
-import Elea.Index
+import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
 import Elea.Show ( showM )
+import Elea.Index hiding ( lift )
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
@@ -61,78 +61,104 @@ typeCheck f t = do
           ++ "\nAfter: " ++ t_s' ++ ": [" ++ ty_s' ++ "]"
 
 simpleFusion :: FusionMonad m => Term -> m (Maybe Term)
-simpleFusion (flattenApp -> outer_f@(Fix outer_b _) : first_arg : args)
-  | Fix {} <- (head . flattenApp) first_arg =
-    Fail.toMaybe (fuse checkedSimple outer_ctx first_arg)
-    where
-    first_arg_ty = id
-      . get boundType 
-      . head . fst
-      . flattenPi
-      . get boundType 
-      $ outer_b
-      
-    outer_ctx = id
-      . Context.make first_arg_ty
-      $ \t -> unflattenApp (outer_f : t : args)
+simpleFusion full_t@(flattenApp -> outer_f@(Fix outer_b _) : first_arg : args)
+  | inner_f@(Fix {}) : inner_args <- flattenApp first_arg = do
+    inner_ty <- Err.noneM (Typing.typeOf inner_f)
+    full_ty <- Err.noneM (Typing.typeOf full_t)
+    let outer_ctx = id
+          . Context.make inner_ty full_ty
+          $ \t -> unflattenApp 
+            $ outer_f : unflattenApp (t : inner_args) : args
+    Fail.toMaybe (fuse checkedSimple outer_ctx inner_f)
 simpleFusion _ = return mzero
 
 
 floatConstructors :: forall m . FusionMonad m => Term -> m (Maybe Term)
-floatConstructors outer_t@(Fix fix_b _) = do 
-  depth <- Env.bindingDepth
+floatConstructors fix_t@(Fix fix_b _) = runMaybeT $ do
   -- Suggest any constructor contexts, then try then out using 'split'
-  suggestions <- Fold.foldM (suggest depth) outer_t
-  firstM (Fail.toMaybe . split checkedSimple outer_t) 
-    . Set.toList 
-    $ suggestions
+  depth <- Env.bindingDepth
+  suggestions <- lift $ Fold.foldM (suggest depth) fix_t
+  fix_t_s <- showM fix_t
+  if Set.size suggestions == 0
+  then mzero
+  else do
+    sug_ss <- mapM showM (Set.toList suggestions)
+    let sug_s = "\n\nsuggestions: " ++ show sug_ss ++ "\n\nFOR\n\n" ++ fix_t_s
+    mby_t <- trace sug_s
+      . firstM (Fail.toMaybe . split checkedSimple fix_t) 
+      . Set.toList 
+      $ suggestions
+    case mby_t of
+      Nothing -> mzero
+      Just t -> do
+        t_s <- showM t
+        outer_t_s <- showM fix_t
+        let meh_s = "FLOAT:\n\n" ++ outer_t_s ++ "\n\nGIVES\n\n" ++ t_s
+        trace meh_s (return t)
   where
-  return_ty = returnType (get boundType fix_b)
+  fix_ty = get boundType fix_b
+  (arg_bs, return_ty) = flattenPi fix_ty
   
-  --- Return any contexts which might be a constructor we can float out
+  -- This value is the number of bindings that will be made 
+  -- by the fix and lambda bindings. It allows us to equate the
+  -- return type outside the term and the type inside.
+  ty_offset = length arg_bs
+  
+  -- Return any contexts which might be constructors we can float out
   suggest :: Int -> Term -> m (Set Context)
-  suggest outer_depth (Case _ _ alts) = concatMapM suggestAlt alts
+  suggest outer_depth inner@(flattenApp -> inj@(Inj {}) : inj_args) = do
+    -- idx_offset is how many more indices have been bound 
+    -- at this point within the term
+    inner_depth <- Env.bindingDepth
+    let idx_offset = (inner_depth - outer_depth) - ty_offset
+    
+    -- This constructor must have the same type as the term we are floating
+    let return_ty' = Indices.liftMany idx_offset return_ty
+    inner_ty <- Err.noneM (Typing.typeOf inner)
+    if inner_ty /= return_ty'
+    then return mempty
+    else concatMapM (suggestGap idx_offset) [0..length inj_args - 1]
     where
-    suggestAlt :: Alt -> m (Set Context)
-    suggestAlt (Alt _ inner@(flattenApp -> inj@(Inj {}) : args)) = do
-      inner_ty <- Err.noneM (Typing.typeOf inner)
-      if inner_ty /= return_ty
-      then return mempty
-      else concatMapM suggestGap [0..length args - 1]
+    -- A wrapper around 'suggestGapMaybe' to convert its maybe output
+    -- into a single or zero element set
+    suggestGap :: Int -> Int -> m (Set Context)
+    suggestGap idx_offset gap_pos = id
+      . liftM (maybe mempty Set.singleton)
+      . runMaybeT 
+      $ suggestGapMaybe 
       where
-      -- A wrapper around 'suggestGapMaybe' to convert its maybe output
-      -- into a single or zero element set
-      suggestGap :: Int -> m (Set Context)
-      suggestGap = id
-        . liftM (maybe mempty Set.singleton)
-        . runMaybeT 
-        . suggestGapMaybe
+      -- Lift indices in the outer return type to properly match 
+      -- the point within the term we are at
+      return_ty' = Indices.liftMany idx_offset return_ty
       
-      suggestGapMaybe :: Int -> MaybeT m Context
-      suggestGapMaybe n = do
-        gap_ty <- Err.noneM (Typing.typeOf gap)
+      suggestGapMaybe :: MaybeT m Context
+      suggestGapMaybe = do
         -- The gap must have the same type as the overall term
-        Fail.when (gap_ty /= return_ty)
-        inner_depth <- Env.bindingDepth
-        -- idx_offset is how many more indices have been bound at this point
-        -- within the term
-        let idx_offset = inner_depth - outer_depth
+        gap_ty <- Err.noneM (Typing.typeOf gap)
+        guard (gap_ty == return_ty')
+        
         -- A context is not valid if it has any indices which do not
         -- exist outside of the term
         let freeIndices = concatMap Indices.free (left ++ right) 
-        Fail.when (any (< toEnum idx_offset) freeIndices)
-        return
-          -- Build a context by replacing the gap in this constructor term
-          . Context.make return_ty 
-          $ \t -> id
-            -- Lower to make sure our indices are correct outside the term
-            . Indices.lowerMany idx_offset
-            . unflattenApp 
-            $ [inj] ++ left ++ [t] ++ right
+        guard (all (>= toEnum idx_offset) freeIndices)
+        
+        return (Context.make fix_ty fix_ty mkContext)
         where
-        (left, gap:right) = splitAt n args
-    suggestAlt _ = 
-      return mempty
+        (left, gap:right) = splitAt gap_pos inj_args
+        
+        mkContext gap_f = id
+          . unflattenLam arg_bs
+          . unflattenApp
+          $ left' ++ [gap] ++ right'
+          where
+          left' = map (Indices.lowerMany idx_offset) ([inj] ++ left)
+          right' = map (Indices.lowerMany idx_offset) right
+          
+          gap = id
+            . unflattenApp 
+            . (gap_f :)
+            . map (Var . toEnum) 
+            $ reverse [0..length arg_bs - 1]
   suggest _ _ = 
     return mempty
 floatConstructors _ = 
@@ -142,13 +168,13 @@ floatConstructors _ =
 
 fuse :: forall m . (FusionMonad m, Fail.Monad m) => 
   (Term -> m Term) -> Context -> Term -> m Term
-fuse transform outer_ctx inner_t = do
+fuse transform outer_ctx inner_f@(Fix fix_b fix_t) = do
   ctx_s <- showM outer_ctx
-  t_s <- showM inner_t
+  t_s <- showM inner_f
   let s1 = "FUSING:\n" ++ ctx_s ++ "\nWITH\n" ++ t_s
 
   -- The return type of our new function is the type of the term
-  -- we are fusing (fused_t == inner_t inside outer_ctx)
+  -- we are fusing (fused_t == inner_f inside outer_ctx)
   result_ty <- Err.noneM (Typing.typeOf fused_t)
   -- The arguments to our new function are any free variables in the 
   -- term we are fusing
@@ -162,17 +188,15 @@ fuse transform outer_ctx inner_t = do
   transformed_t <- trace s1 $
     Env.bind fix_b
     . transform
-    . Context.apply (lift outer_ctx)
-    . unflattenApp 
-    . (fix_t :) 
-    $ map lift inner_args
+    . Context.apply (Indices.lift outer_ctx)
+    $ fix_t
   
   trn_s <- Env.bind fix_b (showM transformed_t)
   let s2 = "\nTRANS:\n" ++ trn_s
   
   -- I gave up commenting at this point, it works because it does...
   let replaced_t = trace s2 $
-          flip runReader 0
+          Env.trackIndices 0
         . Fold.transformM replace
         $ transformed_t
     
@@ -185,7 +209,7 @@ fuse transform outer_ctx inner_t = do
         . (\t -> unflattenApp (t : arg_vars))
         . Fix new_fix_b
         . unflattenLam arg_bs
-        . lower
+        . Indices.lower
         $ replaced_t
         
   done_s <- showM done
@@ -195,17 +219,15 @@ fuse transform outer_ctx inner_t = do
      
   return done
   where
-  replace :: Term -> Reader Index Term
+  replace :: Term -> Env.TrackIndices Index Term
   replace term = do
     idx_offset <- ask
-    let liftHere :: Liftable a => a -> a
-        liftHere = liftMany (fromEnum idx_offset)
+    let liftHere :: Indices.Liftable a => a -> a
+        liftHere = Indices.liftMany (fromEnum idx_offset)
         replace_t = id
           . liftHere
-          . Context.apply (lift outer_ctx)
-          . unflattenApp 
-          . (Var 0 :)
-          $ map lift inner_args
+          . Context.apply (Indices.lift outer_ctx) 
+          $ Var 0
     mby_uni <- Fail.toMaybe (Unifier.find replace_t term)
     case mby_uni of
       Nothing -> return term
@@ -213,15 +235,14 @@ fuse transform outer_ctx inner_t = do
         | Map.member (liftHere 0) uni -> return term
         | otherwise -> id
             . return
-            . liftAt idx_offset
+            . Indices.liftAt idx_offset
             . Unifier.apply uni 
             . liftHere
             . unflattenApp 
             . (Var fix_idx :)
-            $ map lift arg_vars
+            $ map Indices.lift arg_vars
           
-  Fix fix_b fix_t : inner_args = flattenApp inner_t
-  fused_t = Context.apply outer_ctx inner_t
+  fused_t = Context.apply outer_ctx inner_f
   largest_free_index = (pred . supremum . Indices.free) fused_t
   arg_indices = reverse [0..largest_free_index]
   arg_vars = map Var arg_indices
@@ -231,32 +252,50 @@ fuse transform outer_ctx inner_t = do
     $ get boundLabel fix_b
   
 
-split :: Fail.Monad m => (Term -> m Term) -> Term -> Context -> m Term
-split transform full_t outer_ctx = do
-  unfloated <- id
+split :: (Fail.Monad m, FusionMonad m) => 
+  (Term -> m Term) -> Term -> Context -> m Term
+split transform (Fix fix_b fix_t) (Indices.lift -> outer_ctx) = do
+  full_t_s <- showM (Fix fix_b fix_t)
+  ctx_s <- Env.bind fix_b $ showM outer_ctx
+  let s1 = "\n\nSPITTING\n" ++ ctx_s ++ "\n\nFROM\n\n" ++ full_t_s
+  unfloated <- trace s1 $ id
+    . Env.bind fix_b  
     . transform 
-    $ unflattenApp (fix_t' : args)
-  Context.strip outer_ctx
-    . Fold.rewrite floatCtxUp
-    $ unfloated
+    . Indices.replaceAt 0 (Context.apply outer_ctx (Var 0))
+    $ fix_t
+  unf_s <- Env.bind fix_b $ showM unfloated
+  let s2 = "\n\nUNFLOATED\n" ++ unf_s
+  let floated = trace s2 $ id
+        . Env.trackIndices dropped_ctx
+        . Fold.rewriteM (runMaybeT . floatCtxUp)
+        $ unfloated
+      (lam_bs, inner_rhs) = flattenLam floated
+      ctx_inside_lam = Indices.liftMany (length lam_bs) dropped_ctx
+  flt_s <- Env.bind fix_b (showM floated)
+  let s3 =  "\n\nFLOATED\n" ++ flt_s
+  stripped_rhs <- trace s3 $ Context.strip ctx_inside_lam inner_rhs
+  return 
+    . Context.apply (Indices.lower outer_ctx)
+    . Fix fix_b
+    . unflattenLam lam_bs
+    $ stripped_rhs
   where
-  Fix fix_b fix_t : args = flattenApp full_t
-  (arg_bs, result_ty) = flattenPi (get boundType fix_b)
+  dropped_ctx = Context.dropLambdas outer_ctx
+  (arg_bs, _) = flattenPi (get boundType fix_b)
   
-  ctx_f = id
-    . unflattenLam arg_bs
-    . Context.apply outer_ctx
-    . Indices.liftMany (length arg_bs)
-    $ Var 0
-
-  fix_t' = Indices.replaceAt 0 ctx_f fix_t
-  
-  floatCtxUp :: Term -> Maybe Term
+  floatCtxUp :: Term -> MaybeT (Env.TrackIndices Context) Term
   floatCtxUp (Case t ty alts) = do
-    alts' <- mapM (modifyM altInner (Context.strip outer_ctx)) alts
+    ctx <- ask
+    alts' <- mapM floatAlt alts
     return 
-      . Context.apply outer_ctx 
+      . Context.apply ctx 
       $ Case t ty alts'
+    where
+    floatAlt :: Alt -> MaybeT (Env.TrackIndices Context) Alt
+    floatAlt (Alt bs inner) = do
+      ctx <- asks (Indices.liftMany (length bs))
+      inner' <- Context.strip ctx inner
+      return (Alt bs inner')
   floatCtxUp _ = mzero
 
 

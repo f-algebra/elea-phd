@@ -4,6 +4,8 @@
 module Elea.Env 
 (
   Writable (..), Readable (..),
+  TrackIndices, TrackIndicesT (..),
+  trackIndices, trackIndicesT,
   bind, bindMany,
 )
 where
@@ -85,9 +87,11 @@ instance Fold.FoldableM Term where
     sequence (map fst other)
     
 instance Liftable Term where
-  liftAt at = flip runReader at . Fold.transformM liftVar
+  liftAt at = id
+    . trackIndices at 
+    . Fold.transformM liftVar
     where
-    liftVar :: Term -> Reader Index Term
+    liftVar :: Term -> TrackIndices Index Term
     liftVar (Var idx) = do
       at <- ask
       return $ Var (liftAt at idx)
@@ -100,12 +104,12 @@ instance Liftable Bind where
 instance Substitutable Term where
   type Inner Term = Term
 
-  substAt at with term = 
-      flip runReader (at, with)
+  substAt at with term = id
+    . trackIndices (at, with)
     . Fold.transformM substVar
     $ term
     where
-    substVar :: Term -> Reader (Index, Term) Term
+    substVar :: Term -> TrackIndices (Index, Term) Term
     substVar (Var var) = do
       (at, with) <- ask
       return $ case at `compare` var of
@@ -117,9 +121,11 @@ instance Substitutable Term where
     substVar other =
       return other
       
-  free = flip runReader 0 . Fold.foldM freeR
+  free = id
+    . trackIndices 0 
+    . Fold.foldM freeR
     where
-    freeR :: Term -> Reader Index (Set Index)
+    freeR :: Term -> TrackIndices Index (Set Index)
     freeR (Var x) = do
       free_var_limit <- ask
       if x >= free_var_limit
@@ -130,19 +136,29 @@ instance Substitutable Term where
   
 instance Substitutable Bind where
   type Inner Bind = Term
-  
   substAt at with = modify boundType (substAt at with)
   free = Indices.free . get boundType
   
-instance Monad m => Writable (ReaderT Index m) where
-  bindAt at _ = local (liftAt at)
-  equals _ _ = id
+newtype TrackIndicesT r m a 
+  = TrackIndicesT { runTrackIndicesT :: ReaderT r m a }
+  deriving ( Monad )
   
-instance Monad m => Writable (ReaderT (Index, Term) m) where
-  bindAt at _ = local (liftAt at)
-  equals _ _ = id
+type TrackIndices r = TrackIndicesT r Identity
+
+trackIndicesT :: r -> TrackIndicesT r m a -> m a
+trackIndicesT r = flip runReaderT r . runTrackIndicesT
+
+trackIndices :: r -> TrackIndices r a -> a
+trackIndices r = runIdentity . trackIndicesT r
+
+instance Fail.Monad m => Fail.Monad (TrackIndicesT r m) where
+  here = TrackIndicesT Fail.here
   
-instance Monad m => Writable (ReaderT (Index, Index) m) where
+instance Monad m => MonadReader r (TrackIndicesT r m) where
+  ask = TrackIndicesT ask
+  local f = TrackIndicesT . local f . runTrackIndicesT
+  
+instance (Monad m, Liftable r) => Writable (TrackIndicesT r m) where
   bindAt at _ = local (liftAt at)
   equals _ _ = id
   
@@ -158,7 +174,7 @@ instance Monad m => Writable (ReaderT [Bind] m) where
   equals _ _ = id
   
 instance Monad m => Readable (ReaderT [Bind] m) where
-  boundAt at = asks (flip (debugNth "there") $ fromEnum at)
+  boundAt at = asks (!! fromEnum at)
   bindingDepth = asks (toEnum . pred . length)   
   
 instance Writable m => Writable (MaybeT m) where
@@ -178,14 +194,14 @@ instance Readable m => Readable (EitherT e m) where
   bindingDepth = Trans.lift bindingDepth
   
 instance Unifiable Term where
-  find = (flip runReaderT 0 .) . uni
+  find = (trackIndicesT 0 .) . uni
     where
     uniBind :: forall m . Fail.Monad m =>
-      Bind -> Bind -> ReaderT Index m (Unifier Term)
+      Bind -> Bind -> TrackIndicesT Index m (Unifier Term)
     uniBind = uni `on` get boundType
     
     uni :: forall m . Fail.Monad m => 
-      Term -> Term -> ReaderT Index m (Unifier Term)
+      Term -> Term -> TrackIndicesT Index m (Unifier Term)
     uni Absurd Absurd = return mempty
     uni Type Type = return mempty
     uni Set Set = return mempty
@@ -233,7 +249,7 @@ instance Unifiable Term where
       ualts <- zipWithM uniAlt alts1 alts2
       Unifier.unions (ut:uty:ualts)
       where
-      uniAlt :: Alt -> Alt -> ReaderT Index m (Unifier Term)
+      uniAlt :: Alt -> Alt -> TrackIndicesT Index m (Unifier Term)
       uniAlt (Alt bs1 t1) (Alt bs2 t2) = do
         ubs <- zipWithM uniBindL [0..] (bs1 `zip` bs2)
         ut <- local (Indices.liftMany (length bs1)) 

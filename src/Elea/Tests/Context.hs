@@ -11,14 +11,18 @@ import Elea.Monad.Elea ( Elea )
 import qualified Elea.Context as Context
 import qualified Elea.Testing as Test
 
+context :: String -> Elea Context.Context
+context = liftM Context.fromLambda . Test.term
+
 tests = Test.label "Contexts"                                          
     $ Test.run $ do
   Test.loadPrelude
   
   test1 <- contextTest ctx1 sub1 aim1
   test2 <- contextTest ctx2 sub2 aim2
+  test3 <- dropLambdasTest ctx3 aim3
   
-  return $ Test.list [test1, test2]       
+  return $ Test.list [test1, test2, test3]       
   where
   ctx1 = "fun (gap:nat) (y:nat) -> add y gap"
   sub1 = "mul 1 2"
@@ -31,11 +35,14 @@ tests = Test.label "Contexts"
   aim2 = "fun (x:nat) -> match x with "
     ++ "| 0 -> fun (y:nat) -> mul (add 2 2) y "
     ++ "| Suc x' -> fun (y:nat) -> mul x' (add 2 2) end"
+    
+  ctx3 = "fun (gap:pi nat->nat) (x:nat) (y:nat) -> add y (gap x)"
+  aim3 = "fun (gap:nat) (y:nat) -> add y gap"
                                     
   
 contextTest :: String -> String -> String -> Elea Test.Test
 contextTest ctx_s sub_s aim_s = do
-  ctx <- liftM Context.fromLambda (Test.term ctx_s)
+  ctx <- context ctx_s
   sub <- Test.term sub_s
   aim <- Test.term aim_s
   let app = Context.apply ctx sub
@@ -43,4 +50,11 @@ contextTest ctx_s sub_s aim_s = do
       Just sub' = Context.strip ctx aim
       test2 = Test.assertEq sub sub'
   return $ Test.list [test1, test2]
+  
+dropLambdasTest :: String -> String -> Elea Test.Test
+dropLambdasTest ctx_s aim_s = do
+  ctx <- context ctx_s
+  aim <- context aim_s
+  let dropped = Context.dropLambdas ctx
+  return (Test.assertEq aim dropped)
   

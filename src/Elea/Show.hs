@@ -38,7 +38,7 @@ instance Show Term where
 mergePi :: String -> String
 mergePi (dropWhile (`elem` "\n ") -> 'p':'i':cs) = cs
 mergePi other = " -> " ++ other
-  
+
 instance Show (Term' String) where
   show Set' = "*"
   show Type' = "TYPE"

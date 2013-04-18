@@ -95,14 +95,11 @@ constArgStep (Fix fix_b fix_rhs) = do
     toEnum (length arg_binds - (arg_pos + 1))
   
   isConstArg :: Int -> Bool
-  isConstArg arg_pos = 
-      flip runReader (fix_index, argIndex arg_pos) 
+  isConstArg arg_pos = id
+    . Env.trackIndices (fix_index, argIndex arg_pos) 
     $ Fold.allM isConst inner_rhs
     where
-    -- Because we have the instance Env.Writable (Reader (Index, Index)), 
-    -- these indices will be correctly incremented as we descend
-    -- into the term.
-    isConst :: Term -> Reader (Index, Index) Bool
+    isConst :: Term -> Env.TrackIndices (Index, Index) Bool
     isConst (flattenApp -> (Var fun_idx) : args) 
       | length args > arg_pos = do
           (fix_idx, arg_idx) <- ask
