@@ -14,7 +14,7 @@ import qualified Data.Map as Map
 type Unifier a = Map Index a
 
 apply :: Substitutable t => Unifier (Inner t) -> t -> t
-apply = flip (foldr (uncurry substAt)) . Map.toAscList
+apply = flip (foldr (uncurry replaceAt)) . Map.toAscList
 
 singleton :: Index -> a -> Unifier a
 singleton = Map.singleton

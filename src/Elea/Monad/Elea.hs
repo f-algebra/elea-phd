@@ -88,14 +88,13 @@ instance Env.Writable Elea where
   equals _ _ = id
     
 instance Env.Readable Elea where
+  bindings = ask
+
   boundAt at = do
     bs <- ask
     Err.when (fromEnum at >= length bs)
       $ "Index " ++ show at ++ " not bound in " ++ show bs
-    return (debugNth "here" bs $ fromEnum at)
-    
-  bindingDepth = 
-    asks length
+    return (bs !! fromEnum at)
 
 instance Defs.Monad Elea where
   lookup name = State.gets (Map.lookup name)

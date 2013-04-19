@@ -50,8 +50,8 @@ instance Show (Term' String) where
     f' | "->" `isInfixOf` f || "end" `isInfixOf` f = "(" ++ f ++ ")"
        | otherwise = f
   show (Ind' b cons) =
-    --name
-    "(ind " ++ show b ++ " with" ++ cons_s ++ " end)"
+    name
+    --"(ind " ++ show b ++ " with" ++ cons_s ++ " end)"
     where
     cons_s = concatMap ((" | " ++) . show) cons
     name = fromJust (get boundLabel' b)
@@ -68,13 +68,26 @@ instance KleisliShow Term where
   showM = Fold.paraM fshow
     where
     fshow :: Env.Readable m => Term' (String, Term) -> m String
-    fshow (Var' x) = do
-      depth <- Env.bindingDepth
-      if fromEnum x > depth
-      then return (show x)
+    fshow (Var' idx) = do
+      bs <- Env.bindings
+      if n >= length bs
+      then return (show idx)
       else do
-        mby_lbl <- liftM (get boundLabel) (Env.boundAt x)
-        return (fromMaybe (show x) mby_lbl)
+        mby_lbl <- liftM (get boundLabel) (Env.boundAt idx)
+        case mby_lbl of
+          Nothing -> return (show idx)
+          Just lbl -> do
+            let same_lbl_count = id
+                  . length
+                  . filter (== mby_lbl)
+                  . map (get boundLabel)
+                  $ take n bs
+            if same_lbl_count > 0
+            then return (lbl ++ "[" ++ show (same_lbl_count + 1) ++ "]")
+            else return lbl
+      where
+      n = fromEnum idx
+      
     fshow (Inj' n (ind_s, ind@(Ind _ cons))) =
       return
     --  . (\t -> t ++ ": " ++ ind_s )

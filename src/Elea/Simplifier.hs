@@ -46,8 +46,8 @@ caseInjReduce (Case lhs _ alts)
   | inj_term:args <- flattenApp lhs
   , Inj (fromEnum -> n) _ <- inj_term
   , assert (length alts > n) True
-  , Alt bs alt_term <- debugNth "yoyo" alts n =
-      return
+  , Alt bs alt_term <- alts !! n = id
+    . return
     . assert (length args == length bs)
     . foldr subst alt_term
     -- When we substitute an constructor argument, 

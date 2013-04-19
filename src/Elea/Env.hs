@@ -33,10 +33,14 @@ bindMany :: Writable m => [Bind] -> m a -> m a
 bindMany = concatEndos . map bind
 
 class Writable m => Readable m where
+  bindings :: m [Bind]
+
   boundAt :: Index -> m Bind
+  boundAt at = liftM (!! fromEnum at) bindings
   
   -- | Returns the number of indices that have been bound.
   bindingDepth :: m Int
+  bindingDepth = liftM length bindings
   
 instance Fold.FoldableM Term where
   type FoldM Term m = Writable m
@@ -173,15 +177,15 @@ instance Monad m => Writable (ReaderT [Bind] m) where
     . map (liftAt at)
   equals _ _ = id
   
-instance Monad m => Readable (ReaderT [Bind] m) where
-  boundAt at = asks (!! fromEnum at)
-  bindingDepth = asks (toEnum . pred . length)   
+instance Monad m => Readable (ReaderT [Bind] m) where 
+  bindings = ask
   
 instance Writable m => Writable (MaybeT m) where
   bindAt at b = MaybeT . bindAt at b . runMaybeT
   equals x y = MaybeT . equals x y . runMaybeT
   
 instance Readable m => Readable (MaybeT m) where
+  bindings = Trans.lift bindings
   boundAt = Trans.lift . boundAt
   bindingDepth = Trans.lift bindingDepth
   
@@ -190,6 +194,7 @@ instance Writable m => Writable (EitherT e m) where
   equals x y = EitherT . equals x y . runEitherT
   
 instance Readable m => Readable (EitherT e m) where
+  bindings = Trans.lift bindings
   boundAt = Trans.lift . boundAt
   bindingDepth = Trans.lift bindingDepth
   

@@ -65,12 +65,16 @@ simpleFusion full_t@(flattenApp -> outer_f@(Fix outer_b _) : first_arg : args)
   | inner_f@(Fix {}) : inner_args <- flattenApp first_arg = do
     inner_ty <- Err.noneM (Typing.typeOf inner_f)
     full_ty <- Err.noneM (Typing.typeOf full_t)
-    let outer_ctx = id
-          . Context.make inner_ty full_ty
-          $ \t -> unflattenApp 
-            $ outer_f : unflattenApp (t : inner_args) : args
-    Fail.toMaybe (fuse checkedSimple outer_ctx inner_f)
-simpleFusion _ = return mzero
+    if not (isInd full_ty)
+    then return Nothing
+    else do
+      let outer_ctx = id
+            . Context.make inner_ty full_ty
+            $ \t -> unflattenApp 
+              $ outer_f : unflattenApp (t : inner_args) : args
+      Fail.toMaybe (fuse checkedSimple outer_ctx inner_f)
+simpleFusion _ =
+  return Nothing
 
 
 floatConstructors :: forall m . FusionMonad m => Term -> m (Maybe Term)
@@ -185,8 +189,8 @@ fuse transform outer_ctx inner_f@(Fix fix_b fix_t) = do
       new_fix_ty = unflattenPi arg_bs result_ty
       new_fix_b = Bind new_label new_fix_ty
   
-  transformed_t <- trace s1 $
-    Env.bind fix_b
+  transformed_t <- id . trace s1 
+    . Env.bind fix_b
     . transform
     . Context.apply (Indices.lift outer_ctx)
     $ fix_t
@@ -195,8 +199,8 @@ fuse transform outer_ctx inner_f@(Fix fix_b fix_t) = do
   let s2 = "\nTRANS:\n" ++ trn_s
   
   -- I gave up commenting at this point, it works because it does...
-  let replaced_t = trace s2 $
-          Env.trackIndices 0
+  let replaced_t = id . trace s2
+        . Env.trackIndices 0
         . Fold.transformM replace
         $ transformed_t
     
@@ -222,8 +226,7 @@ fuse transform outer_ctx inner_f@(Fix fix_b fix_t) = do
   replace :: Term -> Env.TrackIndices Index Term
   replace term = do
     idx_offset <- ask
-    let liftHere :: Indices.Liftable a => a -> a
-        liftHere = Indices.liftMany (fromEnum idx_offset)
+    let liftHere = Indices.liftMany (fromEnum idx_offset)
         replace_t = id
           . liftHere
           . Context.apply (Indices.lift outer_ctx) 
@@ -232,13 +235,12 @@ fuse transform outer_ctx inner_f@(Fix fix_b fix_t) = do
     case mby_uni of
       Nothing -> return term
       Just uni 
-        | Map.member (liftHere 0) uni -> return term
-        | otherwise -> id
+        | Map.member idx_offset uni -> return term
+        | otherwise -> trace (show uni) $ id
             . return
-            . Indices.liftAt idx_offset
             . Unifier.apply uni 
             . liftHere
-            . unflattenApp 
+            . unflattenApp
             . (Var fix_idx :)
             $ map Indices.lift arg_vars
           

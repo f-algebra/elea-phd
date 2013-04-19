@@ -154,13 +154,7 @@ instance Monad m => Env.Writable (ReaderT Scope m) where
   equals _ _ = id
 
 instance Err.Monad m => Env.Readable (ReaderT Scope m) where
-  boundAt at = 
-      asks
-    $ (\bs -> debugNth ("asking " ++ show at ++ " from " ++ show bs) bs (fromEnum at))
-    . get bindStack
-    
-  bindingDepth = 
-    asks (length . get bindStack)
+  bindings = asks (get bindStack)
   
 type ParserMonad m a = (Err.Monad m, Defs.Monad m) => ReaderT Scope m a
     

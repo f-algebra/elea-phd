@@ -2,14 +2,14 @@ module Elea.Foldable
 (
   module Data.Functor.Foldable,
   Refoldable, FoldableM (..),
-  transformM, rewriteM, foldM, allM,
+  transformM, rewriteM, foldM, allM, findM,
   transform, rewrite, recover,
   rewriteStepsM, rewriteSteps,
 )
 where
 
 import Prelude ()
-import Elea.Prelude hiding ( Foldable, allM )
+import Elea.Prelude hiding ( Foldable, allM, findM )
 import GHC.Prim ( Constraint )
 import Data.Functor.Foldable
 import qualified Data.Monoid as Monoid
@@ -45,6 +45,10 @@ foldM :: (FoldableM t, Monad m, FoldM t (WriterT w m), Monoid w) =>
 foldM f = execWriterT . rewriteM rrwt
   where
   rrwt = const (return Nothing) <=< tell <=< (lift . f)
+  
+findM :: (FoldableM t, Monad m, FoldM t (WriterT (Monoid.First a) m)) =>
+  (t -> m (Maybe a)) -> t -> m (Maybe a)
+findM f = liftM (Monoid.getFirst) . foldM (liftM Monoid.First . f)
 
 allM :: (FoldableM t, Monad m, FoldM t (WriterT Monoid.All m)) =>
   (t -> m Bool) -> t -> m Bool
@@ -56,6 +60,9 @@ rewriteM f = transformM rrwt
   where
   rrwt t = join . liftM (maybe (return t) (rewriteM f)) . f $ t
     
+-- TODO rewrite the arrowSum stuff to use firstM, may save on performance and
+-- stop steps running where the results aren't used due to monad issues
+  
 rewriteStepsM :: (FoldableM t, Monad m, FoldM t m) =>
   [t -> m (Maybe t)] -> t -> m t
 rewriteStepsM  = 
