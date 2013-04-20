@@ -20,7 +20,7 @@ assertFusionEq aim_s t_s = do
   t_s <- showM t
   t' <- Fusion.run t
   aim' <- Fusion.run aim
-  trace ("\n\nORIG:\n" ++ t_s) $ return (Test.assertEq aim' t')
+  return (Test.assertEq aim' t')
 
 tests = Test.label "Fusion"
     $ Test.run $ do
@@ -30,9 +30,10 @@ tests = Test.label "Fusion"
   test2 <- assertFusionEq aim2 t2
   test3 <- assertFusionEq aim3 t3
   test4 <- assertFusionEq aim4 t4
+  test5 <- assertFusionEq aim5 t5
 
   return
-    $ Test.list [ test1, test2, test3, test4 ]
+    $ Test.list [ test1, test2, test3, test4, test5 ]
 
 t1 =  
   "fun (a:*) (y:a) (zs:list a) -> "
@@ -54,4 +55,8 @@ aim3 = "fun (a:*) (xs:list a) (ys:list a) (zs:list a) ->"
   
 t4 = "fun (x:nat)(y:nat)(z:nat) -> add (add x y) z"
 aim4 = "fun (x:nat) (y:nat) (z:nat) -> add x (add y z)"
+
+t5 = "fix (f:pi nat -> bool) (x:nat) ->"
+ ++ "match x with | 0 -> True | Suc x' -> f x' end"
+aim5 = "fun (x:nat) -> True"
 

@@ -84,7 +84,12 @@ argCaseStep _ = mzero
 -- then we should float that lambda abstraction outside the 'Fix'.
 constArgStep :: Term -> Maybe Term
 constArgStep (Fix fix_b fix_rhs) = do
+  -- Find if any arguments never change in any recursive calls, 
+  -- a "constant" argument, pos is the position of such an argument
   pos <- find isConstArg [0..length arg_binds - 1]
+  
+  -- Then we run the 'removeConstArg' function on that position, and
+  -- simplify the result
   return . Simp.run . removeConstArg $ pos
   where
   (arg_binds, inner_rhs) = flattenLam fix_rhs
@@ -106,9 +111,10 @@ constArgStep (Fix fix_b fix_rhs) = do
           let arg = args !! arg_pos
               Var var_idx = arg
           return 
+            -- If we aren't dealing the right function, then just return true
             $ fix_idx /= fun_idx
-            || not (isVar arg)
-            || var_idx == arg_idx
+            -- Otherwise, check to make sure the argument hasn't changed 
+            || (isVar arg && var_idx == arg_idx)
     isConst _ = 
       return True
 
@@ -161,11 +167,35 @@ constArgStep (Fix fix_b fix_rhs) = do
         $ t : [ Var (toEnum i) | i <- reverse [1..n-1] ]    
       
 constArgStep _ = mzero
+{-
 
-
--- freeCaseFix floats cases out that
--- contain only variables free outside the term
-
+-- | If we pattern match inside a 'Fix', but only using variables that exist
+-- outside of the 'Fix', then we can float this pattern match outside
+-- of the 'Fix'.
+freeCaseFix :: Term -> Maybe Term
+freeCaseFix fix_t@(Fix {}) = do
+  Case cse_of ind_ty alts <- id
+    . Env.trackIndices 0
+    $ Fold.findM freeCases fix_t
+  
+  where
+  freeCases :: Term -> Env.TrackIndices Index (Maybe Term)
+  freeCases cse@(Case cse_of _ _) = do
+    idx_offset <- ask
+    if all (>= idx_offset) (Indices.free cse_of) 
+    then return (Just cse)
+    else return Nothing
+  freeCases _ = 
+    return mempty
+    
+  applyMatch :: Type -> Int -> Term -> Env.TrackIndices Term Term
+  applyMatch ind_ty alt_n (Case cse_of _ alts) = do
+    outer_of <- ask
+    if outer_of == cse_of
+    then 
+    
+freeCaseFix _ = mzero
+-}
 
 {- This needs careful index adjustment for the new inner alts I think
 -- | If we are pattern matching on a pattern match then remove this 

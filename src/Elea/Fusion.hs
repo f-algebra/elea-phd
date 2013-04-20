@@ -87,8 +87,7 @@ floatConstructors fix_t@(Fix fix_b _) = runMaybeT $ do
   then mzero
   else do
     sug_ss <- mapM showM (Set.toList suggestions)
-    let sug_s = "\n\nsuggestions: " ++ show sug_ss ++ "\n\nFOR\n\n" ++ fix_t_s
-    mby_t <- trace sug_s
+    mby_t <- id
       . firstM (Fail.toMaybe . split checkedSimple fix_t) 
       . Set.toList 
       $ suggestions
@@ -110,7 +109,7 @@ floatConstructors fix_t@(Fix fix_b _) = runMaybeT $ do
   
   -- Return any contexts which might be constructors we can float out
   suggest :: Int -> Term -> m (Set Context)
-  suggest outer_depth inner@(flattenApp -> inj@(Inj {}) : inj_args) = do
+  suggest outer_depth inj_term@(flattenApp -> inj@(Inj {}) : inj_args) = do
     -- idx_offset is how many more indices have been bound 
     -- at this point within the term
     inner_depth <- Env.bindingDepth
@@ -118,13 +117,31 @@ floatConstructors fix_t@(Fix fix_b _) = runMaybeT $ do
     
     -- This constructor must have the same type as the term we are floating
     let return_ty' = Indices.liftMany idx_offset return_ty
-    inner_ty <- Err.noneM (Typing.typeOf inner)
+    inner_ty <- Err.noneM (Typing.typeOf inj_term)
     if inner_ty /= return_ty'
     then return mempty
-    else concatMapM (suggestGap idx_offset) [0..length inj_args - 1]
+    else do
+      gaps <- concatMapM (suggestGap idx_offset) [0..length inj_args - 1]
+      let const = suggestConst idx_offset
+      return (const `Set.union` gaps)
     where
+    -- Returns the constructor as a constant context, if this context
+    -- would be valid outside of the term
+    suggestConst :: Int -> Set Context
+    suggestConst idx_offset =
+      if any (< toEnum idx_offset) (Indices.free inj_term)
+      then mempty
+      else Set.singleton 
+         . Context.make fix_ty fix_ty
+         . const 
+         . unflattenLam arg_bs
+         . Indices.lowerMany idx_offset 
+         $ inj_term
+    
     -- A wrapper around 'suggestGapMaybe' to convert its maybe output
-    -- into a single or zero element set
+    -- into a single or zero element set. This returns the constructor 
+    -- as a context with the gap at argument 'gap_pos', as long as this
+    -- would be a valid context outside of the term.
     suggestGap :: Int -> Int -> m (Set Context)
     suggestGap idx_offset gap_pos = id
       . liftM (maybe mempty Set.singleton)
