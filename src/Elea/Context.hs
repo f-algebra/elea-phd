@@ -88,10 +88,13 @@ dropLambdas other = other
 strip :: forall m . Fail.Monad m => Context -> Term -> m Term
 strip (Context (Lam _ ctx_t)) term = do
   uni <- Unifier.find ctx_t (Indices.lift term)
-  Fail.when (Map.size uni /= 1)
-  let [(idx, hole_term)] = Map.toList uni
-  Fail.when (idx /= 0)
-  return (Indices.lower hole_term)
+  Fail.when (Map.size uni > 1)
+  if Map.size uni == 0
+  then return Absurd
+  else do
+    let [(idx, hole_term)] = Map.toList uni
+    Fail.when (idx /= 0)
+    return (Indices.lower hole_term)
 
 instance Liftable Context where
   liftAt at (Context t) = Context (liftAt at t)

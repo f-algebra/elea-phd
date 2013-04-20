@@ -1,4 +1,13 @@
 
+let bool =
+  ind bool: * with
+  | True: bool
+  | False: bool
+  end
+  
+let True = inj0 bool
+let False = inj1 bool
+
 let nat =
   ind nat: * with 
   | 0: nat 
