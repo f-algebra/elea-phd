@@ -1,7 +1,8 @@
 module Elea.Term
 (
   Type, Term (..), Alt (..), Bind (..),
-  Term' (..), Alt' (..), Bind' (..), Matches,
+  Term' (..), Alt' (..), Bind' (..), 
+  Matches,
   projectAlt, embedAlt, projectBind, embedBind,   
   inner, varIndex, alts, argument, 
   inductiveType, binding, constructors,
@@ -77,10 +78,6 @@ data Alt
           , _altInner :: !Term }
   deriving ( Eq, Ord )
   
--- | A set of equations between terms as mapped keys and constructor terms
--- as mapped values.
-type Matches = Map Term Term
-  
 -- * Base types for generalised cata/para morphisms.
   
 type instance Fold.Base Term = Term'
@@ -110,6 +107,10 @@ data Alt' a
   deriving ( Functor, Foldable, Traversable )
   
 mkLabels [''Term, ''Alt, ''Bind, ''Term', ''Alt', ''Bind']
+
+-- | A set of equations between terms as mapped keys and constructor terms
+-- as mapped values.
+type Matches = Map Term Term
 
 projectAlt :: Alt -> Alt' Term
 projectAlt (Alt bs t) = Alt' (map projectBind bs) t

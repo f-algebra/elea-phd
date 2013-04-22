@@ -105,4 +105,5 @@ instance Substitutable Context where
   type Inner Context = Term
   substAt at with = modify term (substAt at with)
   free = Indices.free . get term
-   
+  modifyInnerM = modifyM term
+

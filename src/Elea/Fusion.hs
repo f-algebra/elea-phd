@@ -28,16 +28,16 @@ import qualified Data.Monoid as Monoid
 type FusionMonad m = Env.Readable m
 
 run :: FusionMonad m => Term -> m Term
-run = Fold.rewriteStepsM (map typeCheck $ simpleSteps ++ steps)
+run = Fold.rewriteStepsM ({-map typeCheck $ -} simpleSteps ++ steps)
 
 simpleSteps :: Env.Readable m => [Term -> m (Maybe Term)]
-simpleSteps = (map (return .) (Simp.steps ++ Float.steps)) ++ [varEqApply]
+simpleSteps = map (return .) (Simp.steps ++ Float.steps)
 
 checkedSimple :: FusionMonad m => Term -> m Term
-checkedSimple = Fold.rewriteStepsM (map id {- typeCheck -} simpleSteps)
+checkedSimple = Fold.rewriteStepsM (map typeCheck simpleSteps)
 
 steps :: FusionMonad m => [Term -> m (Maybe Term)]
-steps = [ fusion, floatConstructors ]
+steps = [ varEqApply, fusion, floatConstructors ]
 
 typeCheck :: FusionMonad m => 
   (Term -> m (Maybe Term)) -> Term -> m (Maybe Term)
@@ -73,13 +73,26 @@ fusion full_t@(flattenApp -> outer_f@(Fix outer_b _) : args@(_:_)) = do
   where
   fixfix :: Type -> m (Maybe Term)
   fixfix full_ty
-    | inner_f@(Fix {}) : inner_args <- flattenApp (head args) = do
+    | isFix (leftmost (head args)) = do
       inner_ty <- Err.noneM (Typing.typeOf inner_f)
       let outer_ctx = id
             . Context.make inner_ty full_ty
             $ \t -> unflattenApp 
               $ outer_f : unflattenApp (t : inner_args) : tail args
-      Fail.toMaybe (fuse checkedSimple outer_ctx inner_f)
+      runMaybeT (runFusion outer_ctx)
+    where
+    inner_f@(Fix {}) : inner_args = flattenApp (head args)
+    
+    runFusion :: Context -> MaybeT m Term 
+    runFusion outer_ctx
+      | isVar rec_arg = fuse run outer_ctx inner_f
+      | otherwise = 
+          Typing.generalise 
+            (head inner_args) 
+            (flip (fuse run) (Indices.lift inner_f))
+            outer_ctx
+      where
+      rec_arg = head inner_args
   fixfix _ = 
     return Nothing
   
@@ -92,7 +105,7 @@ fusion full_t@(flattenApp -> outer_f@(Fix outer_b _) : args@(_:_)) = do
       let ctx = id
             . Context.make outer_ty full_ty
             $ \t -> unflattenApp (t : args)
-      Fail.toMaybe (fuse checkedSimple ctx outer_f)
+      Fail.toMaybe (fuse run ctx outer_f)
   repeatedArg _ =
     return Nothing
 fusion _ =
@@ -244,6 +257,7 @@ fuse transform outer_ctx inner_f@(Fix fix_b fix_t) = do
     $ Fail.when (0 `Set.member` Indices.free replaced_t)
 
   let done = id
+        . Float.run
         . (\t -> unflattenApp (t : arg_vars))
         . Fix new_fix_b
         . unflattenLam arg_bs
@@ -285,7 +299,6 @@ fuse transform outer_ctx inner_f@(Fix fix_b fix_t) = do
   new_label = 
     liftM (\t -> "[" ++ t ++ "]")
     $ get boundLabel fix_b
-  
 
 split :: (Fail.Monad m, FusionMonad m) => 
   (Term -> m Term) -> Term -> Context -> m Term

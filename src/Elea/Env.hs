@@ -48,6 +48,19 @@ class Writable m => Readable m where
   matchedWith :: Term -> m (Maybe Term)
   matchedWith t = liftM (Map.lookup t) matches
   
+-- | Replace all instances of one term with another within a term.
+replaceTerm :: (Substitutable t, Inner t ~ Term) =>
+  Term -> Term -> t -> t
+replaceTerm me with = id
+  . trackIndices (me, with)
+  . modifyInnerM (Fold.transformM apply)
+  where
+  apply :: Term -> TrackIndices (Term, Term) Term
+  apply term = do
+    (me, with) <- ask
+    if term == me
+    then return with
+    else return term
   
 instance Fold.FoldableM Term where
   type FoldM Term m = Writable m
@@ -92,19 +105,6 @@ instance Fold.FoldableM Term where
       
   distM other = 
     sequence (map fst other)
-    
--- | Replace all instances of one term with another within a term.
-replaceTerm :: Term -> Term -> (Term -> Term)
-replaceTerm me with = id
-  . trackIndices (me, with)
-  . Fold.transformM apply
-  where
-  apply :: Term -> TrackIndices (Term, Term) Term
-  apply term = do
-    (me, with) <- ask
-    if term == me
-    then return with
-    else return term
     
 instance Liftable Term where
   liftAt at = id
@@ -154,10 +154,13 @@ instance Substitutable Term where
     freeR _ = 
       return mempty
   
+  modifyInnerM = id
+      
 instance Substitutable Bind where
   type Inner Bind = Term
   substAt at with = modify boundType (substAt at with)
   free = Indices.free . get boundType
+  modifyInnerM = modifyM boundType
   
 newtype TrackIndicesT r m a 
   = TrackIndicesT { runTrackIndicesT :: ReaderT r m a }

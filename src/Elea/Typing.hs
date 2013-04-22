@@ -1,6 +1,7 @@
 module Elea.Typing
 (
-  typeOf, unfoldInd, check, absurd, empty
+  typeOf, unfoldInd, check, absurd, empty,
+  generalise
 )
 where
 
@@ -8,7 +9,7 @@ import Prelude ()
 import Elea.Prelude
 import Elea.Index
 import Elea.Term
-import Elea.Show ( showM )
+import Elea.Show ( KleisliShow (..) )
 import qualified Elea.Index as Indices
 import qualified Elea.Foldable as Fold
 import qualified Elea.Env as Env
@@ -38,7 +39,37 @@ unfoldInd ty@(Ind _ cons) =
   map (subst ty) cons
 unfoldInd other = 
   error $ "Tried to unfold a non inductive type: " ++ show other
-
+  
+-- | Takes a term to generalise, and modifies a term to term function,
+-- such that the supplied term is generalised going in,
+-- and ungeneralised coming out. Just treat t1 and t2 as Term, 
+-- I had to generalise it to t1 and t2 for annoying reasons.
+generalise :: (Env.Readable m, KleisliShow t1, ShowM t1 m,
+  Substitutable t1, Inner t1 ~ Term, 
+  Substitutable t2, Inner t2 ~ Term) => 
+    Term -> (t1 -> m t2) -> (t1 -> m t2)
+generalise gen_t transform term = do
+  -- First we create a binding for the new variable by finding its type
+  -- and creating a descriptive label.
+  gen_ty <- Err.noneM (typeOf gen_t)
+  lbl <- liftM (\t -> "{" ++ t ++ "}") (showM gen_t)
+  let gen_b = Bind (Just lbl) gen_ty
+  
+  -- Generalise by replacing all instances of the term with a new variable
+  -- at index 0 and make room for this index by lifting the original term.
+  let term' = id 
+        . Env.replaceTerm (Indices.lift gen_t) (Var 0)
+        $ Indices.lift term
+        
+  -- Apply our term to term function, with the new variable bound.
+  term'' <- Env.bindAt 0 gen_b (transform term') 
+  
+  -- Finally, we reverse the generalisation process.
+  return 
+    . Indices.lower
+    . Indices.replaceAt 0 (Indices.lift gen_t)
+    $ term''
+        
 -- | Returns the type of a given 'Term',
 -- within a readable type environment.
 -- Can throw type checking errors.

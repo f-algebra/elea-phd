@@ -26,10 +26,12 @@ tests = Test.label "Fusion"
     $ Test.run $ do
   Test.loadPrelude
 
-  tests <- 
-    zipWithM assertFusionEq
-    [ aim1, aim2, aim3, aim4, aim5, aim6]
-    [ t1, t2, t3, t4, t5, t6]
+  tests <- id
+    . mapM (uncurry assertFusionEq)
+   -- . take 1
+    $ zip
+    [ aim1, aim2, aim3, aim4, aim5, aim6, aim7 ]
+    [ t1, t2, t3, t4, t5, t6, t7 ]
     
   return (Test.list tests)
 
@@ -61,4 +63,7 @@ aim5 = "fun (x:nat) -> True"
 t6 = "fun (n:nat) (xs:list nat) -> "
   ++ "count n (app nat xs (Cons nat n (Nil nat)))"
 aim6 = "fun (n:nat) (xs:list nat) -> Suc (count n xs)"
+
+t7 = "fun (n:nat) (xs:list nat) -> count n (rev nat xs)"
+aim7 = "fun (n:nat) (xs:list nat) -> count n xs"
 

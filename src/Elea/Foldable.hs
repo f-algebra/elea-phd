@@ -62,6 +62,9 @@ rewriteM f = transformM rrwt
     
 -- TODO rewrite the arrowSum stuff to use firstM, may save on performance and
 -- stop steps running where the results aren't used due to monad issues
+
+-- ... multiple traversals is probably better than single traversal with 
+-- heavy steps used at each point?
   
 rewriteStepsM :: (FoldableM t, Monad m, FoldM t m) =>
   [t -> m (Maybe t)] -> t -> m t

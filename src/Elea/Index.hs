@@ -61,6 +61,13 @@ class Liftable t => Substitutable t where
   substAt :: Index -> Inner t -> t -> t
   free :: t -> Set Index
   
+  -- | Applies the given function to 
+  -- all top-level occurrences of inner objects
+  modifyInnerM :: Monad m => (Inner t -> m (Inner t)) -> t -> m t
+  
+  modifyInner :: (Inner t -> Inner t) -> t -> t
+  modifyInner f = runIdentity . modifyInnerM (Identity . f)
+  
 subst :: Substitutable t => Inner t -> t -> t
 subst = substAt 0
 
