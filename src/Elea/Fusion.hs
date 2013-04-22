@@ -30,14 +30,14 @@ type FusionMonad m = Env.Readable m
 run :: FusionMonad m => Term -> m Term
 run = Fold.rewriteStepsM (map typeCheck $ simpleSteps ++ steps)
 
-simpleSteps :: Monad m => [Term -> m (Maybe Term)]
-simpleSteps = map (return .) (Simp.steps ++ Float.steps)
+simpleSteps :: Env.Readable m => [Term -> m (Maybe Term)]
+simpleSteps = (map (return .) (Simp.steps ++ Float.steps)) ++ [varEqApply]
 
 checkedSimple :: FusionMonad m => Term -> m Term
-checkedSimple = Fold.rewriteStepsM (map typeCheck simpleSteps)
+checkedSimple = Fold.rewriteStepsM (map id {- typeCheck -} simpleSteps)
 
 steps :: FusionMonad m => [Term -> m (Maybe Term)]
-steps = [ simpleFusion, floatConstructors ]
+steps = [ fusion, floatConstructors ]
 
 typeCheck :: FusionMonad m => 
   (Term -> m (Maybe Term)) -> Term -> m (Maybe Term)
@@ -60,23 +60,44 @@ typeCheck f t = do
           ++ "Before: " ++ t_s ++ ": [" ++ ty_s ++ "]"
           ++ "\nAfter: " ++ t_s' ++ ": [" ++ ty_s' ++ "]"
 
-simpleFusion :: FusionMonad m => Term -> m (Maybe Term)
-simpleFusion full_t@(flattenApp -> outer_f@(Fix outer_b _) : first_arg : args)
-  | inner_f@(Fix {}) : inner_args <- flattenApp first_arg = do
-    inner_ty <- Err.noneM (Typing.typeOf inner_f)
-    full_ty <- Err.noneM (Typing.typeOf full_t)
-    if not (isInd full_ty)
-    then return Nothing
-    else do
+varEqApply :: Env.Readable m => Term -> m (Maybe Term)
+varEqApply t@(Var {}) = Env.matchedWith t
+varEqApply _ = return Nothing
+
+fusion :: forall m . Env.Readable m => Term -> m (Maybe Term)
+fusion full_t@(flattenApp -> outer_f@(Fix outer_b _) : args@(_:_)) = do
+  full_ty <- Err.noneM (Typing.typeOf full_t)
+  if not (isInd full_ty)
+  then return Nothing
+  else firstM ($ full_ty) [fixfix, repeatedArg]
+  where
+  fixfix :: Type -> m (Maybe Term)
+  fixfix full_ty
+    | inner_f@(Fix {}) : inner_args <- flattenApp (head args) = do
+      inner_ty <- Err.noneM (Typing.typeOf inner_f)
       let outer_ctx = id
             . Context.make inner_ty full_ty
             $ \t -> unflattenApp 
-              $ outer_f : unflattenApp (t : inner_args) : args
+              $ outer_f : unflattenApp (t : inner_args) : tail args
       Fail.toMaybe (fuse checkedSimple outer_ctx inner_f)
-simpleFusion _ =
+  fixfix _ = 
+    return Nothing
+  
+  repeatedArg :: Type -> m (Maybe Term)
+  repeatedArg full_ty
+    | x@(Var {}) <- head args
+    , any (== x) (tail args) = do
+      full_s <- showM full_t
+      outer_ty <- Err.noneM (Typing.typeOf outer_f)
+      let ctx = id
+            . Context.make outer_ty full_ty
+            $ \t -> unflattenApp (t : args)
+      Fail.toMaybe (fuse checkedSimple ctx outer_f)
+  repeatedArg _ =
+    return Nothing
+fusion _ =
   return Nothing
-
-
+  
 floatConstructors :: forall m . FusionMonad m => Term -> m (Maybe Term)
 floatConstructors fix_t@(Fix fix_b _) = runMaybeT $ do
   -- Suggest any constructor contexts, then try then out using 'split'
@@ -87,17 +108,10 @@ floatConstructors fix_t@(Fix fix_b _) = runMaybeT $ do
   then mzero
   else do
     sug_ss <- mapM showM (Set.toList suggestions)
-    mby_t <- id
+    MaybeT
       . firstM (Fail.toMaybe . split checkedSimple fix_t) 
       . Set.toList 
       $ suggestions
-    case mby_t of
-      Nothing -> mzero
-      Just t -> do
-        t_s <- showM t
-        outer_t_s <- showM fix_t
-        let meh_s = "FLOAT:\n\n" ++ outer_t_s ++ "\n\nGIVES\n\n" ++ t_s
-        trace meh_s (return t)
   where
   fix_ty = get boundType fix_b
   (arg_bs, return_ty) = flattenPi fix_ty
@@ -206,7 +220,7 @@ fuse transform outer_ctx inner_f@(Fix fix_b fix_t) = do
       new_fix_ty = unflattenPi arg_bs result_ty
       new_fix_b = Bind new_label new_fix_ty
   
-  transformed_t <- id . trace s1 
+  transformed_t <- id -- . trace s1 
     . Env.bind fix_b
     . transform
     . Context.apply (Indices.lift outer_ctx)
@@ -216,15 +230,18 @@ fuse transform outer_ctx inner_f@(Fix fix_b fix_t) = do
   let s2 = "\nTRANS:\n" ++ trn_s
   
   -- I gave up commenting at this point, it works because it does...
-  let replaced_t = id . trace s2
+  let replaced_t = id -- . trace s2
         . Env.trackIndices 0
         . Fold.transformM replace
         $ transformed_t
-    
+  
   rep_s <- Env.bindAt 0 fix_b
     . Env.bindAt fix_idx new_fix_b
     $ showM replaced_t
   let s3 = "\nREP:\n" ++ rep_s
+  
+  id -- . trace s3
+    $ Fail.when (0 `Set.member` Indices.free replaced_t)
 
   let done = id
         . (\t -> unflattenApp (t : arg_vars))
@@ -236,9 +253,8 @@ fuse transform outer_ctx inner_f@(Fix fix_b fix_t) = do
   done_s <- showM done
   let s4 = "\nDONE:\n" ++ done_s
   
-  trace s3 $ trace s4 $ Fail.when (0 `Set.member` Indices.free replaced_t)
-     
-  return done
+  id -- . trace s4 
+    $ return done
   where
   replace :: Term -> Env.TrackIndices Index Term
   replace term = do
@@ -253,7 +269,7 @@ fuse transform outer_ctx inner_f@(Fix fix_b fix_t) = do
       Nothing -> return term
       Just uni 
         | Map.member idx_offset uni -> return term
-        | otherwise -> trace (show uni) $ id
+        | otherwise -> id
             . return
             . Unifier.apply uni 
             . liftHere
@@ -277,14 +293,14 @@ split transform (Fix fix_b fix_t) (Indices.lift -> outer_ctx) = do
   full_t_s <- showM (Fix fix_b fix_t)
   ctx_s <- Env.bind fix_b $ showM outer_ctx
   let s1 = "\n\nSPITTING\n" ++ ctx_s ++ "\n\nFROM\n\n" ++ full_t_s
-  unfloated <- trace s1 $ id
+  unfloated <- id -- . trace s1 
     . Env.bind fix_b  
     . transform 
     . Indices.replaceAt 0 (Context.apply outer_ctx (Var 0))
     $ fix_t
   unf_s <- Env.bind fix_b $ showM unfloated
   let s2 = "\n\nUNFLOATED\n" ++ unf_s
-  let floated = trace s2 $ id
+  let floated = id -- . trace s2
         . Env.trackIndices dropped_ctx
         . Fold.rewriteM (runMaybeT . floatCtxUp)
         $ unfloated
@@ -292,7 +308,8 @@ split transform (Fix fix_b fix_t) (Indices.lift -> outer_ctx) = do
       ctx_inside_lam = Indices.liftMany (length lam_bs) dropped_ctx
   flt_s <- Env.bind fix_b (showM floated)
   let s3 =  "\n\nFLOATED\n" ++ flt_s
-  stripped_rhs <- trace s3 $ Context.strip ctx_inside_lam inner_rhs
+  stripped_rhs <- -- trace s3 $ 
+    Context.strip ctx_inside_lam inner_rhs
   return 
     . Context.apply (Indices.lower outer_ctx)
     . Fix fix_b

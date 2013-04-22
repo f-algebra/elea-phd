@@ -7,6 +7,7 @@ module Elea.Env
   TrackIndices, TrackIndicesT (..),
   trackIndices, trackIndicesT,
   bind, bindMany,
+  replaceTerm,
 )
 where
 
@@ -20,6 +21,7 @@ import qualified Elea.Index as Indices
 import qualified Elea.Unifier as Unifier 
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
+import qualified Data.Map as Map
 import qualified Control.Monad.Trans as Trans
 
 class Monad m => Writable m where
@@ -34,6 +36,7 @@ bindMany = concatEndos . map bind
 
 class Writable m => Readable m where
   bindings :: m [Bind]
+  matches :: m Matches
 
   boundAt :: Index -> m Bind
   boundAt at = liftM (!! fromEnum at) bindings
@@ -41,6 +44,10 @@ class Writable m => Readable m where
   -- | Returns the number of indices that have been bound.
   bindingDepth :: m Int
   bindingDepth = liftM length bindings
+  
+  matchedWith :: Term -> m (Maybe Term)
+  matchedWith t = liftM (Map.lookup t) matches
+  
   
 instance Fold.FoldableM Term where
   type FoldM Term m = Writable m
@@ -67,10 +74,12 @@ instance Fold.FoldableM Term where
     ty <- mty
     return (Case' t ty alts)
     where
-    distAlt n (Alt' mbs (mt, _t)) = do
+    distAlt n (Alt' mbs (mt, _)) = do
       bs <- distBinds mbs
-      t <- bindMany _bs
-         $ (_t `equals` match_t) mt
+      t <- id
+        . bindMany _bs
+        . equals (liftMany (length _bs) _t) (altPattern _ty n)
+        $ mt
       return (Alt' bs t)
       where
       distBinds [] = return []
@@ -81,14 +90,21 @@ instance Fold.FoldableM Term where
       
       _bs = map (embedBind . map snd) mbs
       
-      match_args = reverse 
-        . map (Var . toEnum)
-        $ [0..length mbs - 1]
-      match_con = Inj n _ty
-      match_t = unflattenApp (match_con : match_args)
-      
   distM other = 
     sequence (map fst other)
+    
+-- | Replace all instances of one term with another within a term.
+replaceTerm :: Term -> Term -> (Term -> Term)
+replaceTerm me with = id
+  . trackIndices (me, with)
+  . Fold.transformM apply
+  where
+  apply :: Term -> TrackIndices (Term, Term) Term
+  apply term = do
+    (me, with) <- ask
+    if term == me
+    then return with
+    else return term
     
 instance Liftable Term where
   liftAt at = id
@@ -179,6 +195,7 @@ instance Monad m => Writable (ReaderT [Bind] m) where
   
 instance Monad m => Readable (ReaderT [Bind] m) where 
   bindings = ask
+  matches = return mempty
   
 instance Writable m => Writable (MaybeT m) where
   bindAt at b = MaybeT . bindAt at b . runMaybeT
@@ -186,8 +203,10 @@ instance Writable m => Writable (MaybeT m) where
   
 instance Readable m => Readable (MaybeT m) where
   bindings = Trans.lift bindings
+  matches = Trans.lift matches
   boundAt = Trans.lift . boundAt
   bindingDepth = Trans.lift bindingDepth
+  matchedWith = Trans.lift . matchedWith
   
 instance Writable m => Writable (EitherT e m) where
   bindAt at b = EitherT . bindAt at b . runEitherT
@@ -195,8 +214,10 @@ instance Writable m => Writable (EitherT e m) where
   
 instance Readable m => Readable (EitherT e m) where
   bindings = Trans.lift bindings
+  matches = Trans.lift matches
   boundAt = Trans.lift . boundAt
   bindingDepth = Trans.lift bindingDepth
+  matchedWith = Trans.lift . matchedWith
   
 instance Unifiable Term where
   find = (trackIndicesT 0 .) . uni

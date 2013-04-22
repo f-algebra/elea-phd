@@ -150,11 +150,10 @@ instance Monad m => Env.Writable (ReaderT Scope m) where
       | Bind (Just lbl) _ <- b = 
           Map.insert lbl (Right at)
       | otherwise = id
-      
-  equals _ _ = id
 
 instance Err.Monad m => Env.Readable (ReaderT Scope m) where
   bindings = asks (get bindStack)
+  matches = return mempty
   
 type ParserMonad m a = (Err.Monad m, Defs.Monad m) => ReaderT Scope m a
     

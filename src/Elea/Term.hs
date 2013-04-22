@@ -1,7 +1,7 @@
 module Elea.Term
 (
   Type, Term (..), Alt (..), Bind (..),
-  Term' (..), Alt' (..), Bind' (..),
+  Term' (..), Alt' (..), Bind' (..), Matches,
   projectAlt, embedAlt, projectBind, embedBind,   
   inner, varIndex, alts, argument, 
   inductiveType, binding, constructors,
@@ -14,6 +14,7 @@ module Elea.Term
   flattenPi, unflattenPi,
   flattenLam, unflattenLam,
   isInj, isLam, isVar, isPi, isInd, isFix,
+  altPattern,
 )
 where
 
@@ -76,6 +77,9 @@ data Alt
           , _altInner :: !Term }
   deriving ( Eq, Ord )
   
+-- | A set of equations between terms as mapped keys and constructor terms
+-- as mapped values.
+type Matches = Map Term Term
   
 -- * Base types for generalised cata/para morphisms.
   
@@ -200,6 +204,24 @@ leftmost = head . flattenApp
 
 returnType :: Type -> Type
 returnType = snd . flattenPi
+
+-- | Given an inductive type and a constructor index this will return
+-- a fully instantiated constructor term.
+-- E.g. "altPattern [list] 1 == Cons _1 _0"
+altPattern :: Type -> Nat -> Term
+altPattern ty@(Ind _ cons) n = id
+  . unflattenApp 
+  . (Inj n ty :)
+  . reverse
+  . map (Var . toEnum)
+  $ [0..arg_count - 1]
+  where
+  arg_count = id
+    . length
+    . fst
+    . flattenPi
+    . get boundType
+    $ cons !! fromEnum n
   
 instance Failure Term where
   failure = Absurd

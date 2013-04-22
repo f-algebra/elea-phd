@@ -19,6 +19,21 @@ let Suc = inj1 nat
 let 1 = Suc 0
 let 2 = Suc 1
 
+let eq_nat = 
+  fix (eq_nat: pi nat nat -> bool) (x:nat) (y:nat) ->
+    match x with
+    | 0 ->
+      match y with
+      | 0 -> True
+      | Suc y' -> False
+      end
+    | Suc x' ->
+      match y with
+      | 0 -> False
+      | Suc y' -> eq_nat x' y'
+      end
+    end
+
 let list = fun (a: *) -> 
   ind list: * with 
   | Nil: list 
@@ -59,4 +74,15 @@ let rev =
       | Cons x xs' -> 
           app a (rev xs') (Cons a x (Nil a))
       end
+      
+let count =
+  fix (count: pi nat (list nat) -> nat) (n:nat) (xs:list nat) ->
+    match xs with
+    | Nil -> 0
+    | Cons x xs' -> 
+      match eq_nat n x with
+      | True -> Suc (count n xs')
+      | False -> count n xs'
+      end
+    end
 

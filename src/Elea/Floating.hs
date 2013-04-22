@@ -27,6 +27,7 @@ steps =
   , funCaseStep
   , argCaseStep
   , constArgStep
+  , freeCaseFix
   ]
   
 -- | Float lambdas out of the branches of a pattern match
@@ -167,35 +168,41 @@ constArgStep (Fix fix_b fix_rhs) = do
         $ t : [ Var (toEnum i) | i <- reverse [1..n-1] ]    
       
 constArgStep _ = mzero
-{-
 
 -- | If we pattern match inside a 'Fix', but only using variables that exist
 -- outside of the 'Fix', then we can float this pattern match outside
 -- of the 'Fix'.
 freeCaseFix :: Term -> Maybe Term
 freeCaseFix fix_t@(Fix {}) = do
-  Case cse_of ind_ty alts <- id
+  cse_t@(Case cse_of ind_ty alts) <- id
     . Env.trackIndices 0
     $ Fold.findM freeCases fix_t
-  
+  return
+    . Case cse_of ind_ty
+    . map (createAlt cse_t . toEnum) 
+    $ [0..length alts - 1]
   where
   freeCases :: Term -> Env.TrackIndices Index (Maybe Term)
   freeCases cse@(Case cse_of _ _) = do
     idx_offset <- ask
-    if all (>= idx_offset) (Indices.free cse_of) 
-    then return (Just cse)
-    else return Nothing
+    if any (< idx_offset) (Indices.free cse_of) 
+    then return Nothing
+    else return 
+       . Just 
+       . Indices.lowerMany (fromEnum idx_offset) 
+       $ cse
   freeCases _ = 
-    return mempty
-    
-  applyMatch :: Type -> Int -> Term -> Env.TrackIndices Term Term
-  applyMatch ind_ty alt_n (Case cse_of _ alts) = do
-    outer_of <- ask
-    if outer_of == cse_of
-    then 
-    
+    return Nothing
+
+  createAlt :: Term -> Nat -> Alt
+  createAlt (Case cse_of ind_ty alts) n =
+    Alt alt_bs alt_t
+    where
+    Alt alt_bs _ = alts !! fromEnum n
+    match = altPattern ind_ty n
+    alt_t = Env.replaceTerm cse_of match fix_t
+  
 freeCaseFix _ = mzero
--}
 
 {- This needs careful index adjustment for the new inner alts I think
 -- | If we are pattern matching on a pattern match then remove this 

@@ -22,16 +22,14 @@ tests = Test.label "Floating"
     $ Test.run $ do
   Test.loadPrelude
   
-  test1 <- assertFloatEq aim1 t1
-  test2 <- assertFloatEq aim2 t2
-  test3 <- assertFloatEq aim3 t3
-  test4 <- assertFloatEq aim4 t4
-  test5 <- assertFloatEq aim5 t5
   
-  return 
-    $ Test.list
-    [ test1, test2, test3, test4, test5 ]
-
+  tests <- 
+    zipWithM assertFloatEq
+    [aim1, aim2, aim3, aim4, aim5]
+    [t1, t2, t3, t4, t5]
+  
+  return (Test.list tests)
+  
 t1 = 
   "fun (a:*) ->"
   ++ "fix (f: pi (list a) (list a) nat ->list a) (xs:list a) (y:list a) -> "
@@ -95,3 +93,4 @@ aim5 =
   ++ "| Nil -> Cons a y (Nil a)"
   ++ "| Cons x ys -> app a (f ys) (Cons a x (Nil a))"
   ++ "end"
+  
