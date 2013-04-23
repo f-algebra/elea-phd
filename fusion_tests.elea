@@ -1,0 +1,39 @@
+let t1 = 
+  fun (a:*) (y:a) (zs:list a) -> 
+    rev a (app a zs (Cons a y (Nil a)))
+let t1' =
+  fun (a:*) (y:a) (xs:list a) -> 
+    Cons a y ((
+      fix (f: pi (list a)->list a) (xs:list a) ->
+      match xs with
+      | Nil -> Nil a
+      | Cons x xs -> app a (f xs) (Cons a x (Nil a)) 
+      end) xs)
+      
+let t2 = fun (x:nat) (y:nat) -> add x (Suc y)
+let t2' = fun (x:nat) (y:nat) -> Suc (add x y)
+
+let t3 = 
+  fun (a:*) (xs:list a) (ys:list a) (zs:list a) ->
+    app a (app a xs ys) zs
+let t3' = 
+  fun (a:*) (xs:list a) (ys:list a) (zs:list a) ->
+    app a xs (app a ys zs)
+  
+let t4 = fun (x:nat)(y:nat)(z:nat) -> add (add x y) z
+let t4' = fun (x:nat) (y:nat) (z:nat) -> add x (add y z)
+
+let t5 =
+  fix (f:pi nat -> bool) (x:nat) ->
+    match x with | 0 -> True | Suc x' -> f x' end
+let t5' = fun (x:nat) -> True
+
+let t6 = 
+  fun (n:nat) (xs:list nat) -> 
+    count n (app nat xs (Cons nat n (Nil nat)))
+let t6' = fun (n:nat) (xs:list nat) -> Suc (count n xs)
+
+let t7 = fun (n:nat) (xs:list nat) -> count n (rev nat xs)
+let t7' = fun (n:nat) (xs:list nat) -> count n xs
+
+

@@ -2,7 +2,8 @@ module Elea.Testing (
   Test, execute,
   label, list, run, 
   assert, assertEq, 
-  loadPrelude, term
+  loadPrelude, loadFile,
+  term
 ) where
 
 import Prelude ()
@@ -42,6 +43,9 @@ assertEq = (HUnit.TestCase .) . HUnit.assertEqual ""
 prelude :: String
 prelude = unsafePerformIO
   $ readFile "prelude.elea"
+  
+loadFile :: String -> Elea ()
+loadFile = Parse.program . unsafePerformIO . readFile
 
 loadPrelude :: Elea ()
 loadPrelude = Parse.program prelude
