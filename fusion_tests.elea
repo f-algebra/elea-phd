@@ -36,4 +36,17 @@ let t6' = fun (n:nat) (xs:list nat) -> Suc (count n xs)
 let t7 = fun (n:nat) (xs:list nat) -> count n (rev nat xs)
 let t7' = fun (n:nat) (xs:list nat) -> count n xs
 
+let t8 = fun (a: *) (xs: list a) -> rev a (rev a xs)
+let t8' = fun (a: *) (xs: list a) -> xs
+
+let t9 = fix (f: pi (a:*) (list a) -> list a) (a:*) (xs:list a) -> 
+  match xs with
+  | Nil -> Nil a
+  | Cons x xs' -> Cons a x (f a xs')
+  end
+let t9' = fun (a:*) (xs:list a) -> xs
+
+let t10 = fun (x:nat) (y:nat) -> or (leq_nat x y) (leq_nat y x)
+let t10' = fun nat nat -> True
+  
 

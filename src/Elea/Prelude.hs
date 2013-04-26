@@ -173,11 +173,13 @@ findM p (x:xs) = do
     then return (Just x)
     else findM p xs
     
-firstM :: Monad m => (a -> m (Maybe b)) -> [a] -> m (Maybe b)
-firstM _ [] = return Nothing
-firstM f (a:as) = do
-  mby_b <- f a
-  maybe (firstM f as) (return . Just) mby_b
+-- | Returns the first element which is 'Just'. 
+-- Ignores all monadic effects after this element.
+firstM :: Monad m => [m (Maybe a)] -> m (Maybe a)
+firstM [] = return Nothing
+firstM (mx:mxs) = do
+  mby_x <- mx
+  maybe (firstM mxs) (return . Just) mby_x
   
 foldl1M :: (Monad m, Foldable f) => (a -> a -> m a) -> f a -> m a
 foldl1M f (toList -> xs) = foldlM f (head xs) (tail xs)

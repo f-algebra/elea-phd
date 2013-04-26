@@ -8,6 +8,19 @@ let bool =
 let True = inj0 bool
 let False = inj1 bool
 
+let or = 
+  fun (x: bool) (y: bool) -> 
+    match x with
+    | True -> True
+    | False -> 
+      match y with
+      | True -> True
+      | False -> False
+      end
+    end
+
+    
+    
 let nat =
   ind nat: * with 
   | 0: nat 
@@ -33,15 +46,17 @@ let eq_nat =
       | Suc y' -> eq_nat x' y'
       end
     end
-
-let list = fun (a: *) -> 
-  ind list: * with 
-  | Nil: list 
-  | Cons: pi a list -> list
-  end
-
-let Nil = fun (a: *) -> inj0 (list a)
-let Cons = fun (a: *) -> inj1 (list a)
+    
+let leq_nat = 
+  fix (leq_nat: pi nat nat -> bool) (x: nat) (y: nat) -> 
+    match x with
+    | 0 -> True
+    | Suc x' ->
+      match y with
+      | 0 -> False
+      | Suc y' -> leq_nat x' y'
+      end
+    end
 
 let add = 
   fix (add: pi nat nat -> nat) (x: nat) (y: nat) -> 
@@ -56,6 +71,17 @@ let mul =
     | 0 -> 0
     | Suc x' -> add y (mul x' y)
     end
+
+    
+    
+let list = fun (a: *) -> 
+  ind list: * with 
+  | Nil: list 
+  | Cons: pi a list -> list
+  end
+
+let Nil = fun (a: *) -> inj0 (list a)
+let Cons = fun (a: *) -> inj1 (list a)
 
 let app = 
   fun (a: *) ->
@@ -86,3 +112,13 @@ let count =
       end
     end
 
+let leq = 
+  fix (leq: pi nat nat -> bool) (x:nat) (y:nat) ->
+    match x with
+    | 0 -> True
+    | Suc x' ->
+      match y with
+      | 0 -> False
+      | Suc y' -> leq x' y'
+      end
+    end

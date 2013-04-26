@@ -59,17 +59,10 @@ rewriteM :: (FoldableM t, Monad m, FoldM t m) =>
 rewriteM f = transformM rrwt
   where
   rrwt t = join . liftM (maybe (return t) (rewriteM f)) . f $ t
-    
--- TODO rewrite the arrowSum stuff to use firstM, may save on performance and
--- stop steps running where the results aren't used due to monad issues
 
--- ... multiple traversals is probably better than single traversal with 
--- heavy steps used at each point?
-  
 rewriteStepsM :: (FoldableM t, Monad m, FoldM t m) =>
   [t -> m (Maybe t)] -> t -> m t
-rewriteStepsM  = 
-  rewriteM . (runMaybeT .) . arrowSum . map (MaybeT .)
+rewriteStepsM steps = rewriteM (\t -> firstM (map ($ t) steps))
       
 recover :: Unfoldable t => Base t (a, t) -> t
 recover = embed . fmap snd
@@ -81,4 +74,6 @@ rewrite :: Refoldable t => (t -> Maybe t) -> t -> t
 rewrite f = transform $ \t -> maybe t (rewrite f) (f t)
 
 rewriteSteps :: Refoldable t => [t -> Maybe t] -> t -> t
-rewriteSteps = rewrite . arrowSum
+rewriteSteps steps = rewrite step
+  where
+  step t = Monoid.getFirst (concatMap (Monoid.First . ($ t)) steps)

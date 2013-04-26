@@ -64,6 +64,15 @@ varEqApply :: Env.Readable m => Term -> m (Maybe Term)
 varEqApply t@(Var {}) = Env.matchedWith t
 varEqApply _ = return Nothing
 
+caseFixFusion :: Env.Readable m => Term -> m (Maybe Term)
+caseFixFusion 
+    cse_t@(Case (flattenApp -> fix_t@(Fix {}) : args) ind_ty alts) = do
+  fix_ty <- Err.noneM (Typing.typeOf fix_t)
+  cse_ty <- Err.noneM (Typing.typeOf cse_t)
+  let outer_ctx = Context.make fix_ty cse_ty
+        $ \t -> Case (unflattenApp (t:args)) ind_ty alts
+  Fail.toMaybe (fuse checkedSimple outer_ctx fix_t)
+
 fusion :: forall m . Env.Readable m => Term -> m (Maybe Term)
 fusion full_t@(flattenApp -> outer_f@(Fix outer_b _) : args@(_:_)) = do
   full_ty <- Err.noneM (Typing.typeOf full_t)

@@ -1,7 +1,7 @@
 module Elea.Typing
 (
   typeOf, unfoldInd, check, absurd, empty,
-  generalise
+  generalise, checkStep
 )
 where
 
@@ -33,6 +33,26 @@ check :: TypingMonad m => Term -> m ()
 check Type = return ()
 -- Otherwise we just see if 'typeOf' throws an error.
 check other = liftM (const ()) (typeOf other)
+
+-- | Wrap this around a term transformation step @Term -> m (Maybe Term)@
+-- to add a check that the step preserves the type of the term.
+checkStep :: Env.Readable m => 
+  (Term -> m (Maybe Term)) -> Term -> m (Maybe Term)
+checkStep step term = runMaybeT $ do
+  result <- MaybeT (step term)
+  t_ty <- Err.noneM (typeOf term)
+  r_ty <- Err.noneM (typeOf result)
+  if t_ty == r_ty
+  then return result
+  else do
+    t_s <- showM term
+    t_s' <- showM result
+    ty_s <- showM t_ty
+    ty_s' <- showM r_ty
+    error 
+      $ "Transformation does not preserve type.\n"
+      ++ "Before: " ++ t_s ++ ": [" ++ ty_s ++ "]"
+      ++ "\nAfter: " ++ t_s' ++ ": [" ++ ty_s' ++ "]"
 
 unfoldInd :: Term -> [Bind]
 unfoldInd ty@(Ind _ cons) = 

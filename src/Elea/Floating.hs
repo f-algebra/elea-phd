@@ -28,17 +28,18 @@ steps =
   , argCaseStep
   , constArgStep
   , freeCaseFix
+  , identityCase
   ]
   
 -- | Float lambdas out of the branches of a pattern match
 lambdaCaseStep :: Term -> Maybe Term
 lambdaCaseStep (Case lhs ind_ty alts)
   -- This step only works if every branch has a lambda topmost
-  | all (isLam . get altInner) alts = 
-        return
-      . Lam new_b
-      . Case (Indices.lift lhs) (Indices.lift ind_ty) 
-      $ map lctAlt alts
+  | all (isLam . get altInner) alts = id
+    . return
+    . Lam new_b
+    . Case (Indices.lift lhs) (Indices.lift ind_ty) 
+    $ map lctAlt alts
   where
   -- Use the binding of the first alt's lambda as our new outer binding
   getBinding (Alt bs (Lam lam_b _)) = 
@@ -46,8 +47,8 @@ lambdaCaseStep (Case lhs ind_ty alts)
   new_b = getBinding (head alts)
   
   -- Lots of careful de-Bruijn index adjustment here
-  lctAlt (Alt bs (Lam lam_b rhs)) = 
-      Alt (map Indices.lift bs)
+  lctAlt (Alt bs (Lam lam_b rhs)) = id
+    . Alt (map Indices.lift bs)
     . subst (Var (toEnum (length bs)))
     . Indices.liftAt (toEnum (length bs + 1))
     $ rhs
@@ -58,8 +59,8 @@ lambdaCaseStep _ = mzero
 -- | If we have a case statement on the left of term 'App'lication
 -- then float it out.
 funCaseStep :: Term -> Maybe Term
-funCaseStep (App (Case lhs ind_ty alts) arg) =
-    return
+funCaseStep (App (Case lhs ind_ty alts) arg) = id
+  . return
   $ Case lhs ind_ty (map appArg alts)
   where
   appArg (Alt bs rhs) =
@@ -71,8 +72,8 @@ funCaseStep _ = mzero
 -- | If we have a case statement on the right of term 'App'lication
 -- then float it out.
 argCaseStep :: Term -> Maybe Term
-argCaseStep (App fun (Case lhs ind_ty alts)) =
-    return 
+argCaseStep (App fun (Case lhs ind_ty alts)) = id
+  . return 
   $ Case lhs ind_ty (map appFun alts)
   where
   appFun (Alt bs rhs) =
@@ -203,6 +204,18 @@ freeCaseFix fix_t@(Fix {}) = do
     alt_t = Env.replaceTerm cse_of match fix_t
   
 freeCaseFix _ = mzero
+
+-- | This one is mostly to get rev-rev to go through. Removes a pattern
+-- match which just returns the term it is matching upon.
+identityCase :: Term -> Maybe Term
+identityCase (Case cse_t ind_ty alts)
+  | and (zipWith isIdAlt [0..] alts) = return cse_t
+  where
+  isIdAlt :: Nat -> Alt -> Bool
+  isIdAlt n (Alt bs alt_t) = 
+    alt_t == altPattern (liftMany (length bs) ind_ty) n
+identityCase _ = mzero
+
 
 {- This needs careful index adjustment for the new inner alts I think
 -- | If we are pattern matching on a pattern match then remove this 

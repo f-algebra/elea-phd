@@ -37,7 +37,7 @@ bindMany = concatEndos . map bind
 class Writable m => Readable m where
   bindings :: m [Bind]
   matches :: m Matches
-
+  
   boundAt :: Index -> m Bind
   boundAt at = liftM (!! fromEnum at) bindings
   

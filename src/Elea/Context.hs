@@ -2,6 +2,7 @@ module Elea.Context
 (
   Context, 
   make, apply, strip,
+  isConstant,
   toLambda, fromLambda, 
   dropLambdas,
 )
@@ -50,6 +51,11 @@ fromLambda = Context
 toLambda :: Context -> Term
 toLambda = get term
 
+-- | Returns whether there is any gap in the given context.
+isConstant :: Context -> Bool
+isConstant (Context (Lam _ t)) = 
+  0 `Set.member` Indices.free t
+
 -- | This is an odd function, it takes a context which has a lambda topmost
 -- and drops it if that abstracted variable is always applied to the gap.
 -- For example "\x -> f (_ x)" becomes just "f _".
@@ -67,14 +73,14 @@ dropLambdas (Context
   rhs_t' = id
     . Env.trackIndices 0
     . Fold.transformM merge
-    . substAt 1 (Var Indices.omega)
+    . substAt 0 (Var Indices.omega)
     $ rhs_t
   
   merge :: Term -> Env.TrackIndices Index Term
   merge orig@(App (Var x1) (Var x2)) 
-    | x1 == Indices.omega = do
+    | x2 == Indices.omega = do
       idx <- ask
-      if x2 == idx 
+      if x1 == idx 
       then return (Var idx)
       else return orig
   merge other = 
