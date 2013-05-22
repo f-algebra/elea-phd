@@ -1,9 +1,10 @@
--- | de-Bruijn indices, lifting, substitution, and unification.
+-- | de-Bruijn indices, lifting, and substitution.
 module Elea.Index
 (
-  Index, Liftable (..), Substitutable (..), Failure (..),
-  lift, liftMany, liftManyAt, subst, 
-  lowerAt, lower, lowerMany, replaceAt, omega,
+  Index, Indexed (..), Substitutable (..),
+  lift, liftAt, liftManyAt, liftMany, subst, 
+  lowerAt, lower, lowerMany, lowerableBy,
+  replaceAt, omega,
 )
 where
 
@@ -12,6 +13,7 @@ import Elea.Prelude hiding ( lift )
 import qualified Data.Nat as Nat
 import qualified Data.Map as Map
 import qualified Elea.Monad.Failure as Fail
+import qualified Data.Set as Set
 
 -- | A de-Bruijn index.
 -- We use the natural numbers with omega, in order to leverage some tricks 
@@ -21,52 +23,74 @@ newtype Index
   = Index CoNat
   deriving ( Eq, Ord, Enum, Num )
   
-class Liftable a where
-  liftAt :: Index -> a -> a
-  
-lift :: Liftable a => a -> a
-lift = liftAt 0
-
-liftMany :: Liftable a => Int -> a -> a
-liftMany n = concatEndos (replicate n lift)
-
-liftManyAt :: Liftable a => Int -> Index -> a -> a
-liftManyAt n at = concatEndos (replicate n (liftAt at))
-   
-instance Liftable () where
-  liftAt _ = id
-  
-instance Liftable Index where
-  liftAt at x 
-    | at <= x = succ x
-    | otherwise = x
-    
-instance (Liftable a, Liftable b) => Liftable (a, b) where
-  liftAt at (x, y) = (liftAt at x, liftAt at y)
-
-instance (Liftable a, Liftable b) => Liftable (Either a b) where
-  liftAt at (Left x) = Left (liftAt at x)
-  liftAt at (Right y) = Right (liftAt at y)
-
-instance Show Index where
-  show (Index n) = "_" ++ show n
-  
--- | This is for debugging. It is used in places that should really be 
--- undefined, but it's nicer to use a value we can actually observe/print out.
-class Failure t where
-  failure :: t
-  
-class Liftable t => Substitutable t where
-  type Inner t
-  substAt :: Index -> Inner t -> t -> t
+-- | Indexed things contain de-Bruijn indices.
+class Indexed t where
   free :: t -> Set Index
   
-  -- | Applies the given function to 
-  -- all top-level occurrences of inner objects
-  modifyInnerM :: Monad m => (Inner t -> m (Inner t)) -> t -> m t
+  -- | Only modifies free indices.
+  shift :: (Index -> Index) -> t -> t
+
+liftManyAt :: Indexed a => Int -> Index -> a -> a
+liftManyAt n at = shift lift
+  where
+  lift x
+    | at <= x = toEnum n + x
+    | otherwise = x
+
+liftAt :: Indexed a => Index -> a -> a
+liftAt = liftManyAt 1
+
+lift :: Indexed a => a -> a
+lift = liftAt 0
+
+liftMany :: Indexed a => Int -> a -> a
+liftMany = flip liftManyAt 0
+
+lowerManyAt :: Indexed a => Int -> Index -> a -> a
+lowerManyAt n at = shift lower
+  where
+  lower x
+    | at <= x = x - toEnum n
+    | otherwise = x
+    
+lowerAt :: Indexed a => Index -> a -> a
+lowerAt = lowerManyAt 1
+
+lower :: Indexed a => a -> a
+lower = lowerAt 0
+
+lowerMany :: Indexed a => Int -> a -> a
+lowerMany = flip lowerManyAt 0
+
+instance Indexed () where
+  free _ = mempty
+  shift _ = id
   
-  modifyInner :: (Inner t -> Inner t) -> t -> t
-  modifyInner f = runIdentity . modifyInnerM (Identity . f)
+instance Indexed Index where
+  free = Set.singleton
+  shift = ($)
+    
+instance (Indexed a, Indexed b) => Indexed (a, b) where
+  free (x, y) = free x ++ free y
+  shift f (x, y) = (shift f x, shift f y)
+
+instance (Indexed a, Indexed b) => Indexed (Either a b) where
+  free (Left x) = free x
+  free (Right y) = free y
+  
+  shift f (Left x) = Left (shift f x)
+  shift f (Right y) = Right (shift f y)
+
+instance (Ord a, Indexed a) => Indexed (Set a) where
+  free = Set.unions . map free . Set.toList
+  shift f = Set.map (shift f)
+  
+instance Show Index where
+  show (Index n) = "_" ++ show n
+
+class Indexed t => Substitutable t where
+  type Inner t
+  substAt :: Index -> Inner t -> t -> t
   
 subst :: Substitutable t => Inner t -> t -> t
 subst = substAt 0
@@ -75,16 +99,10 @@ subst = substAt 0
 replaceAt :: Substitutable t => Index -> Inner t -> t -> t
 replaceAt at with = substAt at with . liftAt (succ at)
 
-lowerAt :: (Substitutable t, Failure (Inner t)) => Index -> t -> t
-lowerAt idx = substAt idx failure --(error "Lowered an existing index")
+lowerableBy :: Indexed t => Int -> t -> Bool
+lowerableBy n = all (>= (toEnum n)) . free
 
-lower :: (Substitutable t, Failure (Inner t)) => t -> t
-lower = lowerAt 0
-
-lowerMany :: (Substitutable t, Failure (Inner t)) => Int -> t -> t
-lowerMany n = concatEndos (replicate n lower)
-
--- The magic index. Equal only to itself, greater than every other index,
+-- | The magic index. Equal only to itself, greater than every other index,
 -- and unchanged by lifting or lowering.
 omega :: Index
 omega = Index Nat.omega

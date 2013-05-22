@@ -4,7 +4,7 @@
 -- be lambdas then cases as high up as possible.
 module Elea.Floating
 (
-  run, steps,
+  run, steps, absurdity,
 )
 where
 
@@ -17,23 +17,29 @@ import qualified Elea.Env as Env
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Foldable as Fold
 import qualified Data.Monoid as Monoid
+import qualified Data.Set as Set
 
 run :: Term -> Term
 run = Fold.rewriteSteps (Simp.steps ++ steps)
 
 steps :: [Term -> Maybe Term]
 steps = 
-  [ lambdaCaseStep 
-  , funCaseStep
-  , argCaseStep
-  , constArgStep
+  [ lambdaCase
+  , funCase
+  , argCase
+  , constArg
   , freeCaseFix
   , identityCase
+  , caseCase
+  , fixCase
+  , constantCase
+ -- , uselessFix
+  , absurdity
   ]
   
 -- | Float lambdas out of the branches of a pattern match
-lambdaCaseStep :: Term -> Maybe Term
-lambdaCaseStep (Case lhs ind_ty alts)
+lambdaCase :: Term -> Maybe Term
+lambdaCase (Case lhs ind_ty alts)
   -- This step only works if every branch has a lambda topmost
   | all (isLam . get altInner) alts = id
     . return
@@ -53,39 +59,39 @@ lambdaCaseStep (Case lhs ind_ty alts)
     . Indices.liftAt (toEnum (length bs + 1))
     $ rhs
     
-lambdaCaseStep _ = mzero
+lambdaCase _ = mzero
 
 
 -- | If we have a case statement on the left of term 'App'lication
 -- then float it out.
-funCaseStep :: Term -> Maybe Term
-funCaseStep (App (Case lhs ind_ty alts) arg) = id
+funCase :: Term -> Maybe Term
+funCase (App (Case lhs ind_ty alts) arg) = id
   . return
   $ Case lhs ind_ty (map appArg alts)
   where
   appArg (Alt bs rhs) =
     Alt bs (App rhs (Indices.liftMany (length bs) arg))
     
-funCaseStep _ = mzero
+funCase _ = mzero
 
 
 -- | If we have a case statement on the right of term 'App'lication
 -- then float it out.
-argCaseStep :: Term -> Maybe Term
-argCaseStep (App fun (Case lhs ind_ty alts)) = id
+argCase :: Term -> Maybe Term
+argCase (App fun (Case lhs ind_ty alts)) = id
   . return 
   $ Case lhs ind_ty (map appFun alts)
   where
   appFun (Alt bs rhs) =
     Alt bs (App (Indices.liftMany (length bs) fun) rhs)
     
-argCaseStep _ = mzero
+argCase _ = mzero
 
 
 -- | If an argument to a 'Fix' never changes in any recursive call
 -- then we should float that lambda abstraction outside the 'Fix'.
-constArgStep :: Term -> Maybe Term
-constArgStep (Fix fix_b fix_rhs) = do
+constArg :: Term -> Maybe Term
+constArg (Fix fix_b fix_rhs) = do
   -- Find if any arguments never change in any recursive calls, 
   -- a "constant" argument, pos is the position of such an argument
   pos <- find isConstArg [0..length arg_binds - 1]
@@ -120,10 +126,10 @@ constArgStep (Fix fix_b fix_rhs) = do
     isConst _ = 
       return True
 
-  -- Returns the original argument to constArgStep, with the argument
+  -- Returns the original argument to constArg, with the argument
   -- at the given index floated outside of the 'Fix'.
   -- Code like this makes me hate de-Bruijn indices, particularly since
-  -- it's mostly just me not being clever enough to do it cleanly.
+  -- it's mostly just me not being clever enough to do it more concisely.
   removeConstArg :: Int -> Term
   removeConstArg arg_pos = id
     . Indices.lower
@@ -168,7 +174,8 @@ constArgStep (Fix fix_b fix_rhs) = do
           unflattenApp 
         $ t : [ Var (toEnum i) | i <- reverse [1..n-1] ]    
       
-constArgStep _ = mzero
+constArg _ = mzero
+
 
 -- | If we pattern match inside a 'Fix', but only using variables that exist
 -- outside of the 'Fix', then we can float this pattern match outside
@@ -205,6 +212,7 @@ freeCaseFix fix_t@(Fix {}) = do
   
 freeCaseFix _ = mzero
 
+
 -- | This one is mostly to get rev-rev to go through. Removes a pattern
 -- match which just returns the term it is matching upon.
 identityCase :: Term -> Maybe Term
@@ -217,16 +225,100 @@ identityCase (Case cse_t ind_ty alts)
 identityCase _ = mzero
 
 
-{- This needs careful index adjustment for the new inner alts I think
+-- | Dunno if this ever comes up but if we have a fix without any occurrence
+-- of the fix variable in the body we can just drop it.
+uselessFix :: Term -> Maybe Term
+uselessFix (Fix _ fix_t)
+  | not (Set.member 0 (Indices.free fix_t)) = 
+      Just (Indices.lower fix_t)
+uselessFix _ = mzero
+
+
+-- | Removes a pattern match if every branch returns the same value.
+constantCase :: Term -> Maybe Term
+constantCase (Case _ _ alts) = do
+  lowered <- mapM loweredAltTerm alts
+  let filtered = filter (not . isAbsurd) lowered
+  case filtered of
+    [] -> return (head lowered)
+    alt_t:alt_ts -> do
+      guard (all (== alt_t) alt_ts)
+      guard (not (containsFreeFunction alt_t))
+      return alt_t
+  where
+  containsFreeFunction :: Term -> Bool
+  containsFreeFunction term = 
+    Env.trackIndices (Indices.free term) (Fold.anyM freeFunc term)
+    where
+    freeFunc :: Term -> Env.TrackIndices (Set Index) Bool
+    freeFunc (App (Var f) _) = asks (Set.member f)
+    freeFunc _ = return False
+
+  loweredAltTerm :: Alt -> Maybe Term
+  loweredAltTerm (Alt bs alt_t) = do
+    guard (Indices.lowerableBy (length bs) alt_t)
+    return (Indices.lowerMany (length bs) alt_t)
+constantCase _ = mzero
+
+
+-- | Pattern matches over variables should be above those over function
+-- results.
+fixCase :: Term -> Maybe Term
+fixCase outer_cse@(Case outer_t outer_ty outer_alts)
+  | isFix (leftmost outer_t) = do
+    var_alt <- find varAlt outer_alts
+    return (applyCase var_alt)
+    where
+    varAlt :: Alt -> Bool
+    -- The inner case must pattern match over a variable not 
+    -- bound by the outer pattern match
+    varAlt (Alt bs (Case (Var idx) _ _)) = 
+      fromEnum idx >= length bs
+    varAlt _ = False
+    
+    applyCase :: Alt -> Term
+    applyCase (Alt bs alt_t) =
+      Case (Var idx) inner_ty cse_alts
+      where
+      Case (Var idx) inner_ty inner_alts =  
+        Indices.lowerMany (length bs) alt_t
+      cse_alts = zipWith mkAlt [0..] inner_alts
+      
+      mkAlt :: Nat -> Alt -> Alt
+      mkAlt n (Alt bs _) = id
+        . Alt bs 
+        . replaceAt (Indices.liftMany (length bs) idx) pattern
+        . Indices.liftMany (length bs) 
+        $ outer_cse        
+        where
+        pattern = altPattern inner_ty n
+        
+fixCase _ = mzero
+
+
 -- | If we are pattern matching on a pattern match then remove this 
 -- using distributivity.
-caseCaseStep :: Term -> Maybe Term
-caseCaseStep (Case (Case lhs inner_ty inner_alts) outer_ty outer_alts) =
-  Case lhs inner_ty (map floatAlt inner_alts)
+caseCase :: Term -> Maybe Term
+caseCase (Case (Case i_t i_ty i_alts) o_ty o_alts) = id
+  . return
+  . Case i_t i_ty 
+  $ map innerAlt i_alts
   where
-  floatAlt (Alt bs rhs) = 
-    Alt bs (Case rhs outer_ty outer_alts)
+  innerAlt (Alt i_bs i_alt) = 
+    Alt i_bs (Case i_alt o_ty' (map outerAlt o_alts))
+    where
+    o_ty' = liftMany (length i_bs) o_ty
     
-caseCaseStep _ = Nothing
--}
+    outerAlt (Alt o_bs o_alt) = 
+      Alt o_bs' o_alt'
+      where 
+      o_alt' = liftManyAt (length i_bs) (toEnum (length o_bs)) o_alt
+      o_bs' = zipWith (liftManyAt (length i_bs)) [0..] o_bs
+    
+caseCase _ = mzero
 
+
+absurdity :: Term -> Maybe Term
+absurdity (App (App Absurd _) _) = Just Absurd
+absurdity (Case (leftmost -> Absurd) _ _) = Just Absurd
+absurdity _ = mzero

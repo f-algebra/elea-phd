@@ -10,6 +10,7 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
 import Elea.Show ( showM )
+import Elea.Unifier ( Unifier )
 import Elea.Index hiding ( lift )
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Index as Indices
@@ -44,7 +45,7 @@ fuse transform outer_ctx inner_f@(Fix fix_b fix_t) = do
       new_fix_ty = unflattenPi arg_bs result_ty
       new_fix_b = Bind new_label new_fix_ty
   
-  transformed_t <- id . trace s1 
+  transformed_t <- id -- . trace s1 
     . Env.bind fix_b
     . transform
     . Context.apply (Indices.lift outer_ctx)
@@ -54,7 +55,7 @@ fuse transform outer_ctx inner_f@(Fix fix_b fix_t) = do
   let s2 = "\nTRANS:\n" ++ trn_s
   
   -- I gave up commenting at this point, it works because it does...
-  let replaced_t = id . trace s2
+  let replaced_t = id -- . trace s2
         . Env.trackIndices 0
         . Fold.transformM replace
         $ transformed_t
@@ -64,7 +65,7 @@ fuse transform outer_ctx inner_f@(Fix fix_b fix_t) = do
     $ showM replaced_t
   let s3 = "\nREP:\n" ++ rep_s
   
-  id . trace s3
+  id -- . trace (s1 ++ s2 ++ s3)
     $ Fail.when (0 `Set.member` Indices.free replaced_t)
 
   let done = id
@@ -74,11 +75,14 @@ fuse transform outer_ctx inner_f@(Fix fix_b fix_t) = do
         . unflattenLam arg_bs
         . Indices.lower
         $ replaced_t
-        
+     
   done_s <- showM done
   let s4 = "\nDONE:\n" ++ done_s
   
-  id . trace s4 
+  Fail.when (Fold.any isAbsurd done)
+  Fail.when (leftmost done == inner_f)
+  
+  id -- . trace s4 
     $ return done
   where
   replace :: Term -> Env.TrackIndices Index Term
@@ -92,7 +96,7 @@ fuse transform outer_ctx inner_f@(Fix fix_b fix_t) = do
     mby_uni <- Fail.toMaybe (Unifier.find replace_t term)
     case mby_uni of
       Nothing -> return term
-      Just uni 
+      Just uni
         | Map.member idx_offset uni -> return term
         | otherwise -> id
             . return
@@ -101,7 +105,7 @@ fuse transform outer_ctx inner_f@(Fix fix_b fix_t) = do
             . unflattenApp
             . (Var fix_idx :)
             $ map Indices.lift arg_vars
-          
+            
   fused_t = Context.apply outer_ctx inner_f
   largest_free_index = (pred . supremum . Indices.free) fused_t
   arg_indices = reverse [0..largest_free_index]
@@ -129,11 +133,16 @@ split transform (Fix fix_b fix_t) (Indices.lift -> outer_ctx) = do
  -- let s3 =  "\n\nFLOATED\n" ++ flt_s
   stripped <- id -- . trace s2
     $ stripContext unfloated
-    
-  return 
-    . Context.apply (Indices.lower outer_ctx)
-    . Fix fix_b
-    $ stripped
+   
+  let output = id
+       . Context.apply (Indices.lower outer_ctx)
+       . Fix fix_b
+       $ stripped
+       
+  o_s <- showM output
+  let s3 = s1 ++ "\n\nGIVES\n" ++ o_s
+  return -- . trace s3
+    $ output
   where
   (arg_bs, _) = flattenPi (get boundType fix_b)
                  
@@ -171,3 +180,25 @@ split transform (Fix fix_b fix_t) (Indices.lift -> outer_ctx) = do
         return (Alt bs inner')
     floatCtxUp _ = mzero
 
+    {-
+invent :: (Monad.Fail m, Env.Readable m) => 
+  (Term -> m Term) -> Term -> Term -> m Context
+invent transform top_t inner_f@(Fix inner_b inner_t) = do
+  ret_ty <- Err.noneM (Typing.typeOf top_t)
+  ind_ty <- Err.noneM (Typing.typeOf applied_inner)
+  Fail.when (not (isInd ind_ty))
+  let Ind _ ind_cons = ind_ty                       
+      
+  where
+  (arg_bs, _) = flattenLam inner_t
+  
+  new_vars = id
+    . map (Var . toEnum)
+    $ reverse [0..length arg_bs - 1]
+    
+  applied_inner = id 
+    . unflattenApp 
+    . (: new_vars)
+    . Indices.liftMany (length arg_bs)
+    $ inner_f
+-}

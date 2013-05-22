@@ -83,6 +83,15 @@ let list = fun (a: *) ->
 let Nil = fun (a: *) -> inj0 (list a)
 let Cons = fun (a: *) -> inj1 (list a)
 
+let len =
+  fun (a: *) ->
+    fix (len: pi (list a) -> nat) ->
+      fun (xs: list a) ->
+        match xs with
+        | Nil -> 0
+        | Cons x xs' -> Suc (len xs')
+        end
+
 let app = 
   fun (a: *) ->
     fix (app: pi (list a) (list a) -> list a) ->

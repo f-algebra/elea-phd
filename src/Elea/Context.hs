@@ -104,12 +104,14 @@ strip (Context (Lam _ ctx_t)) term = do
     Fail.when (idx /= 0)
     return (Indices.lower hole_term)
 
-instance Liftable Context where
-  liftAt at (Context t) = Context (liftAt at t)
+instance Indexed Context where
+  free = Indices.free . get term
+  shift f = modify term (Indices.shift f)
 
 instance Substitutable Context where
   type Inner Context = Term
   substAt at with = modify term (substAt at with)
-  free = Indices.free . get term
-  modifyInnerM = modifyM term
+  
+instance ContainsTerms Context where
+  mapTermsM f = modifyM term f
 

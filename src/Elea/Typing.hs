@@ -1,7 +1,7 @@
 module Elea.Typing
 (
   typeOf, unfoldInd, check, absurd, empty,
-  generalise, checkStep
+  generalise, checkStep, nthArgument
 )
 where
 
@@ -60,13 +60,20 @@ unfoldInd ty@(Ind _ cons) =
 unfoldInd other = 
   error $ "Tried to unfold a non inductive type: " ++ show other
   
+nthArgument :: Int -> Type -> Type
+nthArgument n = id
+  . Indices.lowerMany n
+  . get boundType
+  . (!! n)
+  . fst
+  . flattenPi 
+  
 -- | Takes a term to generalise, and modifies a term to term function,
 -- such that the supplied term is generalised going in,
 -- and ungeneralised coming out. Just treat t1 and t2 as Term, 
 -- I had to generalise it to t1 and t2 for annoying reasons.
 generalise :: (Env.Readable m, KleisliShow t1, ShowM t1 m,
-  Substitutable t1, Inner t1 ~ Term, 
-  Substitutable t2, Inner t2 ~ Term) => 
+  ContainsTerms t1, ContainsTerms t2) => 
     Term -> (t1 -> m t2) -> (t1 -> m t2)
 generalise gen_t transform term = do
   -- First we create a binding for the new variable by finding its type

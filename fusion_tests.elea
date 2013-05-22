@@ -9,7 +9,7 @@ let t1' =
       | Nil -> Nil a
       | Cons x xs -> app a (f xs) (Cons a x (Nil a)) 
       end) xs)
-      
+
 let t2 = fun (x:nat) (y:nat) -> add x (Suc y)
 let t2' = fun (x:nat) (y:nat) -> Suc (add x y)
 
@@ -20,7 +20,7 @@ let t3' =
   fun (a:*) (xs:list a) (ys:list a) (zs:list a) ->
     app a xs (app a ys zs)
   
-let t4 = fun (x:nat)(y:nat)(z:nat) -> add (add x y) z
+let t4 = fun (x:nat) (y:nat) (z:nat) -> add (add x y) z
 let t4' = fun (x:nat) (y:nat) (z:nat) -> add x (add y z)
 
 let t5 =
@@ -48,5 +48,4 @@ let t9' = fun (a:*) (xs:list a) -> xs
 
 let t10 = fun (x:nat) (y:nat) -> or (leq_nat x y) (leq_nat y x)
 let t10' = fun nat nat -> True
-  
 

@@ -111,10 +111,10 @@ Bindings :: { [RawBind] }
 Term :: { RawTerm }
   : name                              { TVar $1 }
   | '*'                               { TSet }
-  | inj Term                          { TInj $1 $2 }
   | Term name                         { TApp $1 (TVar $2) }
   | Term '(' Term ')'                 { TApp $1 $3 }  
   | '(' Term ')'                      { $2 }
+  | inj Term                          { TInj $1 $2 }
   | fun Bindings '->' Term            { TLam $2 $4 }
   | fix Bindings '->' Term            { TFix $2 $4 }
   | any Bindings '->' Term            { TAny $2 $4 }
@@ -150,6 +150,8 @@ instance Monad m => Env.Writable (ReaderT Scope m) where
       | Bind (Just lbl) _ <- b = 
           Map.insert lbl (Right at)
       | otherwise = id
+      
+  equals _ _ = id
 
 instance Err.Monad m => Env.Readable (ReaderT Scope m) where
   bindings = asks (get bindStack)

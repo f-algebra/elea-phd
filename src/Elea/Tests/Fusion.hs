@@ -12,7 +12,7 @@ import Elea.Show ( showM )
 import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Testing as Test
 import qualified Elea.Context as Context
-import qualified Elea.Fusion.Steps as Fusion
+import qualified Elea.Fusion.Simplifier as Fusion
 
 assertFusionEq :: Int -> Elea Test.Test
 assertFusionEq n = do
@@ -26,7 +26,6 @@ tests = Test.label "Fusion"
     $ Test.run $ do
   Test.loadPrelude
   Test.loadFile "fusion_tests.elea"
-
   liftM Test.list
-    $ mapM assertFusionEq [10]
+    $ mapM assertFusionEq [1..10]
 

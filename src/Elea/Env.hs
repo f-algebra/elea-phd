@@ -1,4 +1,3 @@
-{-# LANGUAGE UndecidableInstances #-}
 -- | Type environments, but also a lot of class instances for 'Term',
 -- since they require type environments.
 module Elea.Env 
@@ -48,12 +47,11 @@ class Writable m => Readable m where
   matchedWith :: Term -> m (Maybe Term)
   matchedWith t = liftM (Map.lookup t) matches
   
--- | Replace all instances of one term with another within a term.
-replaceTerm :: (Substitutable t, Inner t ~ Term) =>
-  Term -> Term -> t -> t
+-- | Replace all instances of one term with another within terms.
+replaceTerm :: ContainsTerms t => Term -> Term -> t -> t
 replaceTerm me with = id
   . trackIndices (me, with)
-  . modifyInnerM (Fold.transformM apply)
+  . mapTermsM (Fold.transformM apply)
   where
   apply :: Term -> TrackIndices (Term, Term) Term
   apply term = do
@@ -106,28 +104,43 @@ instance Fold.FoldableM Term where
   distM other = 
     sequence (map fst other)
     
-instance Liftable Term where
-  liftAt at = id
-    . trackIndices at 
-    . Fold.transformM liftVar
+instance Indexed Term where
+  free = id
+    . trackIndices 0 
+    . Fold.foldM freeR
     where
-    liftVar :: Term -> TrackIndices Index Term
-    liftVar (Var idx) = do
+    freeR :: Term -> TrackIndices Index (Set Index)
+    freeR (Var x) = do
       at <- ask
-      return $ Var (liftAt at idx)
-    liftVar other = 
+      if x >= at
+      then return (Set.singleton (x - at))
+      else return mempty
+    freeR _ = 
+      return mempty
+
+  shift f = id
+    . trackIndices 0
+    . Fold.transformM shiftVar
+    where
+    shiftVar :: Term -> TrackIndices Index Term
+    shiftVar (Var x) = do
+      at <- ask
+      let x' | x >= at = f (x - at) + at
+             | otherwise = x
+      return (Var x')
+    shiftVar other = 
       return other
       
-instance Liftable Bind where
-  liftAt at (Bind l t) = Bind l (liftAt at t)
+instance Indexed Bind where
+  free (Bind _ t) = free t
+  shift f (Bind l t) = Bind l (Indices.shift f t)
       
 instance Substitutable Term where
   type Inner Term = Term
 
-  substAt at with term = id
+  substAt at with = id
     . trackIndices (at, with)
     . Fold.transformM substVar
-    $ term
     where
     substVar :: Term -> TrackIndices (Index, Term) Term
     substVar (Var var) = do
@@ -140,27 +153,10 @@ instance Substitutable Term where
         GT -> Var var
     substVar other =
       return other
-      
-  free = id
-    . trackIndices 0 
-    . Fold.foldM freeR
-    where
-    freeR :: Term -> TrackIndices Index (Set Index)
-    freeR (Var x) = do
-      free_var_limit <- ask
-      if x >= free_var_limit
-      then return (Set.singleton (x - free_var_limit))
-      else return mempty
-    freeR _ = 
-      return mempty
-  
-  modifyInnerM = id
-      
+
 instance Substitutable Bind where
   type Inner Bind = Term
   substAt at with = modify boundType (substAt at with)
-  free = Indices.free . get boundType
-  modifyInnerM = modifyM boundType
   
 newtype TrackIndicesT r m a 
   = TrackIndicesT { runTrackIndicesT :: ReaderT r m a }
@@ -181,7 +177,7 @@ instance Monad m => MonadReader r (TrackIndicesT r m) where
   ask = TrackIndicesT ask
   local f = TrackIndicesT . local f . runTrackIndicesT
   
-instance (Monad m, Liftable r) => Writable (TrackIndicesT r m) where
+instance (Monad m, Indexed r) => Writable (TrackIndicesT r m) where
   bindAt at _ = local (liftAt at)
   equals _ _ = id
   
@@ -222,8 +218,27 @@ instance Readable m => Readable (EitherT e m) where
   bindingDepth = Trans.lift bindingDepth
   matchedWith = Trans.lift . matchedWith
   
+instance Writable Identity where
+  bindAt _ _ = id
+  equals _ _ = id
+  
+instance Readable Identity where
+  bindings = return mempty
+  matches = return mempty
+  
+instance ContainsTerms Term where
+  mapTermsM = ($)
+
+instance ContainsTerms Bind where
+  mapTermsM f = modifyM boundType f
+
 instance Unifiable Term where
-  find = (trackIndicesT 0 .) . uni
+  find t1 t2 = do
+    possible_uni <- trackIndicesT 0 (uni t1 t2)
+    -- Need to test out the unifier. It could be invalid if at some
+    -- points a variable needs to be replaced, but at others it stays the same.
+    Fail.when (Unifier.apply possible_uni t1 /= t2)
+    return possible_uni
     where
     uniBind :: forall m . Fail.Monad m =>
       Bind -> Bind -> TrackIndicesT Index m (Unifier Term)

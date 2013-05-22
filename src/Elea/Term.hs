@@ -2,7 +2,7 @@ module Elea.Term
 (
   Type, Term (..), Alt (..), Bind (..),
   Term' (..), Alt' (..), Bind' (..), 
-  Matches,
+  Matches, ContainsTerms (..), mapTerms,
   projectAlt, embedAlt, projectBind, embedBind,   
   inner, varIndex, alts, argument, 
   inductiveType, binding, constructors,
@@ -14,8 +14,8 @@ module Elea.Term
   flattenApp, unflattenApp, 
   flattenPi, unflattenPi,
   flattenLam, unflattenLam,
-  isInj, isLam, isVar, isPi, isInd, isFix,
-  altPattern,
+  isInj, isLam, isVar, isPi, isInd, isFix, isAbsurd,
+  altPattern, isBaseCase,
 )
 where
 
@@ -24,6 +24,7 @@ import Elea.Prelude
 import Elea.Index
 import qualified Elea.Index as Indices
 import qualified Elea.Foldable as Fold
+import qualified Data.Set as Set
 
 -- * Our functional language
 
@@ -150,9 +151,14 @@ instance Fold.Unfoldable Term where
   embed Set' = Set
   embed Type' = Type
   
-        
+class (Substitutable t, Inner t ~ Term) => ContainsTerms t where
+  mapTermsM :: Monad m => (Term -> m Term) -> t -> m t
+  
+mapTerms :: ContainsTerms t => (Term -> Term) -> t -> t
+mapTerms f = runIdentity . mapTermsM (return . f)
+
 -- * Some generally helpful functions
-        
+
 isInj :: Term -> Bool
 isInj (Inj {}) = True
 isInj _ = False
@@ -176,6 +182,10 @@ isInd _ = False
 isFix :: Term -> Bool
 isFix (Fix {}) = True
 isFix _ = False
+
+isAbsurd :: Term -> Bool
+isAbsurd (leftmost -> Absurd) = True
+isAbsurd _ = False
     
 flattenApp :: Term -> [Term]
 flattenApp (App t1 t2) = flattenApp t1 ++ [t2]
@@ -223,7 +233,24 @@ altPattern ty@(Ind _ cons) n = id
     . flattenPi
     . get boundType
     $ cons !! fromEnum n
-  
-instance Failure Term where
-  failure = Absurd
 
+-- | For a given inductive type, return whether the constructor at that 
+-- index is a base case.
+isBaseCase :: Substitutable Term => Type -> Nat -> Bool
+isBaseCase (Ind _ cons) = id
+  . not
+  . Set.member 0
+  . Indices.free
+  -- These next three strip the return type out, since it will always contain
+  -- an instance of the defined inductive type.
+  . uncurry unflattenPi
+  . second (const Absurd)
+  . flattenPi
+  . get boundType
+  . (cons !!)
+  . fromEnum
+  {-
+makeFold :: Type -> Type -> Term 
+makeFold (Ind _ cons) ret_ty = 
+  -}
+  

@@ -366,7 +366,7 @@ action_27 _ = happyFail
 
 action_28 (15) = happyShift action_34
 action_28 (24) = happyShift action_35
-action_28 _ = happyReduce_17
+action_28 _ = happyReduce_20
 
 action_29 (21) = happyShift action_44
 action_29 _ = happyFail
@@ -393,7 +393,7 @@ action_33 (24) = happyShift action_35
 action_33 (25) = happyShift action_39
 action_33 _ = happyFail
 
-action_34 _ = happyReduce_18
+action_34 _ = happyReduce_17
 
 action_35 (15) = happyShift action_5
 action_35 (20) = happyShift action_6
@@ -432,7 +432,7 @@ action_38 (24) = happyShift action_35
 action_38 (25) = happyShift action_66
 action_38 _ = happyFail
 
-action_39 _ = happyReduce_20
+action_39 _ = happyReduce_19
 
 action_40 (16) = happyShift action_65
 action_40 (9) = happyGoto action_64
@@ -593,7 +593,7 @@ action_65 (8) = happyGoto action_67
 action_65 (10) = happyGoto action_68
 action_65 _ = happyFail
 
-action_66 _ = happyReduce_19
+action_66 _ = happyReduce_18
 
 action_67 (15) = happyShift action_80
 action_67 (18) = happyShift action_81
@@ -783,23 +783,15 @@ happyReduction_16 _
 	)
 
 happyReduce_17 = happySpecReduce_2  12 happyReduction_17
-happyReduction_17 (HappyAbsSyn12  happy_var_2)
-	(HappyTerminal (TokenInj happy_var_1))
-	 =  HappyAbsSyn12
-		 (TInj happy_var_1 happy_var_2
-	)
-happyReduction_17 _ _  = notHappyAtAll 
-
-happyReduce_18 = happySpecReduce_2  12 happyReduction_18
-happyReduction_18 (HappyTerminal (TokenName happy_var_2))
+happyReduction_17 (HappyTerminal (TokenName happy_var_2))
 	(HappyAbsSyn12  happy_var_1)
 	 =  HappyAbsSyn12
 		 (TApp happy_var_1 (TVar happy_var_2)
 	)
-happyReduction_18 _ _  = notHappyAtAll 
+happyReduction_17 _ _  = notHappyAtAll 
 
-happyReduce_19 = happyReduce 4 12 happyReduction_19
-happyReduction_19 (_ `HappyStk`
+happyReduce_18 = happyReduce 4 12 happyReduction_18
+happyReduction_18 (_ `HappyStk`
 	(HappyAbsSyn12  happy_var_3) `HappyStk`
 	_ `HappyStk`
 	(HappyAbsSyn12  happy_var_1) `HappyStk`
@@ -808,14 +800,22 @@ happyReduction_19 (_ `HappyStk`
 		 (TApp happy_var_1 happy_var_3
 	) `HappyStk` happyRest
 
-happyReduce_20 = happySpecReduce_3  12 happyReduction_20
-happyReduction_20 _
+happyReduce_19 = happySpecReduce_3  12 happyReduction_19
+happyReduction_19 _
 	(HappyAbsSyn12  happy_var_2)
 	_
 	 =  HappyAbsSyn12
 		 (happy_var_2
 	)
-happyReduction_20 _ _ _  = notHappyAtAll 
+happyReduction_19 _ _ _  = notHappyAtAll 
+
+happyReduce_20 = happySpecReduce_2  12 happyReduction_20
+happyReduction_20 (HappyAbsSyn12  happy_var_2)
+	(HappyTerminal (TokenInj happy_var_1))
+	 =  HappyAbsSyn12
+		 (TInj happy_var_1 happy_var_2
+	)
+happyReduction_20 _ _  = notHappyAtAll 
 
 happyReduce_21 = happyReduce 4 12 happyReduction_21
 happyReduction_21 ((HappyAbsSyn12  happy_var_4) `HappyStk`
@@ -1010,6 +1010,7 @@ instance Monad m => Env.Writable (ReaderT Scope m) where
 
 instance Err.Monad m => Env.Readable (ReaderT Scope m) where
   bindings = asks (get bindStack)
+  matches = return mempty
   
 type ParserMonad m a = (Err.Monad m, Defs.Monad m) => ReaderT Scope m a
     

@@ -2,14 +2,15 @@ module Elea.Foldable
 (
   module Data.Functor.Foldable,
   Refoldable, FoldableM (..),
-  transformM, rewriteM, foldM, allM, findM,
+  transformM, rewriteM, foldM, 
+  allM, findM, anyM, any, all,
   transform, rewrite, recover,
   rewriteStepsM, rewriteSteps,
 )
 where
 
 import Prelude ()
-import Elea.Prelude hiding ( Foldable, allM, findM )
+import Elea.Prelude hiding ( Foldable, allM, anyM, findM, any, all )
 import GHC.Prim ( Constraint )
 import Data.Functor.Foldable
 import qualified Data.Monoid as Monoid
@@ -53,6 +54,18 @@ findM f = liftM (Monoid.getFirst) . foldM (liftM Monoid.First . f)
 allM :: (FoldableM t, Monad m, FoldM t (WriterT Monoid.All m)) =>
   (t -> m Bool) -> t -> m Bool
 allM p = liftM Monoid.getAll . foldM (liftM Monoid.All . p)
+
+anyM :: (FoldableM t, Monad m, FoldM t (WriterT Monoid.All m)) =>
+  (t -> m Bool) -> t -> m Bool
+anyM p = liftM not . allM (liftM not . p)
+
+all :: (FoldableM t, FoldM t (WriterT Monoid.All Identity)) => 
+  (t -> Bool) -> t -> Bool
+all p = runIdentity . allM (return . p)
+
+any :: (FoldableM t, FoldM t (WriterT Monoid.All Identity)) => 
+  (t -> Bool) -> t -> Bool
+any p = not . all (not . p)
   
 rewriteM :: (FoldableM t, Monad m, FoldM t m) =>
   (t -> m (Maybe t)) -> t -> m t
