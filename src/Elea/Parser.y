@@ -66,6 +66,7 @@ mkLabels [''Scope, ''RawBind]
   ']'         { TokenCS }
   '('         { TokenOP }
   ')'         { TokenCP }
+  '_|_'       { TokenAbsurd }
   match       { TokenMatch }
   with        { TokenWith }
   fun         { TokenFun }
@@ -111,6 +112,7 @@ Bindings :: { [RawBind] }
 Term :: { RawTerm }
   : name                              { TVar $1 }
   | '*'                               { TSet }
+  | '_|_'                             { TAbsurd }
   | Term name                         { TApp $1 (TVar $2) }
   | Term '(' Term ')'                 { TApp $1 $3 }  
   | '(' Term ')'                      { $2 }
@@ -152,6 +154,7 @@ instance Monad m => Env.Writable (ReaderT Scope m) where
       | otherwise = id
       
   equals _ _ = id
+  forgetMatches = id
 
 instance Err.Monad m => Env.Readable (ReaderT Scope m) where
   bindings = asks (get bindStack)
@@ -286,6 +289,7 @@ data Token
   | TokenCS
   | TokenOP
   | TokenCP
+  | TokenAbsurd
   | TokenMatch
   | TokenWith
   | TokenFun
@@ -316,6 +320,7 @@ lexer (' ':cs) = lexer cs
 lexer ('\n':cs) = lexer cs
 lexer ('-':'>':cs) = TokenArr : lexer cs
 lexer ('=':'>':cs) = TokenDArr : lexer cs
+lexer ('_':'|':'_':cs) = TokenAbsurd : lexer cs
 lexer ('*':cs) = TokenSet : lexer cs
 lexer (':':cs) = TokenTypeOf : lexer cs
 lexer ('(':cs) = TokenOP : lexer cs
@@ -354,6 +359,7 @@ instance Show Token where
   show TokenArr = "->"
   show TokenDArr = "=>"
   show TokenEq = "="
+  show TokenAbsurd = "_|_"
   show TokenOS = "["
   show TokenCS = "]"
   show TokenOP = "("

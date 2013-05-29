@@ -86,3 +86,9 @@ let t6' = fun (a:*) (xs:list a) (n:nat) ->
       end
     end
   end
+  
+let t7 = fun (p:bool) (q:bool) -> not (and (not p) (not q))
+let t7' = or
+
+let t8 = fun (p:bool) -> not (not p)
+let t8' = id bool

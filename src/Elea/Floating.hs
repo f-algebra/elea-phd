@@ -4,7 +4,7 @@
 -- be lambdas then cases as high up as possible.
 module Elea.Floating
 (
-  run, steps, absurdity,
+  run, steps,
 )
 where
 
@@ -31,10 +31,9 @@ steps =
   , freeCaseFix
   , identityCase
   , caseCase
-  , fixCase
+  , raiseVarCase
   , constantCase
  -- , uselessFix
-  , absurdity
   ]
   
 -- | Float lambdas out of the branches of a pattern match
@@ -263,8 +262,8 @@ constantCase _ = mzero
 
 -- | Pattern matches over variables should be above those over function
 -- results.
-fixCase :: Term -> Maybe Term
-fixCase outer_cse@(Case outer_t outer_ty outer_alts)
+raiseVarCase :: Term -> Maybe Term
+raiseVarCase outer_cse@(Case outer_t outer_ty outer_alts)
   | isFix (leftmost outer_t) = do
     var_alt <- find varAlt outer_alts
     return (applyCase var_alt)
@@ -293,7 +292,7 @@ fixCase outer_cse@(Case outer_t outer_ty outer_alts)
         where
         pattern = altPattern inner_ty n
         
-fixCase _ = mzero
+raiseVarCase _ = mzero
 
 
 -- | If we are pattern matching on a pattern match then remove this 
@@ -317,8 +316,3 @@ caseCase (Case (Case i_t i_ty i_alts) o_ty o_alts) = id
     
 caseCase _ = mzero
 
-
-absurdity :: Term -> Maybe Term
-absurdity (App (App Absurd _) _) = Just Absurd
-absurdity (Case (leftmost -> Absurd) _ _) = Just Absurd
-absurdity _ = mzero

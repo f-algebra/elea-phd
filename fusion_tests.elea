@@ -49,3 +49,22 @@ let t9' = fun (a:*) (xs:list a) -> xs
 let t10 = fun (x:nat) (y:nat) -> or (leq_nat x y) (leq_nat y x)
 let t10' = fun nat nat -> True
 
+let t11 = fun (n:nat) (xs:list nat) (ys:list nat) -> 
+  count n (app nat xs ys)
+let t11' = fun (n:nat) (xs:list nat) (ys:list nat) -> 
+  add (count n xs) (count n ys)
+
+let t12 = fun (x:nat) (y:nat) (z:nat) -> 
+  implies (and (leq_nat x y) (leq_nat y z)) (leq_nat x z)
+let t12' = fun nat nat nat -> True
+  
+let t19 = fun (n:nat) (x:nat) (xs:list nat) -> 
+  match sorted xs with
+  | True -> False
+  | False -> sorted (Cons nat x xs)
+  end
+let t19' = fun nat nat (list nat) -> False
+
+let t20 = fun (n:nat) (xs:list nat) -> sorted (insert n xs)
+let t20' = fun (n:nat) (xs:list nat) -> sorted xs
+  

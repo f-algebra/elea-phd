@@ -153,9 +153,8 @@ fusion full_t@(flattenApp -> outer_f@(Fix outer_b _) : outer_args@(_:_)) = do
     runFusion outer_ctx
       | isVar rec_arg = fuse run outer_ctx inner_f
       | otherwise = 
-          Typing.generalise 
-            (head inner_args) 
-            (flip (fuse run) (Indices.lift inner_f))
+          Typing.generalise (head inner_args) 
+            (\t -> fuse run t (Indices.lift inner_f))
             outer_ctx
       where
       rec_arg = head inner_args
@@ -187,9 +186,7 @@ fusion full_t@(flattenApp -> outer_f@(Fix outer_b _) : outer_args@(_:_)) = do
     fuseMatch (match_t, flattenApp -> Inj inj_n ind_ty : inj_args) = do
       outer_ty <- Err.noneM (Typing.typeOf outer_f)
       let ctx = Context.make outer_ty full_ty buildContext
-      Fail.toMaybe 
-        . liftM (Fold.rewrite Float.absurdity)
-        $ fuse checkedSimple ctx outer_f
+      Fail.toMaybe (fuse checkedSimple ctx outer_f)
       where
       buildContext :: Term -> Term
       buildContext gap_t = 

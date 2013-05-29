@@ -28,7 +28,8 @@ import qualified Data.Map as Map
 
 fuse :: forall m . (Env.Readable m, Fail.Monad m) => 
   (Term -> m Term) -> Context -> Term -> m Term
-fuse transform outer_ctx inner_f@(Fix fix_b fix_t) = do
+fuse transform outer_ctx inner_f@(Fix fix_b fix_t) = 
+    Env.forgetMatches $ do
   ctx_s <- showM outer_ctx
   t_s <- showM inner_f
   let s1 = "FUSING:\n" ++ ctx_s ++ "\nWITH\n" ++ t_s
@@ -65,24 +66,24 @@ fuse transform outer_ctx inner_f@(Fix fix_b fix_t) = do
     $ showM replaced_t
   let s3 = "\nREP:\n" ++ rep_s
   
-  id -- . trace (s1 ++ s2 ++ s3)
-    $ Fail.when (0 `Set.member` Indices.free replaced_t)
-
+  let fix_body = id . trace (s1 ++ s2 ++ s3)
+        . unflattenLam arg_bs
+        . substAt 0 inner_f
+        $ replaced_t
+        
+  Fail.unless (0 `Set.member` Indices.free fix_body)
+    
   let done = id
         . Float.run
         . (\t -> unflattenApp (t : arg_vars))
-        . Fix new_fix_b
-        . unflattenLam arg_bs
-        . Indices.lower
-        $ replaced_t
+        $ Fix new_fix_b fix_body
      
   done_s <- showM done
   let s4 = "\nDONE:\n" ++ done_s
   
-  Fail.when (Fold.any isAbsurd done)
   Fail.when (leftmost done == inner_f)
   
-  id -- . trace s4 
+  id . trace s4 
     $ return done
   where
   replace :: Term -> Env.TrackIndices Index Term
@@ -117,7 +118,8 @@ fuse transform outer_ctx inner_f@(Fix fix_b fix_t) = do
 
 split :: forall m . (Fail.Monad m, Env.Readable m) => 
   (Term -> m Term) -> Term -> Context -> m Term
-split transform (Fix fix_b fix_t) (Indices.lift -> outer_ctx) = do
+split transform (Fix fix_b fix_t) (Indices.lift -> outer_ctx) =
+    Env.forgetMatches $ do
   full_t_s <- showM (Fix fix_b fix_t)
   ctx_s <- Env.bind fix_b $ showM outer_ctx
   let s1 = "\n\nSPITTING\n" ++ ctx_s ++ "\n\nFROM\n\n" ++ full_t_s
@@ -174,10 +176,13 @@ split transform (Fix fix_b fix_t) (Indices.lift -> outer_ctx) = do
         $ Case t ty alts'
       where
       floatAlt :: Alt -> MaybeT (Env.TrackIndices Context) Alt
-      floatAlt (Alt bs inner) = do
-        ctx <- asks (Indices.liftMany (length bs))
-        inner' <- Context.strip ctx inner
-        return (Alt bs inner')
+      floatAlt (Alt bs inner) 
+        -- If a branch is absurd we can float any context out of it.
+        | isAbsurd inner = return (Alt bs inner)
+        | otherwise = do
+          ctx <- asks (Indices.liftMany (length bs))
+          inner' <- Context.strip ctx inner
+          return (Alt bs inner')
     floatCtxUp _ = mzero
 
     {-

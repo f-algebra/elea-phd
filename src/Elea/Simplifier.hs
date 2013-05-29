@@ -9,6 +9,8 @@ import Elea.Prelude
 import Elea.Index
 import Elea.Term
 import Elea.Show
+import qualified Elea.Env as Env
+import qualified Elea.Unifier as Unifier
 import qualified Elea.Index as Indices
 import qualified Elea.Term as Term
 import qualified Elea.Foldable as Fold
@@ -58,10 +60,28 @@ caseInjReduce (Case lhs _ alts)
     $ zipWith liftMany [0..] args
 caseInjReduce _ = mzero
 
+-- | Unfolds a 'Fix' if the first argument is a constructor term
+-- which does not match a recursive call to the function itself.
+-- This code desperately needs to be improved, this was just a quick solution.
+-- I can think of loads of ways to make this 
+-- loop with otherwise terminating code.
 unfoldFix :: Term -> Maybe Term
-unfoldFix (App fix@(Fix _ rhs) arg) 
-  | isInj (leftmost arg) = 
-    return (App (subst fix rhs) arg)
+unfoldFix (App fix@(Fix _ rhs) arg)
+  | isInj (leftmost arg) 
+  , not (anyMatch rhs) = 
+    return (App (subst fix rhs) arg) 
+  where
+  anyMatch :: Term -> Bool
+  anyMatch = Env.trackIndices 0 . Fold.anyM matchingCall
+    where
+    matchingCall :: Term -> Env.TrackIndices Index Bool
+    matchingCall (flattenApp -> [Var f_var, f_arg]) 
+      | isInj (leftmost f_arg) = do
+        fix_var <- ask
+        return 
+          $ f_var == fix_var
+          && isJust (Unifier.find f_arg arg)
+    matchingCall _ = return False
 unfoldFix _ = mzero
 
 {-
@@ -73,7 +93,4 @@ step (App Absurd _) = Just Absurd
 -- Absurd matching
 step (Case Absurd _ _) = Just Absurd
 
--- Absurd branched
-step (Case _ _ alts)
-  | all (== Absurd) (map (get Term.altTerm) alts) = Just Absurd  
 -}

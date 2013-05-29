@@ -1,4 +1,9 @@
 
+let id = fun (a:*) (x:a) -> x
+
+
+/* Booleans */ 
+
 let bool =
   ind bool: * with
   | True: bool
@@ -7,6 +12,8 @@ let bool =
   
 let True = inj0 bool
 let False = inj1 bool
+
+let not = fun (x:bool) -> match x with | True -> False | False -> True end
 
 let or = 
   fun (x: bool) (y: bool) -> 
@@ -19,7 +26,21 @@ let or =
       end
     end
 
+let and =
+  fun (x:bool) (y:bool) ->
+    match x with
+    | True -> 
+      match y with
+      | True -> True
+      | False -> False
+      end
+    | False -> False
+    end
     
+let implies = fun (p:bool) (q:bool) -> or (not p) q
+
+    
+/* Natural numbers */    
     
 let nat =
   ind nat: * with 
@@ -72,7 +93,7 @@ let mul =
     | Suc x' -> add y (mul x' y)
     end
 
-    
+/* Lists */
     
 let list = fun (a: *) -> 
   ind list: * with 
@@ -131,3 +152,35 @@ let leq =
       | Suc y' -> leq x' y'
       end
     end
+    
+/* Sorting lists */
+    
+let sorted =
+  fix (srtd: pi (list nat) -> bool) (xs:list nat) ->
+    match xs with
+    | Nil -> True
+    | Cons y ys -> 
+      match ys with
+      | Nil -> True
+      | Cons z zs -> and (leq_nat y z) (srtd ys)
+      end
+    end
+    
+let insert = 
+  fix (ins: pi nat (list nat) -> list nat) (n: nat) (xs: list nat) ->
+    match xs with
+    | Nil -> Cons nat n (Nil nat)
+    | Cons y ys ->
+      match leq_nat n y with
+      | True -> Cons nat n xs
+      | False -> Cons nat y (ins n ys)
+      end
+    end
+    
+let isort = 
+  fix (isort: pi (list nat) -> list nat) (xs: list nat) ->
+    match xs with
+    | Nil -> Nil nat
+    | Cons y ys -> insert y (isort ys)
+    end
+

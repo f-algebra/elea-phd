@@ -26,6 +26,7 @@ import qualified Control.Monad.Trans as Trans
 class Monad m => Writable m where
   bindAt :: Index -> Bind -> m a -> m a
   equals :: Term -> Term -> m a -> m a
+  forgetMatches :: m a -> m a
   
 bind :: Writable m => Bind -> m a -> m a
 bind = bindAt 0
@@ -46,6 +47,7 @@ class Writable m => Readable m where
   
   matchedWith :: Term -> m (Maybe Term)
   matchedWith t = liftM (Map.lookup t) matches
+
   
 -- | Replace all instances of one term with another within terms.
 replaceTerm :: ContainsTerms t => Term -> Term -> t -> t
@@ -69,7 +71,7 @@ instance Fold.FoldableM Term where
     return (Lam' (Bind' l ty) t)
   distM (Fix' (Bind' l (mty, _ty)) (mt, _)) = do
     ty <- mty
-    t <- bind (Bind l _ty) mt
+    t <- bind (Bind l _ty) (forgetMatches mt)
     return (Fix' (Bind' l ty) t)
   distM (Pi' (Bind' l (mty, _ty)) (mt, _)) = do
     ty <- mty
@@ -180,10 +182,12 @@ instance Monad m => MonadReader r (TrackIndicesT r m) where
 instance (Monad m, Indexed r) => Writable (TrackIndicesT r m) where
   bindAt at _ = local (liftAt at)
   equals _ _ = id
+  forgetMatches = id
   
 instance (Monoid w, Writable m) => Writable (WriterT w m) where
   bindAt at b = WriterT . bindAt at b . runWriterT
   equals t1 t2 = WriterT . equals t1 t2 . runWriterT
+  forgetMatches = WriterT . forgetMatches . runWriterT
   
 instance Monad m => Writable (ReaderT [Bind] m) where
   bindAt at b = 
@@ -191,6 +195,7 @@ instance Monad m => Writable (ReaderT [Bind] m) where
     $ insertAt (convertEnum at) (liftAt at b) 
     . map (liftAt at)
   equals _ _ = id
+  forgetMatches = id
   
 instance Monad m => Readable (ReaderT [Bind] m) where 
   bindings = ask
@@ -199,6 +204,7 @@ instance Monad m => Readable (ReaderT [Bind] m) where
 instance Writable m => Writable (MaybeT m) where
   bindAt at b = MaybeT . bindAt at b . runMaybeT
   equals x y = MaybeT . equals x y . runMaybeT
+  forgetMatches = MaybeT . forgetMatches . runMaybeT
   
 instance Readable m => Readable (MaybeT m) where
   bindings = Trans.lift bindings
@@ -210,6 +216,7 @@ instance Readable m => Readable (MaybeT m) where
 instance Writable m => Writable (EitherT e m) where
   bindAt at b = EitherT . bindAt at b . runEitherT
   equals x y = EitherT . equals x y . runEitherT
+  forgetMatches = EitherT . forgetMatches . runEitherT
   
 instance Readable m => Readable (EitherT e m) where
   bindings = Trans.lift bindings
@@ -221,6 +228,7 @@ instance Readable m => Readable (EitherT e m) where
 instance Writable Identity where
   bindAt _ _ = id
   equals _ _ = id
+  forgetMatches = id
   
 instance Readable Identity where
   bindings = return mempty
