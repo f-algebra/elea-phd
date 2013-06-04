@@ -14,6 +14,7 @@ import GHC.Prim ( Constraint )
 import qualified Elea.Env as Env
 import qualified Elea.Context as Context
 import qualified Elea.Foldable as Fold
+import qualified Data.Map as Map
 
 -- | A monadic variant of 'show'.
 class KleisliShow a where
@@ -57,8 +58,8 @@ instance Show (Term' String) where
     name = fromJust (get boundLabel' b)
   show (Pi' (show -> b) t) =
     "pi " ++ b ++ mergePi t
-  show (Fix' (show -> b) t) =
-    indent $ "\nfix " ++ b ++ " -> " ++ t
+  show (Fix' (FixInfo' inf) (show -> b) t) =
+    indent $ "\nfix " {- ++ show inf ++ " " -} ++ b ++ " -> " ++ t
   show (Lam' (show -> b) t) =
     indent $ "\nfun " ++ b ++ " -> " ++ t
         
@@ -123,4 +124,22 @@ instance KleisliShow Context where
   
 instance Show Context where
   show = show . Context.toLambda
+  
+instance KleisliShow a => KleisliShow (a, a) where
+  type ShowM (a, a) m = ShowM a m
+  showM (x, y) = do
+    sx <- showM x
+    sy <- showM y
+    return ("(" ++ sx ++ ", " ++ sy ++ ")")
+    
+instance KleisliShow a => KleisliShow [a] where
+  type ShowM [a] m = ShowM a m
+  showM xs = do
+    sxs <- mapM showM xs
+    return 
+      $ "[" ++ intercalate ", " sxs ++ "]"
+ 
+instance KleisliShow a => KleisliShow (Map a a) where
+  type ShowM (Map a a) m = ShowM a m
+  showM = showM . Map.toList
       

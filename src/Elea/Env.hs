@@ -6,7 +6,7 @@ module Elea.Env
   TrackIndices, TrackIndicesT (..),
   trackIndices, trackIndicesT,
   bind, bindMany,
-  replaceTerm,
+  replaceTerm, revertMatches, matchedWith,
 )
 where
 
@@ -26,6 +26,7 @@ import qualified Control.Monad.Trans as Trans
 class Monad m => Writable m where
   bindAt :: Index -> Bind -> m a -> m a
   equals :: Term -> Term -> m a -> m a
+  forgetMatches :: m a -> m a
   
 bind :: Writable m => Bind -> m a -> m a
 bind = bindAt 0
@@ -44,8 +45,8 @@ class Writable m => Readable m where
   bindingDepth :: m Int
   bindingDepth = liftM length bindings
   
-  matchedWith :: Term -> m (Maybe Term)
-  matchedWith t = liftM (Map.lookup t) matches
+matchedWith :: Readable m => Term -> m (Maybe Term)
+matchedWith t = liftM (Map.lookup t) matches
   
 -- | Replace all instances of one term with another within terms.
 replaceTerm :: ContainsTerms t => Term -> Term -> t -> t
@@ -67,10 +68,18 @@ instance Fold.FoldableM Term where
     ty <- mty
     t <- bind (Bind l _ty) mt
     return (Lam' (Bind' l ty) t)
-  distM (Fix' (Bind' l (mty, _ty)) (mt, _)) = do
+  distM (Fix' minf (Bind' l (mty, _ty)) (mt, _)) = do
     ty <- mty
-    t <- bind (Bind l _ty) mt
-    return (Fix' (Bind' l ty) t)
+    t <- bind (Bind l _ty) (forgetMatches mt)
+    inf <- forgetMatches (distInfo minf)
+    return (Fix' inf (Bind' l ty) t)
+    where
+    distInfo (FixInfo' mms) = do
+      ms <- mapM distMatch mms
+      return (FixInfo' ms)
+      where
+      distMatch :: Monad m => ((m a, b), Nat) -> m (a, Nat)
+      distMatch ((ma, _), n) = liftM (\a -> (a, n)) ma
   distM (Pi' (Bind' l (mty, _ty)) (mt, _)) = do
     ty <- mty
     t <- bind (Bind l _ty) mt
@@ -80,29 +89,51 @@ instance Fold.FoldableM Term where
     cs <- bind (Bind l _ty) (mapM (sequence . map fst) mcs)
     return (Ind' (Bind' l ty) cs)
   distM (Case' (mt, _t) (mty, _ty) malts) = do
-    alts <- zipWithM distAlt [0..] malts
     t <- mt
     ty <- mty
+    alts <- zipWithM (distAltM _t _ty) [0..] malts
     return (Case' t ty alts)
-    where
-    distAlt n (Alt' mbs (mt, _)) = do
-      bs <- distBinds mbs
-      t <- id
-        . bindMany _bs
-        . equals (liftMany (length _bs) _t) (altPattern _ty n)
-        $ mt
-      return (Alt' bs t)
-      where
-      distBinds [] = return []
-      distBinds (Bind' l (mb, _b) : mbs) = do
-        b <- mb
-        bs <- bind (Bind l _b) (distBinds mbs)
-        return (Bind' l b : bs)
-      
-      _bs = map (embedBind . map snd) mbs
-      
   distM other = 
     sequence (map fst other)
+    
+    
+  -- Provided my own instance of this to make sure "case-of" terms are
+  -- transformed before their branches.
+  transformM f (Case cse_t ind_ty alts) = do
+    cse_t' <- Fold.transformM f cse_t
+    ind_ty' <- Fold.transformM f ind_ty
+    alts' <- id
+      . liftM (map embedAlt)
+      . zipWithM (distAltM cse_t' ind_ty') [0..]
+      . map (fmap (\t -> (Fold.transformM f t, t)))
+      . map projectAlt
+      $ alts
+    f (Case cse_t' ind_ty' alts')
+  transformM f other = id
+    . join
+    . liftM (f . Fold.embed)
+    . Fold.distM 
+    . fmap (\x -> (Fold.transformM f x, x))
+    . Fold.project 
+    $ other
+    
+distAltM :: Writable m => 
+  Term -> Type -> Nat -> Alt' (m a, Term) -> m (Alt' a)
+distAltM cse_t ind_ty alt_n (Alt' mbs (mt, _)) = do
+  bs <- distBinds mbs
+  t <- id
+    . bindMany _bs
+    . equals (liftMany (length _bs) cse_t) (altPattern ind_ty alt_n)
+    $ mt
+  return (Alt' bs t)
+  where
+  distBinds [] = return []
+  distBinds (Bind' l (mb, _b) : mbs) = do
+    b <- mb
+    bs <- bind (Bind l _b) (distBinds mbs)
+    return (Bind' l b : bs)
+  
+  _bs = map (embedBind . map snd) mbs  
     
 instance Indexed Term where
   free = id
@@ -180,10 +211,12 @@ instance Monad m => MonadReader r (TrackIndicesT r m) where
 instance (Monad m, Indexed r) => Writable (TrackIndicesT r m) where
   bindAt at _ = local (liftAt at)
   equals _ _ = id
+  forgetMatches = id
   
 instance (Monoid w, Writable m) => Writable (WriterT w m) where
   bindAt at b = WriterT . bindAt at b . runWriterT
   equals t1 t2 = WriterT . equals t1 t2 . runWriterT
+  forgetMatches = WriterT . forgetMatches . runWriterT
   
 instance Monad m => Writable (ReaderT [Bind] m) where
   bindAt at b = 
@@ -191,6 +224,7 @@ instance Monad m => Writable (ReaderT [Bind] m) where
     $ insertAt (convertEnum at) (liftAt at b) 
     . map (liftAt at)
   equals _ _ = id
+  forgetMatches = id
   
 instance Monad m => Readable (ReaderT [Bind] m) where 
   bindings = ask
@@ -199,28 +233,40 @@ instance Monad m => Readable (ReaderT [Bind] m) where
 instance Writable m => Writable (MaybeT m) where
   bindAt at b = MaybeT . bindAt at b . runMaybeT
   equals x y = MaybeT . equals x y . runMaybeT
+  forgetMatches = MaybeT . forgetMatches . runMaybeT
   
 instance Readable m => Readable (MaybeT m) where
   bindings = Trans.lift bindings
   matches = Trans.lift matches
   boundAt = Trans.lift . boundAt
   bindingDepth = Trans.lift bindingDepth
-  matchedWith = Trans.lift . matchedWith
   
 instance Writable m => Writable (EitherT e m) where
   bindAt at b = EitherT . bindAt at b . runEitherT
   equals x y = EitherT . equals x y . runEitherT
+  forgetMatches = EitherT . forgetMatches . runEitherT
   
 instance Readable m => Readable (EitherT e m) where
   bindings = Trans.lift bindings
   matches = Trans.lift matches
   boundAt = Trans.lift . boundAt
   bindingDepth = Trans.lift bindingDepth
-  matchedWith = Trans.lift . matchedWith
+  
+instance Writable m => Writable (StateT s m) where
+  bindAt at b = StateT . (bindAt at b .) . runStateT
+  equals x y = StateT . (equals x y .) . runStateT
+  forgetMatches = StateT . (forgetMatches .) . runStateT
+  
+instance Readable m => Readable (StateT s m) where
+  bindings = Trans.lift bindings
+  matches = Trans.lift matches
+  boundAt = Trans.lift . boundAt
+  bindingDepth = Trans.lift bindingDepth
   
 instance Writable Identity where
   bindAt _ _ = id
   equals _ _ = id
+  forgetMatches = id
   
 instance Readable Identity where
   bindings = return mempty
@@ -271,7 +317,7 @@ instance Unifiable Term where
       ub <- b1 `uniBind` b2
       ut <- local Indices.lift (t1 `uni` t2)
       Unifier.union ub ut
-    uni (Fix b1 t1) (Fix b2 t2) = do
+    uni (Fix _ b1 t1) (Fix _ b2 t2) = do
       ub <- b1 `uniBind` b2
       ut <- local Indices.lift (t1 `uni` t2)
       Unifier.union ub ut
@@ -303,4 +349,14 @@ instance Unifiable Term where
         uniBindL n (b1, b2) = do
           local (Indices.liftMany n) (b1 `uniBind` b2)
     uni _ _ = Fail.here 
+
+revertMatches :: forall t m . (ContainsTerms t, Readable m) => t -> m t
+revertMatches = mapTermsM (Fold.rewriteM revert)
+  where
+  invertMap = Map.fromList . map (\(x, y) -> (y, x)) . Map.toList
   
+  revert :: Term -> m (Maybe Term)
+  revert t = do
+    m_map <- matches
+    return (Map.lookup t (invertMap m_map))
+

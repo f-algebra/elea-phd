@@ -2,7 +2,7 @@ module Elea.Foldable
 (
   module Data.Functor.Foldable,
   Refoldable, FoldableM (..),
-  transformM, rewriteM, foldM, 
+  rewriteM, foldM, rewriteOnceM,
   allM, findM, anyM, any, all,
   transform, rewrite, recover,
   rewriteStepsM, rewriteSteps,
@@ -14,6 +14,7 @@ import Elea.Prelude hiding ( Foldable, allM, anyM, findM, any, all )
 import GHC.Prim ( Constraint )
 import Data.Functor.Foldable
 import qualified Data.Monoid as Monoid
+import qualified Control.Monad.State as State
 
 type Refoldable t = (Foldable t, Unfoldable t)
 
@@ -37,9 +38,9 @@ class Refoldable t => FoldableM t where
       a <- f x
       return (a, recover x)
   
-transformM :: (FoldableM t, Monad m, FoldM t m) => 
-  (t -> m t) -> t -> m t
-transformM f = cataM (f . embed)
+  transformM :: (Monad m, FoldM t m) => 
+    (t -> m t) -> t -> m t
+  transformM f = cataM (f . embed)
   
 foldM :: (FoldableM t, Monad m, FoldM t (WriterT w m), Monoid w) =>
   (t -> m w) -> t -> m w
@@ -66,7 +67,31 @@ all p = runIdentity . allM (return . p)
 any :: (FoldableM t, FoldM t (WriterT Monoid.All Identity)) => 
   (t -> Bool) -> t -> Bool
 any p = not . all (not . p)
-  
+
+-- | Apply a given transformation exactly once. If it is never applied
+-- then this returns 'Nothing'.
+rewriteOnceM :: forall m t .
+    (FoldableM t, Monad m, FoldM t (StateT Bool m)) =>
+  (t -> m (Maybe t)) -> t -> m (Maybe t)
+rewriteOnceM f t = do
+  (t', done) <- runStateT (transformM once t) False
+  if done
+  then return (Just t')
+  else return Nothing
+  where
+  once :: Monad m => t -> StateT Bool m t
+  once t = do
+    already <- State.get
+    if already 
+    then return t
+    else do
+      mby_t <- lift (f t)
+      case mby_t of
+        Nothing -> return t
+        Just t' -> do
+          State.put True
+          return t'
+          
 rewriteM :: (FoldableM t, Monad m, FoldM t m) =>
   (t -> m (Maybe t)) -> t -> m t
 rewriteM f = transformM rrwt

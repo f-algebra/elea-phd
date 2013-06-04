@@ -4,7 +4,7 @@
 -- be lambdas then cases as high up as possible.
 module Elea.Floating
 (
-  run, steps, absurdity,
+  run, steps,
 )
 where
 
@@ -14,28 +14,94 @@ import Elea.Index
 import Elea.Term
 import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
+import qualified Elea.Unifier as Unifier
+import qualified Elea.Typing as Typing
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Foldable as Fold
+import qualified Elea.Monad.Error as Err
 import qualified Data.Monoid as Monoid
 import qualified Data.Set as Set
+import qualified Data.Map as Map
 
-run :: Term -> Term
-run = Fold.rewriteSteps (Simp.steps ++ steps)
+run :: Env.Readable m => Term -> m Term
+run = Fold.rewriteStepsM (Simp.stepsM ++ steps)
 
-steps :: [Term -> Maybe Term]
+steps :: Env.Readable m => [Term -> m (Maybe Term)]
 steps = 
-  [ lambdaCase
-  , funCase
-  , argCase
-  , constArg
-  , freeCaseFix
-  , identityCase
-  , caseCase
-  , fixCase
-  , constantCase
- -- , uselessFix
-  , absurdity
-  ]
+  map (return .) nonMonadic ++ [unfoldFix, absurdity, varEqApply]
+  where
+  nonMonadic = 
+    [ constArg
+    , lambdaCase
+    , funCase
+    , argCase
+    , freeCaseFix
+    , identityCase
+    , caseCase
+    , raiseVarCase
+    , constantCase
+    , uselessFix
+    ]
+    
+varEqApply :: Env.Readable m => Term -> m (Maybe Term)
+varEqApply t@(Var {}) = Env.matchedWith t
+varEqApply _ = return Nothing
+
+{-
+Need to preserve types here. Absurd is "Absurd `App` Type ty".
+
+-- Absurd function
+step (App Absurd _) = Just Absurd
+
+-- Absurd matching
+step (Case Absurd _ _) = Just Absurd
+-}
+
+absurdity :: Env.Readable m => Term -> m (Maybe Term)
+absurdity term
+  | isAbsurd term = do
+    ty <- Err.noneM (Typing.typeOf term)
+    return (Just (App Absurd ty))
+  where
+  isAbsurd (App (App Absurd _) _) = True
+  isAbsurd (Case (App Absurd _) _ _) = True
+  isAbsurd _ = False
+absurdity _ = return Nothing
+
+-- | Unfolds a 'Fix' if any arguments are a constructor term
+-- which does not match a recursive call to the function itself.
+-- This code desperately needs to be improved, this was just a quick solution.
+-- I can think of loads of ways to make this 
+-- loop with otherwise terminating code.
+unfoldFix :: Env.Readable m => Term -> m (Maybe Term)
+unfoldFix (flattenApp -> fix@(Fix _ _ rhs) : args@(last -> arg))
+  | not (null args)
+  , isInj (leftmost arg) = do
+    is_pat <- isPattern arg
+    return $ do
+      guard (not (is_pat && matchesRecCall rhs))
+      Just (unflattenApp (subst fix rhs : args))
+  where
+  isPattern :: Env.Readable m => Term -> m Bool
+  isPattern t = do
+    ms <- Env.matches
+    return (t `elem` Map.elems ms)
+  
+  matchesRecCall :: Term -> Bool
+  matchesRecCall = Env.trackIndices 0 . Fold.anyM matchingCall
+    where
+    matchingCall :: Term -> Env.TrackIndices Index Bool
+    matchingCall (flattenApp -> Var f_var : f_args@(last -> f_arg)) 
+      | length f_args == length args
+      , isInj (leftmost f_arg) = do
+        fix_var <- ask
+        return 
+          $ f_var == fix_var
+          && isJust (Unifier.find arg f_arg)
+    matchingCall _ = return False
+unfoldFix _ =
+  return Nothing
+
   
 -- | Float lambdas out of the branches of a pattern match
 lambdaCase :: Term -> Maybe Term
@@ -91,7 +157,7 @@ argCase _ = mzero
 -- | If an argument to a 'Fix' never changes in any recursive call
 -- then we should float that lambda abstraction outside the 'Fix'.
 constArg :: Term -> Maybe Term
-constArg (Fix fix_b fix_rhs) = do
+constArg (Fix fix_info fix_b fix_rhs) = do
   -- Find if any arguments never change in any recursive calls, 
   -- a "constant" argument, pos is the position of such an argument
   pos <- find isConstArg [0..length arg_binds - 1]
@@ -135,7 +201,7 @@ constArg (Fix fix_b fix_rhs) = do
     . Indices.lower
     . stripLam strip_bs
     . liftManyAt (length strip_bs) 1
-    . Fix new_fix_b
+    . Fix fix_info new_fix_b
     . replaceAt 0 (stripLam strip_bs (Var (toEnum $ length strip_bs)))
     . substAt Indices.omega (Var 1)
     . Indices.liftAt 1
@@ -176,19 +242,34 @@ constArg (Fix fix_b fix_rhs) = do
       
 constArg _ = mzero
 
+-- | This isn't a step, but it's used in three steps below.
+-- It takes a case-of term and replaces the result term down each branch
+-- with the provided term.
+applyCaseOf :: Term -> Term -> Term
+applyCaseOf (Case cse_t ind_ty old_alts) inner_t = 
+  Case cse_t ind_ty alts
+  where
+  alts = zipWith mkAlt [0..] old_alts
+  
+  mkAlt :: Int -> Alt -> Alt
+  mkAlt n (Alt binds _) = Alt binds alt_t
+    where
+    pat = altPattern ind_ty (toEnum n)
+    alt_t = id
+      . Env.replaceTerm (Indices.liftMany (length binds) cse_t) pat
+      . Indices.liftMany (length binds)
+      $ inner_t
+    
 
 -- | If we pattern match inside a 'Fix', but only using variables that exist
 -- outside of the 'Fix', then we can float this pattern match outside
 -- of the 'Fix'.
 freeCaseFix :: Term -> Maybe Term
-freeCaseFix fix_t@(Fix {}) = do
-  cse_t@(Case cse_of ind_ty alts) <- id
-    . Env.trackIndices 0
-    $ Fold.findM freeCases fix_t
-  return
-    . Case cse_of ind_ty
-    . map (createAlt cse_t . toEnum) 
-    $ [0..length alts - 1]
+freeCaseFix fix_t@(Fix _ _ fix_body) = do
+  free_case <- id
+    . Env.trackIndices 1
+    $ Fold.findM freeCases fix_body
+  return (applyCaseOf free_case fix_t)
   where
   freeCases :: Term -> Env.TrackIndices Index (Maybe Term)
   freeCases cse@(Case cse_of _ _) = do
@@ -196,19 +277,11 @@ freeCaseFix fix_t@(Fix {}) = do
     if any (< idx_offset) (Indices.free cse_of) 
     then return Nothing
     else return 
-       . Just 
+       . Just
        . Indices.lowerMany (fromEnum idx_offset) 
        $ cse
   freeCases _ = 
     return Nothing
-
-  createAlt :: Term -> Nat -> Alt
-  createAlt (Case cse_of ind_ty alts) n =
-    Alt alt_bs alt_t
-    where
-    Alt alt_bs _ = alts !! fromEnum n
-    match = altPattern ind_ty n
-    alt_t = Env.replaceTerm cse_of match fix_t
   
 freeCaseFix _ = mzero
 
@@ -228,8 +301,8 @@ identityCase _ = mzero
 -- | Dunno if this ever comes up but if we have a fix without any occurrence
 -- of the fix variable in the body we can just drop it.
 uselessFix :: Term -> Maybe Term
-uselessFix (Fix _ fix_t)
-  | not (Set.member 0 (Indices.free fix_t)) = 
+uselessFix (Fix _ _ fix_t)
+  | not (0 `Set.member` Indices.free fix_t) = 
       Just (Indices.lower fix_t)
 uselessFix _ = mzero
 
@@ -238,7 +311,7 @@ uselessFix _ = mzero
 constantCase :: Term -> Maybe Term
 constantCase (Case _ _ alts) = do
   lowered <- mapM loweredAltTerm alts
-  let filtered = filter (not . isAbsurd) lowered
+  let filtered = lowered -- filter (not . isAbsurd) lowered
   case filtered of
     [] -> return (head lowered)
     alt_t:alt_ts -> do
@@ -263,11 +336,12 @@ constantCase _ = mzero
 
 -- | Pattern matches over variables should be above those over function
 -- results.
-fixCase :: Term -> Maybe Term
-fixCase outer_cse@(Case outer_t outer_ty outer_alts)
-  | isFix (leftmost outer_t) = do
-    var_alt <- find varAlt outer_alts
-    return (applyCase var_alt)
+raiseVarCase :: Term -> Maybe Term
+raiseVarCase outer_t@(Case outer_of _ outer_alts)
+  | isFix (leftmost outer_of) = do
+    Alt bs var_case <- find varAlt outer_alts
+    let var_case' = Indices.lowerMany (length bs) var_case
+    return (applyCaseOf var_case' outer_t)
     where
     varAlt :: Alt -> Bool
     -- The inner case must pattern match over a variable not 
@@ -275,50 +349,14 @@ fixCase outer_cse@(Case outer_t outer_ty outer_alts)
     varAlt (Alt bs (Case (Var idx) _ _)) = 
       fromEnum idx >= length bs
     varAlt _ = False
-    
-    applyCase :: Alt -> Term
-    applyCase (Alt bs alt_t) =
-      Case (Var idx) inner_ty cse_alts
-      where
-      Case (Var idx) inner_ty inner_alts =  
-        Indices.lowerMany (length bs) alt_t
-      cse_alts = zipWith mkAlt [0..] inner_alts
-      
-      mkAlt :: Nat -> Alt -> Alt
-      mkAlt n (Alt bs _) = id
-        . Alt bs 
-        . replaceAt (Indices.liftMany (length bs) idx) pattern
-        . Indices.liftMany (length bs) 
-        $ outer_cse        
-        where
-        pattern = altPattern inner_ty n
-        
-fixCase _ = mzero
+
+raiseVarCase _ = mzero
 
 
 -- | If we are pattern matching on a pattern match then remove this 
 -- using distributivity.
 caseCase :: Term -> Maybe Term
-caseCase (Case (Case i_t i_ty i_alts) o_ty o_alts) = id
-  . return
-  . Case i_t i_ty 
-  $ map innerAlt i_alts
-  where
-  innerAlt (Alt i_bs i_alt) = 
-    Alt i_bs (Case i_alt o_ty' (map outerAlt o_alts))
-    where
-    o_ty' = liftMany (length i_bs) o_ty
-    
-    outerAlt (Alt o_bs o_alt) = 
-      Alt o_bs' o_alt'
-      where 
-      o_alt' = liftManyAt (length i_bs) (toEnum (length o_bs)) o_alt
-      o_bs' = zipWith (liftManyAt (length i_bs)) [0..] o_bs
-    
+caseCase outer_cse@(Case inner_cse@(Case {}) _ _) =
+  Just (applyCaseOf inner_cse outer_cse)
 caseCase _ = mzero
 
-
-absurdity :: Term -> Maybe Term
-absurdity (App (App Absurd _) _) = Just Absurd
-absurdity (Case (leftmost -> Absurd) _ _) = Just Absurd
-absurdity _ = mzero

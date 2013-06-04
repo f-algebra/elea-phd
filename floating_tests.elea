@@ -1,10 +1,19 @@
-let t1 = fun (a:*) ->
+let t1 = add 1 1
+let t1' = 2
+
+let t2 = mul 2 2
+let t2' = add 2 2
+
+let t3 = rev nat (Cons nat 1 (Cons nat 2 (Nil nat)))
+let t3' = Cons nat 2 (Cons nat 1 (Nil nat))
+
+let t4 = fun (a:*) ->
   fix (f: pi (list a) (list a) nat ->list a) (xs:list a) (y:list a) -> 
     match xs with
     | Nil -> fun (z:nat) -> y
     | Cons x xs' -> fun (z:nat) -> Cons a x (f xs' y
     (match z with | 0 -> 0 | Suc z' -> z' end)) end
-let t1' = 
+let t4' = 
   fun (a:*) (xs:list a) (y:list a) -> 
   (fix (f: pi (list a) nat -> list a) (xs:list a) (z:nat) ->
   match xs with
@@ -13,32 +22,32 @@ let t1' =
     | 0 -> Cons a x (f xs' 0)
     | Suc z' -> Cons a x (f xs' z') end end) xs
     
-let t2 = fix (f: pi nat nat ->nat) (x:nat) (y:nat) ->
+let t5 = fix (f: pi nat nat ->nat) (x:nat) (y:nat) ->
   match x with
   | 0 -> y
   | Suc x' -> Suc (f x' y) end    
-let t2' = fun (x:nat) (y:nat) ->
+let t5' = fun (x:nat) (y:nat) ->
   (fix (f:pi nat->nat) (x:nat) ->
     match x with
     | 0 -> y
     | Suc x' -> Suc (f x') end) x
 
-let t3 = 
+let t6 = 
   fun (a:*) (y:a) (xs:list a) -> app a xs (Cons a y (Nil a))
-let t3' = 
+let t6' = 
   fun (a:*) (y:a) ->
     fix (app: pi (list a)->list a) (xs:list a) ->
     match xs with
     | Nil -> Cons a y (Nil a)
     | Cons x xs' -> Cons a x (app xs') end
   
-let t4 = 
+let t7 = 
   fix (rev: pi (a:*) (list a) -> list a) (a:*) (xs:list a)->
     match xs with
     | Nil -> Nil a
     | Cons x ys -> (app a) (rev a ys) (Cons a x (Nil a))
     end
-let t4' = 
+let t7' = 
   fun (a:*) -> 
     fix (f: pi (list a) -> list a) (xs: list a) ->
     match xs with
@@ -46,13 +55,13 @@ let t4' =
     | Cons x ys -> app a (f ys) (Cons a x (Nil a))
     end
     
-let t5 = 
+let t8 = 
   fix (rap: pi (a:*) a (list a) -> list a) (a:*) (y:a) (xs:list a)->
     match xs with
     | Nil -> Cons a y (Nil a)
     | Cons x ys -> (app a) (rap a y ys) (Cons a x (Nil a))
     end
-let t5' = 
+let t8' = 
   fun (a:*) (y:a) -> 
     fix (f: pi (list a) -> list a) (xs: list a) ->
     match xs with
@@ -60,7 +69,7 @@ let t5' =
     | Cons x ys -> app a (f ys) (Cons a x (Nil a))
     end
     
-let t6 = fun (a:*) (xs:list a) (n:nat) ->
+let t9 = fun (a:*) (xs:list a) (n:nat) ->
   match leq_nat (len a xs) n with
   | True -> True
   | False -> 
@@ -73,7 +82,7 @@ let t6 = fun (a:*) (xs:list a) (n:nat) ->
       end
     end
   end
-let t6' = fun (a:*) (xs:list a) (n:nat) ->
+let t9' = fun (a:*) (xs:list a) (n:nat) ->
   match n with
   | 0 -> True
   | Suc n' ->
@@ -86,3 +95,9 @@ let t6' = fun (a:*) (xs:list a) (n:nat) ->
       end
     end
   end
+  
+let t10 = fun (p:bool) (q:bool) -> not (and (not p) (not q))
+let t10' = or
+
+let t11 = fun (p:bool) -> not (not p)
+let t11' = id bool

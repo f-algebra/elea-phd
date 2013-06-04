@@ -90,6 +90,8 @@ instance Env.Writable Elea where
   equals t k =
     local (second (Map.insert t k))
     
+  forgetMatches = local (second (const mempty))
+    
 instance Env.Readable Elea where
   bindings = asks fst
   matches = asks snd

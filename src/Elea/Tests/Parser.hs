@@ -33,7 +33,7 @@ tests = Test.label "Parser"
   suc = Inj 1 nat
 
   add_ty = Pi (bind nat) (Pi (bind nat) nat)
-  add = Fix (bind add_ty)
+  add = Fix emptyFixInfo (bind add_ty)
     $ Lam (bind nat) 
     $ Lam (bind nat)
     $ Case (Var 1) nat

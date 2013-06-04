@@ -1,7 +1,8 @@
 module Elea.Typing
 (
   typeOf, unfoldInd, check, absurd, empty,
-  generalise, checkStep, nthArgument
+  generalise, generaliseMany,
+  checkStep, nthArgument
 )
 where
 
@@ -72,9 +73,9 @@ nthArgument n = id
 -- such that the supplied term is generalised going in,
 -- and ungeneralised coming out. Just treat t1 and t2 as Term, 
 -- I had to generalise it to t1 and t2 for annoying reasons.
-generalise :: (Env.Readable m, KleisliShow t1, ShowM t1 m,
-  ContainsTerms t1, ContainsTerms t2) => 
-    Term -> (t1 -> m t2) -> (t1 -> m t2)
+generalise :: (Env.Readable m, ContainsTerms t1, ContainsTerms t2,
+    KleisliShow t1, ShowM t1 m) => 
+  Term -> (t1 -> m t2) -> (t1 -> m t2)
 generalise gen_t transform term = do
   -- First we create a binding for the new variable by finding its type
   -- and creating a descriptive label.
@@ -96,7 +97,12 @@ generalise gen_t transform term = do
     . Indices.lower
     . Indices.replaceAt 0 (Indices.lift gen_t)
     $ term''
-        
+    
+generaliseMany :: (Env.Readable m, ContainsTerms t1, ContainsTerms t2,
+    KleisliShow t1, ShowM t1 m) => 
+  Set Term -> (t1 -> m t2) -> (t1 -> m t2)
+generaliseMany = flip (foldr generalise)
+
 -- | Returns the type of a given 'Term',
 -- within a readable type environment.
 -- Can throw type checking errors.
@@ -153,7 +159,7 @@ typeOf term = id
         Err.throw 
           $ "Found an applied term [" ++ t_s
           ++ "] of non-function type [" ++ ty_s ++ "]."       
-  fcheck fx@(Fix' (Bind' _ (_, b_ty)) (Indices.lower -> ty, _))
+  fcheck fx@(Fix' _ (Bind' _ (_, b_ty)) (Indices.lower -> ty, _))
     | b_ty /= ty = do
         b_ty_s <- showM b_ty
         ty_s <- showM ty
@@ -216,7 +222,7 @@ typeOf term = id
     return (Pi (Bind lbl arg) res)
   ftype (App' (Pi _ res, _) (_, arg)) = 
     return (subst arg res)
-  ftype (Fix' (Bind' _ (_, ty)) _) = 
+  ftype (Fix' _ (Bind' _ (_, ty)) _) = 
     return ty
   ftype (Ind' (Bind' _ (_, ty)) _) = 
     return ty

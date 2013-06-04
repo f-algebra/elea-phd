@@ -17,7 +17,9 @@ assertFloatEq :: Int -> Elea Test.Test
 assertFloatEq n = do
   Just t <- Defs.lookup ("t" ++ show n)
   Just t' <- Defs.lookup ("t" ++ show n ++ "'")
-  return (Test.assertEq (Float.run t') (Float.run t))
+  ft <- Float.run t
+  ft' <- Float.run t'
+  return (Test.assertEq ft' ft)
 
 tests = Test.label "Floating"
     $ Test.run $ do
@@ -25,5 +27,5 @@ tests = Test.label "Floating"
   Test.loadFile "floating_tests.elea"
 
   liftM Test.list
-    $ mapM assertFloatEq [1..6]
+    $ mapM assertFloatEq [1..11]
 

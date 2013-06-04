@@ -85,6 +85,10 @@ instance (Ord a, Indexed a) => Indexed (Set a) where
   free = Set.unions . map free . Set.toList
   shift f = Set.map (shift f)
   
+instance Indexed a => Indexed [a] where
+  free = Set.unions . map free
+  shift f = map (shift f)
+  
 instance Show Index where
   show (Index n) = "_" ++ show n
 

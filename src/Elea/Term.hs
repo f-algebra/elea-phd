@@ -1,9 +1,10 @@
 module Elea.Term
 (
-  Type, Term (..), Alt (..), Bind (..),
-  Term' (..), Alt' (..), Bind' (..), 
+  Type, Term (..), Alt (..), Bind (..), FixInfo (..),
+  Term' (..), Alt' (..), Bind' (..), FixInfo' (..),
   Matches, ContainsTerms (..), mapTerms,
-  projectAlt, embedAlt, projectBind, embedBind,   
+  projectAlt, embedAlt, 
+  projectBind, embedBind,   
   inner, varIndex, alts, argument, 
   inductiveType, binding, constructors,
   altBindings, altInner,
@@ -15,7 +16,9 @@ module Elea.Term
   flattenPi, unflattenPi,
   flattenLam, unflattenLam,
   isInj, isLam, isVar, isPi, isInd, isFix, isAbsurd,
-  altPattern, isBaseCase,
+  fromVar, emptyFixInfo,
+  altPattern, isBaseCase, 
+  fusedMatch, addFusedMatch,
 )
 where
 
@@ -56,7 +59,8 @@ data Term
   | Pi      { _binding :: !Bind
             , _inner :: !Term }
 
-  | Fix     { _binding :: !Bind 
+  | Fix     { _fixInfo :: !FixInfo
+            , _binding :: !Bind 
             , _inner :: !Term }
             
   | Ind     { _binding :: !Bind
@@ -79,6 +83,18 @@ data Alt
           , _altInner :: !Term }
   deriving ( Eq, Ord )
   
+data FixInfo =
+  FixInfo { _fusedMatches :: [(Term, Nat)] }
+
+-- The info stored in a 'Fix' has no bearing on its value  
+instance Eq FixInfo where
+  _ == _ = True
+instance Ord FixInfo where
+  _ `compare` _ = EQ
+
+emptyFixInfo :: FixInfo
+emptyFixInfo = FixInfo mempty
+  
 -- * Base types for generalised cata/para morphisms.
   
 type instance Fold.Base Term = Term'
@@ -87,7 +103,7 @@ data Term' a
   = Var' !Index
   | App' a a
   | Lam' !(Bind' a) a
-  | Fix' !(Bind' a) a
+  | Fix' !(FixInfo' a) !(Bind' a) a
   | Pi' !(Bind' a) a
   | Ind' !(Bind' a) ![Bind' a]
   | Inj' !Nat a
@@ -107,7 +123,12 @@ data Alt' a
          , _altInner' :: a }
   deriving ( Functor, Foldable, Traversable )
   
-mkLabels [''Term, ''Alt, ''Bind, ''Term', ''Alt', ''Bind']
+data FixInfo' a =
+  FixInfo'  { _fusedMatches' :: [(a, Nat)] }
+  deriving ( Functor, Foldable, Traversable )
+  
+mkLabels [ ''Term, ''Alt, ''Bind, ''FixInfo
+         , ''Term', ''Alt', ''Bind', ''FixInfo']
 
 -- | A set of equations between terms as mapped keys and constructor terms
 -- as mapped values.
@@ -125,11 +146,17 @@ projectBind (Bind lbl t) = Bind' lbl t
 embedBind :: Bind' Term -> Bind
 embedBind (Bind' lbl t) = Bind lbl t
 
+projectFixInfo :: FixInfo -> FixInfo' Term
+projectFixInfo (FixInfo ms) = FixInfo' ms
+
+embedFixInfo :: FixInfo' Term -> FixInfo
+embedFixInfo (FixInfo' ms) = FixInfo ms
+
 instance Fold.Foldable Term where
   project (Var x) = Var' x
   project (App t1 t2) = App' t1 t2
   project (Lam b t) = Lam' (projectBind b) t
-  project (Fix b t) = Fix' (projectBind b) t
+  project (Fix i b t) = Fix' (projectFixInfo i) (projectBind b) t
   project (Pi b t) = Pi' (projectBind b) t
   project (Ind b cs) = Ind' (projectBind b) (map projectBind cs)
   project (Inj n t) = Inj' n t
@@ -137,12 +164,12 @@ instance Fold.Foldable Term where
   project Absurd = Absurd'
   project Set = Set'
   project Type = Type'
-  
+
 instance Fold.Unfoldable Term where
   embed (Var' x) = Var x
   embed (App' t1 t2) = App t1 t2
   embed (Lam' b t) = Lam (embedBind b) t
-  embed (Fix' b t) = Fix (embedBind b) t
+  embed (Fix' i b t) = Fix (embedFixInfo i) (embedBind b) t
   embed (Pi' b t) = Pi (embedBind b) t
   embed (Ind' b cs) = Ind (embedBind b) (map embedBind cs)
   embed (Inj' n ty) = Inj n ty
@@ -186,6 +213,9 @@ isFix _ = False
 isAbsurd :: Term -> Bool
 isAbsurd (leftmost -> Absurd) = True
 isAbsurd _ = False
+
+fromVar :: Term -> Index
+fromVar (Var x) = x
     
 flattenApp :: Term -> [Term]
 flattenApp (App t1 t2) = flattenApp t1 ++ [t2]
@@ -215,6 +245,22 @@ leftmost = head . flattenApp
 
 returnType :: Type -> Type
 returnType = snd . flattenPi
+
+-- | If the provided 'Fix' term has already had a given 
+-- pattern match fused into it, this returns which constructor 
+-- it was matched to.
+fusedMatch :: Term -> Term -> Maybe Nat
+fusedMatch match (leftmost -> Fix (FixInfo ms) _ _) =
+  lookup match ms
+  
+addFusedMatch :: Show Term => (Term, Nat) -> Term -> Term
+addFusedMatch (m_t, m_n) (flattenApp -> Fix inf b t : args) = id
+  . assert (fusedMatch m_t (Fix inf b t) == Nothing)
+  $ unflattenApp (Fix inf' b t : args)
+  where
+  FixInfo ms = inf
+  inf' = FixInfo ((m_t, m_n) : ms)
+addFusedMatch _ other = other
 
 -- | Given an inductive type and a constructor index this will return
 -- a fully instantiated constructor term.
@@ -249,6 +295,8 @@ isBaseCase (Ind _ cons) = id
   . get boundType
   . (cons !!)
   . fromEnum
+  
+  
   {-
 makeFold :: Type -> Type -> Term 
 makeFold (Ind _ cons) ret_ty = 

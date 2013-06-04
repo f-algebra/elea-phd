@@ -1,6 +1,6 @@
 module Elea.Simplifier 
 (
-  run, steps, safe,
+  run, steps, stepsM, strictVars,
 )
 where
 
@@ -11,24 +11,38 @@ import Elea.Term
 import Elea.Show
 import qualified Elea.Index as Indices
 import qualified Elea.Term as Term
+import qualified Elea.Env as Env
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 
 run :: Term -> Term
 run = Fold.rewriteSteps steps
 
-safe :: Term -> Term
-safe = Fold.rewriteSteps safeSteps 
-
 steps :: [Term -> Maybe Term]
-steps = safeSteps ++ [ unfoldFix ]
-
-safeSteps :: [Term -> Maybe Term]
-safeSteps = 
+steps = 
   [ betaReduce
   , etaReduce
   , caseInjReduce
   ]
+  
+stepsM :: Monad m => [Term -> m (Maybe Term)]
+stepsM = map (return .) steps
+  
+strictVars :: Term -> Set Index
+strictVars (flattenApp -> Fix _ _ fix_t : args) = id
+  . Set.intersection (Indices.free args)
+  . Env.trackIndices 0
+  . Fold.foldM matchedUpon
+  . run
+  $ unflattenApp (fix_t : args)
+  where
+  matchedUpon :: Term -> Env.TrackIndices Index (Set Index)
+  matchedUpon (Case (Var x) _ _) = do
+    offset <- ask
+    if x >= offset
+    then return (Set.singleton (x - offset))
+    else return mempty
+  matchedUpon _ = return mempty
   
 betaReduce :: Term -> Maybe Term
 betaReduce (App (Lam _ rhs) arg) = 
@@ -43,7 +57,7 @@ etaReduce _ = mzero
 
 caseInjReduce :: Term -> Maybe Term
 caseInjReduce (Case lhs _ alts)
-  | inj_term:args <- flattenApp lhs
+  | inj_term : args <- flattenApp lhs
   , Inj (fromEnum -> n) _ <- inj_term
   , assert (length alts > n) True
   , Alt bs alt_term <- alts !! n = id
@@ -58,22 +72,3 @@ caseInjReduce (Case lhs _ alts)
     $ zipWith liftMany [0..] args
 caseInjReduce _ = mzero
 
-unfoldFix :: Term -> Maybe Term
-unfoldFix (App fix@(Fix _ rhs) arg) 
-  | isInj (leftmost arg) = 
-    return (App (subst fix rhs) arg)
-unfoldFix _ = mzero
-
-{-
-Need to preserve types here. Absurd is "Absurd `App` Type ty".
-
--- Absurd function
-step (App Absurd _) = Just Absurd
-
--- Absurd matching
-step (Case Absurd _ _) = Just Absurd
-
--- Absurd branched
-step (Case _ _ alts)
-  | all (== Absurd) (map (get Term.altTerm) alts) = Just Absurd  
--}
