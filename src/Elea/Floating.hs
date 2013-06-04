@@ -43,19 +43,10 @@ steps =
     , uselessFix
     ]
     
+    
 varEqApply :: Env.Readable m => Term -> m (Maybe Term)
 varEqApply t@(Var {}) = Env.matchedWith t
 varEqApply _ = return Nothing
-
-{-
-Need to preserve types here. Absurd is "Absurd `App` Type ty".
-
--- Absurd function
-step (App Absurd _) = Just Absurd
-
--- Absurd matching
-step (Case Absurd _ _) = Just Absurd
--}
 
 absurdity :: Env.Readable m => Term -> m (Maybe Term)
 absurdity term
@@ -101,7 +92,7 @@ unfoldFix (flattenApp -> fix@(Fix _ _ rhs) : args@(last -> arg))
     matchingCall _ = return False
 unfoldFix _ =
   return Nothing
-
+  
   
 -- | Float lambdas out of the branches of a pattern match
 lambdaCase :: Term -> Maybe Term
@@ -342,14 +333,13 @@ raiseVarCase outer_t@(Case outer_of _ outer_alts)
     Alt bs var_case <- find varAlt outer_alts
     let var_case' = Indices.lowerMany (length bs) var_case
     return (applyCaseOf var_case' outer_t)
-    where
-    varAlt :: Alt -> Bool
-    -- The inner case must pattern match over a variable not 
-    -- bound by the outer pattern match
-    varAlt (Alt bs (Case (Var idx) _ _)) = 
-      fromEnum idx >= length bs
-    varAlt _ = False
-
+  where
+  varAlt :: Alt -> Bool
+  -- The inner case must pattern match over a variable not 
+  -- bound by the outer pattern match
+  varAlt (Alt bs (Case (Var idx) _ _)) = 
+    fromEnum idx >= length bs
+  varAlt _ = False
 raiseVarCase _ = mzero
 
 

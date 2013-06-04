@@ -9,6 +9,8 @@ import Elea.Prelude
 import Elea.Index
 import Elea.Term
 import Elea.Show
+import qualified Elea.Env as Env
+import qualified Elea.Unifier as Unifier
 import qualified Elea.Index as Indices
 import qualified Elea.Term as Term
 import qualified Elea.Env as Env

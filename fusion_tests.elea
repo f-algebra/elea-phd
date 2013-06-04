@@ -58,7 +58,7 @@ let t12 = fun (x:nat) (y:nat) (z:nat) ->
   implies (and (leq_nat x y) (leq_nat y z)) (leq_nat x z)
 let t12' = fun nat nat nat -> True
 
-let t13 = fun (x:nat) (xs:list nat) -> 
+let t13 = fun (x:nat) (xs:list nat) ->
   match sorted xs with
   | True -> False
   | False -> sorted (Cons nat x xs)
