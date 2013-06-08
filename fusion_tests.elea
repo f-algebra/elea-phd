@@ -74,4 +74,4 @@ let t14' = fun nat (list nat) -> True
 
 let t20 = fun (n:nat) (xs:list nat) -> sorted (insert n xs)
 let t20' = fun (n:nat) (xs:list nat) -> sorted xs
-  
+

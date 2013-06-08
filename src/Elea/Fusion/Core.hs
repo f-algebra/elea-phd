@@ -48,22 +48,21 @@ fuse transform outer_ctx inner_f@(Fix fix_info fix_b fix_t) =
   
   transformed_t <- id 
     . Env.bind fix_b
-    . transform
-   -- . trace s1
-    . Context.apply (Indices.lift outer_ctx)
+    . Env.mapBranchesM transformBranch
+    . trace s1
     $ fix_t
   
   trn_s <- Env.bind fix_b (showM transformed_t)
   let s2 = "\nTRANS:\n" ++ trn_s
   
   -- I gave up commenting at this point, it works because it does...
-  reverted_t <- return transformed_t -- Env.revertMatches transformed_t
+  depth <- Env.bindingDepth
   let replaced_t = id
         . Env.trackIndices 0
         . Fold.transformM replace
-     --  . trace s2
-        $ reverted_t
-  
+        . trace s2
+        $ transformed_t
+      
   rep_s <- Env.bindAt 0 fix_b
     . Env.bindAt fix_idx new_fix_b
     $ showM replaced_t
@@ -72,7 +71,7 @@ fuse transform outer_ctx inner_f@(Fix fix_info fix_b fix_t) =
  -- Fail.when (0 `Set.member` Indices.free inner_f)
   
   let fix_body = id
-     --   . trace s3
+        . trace s3
      --   . trace (s1 ++ s2 ++ s3)
         . unflattenLam arg_bs
         . substAt 0 inner_f
@@ -91,30 +90,39 @@ fuse transform outer_ctx inner_f@(Fix fix_info fix_b fix_t) =
   Fail.when (leftmost done == inner_f)
   
   id 
-   -- . trace s4 
+    . trace s4 
     $ return done
   where
+  transformBranch :: Term -> m Term
+  transformBranch = id
+    . transform 
+    . Context.apply (Indices.lift outer_ctx)
+  
   replace :: Term -> Env.TrackIndices Index Term
   replace term = do
-    idx_offset <- ask
-    let liftHere = Indices.liftMany (fromEnum idx_offset)
-        replace_t = id
-          . liftHere
-          . Context.apply (Indices.lift outer_ctx) 
-          $ Var 0
-    mby_uni <- Fail.toMaybe (Unifier.find replace_t term)
-    case mby_uni of
-      Nothing -> return term
-      Just uni
-        | Map.member idx_offset uni -> return term
-        | otherwise -> id
-            . return
-            . Unifier.apply uni 
-            . liftHere
-            . unflattenApp
-            . (Var fix_idx :)
-            $ map Indices.lift arg_vars
-            
+    old_f <- ask
+    return (fromMaybe term (tryReplace old_f))
+    where
+    tryReplace :: Index -> Maybe Term
+    tryReplace old_f = do
+      guard (old_f `Set.member` Indices.free term)
+      
+      uni <- Unifier.find replace_t term
+      guard (not (old_f `Map.member` uni))
+      
+      return
+        . Unifier.apply uni 
+        . liftHere
+        . unflattenApp
+        . (Var fix_idx :)
+        $ map Indices.lift arg_vars
+      where
+      liftHere = Indices.liftMany (fromEnum old_f)
+      replace_t = id
+        . liftHere
+        . Context.apply (Indices.lift outer_ctx) 
+        $ Var 0   
+  
   fused_t = Context.apply outer_ctx inner_f
   largest_free_index = (pred . supremum . Indices.free) fused_t
   arg_indices = reverse [0..largest_free_index]

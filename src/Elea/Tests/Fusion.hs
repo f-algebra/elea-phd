@@ -29,3 +29,4 @@ tests = Test.label "Fusion"
   liftM Test.list
     $ mapM assertFusionEq [1..14]
 
+

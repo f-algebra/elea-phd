@@ -72,7 +72,7 @@ import Control.Monad.Trans ( MonadTrans (..), lift, liftIO )
 import Control.Monad.State ( evalStateT, execState, runState, evalState,
   MonadState, State (..), StateT (..) )
 import Control.Monad.Reader ( 
-  MonadReader (..), Reader (..), ReaderT (..), asks, runReader )
+  MonadReader (..), Reader (..), ReaderT (..), asks, runReader, mapReaderT )
 import Control.Monad.Writer ( execWriter, runWriter, execWriterT,
   MonadWriter (..), Writer (..), WriterT (..), censor, listens )
 import Control.Monad.List ( ListT (..) )

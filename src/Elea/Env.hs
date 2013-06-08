@@ -7,6 +7,8 @@ module Elea.Env
   trackIndices, trackIndicesT,
   bind, bindMany,
   replaceTerm, revertMatches, matchedWith,
+  AlsoTrack, alsoTrack, 
+  mapBranchesM,
 )
 where
 
@@ -62,6 +64,9 @@ replaceTerm me with = id
     else return term
   
 instance Fold.FoldableM Term where
+  -- To fold over a 'Term' we require that our monad implement a writable
+  -- environment. This environment can then be correctly updated as 
+  -- we move into the syntax tree of the term.
   type FoldM Term m = Writable m
   
   distM (Lam' (Bind' l (mty, _ty)) (mt, _)) = do
@@ -116,7 +121,9 @@ instance Fold.FoldableM Term where
     . fmap (\x -> (Fold.transformM f x, x))
     . Fold.project 
     $ other
-    
+
+-- | The distribution law for 'Alt's is relatively complex, since we have to
+-- store any bound patterns as equalities in the environment (@see 'equals').
 distAltM :: Writable m => 
   Term -> Type -> Nat -> Alt' (m a, Term) -> m (Alt' a)
 distAltM cse_t ind_ty alt_n (Alt' mbs (mt, _)) = do
@@ -134,6 +141,32 @@ distAltM cse_t ind_ty alt_n (Alt' mbs (mt, _)) = do
     return (Bind' l b : bs)
   
   _bs = map (embedBind . map snd) mbs  
+  
+-- | Applies a transformation to the resulting terms of however many nested
+-- pattern matches.
+mapBranchesM :: forall m . Fold.FoldM Term m => 
+  (Term -> m Term) -> Term -> m Term
+mapBranchesM f (Case t ty alts) = do
+  alts' <- zipWithM mapAlt [0..] alts
+  return (Case t ty alts')
+  where
+  -- This bit allows me re-use the code in 'distAltM'
+  -- to deal with the complex bindings that occur when we move into the 
+  -- branch of a pattern match.
+  mapAlt :: Nat -> Alt -> m Alt
+  mapAlt n = id
+    . liftM embedAlt
+    . distAltM t ty n
+    . apply
+    . projectAlt
+    where
+    apply :: Alt' Term -> Alt' (m Term, Term)
+    apply (Alt' bs t) = Alt' bs' t'
+      where
+      t' = (mapBranchesM f &&& id) t
+      bs' = map (map (return &&& id)) bs
+      
+mapBranchesM f other = f other
     
 instance Indexed Term where
   free = id
@@ -191,7 +224,7 @@ instance Substitutable Bind where
   
 newtype TrackIndicesT r m a 
   = TrackIndicesT { runTrackIndicesT :: ReaderT r m a }
-  deriving ( Monad )
+  deriving ( Monad, MonadReader r )
   
 type TrackIndices r = TrackIndicesT r Identity
 
@@ -204,14 +237,28 @@ trackIndices r = runIdentity . trackIndicesT r
 instance Fail.Monad m => Fail.Monad (TrackIndicesT r m) where
   here = TrackIndicesT Fail.here
   
-instance Monad m => MonadReader r (TrackIndicesT r m) where
-  ask = TrackIndicesT ask
-  local f = TrackIndicesT . local f . runTrackIndicesT
-  
 instance (Monad m, Indexed r) => Writable (TrackIndicesT r m) where
   bindAt at _ = local (liftAt at)
   equals _ _ = id
   forgetMatches = id
+
+-- | An environment monad which tracks indices but also passes environment
+-- bindings to an inner monad (see the 'Writable' interface for details).
+newtype AlsoTrack r m a
+  = AlsoTrack { runAlsoTrack :: ReaderT r m a }
+  deriving ( Monad, MonadReader r )
+  
+mapAlsoTrack :: Monad m => (m a -> m a) -> 
+  (AlsoTrack r m a -> AlsoTrack r m a)
+mapAlsoTrack f = AlsoTrack . mapReaderT f . runAlsoTrack
+
+alsoTrack :: r -> AlsoTrack r m a -> m a
+alsoTrack r = flip runReaderT r . runAlsoTrack
+   
+instance (Writable m, Indexed r) => Writable (AlsoTrack r m) where
+  bindAt at b = local (liftAt at) . mapAlsoTrack (bindAt at b)
+  equals x y = mapAlsoTrack (equals x y)
+  forgetMatches = mapAlsoTrack forgetMatches
   
 instance (Monoid w, Writable m) => Writable (WriterT w m) where
   bindAt at b = WriterT . bindAt at b . runWriterT

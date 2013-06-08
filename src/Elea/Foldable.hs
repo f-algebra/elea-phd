@@ -22,13 +22,13 @@ type Refoldable t = (Foldable t, Unfoldable t)
 class Refoldable t => FoldableM t where
   type FoldM t m :: Constraint 
   type FoldM t m = ()
- 
+  
   distM :: (Monad m, FoldM t m) => Base t (m a, t) -> m (Base t a)
   
   cataM :: forall m a . (Monad m, FoldM t m) => 
     (Base t a -> m a) -> t -> m a
   cataM f = join . liftM f . distM . fmap (cataM f &&& id) . project
-    
+
   paraM :: forall m a . (Monad m, FoldM t m) =>
     (Base t (a, t) -> m a) -> t -> m a
   paraM f = liftM fst . cataM g
