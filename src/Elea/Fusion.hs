@@ -27,10 +27,12 @@ import qualified Data.Monoid as Monoid
 
 
 steps :: Env.Readable m => [Term -> m (Maybe Term)]
-steps = [ fusion
-        , floatConstructors 
-        , removeIdFix
-        ]
+steps = id
+  . map Typing.checkStep
+  $ [ fusion
+    , floatConstructors 
+    , removeIdFix
+    ]
         
 run :: forall m . Env.Readable m => Term -> m Term
 run term = do
@@ -185,13 +187,13 @@ fusion full_t@(flattenApp ->
     where
     inner_f@(Fix {}) : inner_args = flattenApp (head outer_args)
     
-    runFusion :: Context -> MaybeT m Term 
+    runFusion :: Context -> MaybeT (Env.AlsoTrack Term m) Term 
     runFusion outer_ctx
-      | isVar rec_arg = fuse run outer_ctx inner_f
-      | otherwise = 
-          Typing.generalise (head inner_args) 
-            (\t -> fuse run t (Indices.lift inner_f))
-            outer_ctx
+      | isVar rec_arg = fuse simplifyAndExtract outer_ctx inner_f
+      | otherwise = id
+          . Typing.generalise (head inner_args) 
+            (\_ t -> fuse simplifyAndExtract t (Indices.lift inner_f))
+          $ outer_ctx
       where
       rec_arg = head inner_args
   fixfix _ = 
@@ -206,7 +208,7 @@ fusion full_t@(flattenApp ->
       let ctx = id
             . Context.make outer_ty full_ty
             $ \t -> unflattenApp (t : outer_args)
-      Fail.toMaybe (fuse run ctx outer_f)
+      Fail.toMaybe (fuse (const run) ctx outer_f)
   repeatedArg _ =
     return Nothing
     
@@ -238,7 +240,7 @@ fusion full_t@(flattenApp ->
       , relevantFact = do
         outer_ty <- Err.noneM (Typing.typeOf outer_f)
         let ctx = Context.make outer_ty full_ty buildContext
-        mby_t <- Fail.toMaybe (fuse run ctx outer_f)
+        mby_t <- Fail.toMaybe (fuse (const run) ctx outer_f)
         return $ do
           t <- mby_t
          -- guard (Fold.all (/= outer_f) t)
@@ -285,4 +287,62 @@ fusion full_t@(flattenApp ->
   
 fusion _ =
   return Nothing
+
+
+simplifyAndExtract :: forall m . Env.Readable m =>  
+  Index -> Term -> Env.AlsoTrack Term m Term
+simplifyAndExtract inner_f term = do
+  term' <- lift (run term)
+  can_extract <- extractable
+  if True -- not can_extract
+  then return term'
+  else do
+    outer_f <- ask
+    Env.alsoTrack (outer_f, inner_f) 
+      . Env.mapBranchesM extract 
+      $ term'
+  where
+  extractable :: Env.AlsoTrack Term m Bool
+  extractable = do
+    outer_f <- ask
+    ty <- Err.noneM (Typing.typeOf outer_f)
+    let (args, ret) = flattenPi ty
+    return 
+      $ length args == 1
+      && isInd ret 
+      && not (isRecursiveInd ret)
+  
+  extract :: Term -> Env.AlsoTrack (Term, Index) m Term
+  extract (flattenApp -> inj@(Inj {}) : args) = do
+    args' <- mapM extract args
+    return (unflattenApp (inj : args'))
+  extract term = do
+    (outer_f, inner_f) <- ask
+    inner_calls <- id
+      . lift
+      . Env.alsoTrack inner_f 
+      $ Env.collectTerms isInnerCall term
+    lift
+      . Env.alsoTrack outer_f
+      . Typing.generaliseMany (Set.toList inner_calls) extraction
+      $ term
+    where
+    isInnerCall :: Term -> Env.AlsoTrack Index m Bool
+    isInnerCall term@(flattenApp -> Var f : args) = do
+      inner_f <- ask
+      if inner_f /= f 
+      then return False
+      else do
+        ty <- Err.noneM (Typing.typeOf term)
+        return (not (isPi ty))
+    isInnerCall _ = 
+      return False
+      
+    extraction :: [Index] -> Term -> Env.AlsoTrack Term m Term
+    extraction gen_vars term = do
+      outer_f <- ask
+      lift 
+        . Fail.withDefault term 
+        . concatEndosM (map (invent . App outer_f . Var) gen_vars) 
+        $ term
 

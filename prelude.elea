@@ -92,6 +92,17 @@ let mul =
     | 0 -> 0
     | Suc x' -> add y (mul x' y)
     end
+    
+let leq = 
+  fix (leq: pi nat nat -> bool) (x:nat) (y:nat) ->
+    match x with
+    | 0 -> True
+    | Suc x' ->
+      match y with
+      | 0 -> False
+      | Suc y' -> leq x' y'
+      end
+    end
 
 /* Lists */
     
@@ -141,17 +152,18 @@ let count =
       | False -> count n xs'
       end
     end
-
-let leq = 
-  fix (leq: pi nat nat -> bool) (x:nat) (y:nat) ->
-    match x with
-    | 0 -> True
-    | Suc x' ->
-      match y with
-      | 0 -> False
-      | Suc y' -> leq x' y'
+    
+let take =
+  fix (take: pi (a:*) nat (list a) -> list a) (a:*) (n:nat) (xs:list a) ->
+    match xs with
+    | Nil -> Nil a
+    | Cons y ys -> 
+      match n with
+      | 0 -> Nil a
+      | Suc n' -> Cons a y (take a n ys)
       end
     end
+    
     
 /* Sorting lists */
     

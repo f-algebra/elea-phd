@@ -2,7 +2,7 @@ module Elea.Foldable
 (
   module Data.Functor.Foldable,
   Refoldable, FoldableM (..),
-  rewriteM, foldM, rewriteOnceM,
+  rewriteM, foldM, rewriteOnceM, collectM,
   allM, findM, anyM, any, all,
   transform, rewrite, recover,
   rewriteStepsM, rewriteSteps,
@@ -15,6 +15,7 @@ import GHC.Prim ( Constraint )
 import Data.Functor.Foldable
 import qualified Data.Monoid as Monoid
 import qualified Control.Monad.State as State
+import qualified Data.Set as Set
 
 type Refoldable t = (Foldable t, Unfoldable t)
 
@@ -59,6 +60,10 @@ allM p = liftM Monoid.getAll . foldM (liftM Monoid.All . p)
 anyM :: (FoldableM t, Monad m, FoldM t (WriterT Monoid.All m)) =>
   (t -> m Bool) -> t -> m Bool
 anyM p = liftM not . allM (liftM not . p)
+
+collectM :: (Ord a, FoldableM t, Monad m, FoldM t (WriterT (Set a) m)) =>
+  (t -> MaybeT m a) -> t -> m (Set a)
+collectM f = foldM (liftM (maybe mempty Set.singleton) . runMaybeT . f)
 
 all :: (FoldableM t, FoldM t (WriterT Monoid.All Identity)) => 
   (t -> Bool) -> t -> Bool

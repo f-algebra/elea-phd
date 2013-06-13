@@ -8,7 +8,7 @@ module Elea.Env
   bind, bindMany,
   replaceTerm, revertMatches, matchedWith,
   AlsoTrack, alsoTrack, 
-  mapBranchesM,
+  mapBranchesM, collectTerms,
 )
 where
 
@@ -165,9 +165,19 @@ mapBranchesM f (Case t ty alts) = do
       where
       t' = (mapBranchesM f &&& id) t
       bs' = map (map (return &&& id)) bs
-      
 mapBranchesM f other = f other
-    
+
+collectTerms :: forall m . Writable m => 
+  (Term -> m Bool) -> Term -> m (Set Term)
+collectTerms p = alsoTrack 0 . Fold.collectM collect
+  where
+  collect :: Term -> MaybeT (AlsoTrack Index m) Term
+  collect t = do
+    c <- Trans.lift . Trans.lift $ p t
+    guard c
+    offset <- Trans.lift ask
+    return (Indices.lowerMany (fromEnum offset) t)
+
 instance Indexed Term where
   free = id
     . trackIndices 0 
@@ -243,7 +253,7 @@ instance (Monad m, Indexed r) => Writable (TrackIndicesT r m) where
   forgetMatches = id
 
 -- | An environment monad which tracks indices but also passes environment
--- bindings to an inner monad (see the 'Writable' interface for details).
+-- bindings to an inner monad (see the 'Writable' class for details).
 newtype AlsoTrack r m a
   = AlsoTrack { runAlsoTrack :: ReaderT r m a }
   deriving ( Monad, MonadReader r )
@@ -254,11 +264,20 @@ mapAlsoTrack f = AlsoTrack . mapReaderT f . runAlsoTrack
 
 alsoTrack :: r -> AlsoTrack r m a -> m a
 alsoTrack r = flip runReaderT r . runAlsoTrack
+
+instance MonadTrans (AlsoTrack r) where
+  lift = AlsoTrack . Trans.lift
    
 instance (Writable m, Indexed r) => Writable (AlsoTrack r m) where
   bindAt at b = local (liftAt at) . mapAlsoTrack (bindAt at b)
   equals x y = mapAlsoTrack (equals x y)
   forgetMatches = mapAlsoTrack forgetMatches
+  
+instance (Readable m, Indexed r) => Readable (AlsoTrack r m) where
+  bindings = Trans.lift bindings
+  matches = Trans.lift matches
+  boundAt = Trans.lift . boundAt
+  bindingDepth = Trans.lift bindingDepth
   
 instance (Monoid w, Writable m) => Writable (WriterT w m) where
   bindAt at b = WriterT . bindAt at b . runWriterT

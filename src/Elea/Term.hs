@@ -16,7 +16,7 @@ module Elea.Term
   flattenPi, unflattenPi,
   flattenLam, unflattenLam,
   isInj, isLam, isVar, isPi, isInd, isFix, isAbsurd,
-  fromVar, emptyFixInfo,
+  fromVar, emptyFixInfo, isRecursiveInd,
   altPattern, isBaseCase, 
   fusedMatch, addFusedMatch,
 )
@@ -296,9 +296,7 @@ isBaseCase (Ind _ cons) = id
   . (cons !!)
   . fromEnum
   
-  
-  {-
-makeFold :: Type -> Type -> Term 
-makeFold (Ind _ cons) ret_ty = 
-  -}
-  
+isRecursiveInd :: Substitutable Term => Type -> Bool
+isRecursiveInd ty@(Ind _ cons) = 
+  not . all (isBaseCase ty) . map toEnum $ [0..length cons - 1]
+

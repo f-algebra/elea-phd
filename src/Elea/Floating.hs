@@ -27,8 +27,10 @@ run :: Env.Readable m => Term -> m Term
 run = Fold.rewriteStepsM (Simp.stepsM ++ steps)
 
 steps :: Env.Readable m => [Term -> m (Maybe Term)]
-steps = 
-  map (return .) nonMonadic ++ [unfoldFix, absurdity, varEqApply]
+steps = id
+  . map Typing.checkStep
+  . (map (return .) nonMonadic ++) 
+  $ [unfoldFix, absurdity, varEqApply]
   where
   nonMonadic = 
     [ constArg
@@ -245,12 +247,13 @@ applyCaseOf (Case cse_t ind_ty old_alts) inner_t =
   mkAlt :: Int -> Alt -> Alt
   mkAlt n (Alt binds _) = Alt binds alt_t
     where
-    pat = altPattern ind_ty (toEnum n)
+    liftHere = Indices.liftMany (length binds)
+    pat = altPattern (liftHere ind_ty) (toEnum n)
     alt_t = id
-      . Env.replaceTerm (Indices.liftMany (length binds) cse_t) pat
-      . Indices.liftMany (length binds)
+      . Env.replaceTerm (liftHere cse_t) pat
+      . liftHere
       $ inner_t
-    
+
 
 -- | If we pattern match inside a 'Fix', but only using variables that exist
 -- outside of the 'Fix', then we can float this pattern match outside

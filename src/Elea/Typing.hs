@@ -75,7 +75,7 @@ nthArgument n = id
 -- I had to generalise it to t1 and t2 for annoying reasons.
 generalise :: (Env.Readable m, ContainsTerms t1, ContainsTerms t2,
     KleisliShow t1, ShowM t1 m) => 
-  Term -> (t1 -> m t2) -> (t1 -> m t2)
+  Term -> (Index -> t1 -> m t2) -> (t1 -> m t2)
 generalise gen_t transform term = do
   -- First we create a binding for the new variable by finding its type
   -- and creating a descriptive label.
@@ -90,7 +90,7 @@ generalise gen_t transform term = do
         $ Indices.lift term
         
   -- Apply our term to term function, with the new variable bound.
-  term'' <- Env.bindAt 0 gen_b (transform term') 
+  term'' <- Env.bindAt 0 gen_b (transform 0 term') 
   
   -- Finally, we reverse the generalisation process.
   return 
@@ -98,10 +98,14 @@ generalise gen_t transform term = do
     . Indices.replaceAt 0 (Indices.lift gen_t)
     $ term''
     
-generaliseMany :: (Env.Readable m, ContainsTerms t1, ContainsTerms t2,
+generaliseMany :: forall m t1 t2 . 
+  (Env.Readable m, ContainsTerms t1, ContainsTerms t2,
     KleisliShow t1, ShowM t1 m) => 
-  Set Term -> (t1 -> m t2) -> (t1 -> m t2)
-generaliseMany = flip (foldr generalise)
+  [Term] -> ([Index] -> t1 -> m t2) -> (t1 -> m t2)
+generaliseMany ts f = foldr gen f ts []
+  where
+  gen :: Term -> ([Index] -> t1 -> m t2) -> ([Index] -> t1 -> m t2)
+  gen t f ixs = generalise t (\ix -> f (ix:ixs))
 
 -- | Returns the type of a given 'Term',
 -- within a readable type environment.

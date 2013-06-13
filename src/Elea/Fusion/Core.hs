@@ -1,7 +1,8 @@
 -- | Performs fixpoint fusion.
+-- Don't read the code in here please, it's horrible, hacky and uncommented.
 module Elea.Fusion.Core
 (
-  fuse, split
+  fuse, split, invent
 )
 where
 
@@ -27,7 +28,7 @@ import qualified Data.Map as Map
 -- REWRITE to use Indices.omega rather than random offsets we remove?
 
 fuse :: forall m . (Env.Readable m, Fail.Monad m) => 
-  (Term -> m Term) -> Context -> Term -> m Term
+  (Index -> Term -> m Term) -> Context -> Term -> m Term
 fuse transform outer_ctx inner_f@(Fix fix_info fix_b fix_t) = 
     Env.forgetMatches $ do
   ctx_s <- showM outer_ctx
@@ -48,8 +49,9 @@ fuse transform outer_ctx inner_f@(Fix fix_info fix_b fix_t) =
   
   transformed_t <- id 
     . Env.bind fix_b
-    . Env.mapBranchesM transformBranch
+    . transform 0
     . trace s1
+    . Context.apply (Indices.lift outer_ctx)
     $ fix_t
   
   trn_s <- Env.bind fix_b (showM transformed_t)
@@ -92,12 +94,40 @@ fuse transform outer_ctx inner_f@(Fix fix_info fix_b fix_t) =
   id 
     . trace s4 
     $ return done
-  where
-  transformBranch :: Term -> m Term
-  transformBranch = id
-    . transform 
-    . Context.apply (Indices.lift outer_ctx)
-  
+  where {-
+  transformBranch :: Term -> Env.AlsoTrack Index m Term
+  transformBranch term = do
+    -- Collect every recursive call to the inner unrolled function
+    -- so that we can generalise them
+    fix_idx <- ask
+    ts <- showM term
+    ty <- Err.noneM (Typing.typeOf term)
+    tys <- showM ty
+    fix_uses <- trace tys $ return mempty --trace ("MEEP " ++ ts) $ Fold.collectM (fixUsage fix_idx) term
+    
+    ss <- showM (Set.toList fix_uses)
+    lift
+      . Typing.generaliseMany (Set.toList fix_uses) 
+        (\ixs t -> trace ("GEN: " ++ ss ++ " became " ++ show ixs ++ "\nin\n" ++ ts ++ "\ngiving\n" ++ show t) $ transform (Set.fromList ixs) t) 
+      . Context.apply (Indices.lift outer_ctx)
+      $ term
+    where
+    fixUsage :: Index -> Term -> MaybeT (Env.AlsoTrack Index m) Term
+    fixUsage outer_idx term@(flattenApp -> Var f : args) = do
+      fix_idx <- lift ask
+      guard (f == fix_idx)
+      ts <- showM term
+      tyf <- Err.noneM (Typing.typeOf (Var f))
+      tyfs <- showM tyf
+      ty <- trace ("MERP: " ++ ts ++ " :: " ++ tyfs) $ Err.noneM (Typing.typeOf term)
+      tyss <- showM ty
+      trace ("FLEEP : " ++ tyss) $ guard (not (isPi ty))
+      -- Lower indices to the level they would be 
+      -- at in the 'transformBranch' function
+      let fix_offset = fromEnum (fix_idx - outer_idx)
+      return (Indices.lowerMany fix_offset term)
+    fixUsage _ _ = mzero
+  -}
   replace :: Term -> Env.TrackIndices Index Term
   replace term = do
     old_f <- ask
@@ -204,25 +234,7 @@ split transform (Fix fix_info fix_b fix_t) (Indices.lift -> outer_ctx) =
           return (Alt bs inner')
     floatCtxUp _ = mzero
 
-    {-
-invent :: (Monad.Fail m, Env.Readable m) => 
-  (Term -> m Term) -> Term -> Term -> m Context
-invent transform top_t inner_f@(Fix inner_b inner_t) = do
-  ret_ty <- Err.noneM (Typing.typeOf top_t)
-  ind_ty <- Err.noneM (Typing.typeOf applied_inner)
-  Fail.when (not (isInd ind_ty))
-  let Ind _ ind_cons = ind_ty                       
-      
-  where
-  (arg_bs, _) = flattenLam inner_t
+invent :: (Fail.Monad m, Env.Readable m) => Term -> Term -> m Term
+invent inner_f top_t = do
+  Fail.here
   
-  new_vars = id
-    . map (Var . toEnum)
-    $ reverse [0..length arg_bs - 1]
-    
-  applied_inner = id 
-    . unflattenApp 
-    . (: new_vars)
-    . Indices.liftMany (length arg_bs)
-    $ inner_f
--}

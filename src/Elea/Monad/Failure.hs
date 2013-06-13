@@ -2,7 +2,7 @@
 -- Like 'MonadPlus' without 'mplus', and with more readably named functions.
 -- Requires qualified import (usually as "Fail").
 module Elea.Monad.Failure (
-  Monad (..), when, unless, toMaybe, 
+  Monad (..), when, unless, toMaybe, withDefault,
   success, successM, catchWith, fromEither, has
 ) where
 
@@ -46,6 +46,9 @@ success (Just x) = x
 -- | Converts a 'MonadFailure' instance into a 'Maybe'
 toMaybe :: Prelude.Monad m => MaybeT m a -> m (Maybe a)
 toMaybe = runMaybeT
+
+withDefault :: Prelude.Monad m => a -> MaybeT m a -> m a
+withDefault x = liftM (Prelude.fromMaybe x) . toMaybe
 
 -- | Strips the 'Fail.Monad' by assuming that a computation has succeeded, 
 -- will throw an error if this is not the case.

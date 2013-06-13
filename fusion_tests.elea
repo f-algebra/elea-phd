@@ -75,3 +75,10 @@ let t14' = fun nat (list nat) -> True
 let t20 = fun (n:nat) (xs:list nat) -> sorted (insert n xs)
 let t20' = fun (n:nat) (xs:list nat) -> sorted xs
 
+
+let t40 = fun (n:nat) (xs:list nat) (bs:list nat) ->
+  match sorted xs with
+  | True -> sorted (take nat n xs)
+  | False -> not (sorted (app nat bs xs))
+  end
+let t40' = fun nat (list nat) (list nat) -> True
