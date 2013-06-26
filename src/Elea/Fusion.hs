@@ -29,8 +29,8 @@ import qualified Data.Monoid as Monoid
 steps :: Env.Readable m => [Term -> m (Maybe Term)]
 steps = id
   . map Typing.checkStep
-  $ [ fusion
-    , floatConstructors 
+  $ [ floatConstructors 
+    , fusion
     , removeIdFix
     ]
         
@@ -49,7 +49,7 @@ run term = do
         $ run fused
   where
   applyStep :: Term -> (Term -> m (Maybe Term)) -> m (Maybe Term)
-  applyStep t = ($ t) . Fold.rewriteOnceM . Typing.checkStep
+  applyStep t = ($ t) . Fold.rewriteOnceM 
 
 simpleSteps :: Env.Readable m => [Term -> m (Maybe Term)]
 simpleSteps = Simp.stepsM ++ Float.steps
@@ -183,11 +183,13 @@ fusion full_t@(flattenApp ->
             . Context.make inner_ty full_ty
             $ \t -> unflattenApp 
               $ outer_f : unflattenApp (t : inner_args) : tail outer_args
-      runMaybeT (runFusion outer_ctx)
+      runMaybeT
+        . Env.alsoTrack outer_f
+        $ runFusion outer_ctx
     where
     inner_f@(Fix {}) : inner_args = flattenApp (head outer_args)
     
-    runFusion :: Context -> MaybeT (Env.AlsoTrack Term m) Term 
+    runFusion :: Context -> Env.AlsoTrack Term (MaybeT m) Term 
     runFusion outer_ctx
       | isVar rec_arg = fuse simplifyAndExtract outer_ctx inner_f
       | otherwise = id
@@ -294,14 +296,22 @@ simplifyAndExtract :: forall m . Env.Readable m =>
 simplifyAndExtract inner_f term = do
   term' <- lift (run term)
   can_extract <- extractable
-  if True -- not can_extract
+  if not can_extract
   then return term'
   else do
     outer_f <- ask
-    Env.alsoTrack (outer_f, inner_f) 
-      . Env.mapBranchesM extract 
+    lift
+      . Env.alsoTrack (outer_f, inner_f) 
+      -- We descend into branches as long as the 'inner_f' function
+      -- is not pattern matched by that branch.
+      . Env.mapBranchesWhileM functionNonMatched extract 
       $ term'
   where
+  functionNonMatched :: Term -> Env.AlsoTrack (Term, Index) m Bool
+  functionNonMatched (Case cse_t _ _) = do
+    (_, inner_f) <- ask
+    return (not (inner_f `Set.member` Indices.free cse_t))
+  
   extractable :: Env.AlsoTrack Term m Bool
   extractable = do
     outer_f <- ask
@@ -341,8 +351,14 @@ simplifyAndExtract inner_f term = do
     extraction :: [Index] -> Term -> Env.AlsoTrack Term m Term
     extraction gen_vars term = do
       outer_f <- ask
-      lift 
-        . Fail.withDefault term 
+      mby_t <- lift 
+        . Fail.toMaybe 
         . concatEndosM (map (invent . App outer_f . Var) gen_vars) 
         $ term
+      case mby_t of 
+        Nothing -> return term
+        Just t -> do
+          t' <- lift (run t)
+          ts <- showM t'
+          return $ trace ("GOT: " ++ ts) t'
 

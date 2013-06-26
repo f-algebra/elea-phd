@@ -6,13 +6,15 @@ module Elea.Foldable
   allM, findM, anyM, any, all,
   transform, rewrite, recover,
   rewriteStepsM, rewriteSteps,
+  descendM,
 )
 where
 
 import Prelude ()
-import Elea.Prelude hiding ( Foldable, allM, anyM, findM, any, all )
+import Elea.Prelude hiding ( Foldable, allM, anyM, findM, any, all, zip )
 import GHC.Prim ( Constraint )
 import Data.Functor.Foldable
+import qualified Elea.Prelude as Prelude
 import qualified Data.Monoid as Monoid
 import qualified Control.Monad.State as State
 import qualified Data.Set as Set
@@ -120,3 +122,21 @@ rewriteSteps :: Refoldable t => [t -> Maybe t] -> t -> t
 rewriteSteps steps = rewrite step
   where
   step t = Monoid.getFirst (concatMap (Monoid.First . ($ t)) steps)
+
+descendM :: forall t m . (FoldableM t, FoldM t m, Monad m) => 
+  (t -> m (Bool, Base t (Bool, t))) -> (t -> m t) -> t -> m t
+descendM p f t = do
+  (here, desc) <- p t
+  t' <- id
+    . liftM embed 
+    . distM
+    $ fmap descent desc
+  if here
+  then f t'
+  else return t'
+  where
+  descent :: (Bool, t) -> (m t, t)
+  descent (True, t) = (descendM p f t, t)
+  descent (False, t) = (return t, t)
+
+

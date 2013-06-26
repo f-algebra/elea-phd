@@ -1,14 +1,15 @@
 module Elea.Typing
 (
-  typeOf, unfoldInd, check, absurd, empty,
+  typeOf, check, absurd, empty,
   generalise, generaliseMany,
-  checkStep, nthArgument
+  checkStep, nthArgument,
+  unfoldInd, buildCaseOf
 )
 where
 
 import Prelude ()
 import Elea.Prelude
-import Elea.Index
+import Elea.Index hiding ( lift )
 import Elea.Term
 import Elea.Show ( KleisliShow (..) )
 import qualified Elea.Index as Indices
@@ -37,30 +38,32 @@ check other = liftM (const ()) (typeOf other)
 
 -- | Wrap this around a term transformation step @Term -> m (Maybe Term)@
 -- to add a check that the step preserves the type of the term.
-checkStep :: Env.Readable m => 
+checkStep :: forall m . Env.Readable m => 
   (Term -> m (Maybe Term)) -> Term -> m (Maybe Term)
 checkStep step term = runMaybeT $ do
   result <- MaybeT (step term)
-  t_ty <- Err.noneM (typeOf term)
-  r_ty <- Err.noneM (typeOf result)
-  if t_ty == r_ty
-  then return result
-  else do
+  lift . Err.noneM . Err.augmentM (stepErr result) $ do
+    t_ty <- typeOf term
+    r_ty <- typeOf result
+    if t_ty == r_ty
+    then return result
+    else do
+      ty_s <- showM t_ty
+      ty_s' <- showM r_ty
+      Err.throw 
+        $ "Transformation does not preserve type."
+        ++ "\nBefore: [" ++ ty_s ++ "]"
+        ++ "\nAfter: [" ++ ty_s' ++ "]"
+  where
+  stepErr :: Term -> EitherT Err.Err m Err.Err
+  stepErr result = do
     t_s <- showM term
     t_s' <- showM result
-    ty_s <- showM t_ty
-    ty_s' <- showM r_ty
-    error 
-      $ "Transformation does not preserve type.\n"
-      ++ "Before: " ++ t_s ++ ": [" ++ ty_s ++ "]"
-      ++ "\nAfter: " ++ t_s' ++ ": [" ++ ty_s' ++ "]"
+    Err.throw
+      $ "In the transformation:"
+      ++ "\nFrom: [" ++ t_s ++ "]"
+      ++ "\nTo: [" ++ t_s' ++ "]"
 
-unfoldInd :: Term -> [Bind]
-unfoldInd ty@(Ind _ cons) = 
-  map (subst ty) cons
-unfoldInd other = 
-  error $ "Tried to unfold a non inductive type: " ++ show other
-  
 nthArgument :: Int -> Type -> Type
 nthArgument n = id
   . Indices.lowerMany n
@@ -238,4 +241,20 @@ typeOf term = id
     $ ind_ty
   ftype (Case' _ _ falts) =
     return . altType . head $ falts
+    
+unfoldInd :: Term -> [Bind]
+unfoldInd ty@(Ind _ cons) = 
+  map (subst ty) cons
+unfoldInd other = 
+  error $ "Tried to unfold a non inductive type: " ++ show other
+  
+buildCaseOf :: Term -> Type -> (Nat -> Term) -> Term
+buildCaseOf cse_of ind_ty@(unfoldInd -> cons) mkAlt = 
+  Case cse_of ind_ty (zipWith buildAlt [0..] cons)
+  where
+  buildAlt :: Nat -> Bind -> Alt
+  buildAlt n bind = Alt bs alt_t
+    where
+    bs = fst . flattenPi . get boundType $ bind
+    alt_t = Indices.liftMany (length bs) (mkAlt n)
 

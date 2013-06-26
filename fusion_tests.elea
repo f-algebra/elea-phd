@@ -72,8 +72,35 @@ let t14 = fun (x:nat) (xs:list nat) ->
   end
 let t14' = fun nat (list nat) -> True
 
+let srtd_ins = 
+  fix (srtd_ins: pi nat (list nat) -> bool) ->
+    fun (n: nat) (xs: list nat) -> 
+    match xs with
+    | Nil -> True
+    | Cons y ys ->
+      match leq_nat n y with
+      | True -> sorted xs
+      | False -> 
+        match insert n ys with
+        | Nil -> True
+        | Cons z zs ->
+          match srtd_ins n ys with
+          | True -> leq_nat y z
+          | False -> False
+          end
+        end
+      end
+    end
+
 let t20 = fun (n:nat) (xs:list nat) -> sorted (insert n xs)
-let t20' = fun (n:nat) (xs:list nat) -> sorted xs
+let t20' = fun (n:nat) (xs:list nat) -> srtd_ins n xs
+
+let t21 = fun (n:nat) (xs: list nat) -> 
+  match sorted xs with
+  | True -> srtd_ins n xs
+  | False -> False
+  end
+let t21' = fun (n:nat) (xs: list nat) -> sorted xs
 
 
 let t40 = fun (n:nat) (xs:list nat) (bs:list nat) ->

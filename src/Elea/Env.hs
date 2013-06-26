@@ -5,10 +5,10 @@ module Elea.Env
   Writable (..), Readable (..),
   TrackIndices, TrackIndicesT (..),
   trackIndices, trackIndicesT,
-  bind, bindMany,
+  bind, bindMany, subterm,
   replaceTerm, revertMatches, matchedWith,
   AlsoTrack, alsoTrack, 
-  mapBranchesM, collectTerms,
+  mapBranchesM, mapBranchesWhileM, collectTerms,
 )
 where
 
@@ -62,6 +62,10 @@ replaceTerm me with = id
     if term == me
     then return with
     else return term
+    
+-- | If the first argument is contained somewhere within the second.
+subterm :: Term -> Term -> Bool
+subterm sub = trackIndices sub . Fold.anyM (\t -> asks (== t))
   
 instance Fold.FoldableM Term where
   -- To fold over a 'Term' we require that our monad implement a writable
@@ -143,29 +147,34 @@ distAltM cse_t ind_ty alt_n (Alt' mbs (mt, _)) = do
   _bs = map (embedBind . map snd) mbs  
   
 -- | Applies a transformation to the resulting terms of however many nested
--- pattern matches.
-mapBranchesM :: forall m . Fold.FoldM Term m => 
-  (Term -> m Term) -> Term -> m Term
-mapBranchesM f (Case t ty alts) = do
-  alts' <- zipWithM mapAlt [0..] alts
-  return (Case t ty alts')
+-- pattern matches which satisfy a given condition.
+mapBranchesWhileM :: forall m . Fold.FoldM Term m => 
+  (Term -> m Bool) -> (Term -> m Term) -> Term -> m Term
+mapBranchesWhileM when = Fold.descendM branches
   where
-  -- This bit allows me re-use the code in 'distAltM'
-  -- to deal with the complex bindings that occur when we move into the 
-  -- branch of a pattern match.
-  mapAlt :: Nat -> Alt -> m Alt
-  mapAlt n = id
-    . liftM embedAlt
-    . distAltM t ty n
-    . apply
-    . projectAlt
+  branches :: Term -> m (Bool, Term' (Bool, Term))
+  branches t@(Case cse_t ind_ty alts) = do
+    recurse <- when t
+    if recurse        
+    -- If we are at a pattern match which fulfils the condition
+    -- then don't apply the function and recurse into every branch.
+    then return
+      (False, Case' (False, cse_t) (False, ind_ty) (map branchAlt alts))
+    
+    -- Otherwise just apply the function and don't recurse
+    else return
+      (True, fmap (\t -> (False, t)) (Fold.project t))
     where
-    apply :: Alt' Term -> Alt' (m Term, Term)
-    apply (Alt' bs t) = Alt' bs' t'
+    branchAlt :: Alt -> Alt' (Bool, Term)
+    branchAlt (Alt bs alt_t) = Alt' bs' (True, alt_t)
       where
-      t' = (mapBranchesM f &&& id) t
-      bs' = map (map (return &&& id)) bs
-mapBranchesM f other = f other
+      bs' = map (fmap (\t -> (False, t)) . projectBind) bs
+  branches other = return
+    -- If we are at a branch, apply the function but don't recurse.
+    (True, fmap (\t -> (False, t)) (Fold.project other))
+    
+mapBranchesM :: Fold.FoldM Term m => (Term -> m Term) -> Term -> m Term
+mapBranchesM = mapBranchesWhileM (const (return True))
 
 collectTerms :: forall m . Writable m => 
   (Term -> m Bool) -> Term -> m (Set Term)
@@ -234,7 +243,7 @@ instance Substitutable Bind where
   
 newtype TrackIndicesT r m a 
   = TrackIndicesT { runTrackIndicesT :: ReaderT r m a }
-  deriving ( Monad, MonadReader r )
+  deriving ( Monad, MonadReader r, MonadTrans )
   
 type TrackIndices r = TrackIndicesT r Identity
 
@@ -245,7 +254,7 @@ trackIndices :: r -> TrackIndices r a -> a
 trackIndices r = runIdentity . trackIndicesT r
 
 instance Fail.Monad m => Fail.Monad (TrackIndicesT r m) where
-  here = TrackIndicesT Fail.here
+  here = Trans.lift Fail.here
   
 instance (Monad m, Indexed r) => Writable (TrackIndicesT r m) where
   bindAt at _ = local (liftAt at)
@@ -256,7 +265,7 @@ instance (Monad m, Indexed r) => Writable (TrackIndicesT r m) where
 -- bindings to an inner monad (see the 'Writable' class for details).
 newtype AlsoTrack r m a
   = AlsoTrack { runAlsoTrack :: ReaderT r m a }
-  deriving ( Monad, MonadReader r )
+  deriving ( Monad, MonadReader r, MonadTrans )
   
 mapAlsoTrack :: Monad m => (m a -> m a) -> 
   (AlsoTrack r m a -> AlsoTrack r m a)
@@ -264,9 +273,6 @@ mapAlsoTrack f = AlsoTrack . mapReaderT f . runAlsoTrack
 
 alsoTrack :: r -> AlsoTrack r m a -> m a
 alsoTrack r = flip runReaderT r . runAlsoTrack
-
-instance MonadTrans (AlsoTrack r) where
-  lift = AlsoTrack . Trans.lift
    
 instance (Writable m, Indexed r) => Writable (AlsoTrack r m) where
   bindAt at b = local (liftAt at) . mapAlsoTrack (bindAt at b)
@@ -278,6 +284,9 @@ instance (Readable m, Indexed r) => Readable (AlsoTrack r m) where
   matches = Trans.lift matches
   boundAt = Trans.lift . boundAt
   bindingDepth = Trans.lift bindingDepth
+  
+instance Fail.Monad m => Fail.Monad (AlsoTrack r m) where
+  here = Trans.lift Fail.here
   
 instance (Monoid w, Writable m) => Writable (WriterT w m) where
   bindAt at b = WriterT . bindAt at b . runWriterT

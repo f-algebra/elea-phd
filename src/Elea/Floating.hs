@@ -310,16 +310,14 @@ constantCase (Case _ _ alts) = do
     [] -> return (head lowered)
     alt_t:alt_ts -> do
       guard (all (== alt_t) alt_ts)
-      guard (not (containsFreeFunction alt_t))
+      guard (not (containsFunctionCall alt_t))
       return alt_t
   where
-  containsFreeFunction :: Term -> Bool
-  containsFreeFunction term = 
-    Env.trackIndices (Indices.free term) (Fold.anyM freeFunc term)
+  containsFunctionCall :: Term -> Bool
+  containsFunctionCall = Fold.any isFunctionCall
     where
-    freeFunc :: Term -> Env.TrackIndices (Set Index) Bool
-    freeFunc (App (Var f) _) = asks (Set.member f)
-    freeFunc _ = return False
+    isFunctionCall (App fun _) = not (isInj fun)
+    isFunctionCall _ = False
 
   loweredAltTerm :: Alt -> Maybe Term
   loweredAltTerm (Alt bs alt_t) = do

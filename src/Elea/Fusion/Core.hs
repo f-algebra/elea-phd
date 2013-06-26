@@ -58,12 +58,17 @@ fuse transform outer_ctx inner_f@(Fix fix_info fix_b fix_t) =
   let s2 = "\nTRANS:\n" ++ trn_s
   
   -- I gave up commenting at this point, it works because it does...
+  let reverted_t = id
+        . Env.trackIndices 0
+        . Fold.transformM revertFixMatches 
+        $ transformed_t
+        
   depth <- Env.bindingDepth
   let replaced_t = id
         . Env.trackIndices 0
         . Fold.transformM replace
         . trace s2
-        $ transformed_t
+        $ reverted_t
       
   rep_s <- Env.bindAt 0 fix_b
     . Env.bindAt fix_idx new_fix_b
@@ -128,6 +133,24 @@ fuse transform outer_ctx inner_f@(Fix fix_info fix_b fix_t) =
       return (Indices.lowerMany fix_offset term)
     fixUsage _ _ = mzero
   -}
+  
+  revertFixMatches :: Term -> Env.TrackIndices Index Term
+  revertFixMatches term@(Case cse_t ind_ty alts) = do
+    fix_f <- ask
+    if not (fix_f `Set.member` Indices.free cse_t)
+    then return term
+    else do
+      let alts' = zipWith revertAlt [0..] alts
+      return (Case cse_t ind_ty alts')
+    where
+    revertAlt :: Nat -> Alt -> Alt
+    revertAlt n (Alt bs alt_t) = Alt bs alt_t'
+      where
+      rep_t = Indices.liftMany (length bs) cse_t
+      alt_t' = Env.replaceTerm (altPattern ind_ty n) rep_t alt_t
+  revertFixMatches other = 
+    return other
+    
   replace :: Term -> Env.TrackIndices Index Term
   replace term = do
     old_f <- ask
@@ -235,6 +258,14 @@ split transform (Fix fix_info fix_b fix_t) (Indices.lift -> outer_ctx) =
     floatCtxUp _ = mzero
 
 invent :: (Fail.Monad m, Env.Readable m) => Term -> Term -> m Term
-invent inner_f top_t = do
-  Fail.here
+invent inner_t top_t = do
+  Fail.when (inner_t `Env.subterm` top_t)
+  ind_ty <- Err.noneM (Typing.typeOf inner_t)
+  Fail.unless (isInd ind_ty && not (isRecursiveInd ind_ty))
+  inner_s <- showM inner_t
+  top_s <- showM top_t
+  return
+    . trace ("\n\nEXTRACTING:\n" ++ inner_s ++ "\n\nFROM:\n" ++ top_s)
+    $ Typing.buildCaseOf inner_t ind_ty (const top_t)
+  
   
