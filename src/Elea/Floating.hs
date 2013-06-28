@@ -4,7 +4,8 @@
 -- be lambdas then cases as high up as possible.
 module Elea.Floating
 (
-  run, steps,
+  run, steps, 
+  commuteMatchesWhen
 )
 where
 
@@ -29,10 +30,9 @@ run = Fold.rewriteStepsM (Simp.stepsM ++ steps)
 steps :: Env.Readable m => [Term -> m (Maybe Term)]
 steps = id
   . map Typing.checkStep
-  . (map (return .) nonMonadic ++) 
-  $ [unfoldFix, absurdity, varEqApply]
+  $ nonMonadic ++ [unfoldFixInj, absurdity, varEqApply]
   where
-  nonMonadic = 
+  nonMonadic = map (return .)
     [ constArg
     , lambdaCase
     , funCase
@@ -43,8 +43,27 @@ steps = id
     , raiseVarCase
     , constantCase
     , uselessFix
+    , unfoldCaseFix
+    , unfoldWithinFix
     ]
     
+-- | Given a predicate P, if it finds a pattern match outside (outer)
+-- of another pattern match (inner), where the P(outer, inner) holds,
+-- then inner is floated outside outer.
+commuteMatchesWhen :: Env.Readable m => 
+  (Term -> Term -> m Bool) -> Term -> m (Maybe Term)
+commuteMatchesWhen when outer_cse@(Case _ _ alts) 
+  | Just inner_cse <- (msum . map innerMatch) alts = do
+    lets_do_it <- when outer_cse inner_cse
+    if lets_do_it
+    then (return . Just . applyCaseOf inner_cse) outer_cse
+    else return Nothing
+  where
+  innerMatch :: Alt -> Maybe Term
+  innerMatch (Alt bs alt_t@(Case _ _ _)) = 
+    Indices.tryLowerMany (length bs) alt_t
+  innerMatch _ = Nothing
+commuteMatchesWhen _ _ = return Nothing
     
 varEqApply :: Env.Readable m => Term -> m (Maybe Term)
 varEqApply t@(Var {}) = Env.matchedWith t
@@ -61,13 +80,14 @@ absurdity term
   isAbsurd _ = False
 absurdity _ = return Nothing
 
+
 -- | Unfolds a 'Fix' if any arguments are a constructor term
 -- which does not match a recursive call to the function itself.
 -- This code desperately needs to be improved, this was just a quick solution.
 -- I can think of loads of ways to make this 
 -- loop with otherwise terminating code.
-unfoldFix :: Env.Readable m => Term -> m (Maybe Term)
-unfoldFix (flattenApp -> fix@(Fix _ _ rhs) : args@(last -> arg))
+unfoldFixInj :: Env.Readable m => Term -> m (Maybe Term)
+unfoldFixInj (flattenApp -> fix@(Fix _ _ rhs) : args@(last -> arg))
   | not (null args)
   , isInj (leftmost arg) = do
     is_pat <- isPattern arg
@@ -92,10 +112,75 @@ unfoldFix (flattenApp -> fix@(Fix _ _ rhs) : args@(last -> arg))
           $ f_var == fix_var
           && isJust (Unifier.find arg f_arg)
     matchingCall _ = return False
-unfoldFix _ =
+unfoldFixInj _ =
   return Nothing
   
+-- | Unfolds a 'Fix' which is being pattern matched upon if that pattern
+-- match only uses a finite amount of information from the 'Fix'.
+-- TODO: Extend this to arbitrary depth of unrolling, currently
+-- it only works for depth 1.
+-- TODO: Currently we just check if the type if recursive, what it should
+-- really check is whether a single unrolling of the function will produce
+-- something in HNF, viz. that this finite information will be consumed.
+unfoldCaseFix :: Term -> Maybe Term
+unfoldCaseFix (Case cse_t@(leftmost -> Fix {}) ind_ty alts)
+  | isRecursiveInd ind_ty
+  , and (zipWith recArgsUsed [0..] alts) =
+    Just (Case cse_t' ind_ty alts)
+  where
+  fix@(Fix _ _ rhs) : args = flattenApp cse_t
+  cse_t' = unflattenApp (subst fix rhs : args)
   
+  msg = "\nUNFOLDED\n\n" ++ show (Case cse_t ind_ty alts)
+  
+  -- Whether the recursive variables of a given pattern match
+  -- are used down that branch
+  recArgsUsed :: Nat -> Alt -> Bool
+  recArgsUsed n (Alt _ alt_t) = 
+    not (any isUsed args)
+    where
+    isUsed = (`Set.member` Indices.free alt_t)
+    args = recursivePatternArgs ind_ty n
+  
+unfoldCaseFix _ = mzero
+
+
+-- | Unfolds a 'Fix' within itself if it can be unrolled at
+-- at a point it is called recursively.
+unfoldWithinFix :: Term -> Maybe Term
+unfoldWithinFix fix@(Fix fix_i fix_b fix_t) = 
+  Env.trackIndices (0, fix_t) $ do
+    can_unfold <- Fold.anyM unfoldable fix_t
+    if not can_unfold
+    then return Nothing
+    else do
+      fix_t' <- Fold.transformM unfold fix_t
+      return (Just (Fix fix_i fix_b fix_t'))
+  where
+  arg_count = argumentCount fix
+  
+  unfoldable :: forall a . Term -> Env.TrackIndices (Index, a) Bool
+  unfoldable (flattenApp -> Var f : args)
+    | length args == arg_count = do
+      (fix_f, _) <- ask
+      return (f == fix_f && all isFinite args)
+  unfoldable _ =
+    return False
+  
+  unfold :: Term -> Env.TrackIndices (Index, Term) Term
+  unfold term@(flattenApp -> Var f : args) = do
+    can_unfold <- unfoldable term
+    if not can_unfold
+    then return term
+    else do
+      (_, fix_t) <- ask
+      return (unflattenApp (fix_t : args))
+  unfold other = 
+    return other
+  
+unfoldWithinFix _ = mzero
+
+ 
 -- | Float lambdas out of the branches of a pattern match
 lambdaCase :: Term -> Maybe Term
 lambdaCase (Case lhs ind_ty alts)
@@ -194,7 +279,7 @@ constArg (Fix fix_info fix_b fix_rhs) = do
     . Indices.lower
     . stripLam strip_bs
     . liftManyAt (length strip_bs) 1
-    . Fix fix_info new_fix_b
+    . Fix (Indices.lift fix_info) new_fix_b
     . replaceAt 0 (stripLam strip_bs (Var (toEnum $ length strip_bs)))
     . substAt Indices.omega (Var 1)
     . Indices.liftAt 1
@@ -316,7 +401,7 @@ constantCase (Case _ _ alts) = do
   containsFunctionCall :: Term -> Bool
   containsFunctionCall = Fold.any isFunctionCall
     where
-    isFunctionCall (App fun _) = not (isInj fun)
+    isFunctionCall (App (Fix {}) _) = True -- not (isInj fun)
     isFunctionCall _ = False
 
   loweredAltTerm :: Alt -> Maybe Term

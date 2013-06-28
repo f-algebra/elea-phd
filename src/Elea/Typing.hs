@@ -42,7 +42,7 @@ checkStep :: forall m . Env.Readable m =>
   (Term -> m (Maybe Term)) -> Term -> m (Maybe Term)
 checkStep step term = runMaybeT $ do
   result <- MaybeT (step term)
-  lift . Err.noneM . Err.augmentM (stepErr result) $ do
+  lift . Err.noneM {- . Err.augmentM (stepErr result) -} $ do
     t_ty <- typeOf term
     r_ty <- typeOf result
     if t_ty == r_ty

@@ -17,8 +17,10 @@ module Elea.Term
   flattenLam, unflattenLam,
   isInj, isLam, isVar, isPi, isInd, isFix, isAbsurd,
   fromVar, emptyFixInfo, isRecursiveInd,
-  altPattern, isBaseCase, 
+  recursiveInjArgs, recursivePatternArgs,
+  altPattern, isBaseCase, isFinite,
   fusedMatch, addFusedMatch,
+  argumentCount, fullyAppliedFix,
 )
 where
 
@@ -246,6 +248,20 @@ leftmost = head . flattenApp
 returnType :: Type -> Type
 returnType = snd . flattenPi
 
+-- | If given a function type, returns the number of arguments it takes.
+-- If given a function it does the same with its type.
+argumentCount :: Type -> Int
+argumentCount (Fix _ fix_b _) = 
+  argumentCount (get boundType fix_b)
+argumentCount pi@(Pi _ _) = 
+  length (fst (flattenPi pi))
+
+-- | Counts whether the number of arguments applied to a fixpoint is
+-- all the arguments it needs.
+fullyAppliedFix :: Term -> Bool
+fullyAppliedFix (flattenApp -> fix@(Fix {}) : args) = 
+  length args == argumentCount fix
+  
 -- | If the provided 'Fix' term has already had a given 
 -- pattern match fused into it, this returns which constructor 
 -- it was matched to.
@@ -296,7 +312,42 @@ isBaseCase (Ind _ cons) = id
   . (cons !!)
   . fromEnum
   
+-- | For a given inductive type and constructor number this returns the
+-- argument positions which are recursive.
+recursiveInjArgs :: Indexed Type => Type -> Nat -> Set Int
+recursiveInjArgs (Ind _ cons) inj_n = id
+  . mconcat
+  . zipWith isRec [0..]
+  . map (get boundType)
+  $ args
+  where
+  con = cons !! fromEnum inj_n
+  (args, _) = flattenPi (get boundType con)
+  
+  isRec :: Int -> Type -> Set Int
+  isRec x ty 
+    | toEnum x `Set.member` Indices.free ty = Set.singleton x
+    | otherwise = mempty
+    
+-- | This is just the arguments of 'altPattern' at
+-- the positions from 'recursiveInjArgs' 
+recursivePatternArgs :: Indexed Type => Type -> Nat -> Set Index
+recursivePatternArgs ty n = 
+  Set.map (fromVar . (args !!)) (recursiveInjArgs ty n)
+  where
+  args = tail (flattenApp (altPattern ty n))
+  
 isRecursiveInd :: Substitutable Term => Type -> Bool
 isRecursiveInd ty@(Ind _ cons) = 
   not . all (isBaseCase ty) . map toEnum $ [0..length cons - 1]
+
+-- | Whether a term contains a finite amount of information, from a
+-- strictness point of view. So @[x]@ is finite, even though @x@ is a variable
+-- since it is not of the same type as the overall term.
+isFinite :: Indexed Type => Term -> Bool
+isFinite (flattenApp -> Inj n ind_ty : args) = 
+  all isFinite rec_args
+  where
+  rec_args = Set.map (args !!) (recursiveInjArgs ind_ty n)
+isFinite _ = False
 

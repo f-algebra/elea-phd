@@ -215,8 +215,12 @@ instance Indexed Term where
       return other
       
 instance Indexed Bind where
-  free (Bind _ t) = free t
+  free (Bind _ t) = Indices.free t
   shift f (Bind l t) = Bind l (Indices.shift f t)
+  
+instance Indexed FixInfo where
+  free (FixInfo ms) = concatMap (Indices.free . fst) ms
+  shift f (FixInfo ms) = FixInfo (map (first (Indices.shift f)) ms)
       
 instance Substitutable Term where
   type Inner Term = Term

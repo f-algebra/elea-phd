@@ -75,8 +75,8 @@ fuse transform outer_ctx inner_f@(Fix fix_info fix_b fix_t) =
     $ showM replaced_t
   let s3 = "\nREP:\n" ++ rep_s
   
- -- Fail.when (0 `Set.member` Indices.free inner_f)
-  
+  let inner_f_remained = 0 `Set.member` Indices.free replaced_t
+ 
   let fix_body = id
         . trace s3
      --   . trace (s1 ++ s2 ++ s3)
@@ -84,7 +84,9 @@ fuse transform outer_ctx inner_f@(Fix fix_info fix_b fix_t) =
         . substAt 0 inner_f
         $ replaced_t
         
-  Fail.unless (0 `Set.member` Indices.free fix_body)
+  let was_replaced = 0 `Set.member` Indices.free fix_body
+        
+  Fail.unless (was_replaced || not inner_f_remained)
     
   done <- id
     . Float.run

@@ -4,7 +4,7 @@ module Elea.Index
   Index, Indexed (..), Substitutable (..),
   lift, liftAt, liftManyAt, liftMany, subst, 
   lowerAt, lower, lowerMany, lowerableBy,
-  replaceAt, omega,
+  replaceAt, omega, tryLowerMany,
 )
 where
 
@@ -105,6 +105,11 @@ replaceAt at with = substAt at with . liftAt (succ at)
 
 lowerableBy :: Indexed t => Int -> t -> Bool
 lowerableBy n = all (>= (toEnum n)) . free
+
+tryLowerMany :: Indexed t => Int -> t -> Maybe t
+tryLowerMany n t = do
+  guard (lowerableBy n t)
+  return (lowerMany n t)
 
 -- | The magic index. Equal only to itself, greater than every other index,
 -- and unchanged by lifting or lowering.

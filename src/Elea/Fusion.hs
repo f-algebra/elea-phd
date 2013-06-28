@@ -16,6 +16,7 @@ import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
 import qualified Elea.Context as Context
 import qualified Elea.Typing as Typing
+import qualified Elea.Unifier as Unifier
 import qualified Elea.Floating as Float
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Monad.Error as Err
@@ -242,7 +243,7 @@ fusion full_t@(flattenApp ->
       , relevantFact = do
         outer_ty <- Err.noneM (Typing.typeOf outer_f)
         let ctx = Context.make outer_ty full_ty buildContext
-        mby_t <- Fail.toMaybe (fuse (const run) ctx outer_f)
+        mby_t <- Fail.toMaybe (fuse innerTransform ctx outer_f)
         return $ do
           t <- mby_t
          -- guard (Fold.all (/= outer_f) t)
@@ -283,6 +284,29 @@ fusion full_t@(flattenApp ->
                 . concatEndos (zipWith replaceAt arg_idxs new_vars)
                 . liftMany bs_count
                 $ unflattenApp (gap_t : outer_args)
+                
+      -- The transformation function that is passed to the Core.fuse
+      -- call for fixFact fusion. It is fusion plus 
+      -- the 'floatCtxMatchInwards' transformation.
+      innerTransform :: forall m . (Env.Readable m, Fail.Monad m) => 
+        Index -> Term -> m Term
+      innerTransform _ = run >=> finalFloating
+        where
+        finalFloating = Fold.rewriteStepsM 
+          $ Simp.stepsM ++ Float.steps ++ [floatCtxMatchInwards]
+          
+        -- We need the pattern match for the context (viz. over match_t) 
+        -- to be as far in as possible in order for fusion to succeed,
+        -- viz. that C[f] can be unified at some point. Otherwise we
+        -- end up with C[match ... with ... f ...].
+        floatCtxMatchInwards :: Term -> m (Maybe Term)
+        floatCtxMatchInwards = Float.commuteMatchesWhen when 
+          where
+          when :: Term -> Term -> m Bool
+          when (Case outer_t _ _) (Case inner_t _ _) = 
+            return 
+              $ Unifier.exists match_t outer_t
+             && not (Unifier.exists match_t inner_t)
                 
     fuseMatch _ = 
       return Nothing

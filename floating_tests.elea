@@ -102,3 +102,52 @@ let t10' = or
 let t11 = fun (p:bool) -> not (not p)
 let t11' = id bool
 
+let t12 = fun (xs:list nat) (ys:list nat) (n:nat) ->
+  match app nat xs ys with
+  | Nil -> False
+  | Cons z zs -> eq_nat z n
+  end
+let t12' = fun (xs:list nat) (ys:list nat) (n:nat) ->
+  match xs with
+  | Nil -> 
+    match ys with
+    | Nil -> False
+    | Cons z zs -> eq_nat z n
+    end
+  | Cons z zs -> eq_nat z n
+  end
+  
+let t13 =  
+  fix (srtd_ins: pi nat (list nat) -> bool) ->
+    fun (n: nat) (xs: list nat) -> 
+    match xs with
+    | Nil -> True
+    | Cons y ys ->
+      match leq_nat n y with
+      | True -> srtd_ins n (Nil nat)
+      | False -> srtd_ins n ys
+      end
+    end
+let t13' = 
+  fix (srtd_ins: pi nat (list nat) -> bool) ->
+    fun (n: nat) (xs: list nat) -> 
+    match xs with
+    | Nil -> True
+    | Cons y ys ->
+      match leq_nat n y with
+      | True -> True
+      | False -> srtd_ins n ys
+      end
+    end
+
+
+/* Doesn't work for fiddly reasons */
+let t30 = 
+  fix (app: pi (a:*) (xs:list a) (ys:list a) -> list a) ->
+    fun (a:*) (xs:list a) (ys:list a) ->
+    match xs with
+    | Nil -> ys
+    | Cons z zs -> app a (Nil a) (Cons a z (app a zs ys))
+    end
+let t30' = app
+

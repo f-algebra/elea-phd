@@ -1,12 +1,12 @@
 module Elea.Unifier 
 (
   Unifier, Unifiable (..), 
-  apply, union, unions, singleton
+  apply, union, unions, singleton, exists
 )
 where
 
 import Prelude ()
-import Elea.Prelude hiding ( union )
+import Elea.Prelude hiding ( union, find )
 import Elea.Index
 import qualified Elea.Monad.Failure as Fail
 import qualified Data.Map as Map
@@ -40,3 +40,5 @@ class Substitutable t => Unifiable t where
   -- to produce the second, fails if no such unifier exists. 
   find :: Fail.Monad m => t -> t -> m (Unifier (Inner t))
 
+exists :: Unifiable t => t -> t -> Bool
+exists t = isJust . find t
