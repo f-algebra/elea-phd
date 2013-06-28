@@ -131,8 +131,6 @@ unfoldCaseFix (Case cse_t@(leftmost -> Fix {}) ind_ty alts)
   fix@(Fix _ _ rhs) : args = flattenApp cse_t
   cse_t' = unflattenApp (subst fix rhs : args)
   
-  msg = "\nUNFOLDED\n\n" ++ show (Case cse_t ind_ty alts)
-  
   -- Whether the recursive variables of a given pattern match
   -- are used down that branch
   recArgsUsed :: Nat -> Alt -> Bool
