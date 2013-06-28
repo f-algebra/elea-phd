@@ -1,7 +1,5 @@
--- | This module performs term transformations which involve floating
--- lambdas or cases upwards in a term. 
--- The net effect of all these steps will
--- be lambdas then cases as high up as possible.
+-- | This module performs term transformations which do 
+-- not involve fixpoint fusion. The "lightweight" simplifications.
 module Elea.Floating
 (
   run, steps, 

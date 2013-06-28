@@ -1,3 +1,6 @@
+-- | The most basic and well established simplification steps.
+-- Beta-reduction, eta-reduction and case-inj-reduction
+-- (reduction of pattern matches over a constructor term).
 module Elea.Simplifier 
 (
   run, steps, stepsM, strictVars,
