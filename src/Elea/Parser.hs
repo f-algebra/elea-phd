@@ -1078,9 +1078,9 @@ lookupTerm name = do
       else return (fromJust mby_term)
       
 parseAndCheckTerm :: RawTerm -> ParserMonad m Term
-parseAndCheckTerm =
-    Err.check Typing.check
+parseAndCheckTerm = id
   . liftM Simp.run
+  . Err.check Typing.check
   . parseRawTerm
 
 parseRawTerm :: RawTerm -> ParserMonad m Term
@@ -1259,8 +1259,8 @@ instance Show Token where
   showList = (++) . intercalate " " . map show
 {-# LINE 1 "templates\GenericTemplate.hs" #-}
 {-# LINE 1 "templates\\GenericTemplate.hs" #-}
-{-# LINE 1 "<inbyggd>" #-}
-{-# LINE 1 "<kommandorad>" #-}
+{-# LINE 1 "<built-in>" #-}
+{-# LINE 1 "<command-line>" #-}
 {-# LINE 1 "templates\\GenericTemplate.hs" #-}
 -- Id: GenericTemplate.hs,v 1.26 2005/01/14 14:47:22 simonmar Exp 
 

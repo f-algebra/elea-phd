@@ -31,7 +31,7 @@ steps = id
   $ nonMonadic ++ [unfoldFixInj, absurdity, varEqApply]
   where
   nonMonadic = map (return .)
-    [ constArg
+    [ constArg   
     , lambdaCase
     , funCase
     , argCase
@@ -42,7 +42,7 @@ steps = id
     , constantCase
     , uselessFix
     , unfoldCaseFix
-    , unfoldWithinFix
+    , unfoldWithinFix 
     ]
     
 -- | Given a predicate P, if it finds a pattern match outside (outer)
@@ -276,7 +276,7 @@ constArg (Fix fix_info fix_b fix_rhs) = do
     . stripLam strip_bs
     . liftManyAt (length strip_bs) 1
     . Fix (Indices.lift fix_info) new_fix_b
-    . replaceAt 0 (stripLam strip_bs (Var (toEnum $ length strip_bs)))
+    . replaceAt 0 (stripLam strip_bs' (Var (toEnum $ length strip_bs)))
     . substAt Indices.omega (Var 1)
     . Indices.liftAt 1
     . unflattenLam left_bs
@@ -288,6 +288,7 @@ constArg (Fix fix_info fix_b fix_rhs) = do
     -- at the position where we are removing one.
     (left_bs, dropped_b:right_bs) = splitAt arg_pos arg_binds
     strip_bs = left_bs ++ [dropped_b]
+    strip_bs' = zipWith Indices.liftAt [1..] strip_bs
     
     -- Generate the type of our new fix binding from the old one
     new_fix_b = id

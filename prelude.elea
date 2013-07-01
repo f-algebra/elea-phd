@@ -196,3 +196,33 @@ let isort =
     | Cons y ys -> insert y (isort ys)
     end
 
+    
+/* Trees */
+
+let tree = fun (a:*) ->
+  ind tree: * with
+  | Leaf: tree
+  | Node: pi a tree tree -> tree
+  end
+ 
+let Leaf = fun (a: *) -> inj0 (tree a)
+let Node = fun (a: *) -> inj1 (tree a)
+
+let mirror =
+  fun (a: *) ->
+  fix (mirror: pi (tree a) -> tree a) ->
+    fun (t: tree a) ->
+    match t with
+    | Leaf -> Leaf a
+    | Node x t1 t2 -> Node a x (mirror t2) (mirror t1)
+    end
+    
+let height = 
+  fun (a: *) ->
+  fix (height: pi (tree a) -> nat) ->
+    fun (t: tree a) ->
+    match t with
+    | Leaf -> 0
+    | Node x t1 t2 -> Suc (add (height t1) (height t2))
+    end
+  

@@ -42,7 +42,7 @@ checkStep :: forall m . Env.Readable m =>
   (Term -> m (Maybe Term)) -> Term -> m (Maybe Term)
 checkStep step term = runMaybeT $ do
   result <- MaybeT (step term)
-  lift . Err.noneM {- . Err.augmentM (stepErr result) -} $ do
+  lift . Err.noneM . Err.augmentM (stepErr result) $ do
     t_ty <- typeOf term
     r_ty <- typeOf result
     if t_ty == r_ty
@@ -105,10 +105,14 @@ generaliseMany :: forall m t1 t2 .
   (Env.Readable m, ContainsTerms t1, ContainsTerms t2,
     KleisliShow t1, ShowM t1 m) => 
   [Term] -> ([Index] -> t1 -> m t2) -> (t1 -> m t2)
-generaliseMany ts f = foldr gen f ts []
+generaliseMany ts f = foldr gen f lifted_ts []
   where
+  lifted_ts = zipWith Indices.liftMany [0..] ts
+  
   gen :: Term -> ([Index] -> t1 -> m t2) -> ([Index] -> t1 -> m t2)
-  gen t f ixs = generalise t (\ix -> f (ix:ixs))
+  gen t f ixs = 
+    generalise t (\ix -> f (ix : map Indices.lift ixs))
+
 
 -- | Returns the type of a given 'Term',
 -- within a readable type environment.

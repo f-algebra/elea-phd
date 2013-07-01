@@ -289,7 +289,7 @@ fusion full_t@(flattenApp ->
       -- call for fixFact fusion. It is fusion plus 
       -- the 'floatCtxMatchInwards' transformation.
       innerTransform :: forall m . (Env.Readable m, Fail.Monad m) => 
-        Index -> Term -> m Term
+        Set Index -> Term -> m Term
       innerTransform _ = run >=> finalFloating
         where
         finalFloating = Fold.rewriteStepsM 
@@ -316,8 +316,9 @@ fusion _ =
 
 
 simplifyAndExtract :: forall m . Env.Readable m =>  
-  Index -> Term -> Env.AlsoTrack Term m Term
-simplifyAndExtract inner_f term = do
+  Set Index -> Term -> Env.AlsoTrack Term m Term
+simplifyAndExtract gen_vars term = do
+  lift (run term) {-
   term' <- lift (run term)
   can_extract <- extractable
   if not can_extract
@@ -385,4 +386,4 @@ simplifyAndExtract inner_f term = do
           t' <- lift (run t)
           ts <- showM t'
           return $ trace ("GOT: " ++ ts) t'
-
+-}

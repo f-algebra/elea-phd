@@ -8,7 +8,8 @@ module Elea.Env
   bind, bindMany, subterm,
   replaceTerm, revertMatches, matchedWith,
   AlsoTrack, alsoTrack, 
-  mapBranchesM, mapBranchesWhileM, collectTerms,
+  mapBranchesM, mapBranchesWhileM,
+  collectTermsM, subtermCount,
 )
 where
 
@@ -134,7 +135,7 @@ distAltM cse_t ind_ty alt_n (Alt' mbs (mt, _)) = do
   bs <- distBinds mbs
   t <- id
     . bindMany _bs
-    . equals (liftMany (length _bs) cse_t) (altPattern ind_ty alt_n)
+    . equals cse_t' (altPattern ind_ty' alt_n)
     $ mt
   return (Alt' bs t)
   where
@@ -145,6 +146,8 @@ distAltM cse_t ind_ty alt_n (Alt' mbs (mt, _)) = do
     return (Bind' l b : bs)
   
   _bs = map (embedBind . map snd) mbs  
+  cse_t' = liftMany (length _bs) cse_t
+  ind_ty' = liftMany (length _bs) ind_ty
   
 -- | Applies a transformation to the resulting terms of however many nested
 -- pattern matches which satisfy a given condition.
@@ -159,7 +162,7 @@ mapBranchesWhileM when = Fold.descendM branches
     -- If we are at a pattern match which fulfils the condition
     -- then don't apply the function and recurse into every branch.
     then return
-      (False, Case' (False, cse_t) (False, ind_ty) (map branchAlt alts))
+      (False, Case' (True, cse_t) (False, ind_ty) (map branchAlt alts))
     
     -- Otherwise just apply the function and don't recurse
     else return
@@ -176,9 +179,9 @@ mapBranchesWhileM when = Fold.descendM branches
 mapBranchesM :: Fold.FoldM Term m => (Term -> m Term) -> Term -> m Term
 mapBranchesM = mapBranchesWhileM (const (return True))
 
-collectTerms :: forall m . Writable m => 
+collectTermsM :: forall m . Writable m => 
   (Term -> m Bool) -> Term -> m (Set Term)
-collectTerms p = alsoTrack 0 . Fold.collectM collect
+collectTermsM p = alsoTrack 0 . Fold.collectM collect
   where
   collect :: Term -> MaybeT (AlsoTrack Index m) Term
   collect t = do
@@ -186,6 +189,10 @@ collectTerms p = alsoTrack 0 . Fold.collectM collect
     guard c
     offset <- Trans.lift ask
     return (Indices.lowerMany (fromEnum offset) t)
+    
+-- | Return the number of times a given subterm occurs in a larger term.
+subtermCount :: Term -> Term -> Int
+subtermCount t = trackIndices t . Fold.countM (\t -> asks (== t))
 
 instance Indexed Term where
   free = id

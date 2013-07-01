@@ -27,5 +27,5 @@ tests = Test.label "Floating"
   Test.loadFile "floating_tests.elea"
 
   liftM Test.list
-    $ mapM assertFloatEq [1..13]
+    $ mapM assertFloatEq [1..14]
 

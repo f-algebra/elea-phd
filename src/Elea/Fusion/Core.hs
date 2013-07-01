@@ -25,15 +25,24 @@ import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 
--- REWRITE to use Indices.omega rather than random offsets we remove?
+-- TODO use Indices.omega rather than random offsets we remove?
+-- TODO only pull in the variables that you need as arguments, not all of them
 
 fuse :: forall m . (Env.Readable m, Fail.Monad m) => 
-  (Index -> Term -> m Term) -> Context -> Term -> m Term
-fuse transform outer_ctx inner_f@(Fix fix_info fix_b fix_t) = 
+  (Set Index -> Term -> m Term) -> Context -> Term -> m Term
+fuse transform outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = 
     Env.forgetMatches $ do
   ctx_s <- showM outer_ctx
-  t_s <- showM inner_f
+  t_s <- showM inner_fix
   let s1 = "FUSING:\n" ++ ctx_s ++ "\nWITH\n" ++ t_s
+  
+  next_free_index <- liftM toEnum Env.bindingDepth
+  let arg_indices = reverse [0..next_free_index - 1]
+      arg_vars = map Var arg_indices
+      fix_idx = next_free_index + 1
+      new_label = 
+        liftM (\t -> "[" ++ t ++ "]")
+        $ get boundLabel fix_b
 
   -- The return type of our new function is the type of the term
   -- we are fusing (fused_t == inner_f inside outer_ctx)
@@ -47,27 +56,35 @@ fuse transform outer_ctx inner_f@(Fix fix_info fix_b fix_t) =
       new_fix_ty = unflattenPi arg_bs result_ty
       new_fix_b = Bind new_label new_fix_ty
   
-  transformed_t <- id 
+  unfolded_t <- id
     . Env.bind fix_b
-    . transform 0
-    . trace s1
+    . Float.run
     . Context.apply (Indices.lift outer_ctx)
     $ fix_t
+      
+  transformed_t <- id 
+    . Env.bind fix_b
+    . Env.alsoTrack 0
+    . Env.mapBranchesWhileM calledWithNonFreeArgs transformBranch
+   -- . trace s1
+    $ unfolded_t
   
   trn_s <- Env.bind fix_b (showM transformed_t)
   let s2 = "\nTRANS:\n" ++ trn_s
   
   -- I gave up commenting at this point, it works because it does...
-  let reverted_t = id
-        . Env.trackIndices 0
-        . Fold.transformM revertFixMatches 
-        $ transformed_t
-        
+  reverted_t <- id
+    . Env.bind fix_b
+    . Float.run
+    . Env.trackIndices 0
+    . Fold.transformM revertFixMatches 
+    $ transformed_t
+       
   depth <- Env.bindingDepth
   let replaced_t = id
         . Env.trackIndices 0
-        . Fold.transformM replace
-        . trace s2
+        . Fold.transformM (replace fix_idx arg_vars)
+      --  . trace s2
         $ reverted_t
       
   rep_s <- Env.bindAt 0 fix_b
@@ -78,16 +95,20 @@ fuse transform outer_ctx inner_f@(Fix fix_info fix_b fix_t) =
   let inner_f_remained = 0 `Set.member` Indices.free replaced_t
  
   let fix_body = id
-        . trace s3
-     --   . trace (s1 ++ s2 ++ s3)
+      --  . trace s3
+        . trace (s1 ++ s2 ++ s3)
         . unflattenLam arg_bs
-        . substAt 0 inner_f
+        . substAt 0 inner_fix
         $ replaced_t
         
-  let was_replaced = 0 `Set.member` Indices.free fix_body
-        
-  Fail.unless (was_replaced || not inner_f_remained)
+  let rec_call_count = Env.subtermCount (Var 0) fix_t
+      new_rec_call_count = Env.subtermCount (Var 0) fix_body
+      replaced_enough = new_rec_call_count >= rec_call_count
+
+  Fail.unless (replaced_enough || not inner_f_remained)
     
+  Err.noneM (Typing.check (Fix fix_info new_fix_b fix_body)) 
+  
   done <- id
     . Float.run
     . (\t -> unflattenApp (t : arg_vars))
@@ -96,46 +117,58 @@ fuse transform outer_ctx inner_f@(Fix fix_info fix_b fix_t) =
   done_s <- showM done
   let s4 = "\nDONE:\n" ++ done_s
   
-  Fail.when (leftmost done == inner_f)
+  Fail.when (leftmost done == inner_fix)
   
   id 
     . trace s4 
     $ return done
-  where {-
+  where 
+  fused_t = Context.apply outer_ctx inner_fix
+  
+  -- Whether the given index is called as a function using arguments
+  -- that contain variables which are not free here. We cannot generalise
+  -- an inner function call unless all of the variables it is called with
+  -- are free, so we use this to recurse into the branches of the term
+  -- until they become free.
+  calledWithNonFreeArgs :: Term -> Env.AlsoTrack Index m Bool
+  calledWithNonFreeArgs term = do
+    inner_f <- ask
+    Fold.anyM (nonFreeArgs inner_f) term
+    where
+    nonFreeArgs :: Index -> Term -> Env.AlsoTrack Index m Bool
+    nonFreeArgs inner_f term@(flattenApp -> Var f : args) = do
+      inner_f_here <- ask
+      if inner_f_here /= f
+      then return False
+      else do
+        let idx_diff = inner_f_here - inner_f
+        return (all (>= idx_diff) (Indices.free term))
+    nonFreeArgs _ _ = 
+      return False
+  
   transformBranch :: Term -> Env.AlsoTrack Index m Term
   transformBranch term = do
     -- Collect every recursive call to the inner unrolled function
     -- so that we can generalise them
-    fix_idx <- ask
-    ts <- showM term
-    ty <- Err.noneM (Typing.typeOf term)
-    tys <- showM ty
-    fix_uses <- trace tys $ return mempty --trace ("MEEP " ++ ts) $ Fold.collectM (fixUsage fix_idx) term
+    fix_uses <- Env.collectTermsM isInnerCall term
     
-    ss <- showM (Set.toList fix_uses)
-    lift
-      . Typing.generaliseMany (Set.toList fix_uses) 
-        (\ixs t -> trace ("GEN: " ++ ss ++ " became " ++ show ixs ++ "\nin\n" ++ ts ++ "\ngiving\n" ++ show t) $ transform (Set.fromList ixs) t) 
-      . Context.apply (Indices.lift outer_ctx)
+    id 
+      -- . trace ("GEN:" ++ show fix_uses ++ "\nWITHIN:" ++ show term)
+      . lift 
+      . Typing.generaliseMany 
+          (Set.toList fix_uses) 
+          (transform . Set.fromList) 
       $ term
     where
-    fixUsage :: Index -> Term -> MaybeT (Env.AlsoTrack Index m) Term
-    fixUsage outer_idx term@(flattenApp -> Var f : args) = do
-      fix_idx <- lift ask
-      guard (f == fix_idx)
-      ts <- showM term
-      tyf <- Err.noneM (Typing.typeOf (Var f))
-      tyfs <- showM tyf
-      ty <- trace ("MERP: " ++ ts ++ " :: " ++ tyfs) $ Err.noneM (Typing.typeOf term)
-      tyss <- showM ty
-      trace ("FLEEP : " ++ tyss) $ guard (not (isPi ty))
-      -- Lower indices to the level they would be 
-      -- at in the 'transformBranch' function
-      let fix_offset = fromEnum (fix_idx - outer_idx)
-      return (Indices.lowerMany fix_offset term)
-    fixUsage _ _ = mzero
-  -}
-  
+    isInnerCall :: Term -> Env.AlsoTrack Index m Bool
+    isInnerCall term@(flattenApp -> Var f : args) = do
+      inner_f <- ask
+      return 
+         $ inner_f == f 
+        && length args == argumentCount inner_fix
+    isInnerCall _ = 
+      return False
+    
   revertFixMatches :: Term -> Env.TrackIndices Index Term
   revertFixMatches term@(Case cse_t ind_ty alts) = do
     fix_f <- ask
@@ -153,8 +186,8 @@ fuse transform outer_ctx inner_f@(Fix fix_info fix_b fix_t) =
   revertFixMatches other = 
     return other
     
-  replace :: Term -> Env.TrackIndices Index Term
-  replace term = do
+  replace :: Index -> [Term] -> Term -> Env.TrackIndices Index Term
+  replace fix_idx arg_vars term = do
     old_f <- ask
     return (fromMaybe term (tryReplace old_f))
     where
@@ -165,6 +198,9 @@ fuse transform outer_ctx inner_f@(Fix fix_info fix_b fix_t) =
       uni <- Unifier.find replace_t term
       guard (not (old_f `Map.member` uni))
       
+      let mapped_to = concatMap Indices.free (Map.elems uni)
+      guard (not (liftHere fix_idx `Set.member` mapped_to))
+      
       return
         . Unifier.apply uni 
         . liftHere
@@ -172,20 +208,13 @@ fuse transform outer_ctx inner_f@(Fix fix_info fix_b fix_t) =
         . (Var fix_idx :)
         $ map Indices.lift arg_vars
       where
+      liftHere :: Indexed t => t -> t
       liftHere = Indices.liftMany (fromEnum old_f)
+      
       replace_t = id
         . liftHere
         . Context.apply (Indices.lift outer_ctx) 
         $ Var 0   
-  
-  fused_t = Context.apply outer_ctx inner_f
-  largest_free_index = (pred . supremum . Indices.free) fused_t
-  arg_indices = reverse [0..largest_free_index]
-  arg_vars = map Var arg_indices
-  fix_idx = largest_free_index + 2
-  new_label = 
-    liftM (\t -> "[" ++ t ++ "]")
-    $ get boundLabel fix_b
 
 split :: forall m . (Fail.Monad m, Env.Readable m) => 
   (Term -> m Term) -> Term -> Context -> m Term
@@ -261,7 +290,6 @@ split transform (Fix fix_info fix_b fix_t) (Indices.lift -> outer_ctx) =
 
 invent :: (Fail.Monad m, Env.Readable m) => Term -> Term -> m Term
 invent inner_t top_t = do
-  Fail.when (inner_t `Env.subterm` top_t)
   ind_ty <- Err.noneM (Typing.typeOf inner_t)
   Fail.unless (isInd ind_ty && not (isRecursiveInd ind_ty))
   inner_s <- showM inner_t

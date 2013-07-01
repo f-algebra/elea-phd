@@ -6,7 +6,7 @@ module Elea.Foldable
   allM, findM, anyM, any, all,
   transform, rewrite, recover,
   rewriteStepsM, rewriteSteps,
-  descendM,
+  descendM, countM,
 )
 where
 
@@ -66,6 +66,14 @@ anyM p = liftM not . allM (liftM not . p)
 collectM :: (Ord a, FoldableM t, Monad m, FoldM t (WriterT (Set a) m)) =>
   (t -> MaybeT m a) -> t -> m (Set a)
 collectM f = foldM (liftM (maybe mempty Set.singleton) . runMaybeT . f)
+
+countM :: (FoldableM t, Monad m, FoldM t (WriterT (Monoid.Sum Int) m)) => 
+  (t -> m Bool) -> t -> m Int
+countM p = liftM Monoid.getSum . foldM (liftM (Monoid.Sum . found) . p)
+  where
+  found :: Bool -> Int
+  found False = 0
+  found True = 1
 
 all :: (FoldableM t, FoldM t (WriterT Monoid.All Identity)) => 
   (t -> Bool) -> t -> Bool

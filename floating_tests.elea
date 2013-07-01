@@ -139,6 +139,22 @@ let t13' =
       | False -> srtd_ins n ys
       end
     end
+    
+let t14 = fun (a: *) ->  
+  fix (height: pi (tree a) nat nat nat-> nat) ->
+  fun (t: tree a) (m:nat) (y: nat) (n: nat)  ->
+    match t with
+    | Leaf -> y
+    | Node x t1 t2 -> Suc (height t1 m (height t2 m y n) n)
+    end
+let t14' = fun (a: *) (t: tree a) (m: nat) (y: nat) (n: nat) ->  
+  ((fix (height: pi (t: tree a) (y: nat) -> nat) ->
+  fun (t: tree a) -> 
+    fun (y: nat) ->
+      match t with
+      | Leaf -> y
+      | Node x t1 t2 -> Suc (height t1 (height t2 y))
+      end) t) y
 
 
 /* Doesn't work for fiddly reasons */

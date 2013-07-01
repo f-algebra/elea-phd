@@ -71,9 +71,37 @@ let t14 = fun (x:nat) (xs:list nat) ->
   | False -> True
   end
 let t14' = fun nat (list nat) -> True
+    
+let t15 = fun (a: *) (t: tree a) -> mirror a (mirror a t)
+let t15' = fun (a: *) (t: tree a) -> t
 
-let t15 = fun (n:nat) (xs:list nat) -> sorted (insert n xs)
-let t15' =
+let t16 = fun (a: *) (n: nat)
+  (t1: tree a) (x: nat) (y: nat) -> 
+    add (add n x) y
+let t16' = fun (a: *) (n: nat)
+  (t1: tree a) (x: nat) (y: nat) -> 
+    add n (add x y)
+    
+let t17 = fun (a: *) (t: tree a) -> height a (mirror a t)
+let t17' = fun (a:*) ->
+  fix (height: pi (tree a) -> nat) ->
+    fun (t: tree a) ->
+    match t with
+    | Leaf -> 0
+    | Node x t1 t2 -> Suc (add (height t2) (height t1))
+    end
+
+let t18 = fun (n: nat) (m: nat) -> eq_nat (add n m) (add m n)
+let t18' = fun nat nat -> True
+
+let t19 = fun (a: *) (t: tree a) -> eq_nat (height a t) (t17' a t)
+let t19' = fun (a: *) (tree a) -> True
+
+let t110 = fun (xs:list nat) -> sorted (isort xs)
+let t110' = fun (list nat) -> True
+
+let t115 = fun (n:nat) (xs:list nat) -> sorted (insert n xs)
+let t115' =
   fix (srtd_ins: pi nat (list nat) -> bool) ->
     fun (n: nat) (xs: list nat) -> 
     match xs with
@@ -92,40 +120,6 @@ let t15' =
         end
       end
     end
-    
-let t16 = fun (xs:list nat) -> sorted (isort xs)
-let t16' = fun (list nat) -> True
-
-let t21 = fun (n:nat) (xs: list nat) -> 
-  match sorted xs with
-  | True -> True
-  | False -> t15' n xs
-  end
-let t21' = fun (n:nat) -> sorted 
-
-let t31 = 
-  fix (leq_nat2: pi nat nat nat -> bool) ->
-    fun (n: nat) (y: nat) (z: nat) ->
-       match n with
-       | 0 -> match leq_nat y z with
-         | True -> _|_ bool
-         | False -> _|_ bool
-         end
-       | Suc x' ->
-         match y with
-         | 0 -> _|_ bool
-         | Suc y' ->
-           match z with
-           | 0 ->
-             match leq_nat x' y' with
-             | True -> _|_ bool
-             | False -> False
-             end
-           | Suc z' -> leq_nat2 x' y' z'
-           end
-         end
-       end
-let t31' = fun nat nat nat -> False 
 
 let t40 = fun (n:nat) (xs:list nat) (bs:list nat) ->
   match sorted xs with
