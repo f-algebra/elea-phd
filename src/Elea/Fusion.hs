@@ -14,6 +14,7 @@ import Elea.Index hiding ( lift )
 import Elea.Fusion.Core
 import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
+import qualified Elea.Terms as Term
 import qualified Elea.Context as Context
 import qualified Elea.Typing as Typing
 import qualified Elea.Unifier as Unifier
@@ -108,7 +109,7 @@ floatConstructors term@(Fix _ fix_b fix_t)
       where
       base_alts = id
         . map (alts !!)
-        . filter (isBaseCase ind_ty . toEnum)
+        . filter (Term.isBaseCase ind_ty . toEnum)
         $ [0..length alts - 1]
         
       checked_alts
@@ -141,7 +142,7 @@ floatConstructors term@(Fix _ fix_b fix_t)
         | otherwise = Set.singleton (Context.make fix_ty fix_ty mkContext)
         where
         arg_ty = id
-          . Typing.nthArgument gap_n
+          . Term.nthArgument gap_n
           . get boundType
           . (!! fromEnum inj_n)
           $ Typing.unfoldInd ind_ty
@@ -393,7 +394,7 @@ fixfixSimplifier :: forall m . Env.Readable m =>
   Int -> Index -> Term -> Env.AlsoTrack Term m Term
 fixfixSimplifier inner_arg_count inner_f = id
   . Env.alsoWith (\outer_f -> (outer_f, inner_f))
-  . Env.mapBranchesWhileM True calledWithNonFreeArgs transformBranch
+  . Term.descendWhileM calledWithNonFreeArgs transformBranch
   where
   -- Whether the given index is called as a function using arguments
   -- that contain variables which are not free here. We cannot generalise
@@ -401,7 +402,7 @@ fixfixSimplifier inner_arg_count inner_f = id
   -- are free, so we use this to recurse into the branches of the term
   -- until they become free.
   calledWithNonFreeArgs :: Term -> Env.AlsoTrack (Term, Index) m Bool
-  calledWithNonFreeArgs term = do
+  calledWithNonFreeArgs term@(Case {}) = do
     (_, inner_f) <- ask
     Fold.anyM (nonFreeArgs inner_f) term
     where
@@ -415,6 +416,7 @@ fixfixSimplifier inner_arg_count inner_f = id
         return (any (< idx_diff) (Indices.free term))
     nonFreeArgs _ _ = 
       return False
+  calledWithNonFreeArgs _ = return False
   
   transformBranch :: Term -> Env.AlsoTrack (Term, Index) m Term
   transformBranch term = do
@@ -422,10 +424,10 @@ fixfixSimplifier inner_arg_count inner_f = id
     -- so that we can generalise them
     fix_uses <- id 
       . Env.alsoWith snd
-      $ Env.collectTermsM isInnerCall term
+      $ Term.collectM isInnerCall term
     (outer_f, _) <- ask
     Env.alsoWith (\(outer_f, _) -> outer_f)
-      . Typing.generaliseMany 
+      . Term.generaliseMany 
           (Set.toList fix_uses) 
           (\ixs t -> {- trace ("\nGEN:" ++ show fix_uses ++ "\nWITHIN:\n" ++ show term ++ "\nGIVES:\n" ++ show t) $ -} simplifyAndExtract (Set.fromList ixs) t) 
       $ term
@@ -452,16 +454,19 @@ fixfixSimplifier inner_arg_count inner_f = id
         . Env.alsoTrack (outer_f, gen_vars) 
         -- We descend into branches as long as the 'inner_f' function
         -- is not pattern matched by that branch.
-        . Env.mapBranchesWhileM False functionNonMatched extract 
+        . Term.descendWhileM functionNonMatched extract 
         $ term'
     where
     functionNonMatched :: Term -> Env.AlsoTrack (Term, Set Index) m Bool
     functionNonMatched (Case cse_t _ _) = do
       (_, gen_vars) <- ask
-      return 
-        . Set.null
-        . Set.intersection gen_vars
-        $ Indices.free cse_t
+      cse_t
+        |> Indices.free
+        |> Set.intersection gen_vars
+        |> Set.null
+        |> return
+    functionNonMatches _ =
+      return False
     
     extractable :: Env.AlsoTrack Term m Bool
     extractable = do
@@ -471,7 +476,7 @@ fixfixSimplifier inner_arg_count inner_f = id
       return 
         $ length args == 1
         && isInd ret 
-        && not (isRecursiveInd ret)
+        && not (Term.isRecursiveInd ret)
   
     extract :: Term -> Env.AlsoTrack (Term, Set Index) m Term
     extract (flattenApp -> inj@(Inj {}) : args) = do
@@ -479,16 +484,19 @@ fixfixSimplifier inner_arg_count inner_f = id
       return (unflattenApp (inj : args'))
     extract term = do
       (outer_f, gen_vars) <- ask
-      mby_t <- lift 
-        . Fail.toMaybe 
-        . concatEndosM (map (invent . App outer_f . Var) (Set.toList gen_vars)) 
-        $ term
+      let gen_vars' = term
+            |> Indices.free
+            |> Set.intersection gen_vars
+            |> Set.toList
+      mby_t <- term
+        |> concatEndosM (map (invent . App outer_f . Var) gen_vars') 
+        |> Fail.toMaybe
       case mby_t of 
         Nothing -> return term
         Just t -> do
           t' <- lift (run t)
           ts <- showM t'
-          return 
-            . trace ("GOT: " ++ ts) 
-            $ t'
+          t' 
+            |> trace ("GOT: " ++ ts) 
+            |> return
 

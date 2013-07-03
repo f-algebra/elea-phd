@@ -94,9 +94,11 @@ let t17' = fun (a:*) ->
 let t18 = fun (n: nat) (m: nat) -> eq_nat (add n m) (add m n)
 let t18' = fun nat nat -> True
 
+let t50 = fun (t: tree nat) -> 
+  sorted (flatten nat t)
+let t50' = fun (tree nat) -> False
 
-
-/ * requires invention of list-fold types */
+/* requires invention of list-fold types */
 let t219 = fun (a: *) (t: tree a) -> length a (flatten a t)
 let t219' = fun (a: *) (t: tree a) -> height a t
 

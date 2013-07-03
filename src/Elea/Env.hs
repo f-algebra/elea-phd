@@ -5,11 +5,8 @@ module Elea.Env
   Writable (..), Readable (..),
   TrackIndices, TrackIndicesT (..),
   trackIndices, trackIndicesT,
-  bind, bindMany, subterm,
-  replaceTerm, revertMatches, matchedWith,
+  bind, bindMany, matchedWith,
   AlsoTrack, alsoTrack, alsoWith,
-  mapBranchesM, mapBranchesWhileM,
-  collectTermsM, subtermCount,
 )
 where
 
@@ -50,23 +47,6 @@ class Writable m => Readable m where
   
 matchedWith :: Readable m => Term -> m (Maybe Term)
 matchedWith t = liftM (Map.lookup t) matches
-  
--- | Replace all instances of one term with another within terms.
-replaceTerm :: ContainsTerms t => Term -> Term -> t -> t
-replaceTerm me with = id
-  . trackIndices (me, with)
-  . mapTermsM (Fold.transformM apply)
-  where
-  apply :: Term -> TrackIndices (Term, Term) Term
-  apply term = do
-    (me, with) <- ask
-    if term == me
-    then return with
-    else return term
-    
--- | If the first argument is contained somewhere within the second.
-subterm :: Term -> Term -> Bool
-subterm sub = trackIndices sub . Fold.anyM (\t -> asks (== t))
   
 instance Fold.FoldableM Term where
   -- To fold over a 'Term' we require that our monad implement a writable
@@ -148,53 +128,6 @@ distAltM cse_t ind_ty alt_n (Alt' mbs (mt, _)) = do
   _bs = map (embedBind . map snd) mbs  
   cse_t' = liftMany (length _bs) cse_t
   ind_ty' = liftMany (length _bs) ind_ty
-  
--- | Applies a transformation to the resulting terms of however many nested
--- pattern matches which satisfy a given condition.
--- The first argument decides whether we recurse into terms we pattern
--- match upon.
-mapBranchesWhileM :: forall m . Fold.FoldM Term m => 
-  Bool -> (Term -> m Bool) -> (Term -> m Term) -> Term -> m Term
-mapBranchesWhileM rec_terms when = Fold.descendM branches
-  where
-  branches :: Term -> m (Bool, Term' (Bool, Term))
-  branches t@(Case cse_t ind_ty alts) = do
-    recurse <- when t
-    if recurse        
-    -- If we are at a pattern match which fulfils the condition
-    -- then don't apply the function and recurse into every branch.
-    then return
-      (False, Case' (rec_terms, cse_t) (False, ind_ty) (map branchAlt alts))
-    
-    -- Otherwise just apply the function and don't recurse
-    else return
-      (True, fmap (\t -> (False, t)) (Fold.project t))
-    where
-    branchAlt :: Alt -> Alt' (Bool, Term)
-    branchAlt (Alt bs alt_t) = Alt' bs' (True, alt_t)
-      where
-      bs' = map (fmap (\t -> (False, t)) . projectBind) bs
-  branches other = return
-    -- If we are at a branch, apply the function but don't recurse.
-    (True, fmap (\t -> (False, t)) (Fold.project other))
-    
-mapBranchesM :: Fold.FoldM Term m => Bool -> (Term -> m Term) -> Term -> m Term
-mapBranchesM p = mapBranchesWhileM p (const (return True))
-
-collectTermsM :: forall m . Writable m => 
-  (Term -> m Bool) -> Term -> m (Set Term)
-collectTermsM p = alsoTrack 0 . Fold.collectM collect
-  where
-  collect :: Term -> MaybeT (AlsoTrack Index m) Term
-  collect t = do
-    c <- Trans.lift . Trans.lift $ p t
-    guard c
-    offset <- Trans.lift ask
-    return (Indices.lowerMany (fromEnum offset) t)
-    
--- | Return the number of times a given subterm occurs in a larger term.
-subtermCount :: Term -> Term -> Int
-subtermCount t = trackIndices t . Fold.countM (\t -> asks (== t))
 
 instance Indexed Term where
   free = id
@@ -440,14 +373,4 @@ instance Unifiable Term where
         uniBindL n (b1, b2) = do
           local (Indices.liftMany n) (b1 `uniBind` b2)
     uni _ _ = Fail.here 
-
-revertMatches :: forall t m . (ContainsTerms t, Readable m) => t -> m t
-revertMatches = mapTermsM (Fold.rewriteM revert)
-  where
-  invertMap = Map.fromList . map (\(x, y) -> (y, x)) . Map.toList
-  
-  revert :: Term -> m (Maybe Term)
-  revert t = do
-    m_map <- matches
-    return (Map.lookup t (invertMap m_map))
 

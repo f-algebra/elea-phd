@@ -16,6 +16,7 @@ import Elea.Index hiding ( lift )
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
+import qualified Elea.Terms as Term
 import qualified Elea.Context as Context
 import qualified Elea.Typing as Typing
 import qualified Elea.Floating as Float
@@ -74,7 +75,7 @@ fuse transform outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     . Env.bind fix_b
     . Float.run
     . Env.trackIndices 0
-    . Fold.transformM revertFixMatches 
+    . Term.revertMatchesWhen isInnerFixMatch 
     $ transformed_t
        
   trn_s <- Env.bind fix_b (showM reverted_t)
@@ -101,8 +102,8 @@ fuse transform outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
         . substAt 0 inner_fix
         $ replaced_t
         
-  let rec_call_count = Env.subtermCount (Var 0) fix_t
-      new_rec_call_count = Env.subtermCount (Var 0) fix_body
+  let rec_call_count = Term.occurrences (Var 0) fix_t
+      new_rec_call_count = Term.occurrences (Var 0) fix_body
       replaced_enough = new_rec_call_count >= rec_call_count
 
   Fail.unless (replaced_enough || not inner_f_remained)
@@ -172,23 +173,8 @@ fuse transform outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
       return False
     -}
     
-    
-  revertFixMatches :: Term -> Env.TrackIndices Index Term
-  revertFixMatches term@(Case cse_t ind_ty alts) = do
-    fix_f <- ask
-    if not (fix_f `Set.member` Indices.free cse_t)
-    then return term
-    else do
-      let alts' = zipWith revertAlt [0..] alts
-      return (Case cse_t ind_ty alts')
-    where
-    revertAlt :: Nat -> Alt -> Alt
-    revertAlt n (Alt bs alt_t) = Alt bs alt_t'
-      where
-      rep_t = Indices.liftMany (length bs) cse_t
-      alt_t' = Env.replaceTerm (altPattern ind_ty n) rep_t alt_t
-  revertFixMatches other = 
-    return other
+  isInnerFixMatch :: Term -> Env.TrackIndices Index Bool
+  isInnerFixMatch cse_t = asks (`Set.member` Indices.free cse_t)
     
   replace :: Index -> [Term] -> Term -> Env.TrackIndices Index Term
   replace fix_idx arg_vars term = do
@@ -294,12 +280,20 @@ split transform (Fix fix_info fix_b fix_t) (Indices.lift -> outer_ctx) =
 
 invent :: (Fail.Monad m, Env.Readable m) => Term -> Term -> m Term
 invent inner_t top_t = do
+  Fail.when (inner_t `Term.contains` reverted_top)
   ind_ty <- Err.noneM (Typing.typeOf inner_t)
-  Fail.unless (isInd ind_ty && not (isRecursiveInd ind_ty))
+  Fail.unless (isInd ind_ty && not (Term.isRecursiveInd ind_ty))
   inner_s <- showM inner_t
   top_s <- showM top_t
   return
     . trace ("\n\nEXTRACTING:\n" ++ inner_s ++ "\n\nFROM:\n" ++ top_s)
-    $ Typing.buildCaseOf inner_t ind_ty (const top_t)
+    $ Term.buildCaseOf inner_t ind_ty (const top_t)
+  where
+  reverted_top = top_t
+    |> Term.revertMatchesWhen isInnerMatch
+    |> Env.trackIndices inner_t
   
+  isInnerMatch :: Term -> Env.TrackIndices Term Bool
+  isInnerMatch (Var x) = asks (Set.member x . Indices.free)
+  isInnerMatch _ = return False
   

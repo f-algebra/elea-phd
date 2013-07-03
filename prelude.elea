@@ -160,7 +160,7 @@ let take =
     | Cons y ys -> 
       match n with
       | 0 -> Nil a
-      | Suc n' -> Cons a y (take a n ys)
+      | Suc n' -> Cons a y (take a n' ys)
       end
     end
     

@@ -1,9 +1,6 @@
 module Elea.Typing
 (
-  typeOf, check, absurd, empty,
-  generalise, generaliseMany,
-  checkStep, nthArgument,
-  unfoldInd, buildCaseOf
+  typeOf, check, absurd, empty, checkStep, unfoldInd,
 )
 where
 
@@ -27,6 +24,12 @@ absurd = Pi (Bind (Just "FAIL") Set) (Var 0)
 -- | The constructorless inductive type, "ind (0:*) with end"
 empty :: Type 
 empty = Ind (Bind (Just "0") Set) []
+
+unfoldInd :: Term -> [Bind]
+unfoldInd ty@(Ind _ cons) = 
+  map (subst ty) cons
+unfoldInd other = 
+  error $ "Tried to unfold a non inductive type: " ++ show other
 
 -- | Throws an error if a term is not correctly typed.
 check :: TypingMonad m => Term -> m ()
@@ -63,56 +66,6 @@ checkStep step term = runMaybeT $ do
       $ "In the transformation:"
       ++ "\nFrom: [" ++ t_s ++ "]"
       ++ "\nTo: [" ++ t_s' ++ "]"
-
-nthArgument :: Int -> Type -> Type
-nthArgument n = id
-  . Indices.lowerMany n
-  . get boundType
-  . (!! n)
-  . fst
-  . flattenPi 
-  
--- | Takes a term to generalise, and modifies a term to term function,
--- such that the supplied term is generalised going in,
--- and ungeneralised coming out. Just treat t1 and t2 as Term, 
--- I had to generalise it to t1 and t2 for annoying reasons.
-generalise :: (Env.Readable m, ContainsTerms t1, ContainsTerms t2,
-    KleisliShow t1, ShowM t1 m) => 
-  Term -> (Index -> t1 -> m t2) -> (t1 -> m t2)
-generalise gen_t transform term = do
-  -- First we create a binding for the new variable by finding its type
-  -- and creating a descriptive label.
-  gen_ty <- Err.noneM (typeOf gen_t)
-  lbl <- liftM (\t -> "{" ++ t ++ "}") (showM gen_t)
-  let gen_b = Bind (Just lbl) gen_ty
-  
-  -- Generalise by replacing all instances of the term with a new variable
-  -- at index 0 and make room for this index by lifting the original term.
-  let term' = id 
-        . Env.replaceTerm (Indices.lift gen_t) (Var 0)
-        $ Indices.lift term
-  
-  -- Apply our term to term function, with the new variable bound.
-  term'' <- Env.bindAt 0 gen_b (transform 0 term') 
-  
-  -- Finally, we reverse the generalisation process.
-  return 
-    . Indices.lower
-    . Indices.replaceAt 0 (Indices.lift gen_t)
-    $ term''
-    
-generaliseMany :: forall m t1 t2 . 
-  (Env.Readable m, ContainsTerms t1, ContainsTerms t2,
-    KleisliShow t1, ShowM t1 m) => 
-  [Term] -> ([Index] -> t1 -> m t2) -> (t1 -> m t2)
-generaliseMany ts f = foldr gen f lifted_ts []
-  where
-  lifted_ts = zipWith Indices.liftMany [0..] ts
-  
-  gen :: Term -> ([Index] -> t1 -> m t2) -> ([Index] -> t1 -> m t2)
-  gen t f ixs = 
-    generalise t (\ix -> f (ix : map Indices.lift ixs))
-
 
 -- | Returns the type of a given 'Term',
 -- within a readable type environment.
@@ -241,24 +194,8 @@ typeOf term = id
     return
     . get boundType
     . (!! fromEnum n)
-    . unfoldInd 
+    . unfoldInd
     $ ind_ty
   ftype (Case' _ _ falts) =
     return . altType . head $ falts
-    
-unfoldInd :: Term -> [Bind]
-unfoldInd ty@(Ind _ cons) = 
-  map (subst ty) cons
-unfoldInd other = 
-  error $ "Tried to unfold a non inductive type: " ++ show other
-  
-buildCaseOf :: Term -> Type -> (Nat -> Term) -> Term
-buildCaseOf cse_of ind_ty@(unfoldInd -> cons) mkAlt = 
-  Case cse_of ind_ty (zipWith buildAlt [0..] cons)
-  where
-  buildAlt :: Nat -> Bind -> Alt
-  buildAlt n bind = Alt bs alt_t
-    where
-    bs = fst . flattenPi . get boundType $ bind
-    alt_t = Indices.liftMany (length bs) (mkAlt n)
 

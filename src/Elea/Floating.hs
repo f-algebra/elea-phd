@@ -14,6 +14,7 @@ import Elea.Term
 import Elea.Show ( showM )
 import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
+import qualified Elea.Terms as Term
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Typing as Typing
 import qualified Elea.Simplifier as Simp
@@ -119,14 +120,11 @@ unfoldFixInj _ =
 -- match only uses a finite amount of information from the 'Fix'.
 -- TODO: Extend this to arbitrary depth of unrolling, currently
 -- it only works for depth 1.
--- TODO: Currently we just check if the type if recursive, what it should
--- really check is whether a single unrolling of the function will produce
--- something in HNF, viz. that this finite information will be consumed.
 unfoldCaseFix :: Term -> Maybe Term
-unfoldCaseFix (Case cse_t@(leftmost -> Fix {}) ind_ty alts)
-  | isRecursiveInd ind_ty
+unfoldCaseFix term@(Case cse_t@(leftmost -> fix@(Fix {})) ind_ty alts)
+  | Term.isRecursiveInd ind_ty
   , and (zipWith recArgsUsed [0..] alts) =
-    Just (Case cse_t' ind_ty alts)
+    trace ("UNFCASEFIX: " ++ show term) $ return (Case cse_t' ind_ty alts)
   where
   fix@(Fix _ _ rhs) : args = flattenApp cse_t
   cse_t' = unflattenApp (subst fix rhs : args)
@@ -138,7 +136,7 @@ unfoldCaseFix (Case cse_t@(leftmost -> Fix {}) ind_ty alts)
     not (any isUsed args)
     where
     isUsed = (`Set.member` Indices.free alt_t)
-    args = recursivePatternArgs ind_ty n
+    args = Term.recursivePatternArgs ind_ty n
   
 unfoldCaseFix _ = mzero
 
@@ -153,7 +151,7 @@ unfoldWithinFix fix@(Fix fix_i fix_b fix_t) =
     then return Nothing
     else do
       fix_t' <- Fold.transformM unfold fix_t
-      return (Just (Fix fix_i fix_b fix_t'))
+      trace ("UNFWITHFIX: " ++ show fix) $ return (Just (Fix fix_i fix_b fix_t'))
   where
   arg_count = argumentCount fix
   
@@ -161,7 +159,7 @@ unfoldWithinFix fix@(Fix fix_i fix_b fix_t) =
   unfoldable (flattenApp -> Var f : args)
     | length args == arg_count = do
       (fix_f, _) <- ask
-      return (f == fix_f && all isFinite args)
+      return (f == fix_f && all Term.isFinite args)
   unfoldable _ =
     return False
   
@@ -334,7 +332,7 @@ applyCaseOf (Case cse_t ind_ty old_alts) inner_t =
     liftHere = Indices.liftMany (length binds)
     pat = altPattern (liftHere ind_ty) (toEnum n)
     alt_t = id
-      . Env.replaceTerm (liftHere cse_t) pat
+      . Term.replace (liftHere cse_t) pat
       . liftHere
       $ inner_t
 
