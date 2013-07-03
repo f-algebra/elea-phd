@@ -53,7 +53,7 @@ module Elea.Prelude
   takeIndices, isNub, foldl1M, seqStr, strSeq,
   isLeft, isRight, modifyM', modifyM, removeAt,
   insertAt, convertEnum, indent, indentBy, debugNth,
-  arrowSum, supremum,
+  arrowSum, supremum, (|>),
 )
 where
 
@@ -72,7 +72,8 @@ import Control.Monad.Trans ( MonadTrans (..), lift, liftIO )
 import Control.Monad.State ( evalStateT, execState, runState, evalState,
   MonadState, State (..), StateT (..) )
 import Control.Monad.Reader ( 
-  MonadReader (..), Reader (..), ReaderT (..), asks, runReader, mapReaderT )
+  MonadReader (..), Reader (..), ReaderT (..), 
+  asks, runReader, mapReaderT, withReaderT, withReader )
 import Control.Monad.Writer ( execWriter, runWriter, execWriterT,
   MonadWriter (..), Writer (..), WriterT (..), censor, listens )
 import Control.Monad.List ( ListT (..) )
@@ -122,6 +123,9 @@ import qualified Data.Set as Set
 import qualified Data.Label.Maybe as Maybe
 
 infixr 6 ++
+
+(|>) :: a -> (a -> b) -> b
+(|>) = flip ($)
 
 void :: Functor f => f a -> f ()
 void = fmap (const ())

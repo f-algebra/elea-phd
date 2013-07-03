@@ -7,7 +7,7 @@ module Elea.Env
   trackIndices, trackIndicesT,
   bind, bindMany, subterm,
   replaceTerm, revertMatches, matchedWith,
-  AlsoTrack, alsoTrack, 
+  AlsoTrack, alsoTrack, alsoWith,
   mapBranchesM, mapBranchesWhileM,
   collectTermsM, subtermCount,
 )
@@ -151,9 +151,11 @@ distAltM cse_t ind_ty alt_n (Alt' mbs (mt, _)) = do
   
 -- | Applies a transformation to the resulting terms of however many nested
 -- pattern matches which satisfy a given condition.
+-- The first argument decides whether we recurse into terms we pattern
+-- match upon.
 mapBranchesWhileM :: forall m . Fold.FoldM Term m => 
-  (Term -> m Bool) -> (Term -> m Term) -> Term -> m Term
-mapBranchesWhileM when = Fold.descendM branches
+  Bool -> (Term -> m Bool) -> (Term -> m Term) -> Term -> m Term
+mapBranchesWhileM rec_terms when = Fold.descendM branches
   where
   branches :: Term -> m (Bool, Term' (Bool, Term))
   branches t@(Case cse_t ind_ty alts) = do
@@ -162,7 +164,7 @@ mapBranchesWhileM when = Fold.descendM branches
     -- If we are at a pattern match which fulfils the condition
     -- then don't apply the function and recurse into every branch.
     then return
-      (False, Case' (True, cse_t) (False, ind_ty) (map branchAlt alts))
+      (False, Case' (rec_terms, cse_t) (False, ind_ty) (map branchAlt alts))
     
     -- Otherwise just apply the function and don't recurse
     else return
@@ -176,8 +178,8 @@ mapBranchesWhileM when = Fold.descendM branches
     -- If we are at a branch, apply the function but don't recurse.
     (True, fmap (\t -> (False, t)) (Fold.project other))
     
-mapBranchesM :: Fold.FoldM Term m => (Term -> m Term) -> Term -> m Term
-mapBranchesM = mapBranchesWhileM (const (return True))
+mapBranchesM :: Fold.FoldM Term m => Bool -> (Term -> m Term) -> Term -> m Term
+mapBranchesM p = mapBranchesWhileM p (const (return True))
 
 collectTermsM :: forall m . Writable m => 
   (Term -> m Bool) -> Term -> m (Set Term)
@@ -284,6 +286,9 @@ mapAlsoTrack f = AlsoTrack . mapReaderT f . runAlsoTrack
 
 alsoTrack :: r -> AlsoTrack r m a -> m a
 alsoTrack r = flip runReaderT r . runAlsoTrack
+
+alsoWith :: Monad m => (r' -> r) -> AlsoTrack r m a -> AlsoTrack r' m a
+alsoWith f = AlsoTrack . withReaderT f . runAlsoTrack
    
 instance (Writable m, Indexed r) => Writable (AlsoTrack r m) where
   bindAt at b = local (liftAt at) . mapAlsoTrack (bindAt at b)

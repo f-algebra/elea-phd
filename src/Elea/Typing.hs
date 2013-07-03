@@ -91,7 +91,7 @@ generalise gen_t transform term = do
   let term' = id 
         . Env.replaceTerm (Indices.lift gen_t) (Var 0)
         $ Indices.lift term
-        
+  
   -- Apply our term to term function, with the new variable bound.
   term'' <- Env.bindAt 0 gen_b (transform 0 term') 
   

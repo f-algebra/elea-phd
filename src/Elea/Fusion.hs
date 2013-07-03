@@ -174,7 +174,7 @@ fusion full_t@(flattenApp ->
   full_ty <- Err.noneM (Typing.typeOf full_t)
   if not (isInd full_ty)
   then return Nothing
-  else firstM $ map ($ full_ty) [ fixfix, repeatedArg, fixFact]
+  else firstM $ map ($ full_ty) [ fixfix, repeatedArg, fixFact ]
   where
   fixfix :: Type -> m (Maybe Term)
   fixfix full_ty
@@ -185,20 +185,22 @@ fusion full_t@(flattenApp ->
             $ \t -> unflattenApp 
               $ outer_f : unflattenApp (t : inner_args) : tail outer_args
       runMaybeT
+      --  $ runFusion outer_ctx
         . Env.alsoTrack outer_f
-        $ runFusion outer_ctx
+        $ fuse (fixfixSimplifier (argumentCount inner_f)) outer_ctx inner_f
     where
     inner_f@(Fix {}) : inner_args = flattenApp (head outer_args)
-    
+    {-
     runFusion :: Context -> Env.AlsoTrack Term (MaybeT m) Term 
     runFusion outer_ctx
-      | isVar rec_arg = fuse simplifyAndExtract outer_ctx inner_f
+      | isVar rec_arg = fuse (fixfixSimplifier inner_f) outer_ctx inner_f
       | otherwise = id
           . Typing.generalise (head inner_args) 
-            (\_ t -> fuse simplifyAndExtract t (Indices.lift inner_f))
+            (\_ t -> fuse (fixfixSimplifier inner_f) t (Indices.lift inner_f))
           $ outer_ctx
       where
       rec_arg = head inner_args
+      -}
   fixfix _ = 
     return Nothing
   
@@ -255,7 +257,7 @@ fusion full_t@(flattenApp ->
       
       -- A fact is only relevant to this term if there is a shared variable.
       relevantFact = 
-        (not . Set.null) (Set.intersection match_vars strict_vars)
+        (not . Set.null . Set.intersection match_vars) strict_vars
         
       buildContext :: Term -> Term
       buildContext gap_t = 
@@ -289,12 +291,12 @@ fusion full_t@(flattenApp ->
       -- call for fixFact fusion. It is fusion plus 
       -- the 'floatCtxMatchInwards' transformation.
       innerTransform :: forall m . (Env.Readable m, Fail.Monad m) => 
-        Set Index -> Term -> m Term
+        Index -> Term -> m Term
       innerTransform _ = run >=> finalFloating
         where
         finalFloating = Fold.rewriteStepsM 
           $ Simp.stepsM ++ Float.steps ++ [floatCtxMatchInwards]
-          
+        
         -- We need the pattern match for the context (viz. over match_t) 
         -- to be as far in as possible in order for fusion to succeed,
         -- viz. that C[f] can be unified at some point. Otherwise we
@@ -303,33 +305,33 @@ fusion full_t@(flattenApp ->
         floatCtxMatchInwards = Float.commuteMatchesWhen when 
           where
           when :: Term -> Term -> m Bool
-          when (Case outer_t _ _) (Case inner_t _ _) = 
-            return 
-              $ Unifier.exists match_t outer_t
-             && not (Unifier.exists match_t inner_t)
+          when (Case outer_t _ _) (Case inner_t _ _) = do
+            os <- showM outer_t
+            is <- showM inner_t
+            let do_it = Unifier.exists match_t outer_t
+                  && not (Unifier.exists match_t inner_t)
+            id 
+           -- trace (show do_it ++ " :COMMUTE:\n\n" ++ os ++ "\nWITH:\n" ++ is)
+              $ return do_it
                 
     fuseMatch _ = 
       return Nothing
   
 fusion _ =
   return Nothing
-
-
+{-
 simplifyAndExtract :: forall m . Env.Readable m =>  
-  Set Index -> Term -> Env.AlsoTrack Term m Term
-simplifyAndExtract gen_vars term = do
-  lift (run term) {-
-  term' <- lift (run term)
-  can_extract <- extractable
+  Term -> Index -> Term -> m Term
+simplifyAndExtract outer_fix inner_f term = do
+  term' <- run term
+  can_extract <- Env.alsoTrack outer_fix extractable
   if not can_extract
   then return term'
   else do
-    outer_f <- ask
-    lift
-      . Env.alsoTrack (outer_f, inner_f) 
+    Env.alsoTrack (outer_fix, inner_f) 
       -- We descend into branches as long as the 'inner_f' function
       -- is not pattern matched by that branch.
-      . Env.mapBranchesWhileM functionNonMatched extract 
+      . Env.mapBranchesWhileM False functionNonMatched extract 
       $ term'
   where
   functionNonMatched :: Term -> Env.AlsoTrack (Term, Index) m Bool
@@ -356,7 +358,7 @@ simplifyAndExtract gen_vars term = do
     inner_calls <- id
       . lift
       . Env.alsoTrack inner_f 
-      $ Env.collectTerms isInnerCall term
+      $ Env.collectTermsM isInnerCall term
     lift
       . Env.alsoTrack outer_f
       . Typing.generaliseMany (Set.toList inner_calls) extraction
@@ -386,4 +388,107 @@ simplifyAndExtract gen_vars term = do
           t' <- lift (run t)
           ts <- showM t'
           return $ trace ("GOT: " ++ ts) t'
--}
+  -}
+fixfixSimplifier :: forall m . Env.Readable m =>  
+  Int -> Index -> Term -> Env.AlsoTrack Term m Term
+fixfixSimplifier inner_arg_count inner_f = id
+  . Env.alsoWith (\outer_f -> (outer_f, inner_f))
+  . Env.mapBranchesWhileM True calledWithNonFreeArgs transformBranch
+  where
+  -- Whether the given index is called as a function using arguments
+  -- that contain variables which are not free here. We cannot generalise
+  -- an inner function call unless all of the variables it is called with
+  -- are free, so we use this to recurse into the branches of the term
+  -- until they become free.
+  calledWithNonFreeArgs :: Term -> Env.AlsoTrack (Term, Index) m Bool
+  calledWithNonFreeArgs term = do
+    (_, inner_f) <- ask
+    Fold.anyM (nonFreeArgs inner_f) term
+    where
+    nonFreeArgs :: Index -> Term -> Env.AlsoTrack (Term, Index) m Bool
+    nonFreeArgs inner_f term@(flattenApp -> Var f : args) = do
+      (_, inner_f_here) <- ask
+      if inner_f_here /= f
+      then return False
+      else do
+        let idx_diff = inner_f_here - inner_f
+        return (any (< idx_diff) (Indices.free term))
+    nonFreeArgs _ _ = 
+      return False
+  
+  transformBranch :: Term -> Env.AlsoTrack (Term, Index) m Term
+  transformBranch term = do
+    -- Collect every recursive call to the inner unrolled function
+    -- so that we can generalise them
+    fix_uses <- id 
+      . Env.alsoWith snd
+      $ Env.collectTermsM isInnerCall term
+    (outer_f, _) <- ask
+    Env.alsoWith (\(outer_f, _) -> outer_f)
+      . Typing.generaliseMany 
+          (Set.toList fix_uses) 
+          (\ixs t -> {- trace ("\nGEN:" ++ show fix_uses ++ "\nWITHIN:\n" ++ show term ++ "\nGIVES:\n" ++ show t) $ -} simplifyAndExtract (Set.fromList ixs) t) 
+      $ term
+    where
+    isInnerCall :: Term -> Env.AlsoTrack Index m Bool
+    isInnerCall term@(flattenApp -> Var f : args) = do
+      inner_f <- ask
+      return 
+         $ inner_f == f 
+        && length args == inner_arg_count
+    isInnerCall _ = 
+      return False
+      
+  simplifyAndExtract :: forall m . Env.Readable m =>  
+    Set Index -> Term -> Env.AlsoTrack Term m Term
+  simplifyAndExtract gen_vars term = do
+    term' <- lift (run term)
+    can_extract <- extractable
+    if not can_extract
+    then return term'
+    else do
+      outer_f <- ask
+      lift
+        . Env.alsoTrack (outer_f, gen_vars) 
+        -- We descend into branches as long as the 'inner_f' function
+        -- is not pattern matched by that branch.
+        . Env.mapBranchesWhileM False functionNonMatched extract 
+        $ term'
+    where
+    functionNonMatched :: Term -> Env.AlsoTrack (Term, Set Index) m Bool
+    functionNonMatched (Case cse_t _ _) = do
+      (_, gen_vars) <- ask
+      return 
+        . Set.null
+        . Set.intersection gen_vars
+        $ Indices.free cse_t
+    
+    extractable :: Env.AlsoTrack Term m Bool
+    extractable = do
+      outer_f <- ask
+      ty <- Err.noneM (Typing.typeOf outer_f)
+      let (args, ret) = flattenPi ty
+      return 
+        $ length args == 1
+        && isInd ret 
+        && not (isRecursiveInd ret)
+  
+    extract :: Term -> Env.AlsoTrack (Term, Set Index) m Term
+    extract (flattenApp -> inj@(Inj {}) : args) = do
+      args' <- mapM extract args
+      return (unflattenApp (inj : args'))
+    extract term = do
+      (outer_f, gen_vars) <- ask
+      mby_t <- lift 
+        . Fail.toMaybe 
+        . concatEndosM (map (invent . App outer_f . Var) (Set.toList gen_vars)) 
+        $ term
+      case mby_t of 
+        Nothing -> return term
+        Just t -> do
+          t' <- lift (run t)
+          ts <- showM t'
+          return 
+            . trace ("GOT: " ++ ts) 
+            $ t'
+

@@ -70,7 +70,7 @@ let t8' =
     end
     
 let t9 = fun (a:*) (xs:list a) (n:nat) ->
-  match leq_nat (len a xs) n with
+  match leq_nat (length a xs) n with
   | True -> True
   | False -> 
     match n with
@@ -78,7 +78,7 @@ let t9 = fun (a:*) (xs:list a) (n:nat) ->
     | Suc n' ->
       match xs with
       | Nil -> False
-      | Cons x xs' -> leq_nat n' (len a xs')
+      | Cons x xs' -> leq_nat n' (length a xs')
       end
     end
   end
@@ -89,9 +89,9 @@ let t9' = fun (a:*) (xs:list a) (n:nat) ->
     match xs with
     | Nil -> True
     | Cons x xs' ->
-      match leq_nat (len a xs') n' with
+      match leq_nat (length a xs') n' with
       | True -> True
-      | False -> leq_nat n' (len a xs')
+      | False -> leq_nat n' (length a xs')
       end
     end
   end

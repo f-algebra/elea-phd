@@ -29,7 +29,7 @@ import qualified Data.Map as Map
 -- TODO only pull in the variables that you need as arguments, not all of them
 
 fuse :: forall m . (Env.Readable m, Fail.Monad m) => 
-  (Set Index -> Term -> m Term) -> Context -> Term -> m Term
+  (Index -> Term -> m Term) -> Context -> Term -> m Term
 fuse transform outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = 
     Env.forgetMatches $ do
   ctx_s <- showM outer_ctx
@@ -64,13 +64,10 @@ fuse transform outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
       
   transformed_t <- id 
     . Env.bind fix_b
-    . Env.alsoTrack 0
-    . Env.mapBranchesWhileM calledWithNonFreeArgs transformBranch
-   -- . trace s1
+    . transform 0 
+  --  . Env.mapBranchesWhileM True calledWithNonFreeArgs transformBranch
+    . trace s1
     $ unfolded_t
-  
-  trn_s <- Env.bind fix_b (showM transformed_t)
-  let s2 = "\nTRANS:\n" ++ trn_s
   
   -- I gave up commenting at this point, it works because it does...
   reverted_t <- id
@@ -80,11 +77,14 @@ fuse transform outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     . Fold.transformM revertFixMatches 
     $ transformed_t
        
+  trn_s <- Env.bind fix_b (showM reverted_t)
+  let s2 = "\nTRANS:\n" ++ trn_s
+  
   depth <- Env.bindingDepth
   let replaced_t = id
         . Env.trackIndices 0
         . Fold.transformM (replace fix_idx arg_vars)
-      --  . trace s2
+        . trace s2
         $ reverted_t
       
   rep_s <- Env.bindAt 0 fix_b
@@ -95,8 +95,8 @@ fuse transform outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   let inner_f_remained = 0 `Set.member` Indices.free replaced_t
  
   let fix_body = id
-      --  . trace s3
-        . trace (s1 ++ s2 ++ s3)
+        . trace s3
+      --  . trace (s1 ++ s2 ++ s3)
         . unflattenLam arg_bs
         . substAt 0 inner_fix
         $ replaced_t
@@ -125,6 +125,9 @@ fuse transform outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   where 
   fused_t = Context.apply outer_ctx inner_fix
   
+  {-
+  This code doesn't play well with fixFact.
+  
   -- Whether the given index is called as a function using arguments
   -- that contain variables which are not free here. We cannot generalise
   -- an inner function call unless all of the variables it is called with
@@ -142,7 +145,7 @@ fuse transform outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
       then return False
       else do
         let idx_diff = inner_f_here - inner_f
-        return (all (>= idx_diff) (Indices.free term))
+        return (any (< idx_diff) (Indices.free term))
     nonFreeArgs _ _ = 
       return False
   
@@ -153,11 +156,10 @@ fuse transform outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     fix_uses <- Env.collectTermsM isInnerCall term
     
     id 
-      -- . trace ("GEN:" ++ show fix_uses ++ "\nWITHIN:" ++ show term)
       . lift 
       . Typing.generaliseMany 
-          (Set.toList fix_uses) 
-          (transform . Set.fromList) 
+          mempty  -- (Set.toList fix_uses) 
+          (\ixs t -> trace ("\nGEN:" ++ show fix_uses ++ "\nWITHIN:\n" ++ show term ++ "\nGIVES:\n" ++ show t) $ transform (Set.fromList ixs) t) 
       $ term
     where
     isInnerCall :: Term -> Env.AlsoTrack Index m Bool
@@ -168,6 +170,8 @@ fuse transform outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
         && length args == argumentCount inner_fix
     isInnerCall _ = 
       return False
+    -}
+    
     
   revertFixMatches :: Term -> Env.TrackIndices Index Term
   revertFixMatches term@(Case cse_t ind_ty alts) = do

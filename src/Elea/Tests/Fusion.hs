@@ -27,4 +27,5 @@ tests = Test.label "Fusion"
   Test.loadPrelude
   Test.loadFile "fusion_tests.elea"
   liftM Test.list
-    $ mapM assertFusionEq [1..18]
+    $ mapM assertFusionEq [19] -- 116
+

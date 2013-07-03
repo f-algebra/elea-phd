@@ -91,7 +91,7 @@ instance KleisliShow Term where
       
     fshow (Inj' n (ind_s, ind@(Ind _ cons))) =
       return
-   --   . (\t -> t ++ ": " ++ ind_s )
+  --    . (\t -> t ++ "[: " ++ ind_s ++ "]")
       . fromMaybe "_"
       . get boundLabel
       $ cons !! fromEnum n

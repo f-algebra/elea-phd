@@ -115,7 +115,7 @@ let list = fun (a: *) ->
 let Nil = fun (a: *) -> inj0 (list a)
 let Cons = fun (a: *) -> inj1 (list a)
 
-let len =
+let length =
   fun (a: *) ->
     fix (len: pi (list a) -> nat) ->
       fun (xs: list a) ->
@@ -226,3 +226,11 @@ let height =
     | Node x t1 t2 -> Suc (add (height t1) (height t2))
     end
   
+let flatten = 
+  fun (a: *) ->
+  fix (flat: pi (tree a) -> list a) ->
+    fun (t: tree a) ->
+    match t with
+    | Leaf -> Nil a
+    | Node x t1 t2 -> app a (flat t1) (Cons a x (flat t2))
+    end

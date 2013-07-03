@@ -11,6 +11,7 @@ import Prelude ()
 import Elea.Prelude
 import Elea.Index
 import Elea.Term
+import Elea.Show ( showM )
 import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
 import qualified Elea.Unifier as Unifier
@@ -28,7 +29,7 @@ run = Fold.rewriteStepsM (Simp.stepsM ++ steps)
 steps :: Env.Readable m => [Term -> m (Maybe Term)]
 steps = id
   . map Typing.checkStep
-  $ nonMonadic ++ [unfoldFixInj, absurdity, varEqApply]
+  $ nonMonadic ++ [ unfoldFixInj, absurdity, varEqApply ]
   where
   nonMonadic = map (return .)
     [ constArg   
@@ -85,13 +86,13 @@ absurdity _ = return Nothing
 -- I can think of loads of ways to make this 
 -- loop with otherwise terminating code.
 unfoldFixInj :: Env.Readable m => Term -> m (Maybe Term)
-unfoldFixInj (flattenApp -> fix@(Fix _ _ rhs) : args@(last -> arg))
+unfoldFixInj term@(flattenApp -> fix@(Fix _ _ rhs) : args@(last -> arg))
   | not (null args)
   , isInj (leftmost arg) = do
     is_pat <- isPattern arg
     return $ do
       guard (not (is_pat && matchesRecCall rhs))
-      Just (unflattenApp (subst fix rhs : args))
+      return (unflattenApp (subst fix rhs : args))
   where
   isPattern :: Env.Readable m => Term -> m Bool
   isPattern t = do
@@ -108,10 +109,11 @@ unfoldFixInj (flattenApp -> fix@(Fix _ _ rhs) : args@(last -> arg))
         fix_var <- ask
         return 
           $ f_var == fix_var
-          && isJust (Unifier.find arg f_arg)
+          && Unifier.exists arg f_arg
     matchingCall _ = return False
 unfoldFixInj _ =
   return Nothing
+  
   
 -- | Unfolds a 'Fix' which is being pattern matched upon if that pattern
 -- match only uses a finite amount of information from the 'Fix'.

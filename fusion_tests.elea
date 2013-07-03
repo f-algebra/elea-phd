@@ -94,9 +94,13 @@ let t17' = fun (a:*) ->
 let t18 = fun (n: nat) (m: nat) -> eq_nat (add n m) (add m n)
 let t18' = fun nat nat -> True
 
-let t19 = fun (a: *) (t: tree a) -> eq_nat (height a t) (t17' a t)
-let t19' = fun (a: *) (tree a) -> True
 
+
+/ * requires invention of list-fold types */
+let t219 = fun (a: *) (t: tree a) -> length a (flatten a t)
+let t219' = fun (a: *) (t: tree a) -> height a t
+
+/* done, but takes ages */
 let t110 = fun (xs:list nat) -> sorted (isort xs)
 let t110' = fun (list nat) -> True
 
@@ -113,17 +117,23 @@ let t115' =
         match insert n ys with
         | Nil -> True
         | Cons z zs ->
-          match srtd_ins n ys with
-          | True -> leq_nat y z
+          match leq_nat y z with
+          | True -> srtd_ins n ys
           | False -> False
           end
         end
       end
     end
-
+    
+/* this one is just plain hard */
 let t40 = fun (n:nat) (xs:list nat) (bs:list nat) ->
   match sorted xs with
   | True -> sorted (take nat n xs)
   | False -> not (sorted (app nat bs xs))
   end
 let t40' = fun nat (list nat) (list nat) -> True
+
+/* needs some form of multiple argument deforestation */
+let t219 = fun (a: *) (t: tree a) ->
+  eq_nat (height a t) (height a (mirror a t))
+let t219' = fun (a: *) (tree a) -> True
