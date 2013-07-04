@@ -122,9 +122,9 @@ unfoldFixInj _ =
 -- it only works for depth 1.
 unfoldCaseFix :: Term -> Maybe Term
 unfoldCaseFix term@(Case cse_t@(leftmost -> fix@(Fix {})) ind_ty alts)
-  | Term.isRecursiveInd ind_ty
+  | Term.isProductive fix
   , and (zipWith recArgsUsed [0..] alts) =
-    trace ("UNFCASEFIX: " ++ show term) $ return (Case cse_t' ind_ty alts)
+    {- trace ("UNFCASEFIX: " ++ show term) $ -} return (Case cse_t' ind_ty alts)
   where
   fix@(Fix _ _ rhs) : args = flattenApp cse_t
   cse_t' = unflattenApp (subst fix rhs : args)
@@ -151,7 +151,8 @@ unfoldWithinFix fix@(Fix fix_i fix_b fix_t) =
     then return Nothing
     else do
       fix_t' <- Fold.transformM unfold fix_t
-      trace ("UNFWITHFIX: " ++ show fix) $ return (Just (Fix fix_i fix_b fix_t'))
+      {- trace ("UNFWITHFIX: " ++ show fix) $ -} 
+      return (Just (Fix fix_i fix_b fix_t'))
   where
   arg_count = argumentCount fix
   

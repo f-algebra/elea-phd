@@ -1,4 +1,4 @@
--- | Here I've put all the helpful functions dealing with 
+-- | Here I've put all the helper functions dealing with 
 -- 'Term's, but which also require other modules based on Elea.Term.
 module Elea.Terms
 (
@@ -180,7 +180,7 @@ descendAlt (Alt bs alt_t) = Alt' bs' (True, alt_t)
 -- | Decends into non-type subterms of a term while a predicate holds.
 descendWhileM :: forall m . Fold.FoldM Term m => 
   (Term -> m Bool) -> (Term -> m Term) -> Term -> m Term
-descendWhileM when = Fold.descendM while
+descendWhileM when = Fold.selectiveTransformM while
   where
   while :: Term -> m (Bool, Term' (Bool, Term))
   while term = do
@@ -192,23 +192,21 @@ descendWhileM when = Fold.descendM while
     descend :: Term -> (Bool, Term' (Bool, Term))
     descend (Case cse_t ind_ty alts) = 
       (False, Case' (True, cse_t) (False, ind_ty) (map descendAlt alts))
-      where
-      
     descend (Lam (Bind lbl ty) t) = 
       (False, Lam' (Bind' lbl (False, ty)) (True, t))
       
     -- TODO: Missing cases here
 
 -- | Applies a given transformation function to the innermost branches
--- of a term made of pattern matches.
+-- of a term made of pattern matches, and the terms they match upon.
 -- Will also move inside lambda abstractions.
 mapBranchesM :: forall m . Env.Writable m => 
   (Term -> m Term) -> Term -> m Term
-mapBranchesM = Fold.descendM (return . branches)
+mapBranchesM = Fold.selectiveTransformM (return . branches)
   where
   branches :: Term -> (Bool, Term' (Bool, Term))
   branches (Case cse_t ind_ty alts) =
-    (False, Case' (False, cse_t) (False, ind_ty) (map descendAlt alts))
+    (False, Case' (True, cse_t) (False, ind_ty) (map descendAlt alts))
   branches (Lam (Bind lbl ty) t) = 
     (False, Lam' (Bind' lbl (False, ty)) (True, t))
   branches term = 
@@ -256,5 +254,16 @@ buildCaseOf cse_of ind_ty@(Typing.unfoldInd -> cons) mkAlt =
 -- if unrolled once. We implement this by checking for a constructor
 -- topmost down every pattern match branch.
 isProductive :: Term -> Bool
-isProductive (Fix _ _ fix_t) = 
-  allBranches (isInj . leftmost) fix_t
+isProductive (Fix _ _ fix_t) = fix_t
+  |> allBranchesM productive
+  |> Env.trackIndices 0
+  where
+  productive :: Term -> Env.TrackIndices Index Bool
+  productive (leftmost -> Inj {}) = return True
+  productive other = do
+    fix_f <- ask
+    Indices.free other
+      |> Set.member fix_f
+      |> not
+      |> return
+  

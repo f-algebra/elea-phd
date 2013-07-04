@@ -307,13 +307,9 @@ fusion full_t@(flattenApp ->
           where
           when :: Term -> Term -> m Bool
           when (Case outer_t _ _) (Case inner_t _ _) = do
-            os <- showM outer_t
-            is <- showM inner_t
-            let do_it = Unifier.exists match_t outer_t
-                  && not (Unifier.exists match_t inner_t)
-            id 
-           -- trace (show do_it ++ " :COMMUTE:\n\n" ++ os ++ "\nWITH:\n" ++ is)
-              $ return do_it
+            return
+              $ Unifier.exists match_t outer_t
+              && not (Unifier.exists match_t inner_t)
                 
     fuseMatch _ = 
       return Nothing
@@ -465,7 +461,7 @@ fixfixSimplifier inner_arg_count inner_f = id
         |> Set.intersection gen_vars
         |> Set.null
         |> return
-    functionNonMatches _ =
+    functionNonMatched _ =
       return False
     
     extractable :: Env.AlsoTrack Term m Bool

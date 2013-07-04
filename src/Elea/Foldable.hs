@@ -1,12 +1,12 @@
 module Elea.Foldable
 (
   module Data.Functor.Foldable,
-  Refoldable, FoldableM (..),
+  Refoldable, FoldableM (..), Transformable (..),
   rewriteM, foldM, rewriteOnceM, collectM,
   allM, findM, anyM, any, all,
   transform, rewrite, recover,
-  rewriteStepsM, rewriteSteps,
-  descendM, countM,
+  rewriteStepsM, rewriteSteps, countM,
+  SelectorM, selectiveTransformM, 
 )
 where
 
@@ -41,33 +41,34 @@ class Refoldable t => FoldableM t where
       a <- f x
       return (a, recover x)
   
+class FoldableM t => Transformable t where
   transformM :: (Monad m, FoldM t m) => 
     (t -> m t) -> t -> m t
   transformM f = cataM (f . embed)
   
-foldM :: (FoldableM t, Monad m, FoldM t (WriterT w m), Monoid w) =>
+foldM :: (Transformable t, Monad m, FoldM t (WriterT w m), Monoid w) =>
   (t -> m w) -> t -> m w
 foldM f = execWriterT . rewriteM rrwt
   where
   rrwt = const (return Nothing) <=< tell <=< (lift . f)
   
-findM :: (FoldableM t, Monad m, FoldM t (WriterT (Monoid.First a) m)) =>
+findM :: (Transformable t, Monad m, FoldM t (WriterT (Monoid.First a) m)) =>
   (t -> m (Maybe a)) -> t -> m (Maybe a)
 findM f = liftM (Monoid.getFirst) . foldM (liftM Monoid.First . f)
 
-allM :: (FoldableM t, Monad m, FoldM t (WriterT Monoid.All m)) =>
+allM :: (Transformable t, Monad m, FoldM t (WriterT Monoid.All m)) =>
   (t -> m Bool) -> t -> m Bool
 allM p = liftM Monoid.getAll . foldM (liftM Monoid.All . p)
 
-anyM :: (FoldableM t, Monad m, FoldM t (WriterT Monoid.All m)) =>
+anyM :: (Transformable t, Monad m, FoldM t (WriterT Monoid.All m)) =>
   (t -> m Bool) -> t -> m Bool
 anyM p = liftM not . allM (liftM not . p)
 
-collectM :: (Ord a, FoldableM t, Monad m, FoldM t (WriterT (Set a) m)) =>
+collectM :: (Ord a, Transformable t, Monad m, FoldM t (WriterT (Set a) m)) =>
   (t -> MaybeT m a) -> t -> m (Set a)
 collectM f = foldM (liftM (maybe mempty Set.singleton) . runMaybeT . f)
 
-countM :: (FoldableM t, Monad m, FoldM t (WriterT (Monoid.Sum Int) m)) => 
+countM :: (Transformable t, Monad m, FoldM t (WriterT (Monoid.Sum Int) m)) => 
   (t -> m Bool) -> t -> m Int
 countM p = liftM Monoid.getSum . foldM (liftM (Monoid.Sum . found) . p)
   where
@@ -75,18 +76,18 @@ countM p = liftM Monoid.getSum . foldM (liftM (Monoid.Sum . found) . p)
   found False = 0
   found True = 1
 
-all :: (FoldableM t, FoldM t (WriterT Monoid.All Identity)) => 
+all :: (Transformable t, FoldM t (WriterT Monoid.All Identity)) => 
   (t -> Bool) -> t -> Bool
 all p = runIdentity . allM (return . p)
 
-any :: (FoldableM t, FoldM t (WriterT Monoid.All Identity)) => 
+any :: (Transformable t, FoldM t (WriterT Monoid.All Identity)) => 
   (t -> Bool) -> t -> Bool
 any p = not . all (not . p)
 
 -- | Apply a given transformation exactly once. If it is never applied
 -- then this returns 'Nothing'.
 rewriteOnceM :: forall m t .
-    (FoldableM t, Monad m, FoldM t (StateT Bool m)) =>
+    (Transformable t, Monad m, FoldM t (StateT Bool m)) =>
   (t -> m (Maybe t)) -> t -> m (Maybe t)
 rewriteOnceM f t = do
   (t', done) <- runStateT (transformM once t) False
@@ -107,13 +108,13 @@ rewriteOnceM f t = do
           State.put True
           return t'
           
-rewriteM :: (FoldableM t, Monad m, FoldM t m) =>
+rewriteM :: (Transformable t, Monad m, FoldM t m) =>
   (t -> m (Maybe t)) -> t -> m t
 rewriteM f = transformM rrwt
   where
   rrwt t = join . liftM (maybe (return t) (rewriteM f)) . f $ t
 
-rewriteStepsM :: (FoldableM t, Monad m, FoldM t m) =>
+rewriteStepsM :: (Transformable t, Monad m, FoldM t m) =>
   [t -> m (Maybe t)] -> t -> m t
 rewriteStepsM steps = rewriteM (\t -> firstM (map ($ t) steps))
       
@@ -131,9 +132,11 @@ rewriteSteps steps = rewrite step
   where
   step t = Monoid.getFirst (concatMap (Monoid.First . ($ t)) steps)
 
-descendM :: forall t m . (FoldableM t, FoldM t m, Monad m) => 
-  (t -> m (Bool, Base t (Bool, t))) -> (t -> m t) -> t -> m t
-descendM p f t = do
+type SelectorM m t = t -> m (Bool, Base t (Bool, t))
+  
+selectiveTransformM :: forall t m . (FoldableM t, FoldM t m, Monad m) => 
+  SelectorM m t -> (t -> m t) -> t -> m t
+selectiveTransformM p f t = do
   (here, desc) <- p t
   t' <- id
     . liftM embed 
@@ -144,7 +147,6 @@ descendM p f t = do
   else return t'
   where
   descent :: (Bool, t) -> (m t, t)
-  descent (True, t) = (descendM p f t, t)
+  descent (True, t) = (selectiveTransformM p f t, t)
   descent (False, t) = (return t, t)
-
 

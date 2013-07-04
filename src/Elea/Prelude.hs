@@ -53,7 +53,7 @@ module Elea.Prelude
   takeIndices, isNub, foldl1M, seqStr, strSeq,
   isLeft, isRight, modifyM', modifyM, removeAt,
   insertAt, convertEnum, indent, indentBy, debugNth,
-  arrowSum, supremum, (|>),
+  arrowSum, supremum, (|>), ($>),
 )
 where
 
@@ -126,6 +126,9 @@ infixr 6 ++
 
 (|>) :: a -> (a -> b) -> b
 (|>) = flip ($)
+
+($>) :: Monad m => m a -> (a -> b) -> m b
+($>) = flip liftM 
 
 void :: Functor f => f a -> f ()
 void = fmap (const ())

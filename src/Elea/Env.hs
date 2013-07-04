@@ -86,7 +86,7 @@ instance Fold.FoldableM Term where
   distM other = 
     sequence (map fst other)
     
-    
+instance Fold.Transformable Term where
   -- Provided my own instance of this to make sure "case-of" terms are
   -- transformed before their branches.
   transformM f (Case cse_t ind_ty alts) = do
