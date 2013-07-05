@@ -1084,7 +1084,9 @@ parseAndCheckTerm = id
   . parseRawTerm
 
 parseRawTerm :: RawTerm -> ParserMonad m Term
-parseRawTerm TAbsurd = return Absurd
+parseRawTerm (TApp TAbsurd rty) = do
+  ty <- parseRawTerm rty
+  return (Absurd ty)
 parseRawTerm TSet = return Set
 parseRawTerm (TVar var) = lookupTerm var
 parseRawTerm (TInj n rty) = do

@@ -43,7 +43,7 @@ mergePi other = " -> " ++ other
 instance Show (Term' String) where
   show Set' = "*"
   show Type' = "TYPE"
-  show Absurd' = "_|_"
+  show (Absurd' ty) = "_|_ " ++ ty
   show (App' f x) = f' ++ " " ++ x'
     where 
     x' | ' ' `elem` x = "(" ++ x ++ ")"

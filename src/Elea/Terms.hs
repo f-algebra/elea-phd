@@ -36,7 +36,7 @@ isBaseCase (Ind _ cons) = id
   -- These next three strip the return type out, since it will always contain
   -- an instance of the defined inductive type.
   . uncurry unflattenPi
-  . second (const Absurd)
+  . second (const Set)
   . flattenPi
   . get boundType
   . (cons !!)

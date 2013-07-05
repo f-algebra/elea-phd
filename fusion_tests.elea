@@ -98,7 +98,14 @@ let t50 = fun (t: tree nat) ->
   sorted (flatten nat t)
 let t50' = fun (tree nat) -> False
 
-/* requires invention of list-fold types */
+let t51 = fun (n: nat) (as: list nat) (bs: list nat) -> 
+  match sorted bs with
+  | True -> False
+  | False -> sorted (app nat as (Cons nat n bs))
+  end
+let t51' = fun nat (list nat) (list nat) -> False
+
+/* requires invention of list-fold functions */
 let t219 = fun (a: *) (t: tree a) -> length a (flatten a t)
 let t219' = fun (a: *) (t: tree a) -> height a t
 

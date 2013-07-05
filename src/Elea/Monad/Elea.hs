@@ -92,6 +92,7 @@ instance Env.Writable Elea where
     
   forgetMatches = 
     local (second (Map.filterWithKey (\k _ -> isVar k)))
+   -- local (second (const mempty))
     
 instance Env.Readable Elea where
   bindings = asks fst

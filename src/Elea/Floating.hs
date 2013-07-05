@@ -66,19 +66,26 @@ commuteMatchesWhen when outer_cse@(Case _ _ alts)
 commuteMatchesWhen _ _ = return Nothing
     
 varEqApply :: Env.Readable m => Term -> m (Maybe Term)
+varEqApply term 
+  | isFix (leftmost term) || isVar term = Env.matchedWith term
+varEqApply _ = return Nothing
+{-
 varEqApply t@(Var {}) = Env.matchedWith t
 varEqApply _ = return Nothing
+-}
 
 absurdity :: Env.Readable m => Term -> m (Maybe Term)
+absurdity (Absurd _) = return Nothing
 absurdity term
   | isAbsurd term = do
     ty <- Err.noneM (Typing.typeOf term)
-    return (Just (App Absurd ty))
+    return (Just (Absurd ty))
   where
-  isAbsurd (App (App Absurd _) _) = True
-  isAbsurd (Case (App Absurd _) _ _) = True
+  isAbsurd (App (Absurd _) _) = True
+  isAbsurd (Case (Absurd _) _ _) = True
   isAbsurd _ = False
-absurdity _ = return Nothing
+absurdity _ =
+  return Nothing
 
 
 -- | Unfolds a 'Fix' if any arguments are a constructor term
@@ -92,7 +99,8 @@ unfoldFixInj term@(flattenApp -> fix@(Fix _ _ rhs) : args@(last -> arg))
   , isInj (leftmost arg) = do
     is_pat <- isPattern arg
     return $ do
-      guard (not (is_pat && matchesRecCall rhs))
+      guard (not (True {- is_pat -} && matchesRecCall rhs))
+      {-trace ("UNFINJFIX: " ++ show term) $ -}
       return (unflattenApp (subst fix rhs : args))
   where
   isPattern :: Env.Readable m => Term -> m Bool
@@ -124,7 +132,8 @@ unfoldCaseFix :: Term -> Maybe Term
 unfoldCaseFix term@(Case cse_t@(leftmost -> fix@(Fix {})) ind_ty alts)
   | Term.isProductive fix
   , and (zipWith recArgsUsed [0..] alts) =
-    {- trace ("UNFCASEFIX: " ++ show term) $ -} return (Case cse_t' ind_ty alts)
+   -- trace ("UNFCASEFIX: " ++ show term) $ 
+    return (Case cse_t' ind_ty alts)
   where
   fix@(Fix _ _ rhs) : args = flattenApp cse_t
   cse_t' = unflattenApp (subst fix rhs : args)
@@ -151,7 +160,7 @@ unfoldWithinFix fix@(Fix fix_i fix_b fix_t) =
     then return Nothing
     else do
       fix_t' <- Fold.transformM unfold fix_t
-      {- trace ("UNFWITHFIX: " ++ show fix) $ -} 
+     -- trace ("UNFWITHFIX: " ++ show fix) $
       return (Just (Fix fix_i fix_b fix_t'))
   where
   arg_count = argumentCount fix

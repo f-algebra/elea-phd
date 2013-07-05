@@ -74,7 +74,7 @@ data Term
             , _inductiveType :: !Term
             , _alts :: ![Alt] }
 
-  | Absurd
+  | Absurd  { _inner :: !Type }
   | Set
   | Type
   deriving ( Eq, Ord )
@@ -109,7 +109,7 @@ data Term' a
   | Ind' !(Bind' a) ![Bind' a]
   | Inj' !Nat a
   | Case' a a ![Alt' a]
-  | Absurd'
+  | Absurd' a
   | Set'
   | Type'
   deriving ( Functor, Foldable, Traversable )
@@ -162,7 +162,7 @@ instance Fold.Foldable Term where
   project (Ind b cs) = Ind' (projectBind b) (map projectBind cs)
   project (Inj n t) = Inj' n t
   project (Case t ty alts) = Case' t ty (map projectAlt alts)
-  project Absurd = Absurd'
+  project (Absurd ty) = Absurd' ty
   project Set = Set'
   project Type = Type'
 
@@ -175,7 +175,7 @@ instance Fold.Unfoldable Term where
   embed (Ind' b cs) = Ind (embedBind b) (map embedBind cs)
   embed (Inj' n ty) = Inj n ty
   embed (Case' t ty alts) = Case t ty (map embedAlt alts)
-  embed Absurd' = Absurd
+  embed (Absurd' ty) = Absurd ty
   embed Set' = Set
   embed Type' = Type
   
@@ -216,7 +216,7 @@ isCase (Case {}) = True
 isCase _ = False
 
 isAbsurd :: Term -> Bool
-isAbsurd (leftmost -> Absurd) = True
+isAbsurd (leftmost -> Absurd {}) = True
 isAbsurd _ = False
 
 fromVar :: Term -> Index

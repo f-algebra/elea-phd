@@ -1,6 +1,6 @@
 module Elea.Typing
 (
-  typeOf, check, absurd, empty, checkStep, unfoldInd,
+  typeOf, check, empty, checkStep, unfoldInd,
 )
 where
 
@@ -16,10 +16,6 @@ import qualified Elea.Monad.Error as Err
 import qualified Data.Set as Set
 
 type TypingMonad m = (Err.Monad m, Env.Readable m)
-
--- | The type of 'Absurd', "all (a:*) -> a"
-absurd :: Type
-absurd = Pi (Bind (Just "FAIL") Set) (Var 0)
 
 -- | The constructorless inductive type, "ind (0:*) with end"
 empty :: Type 
@@ -174,8 +170,8 @@ typeOf term = id
   
   -- | Returns the type of a term, given the type of its subterms.
   ftype :: TypingMonad m => Term' (Type, Term) -> m Type
-  ftype Absurd' = 
-    return absurd
+  ftype (Absurd' (_, ty)) = 
+    return ty
   ftype Set' = 
     return Type
   ftype (Pi' _ _) = 

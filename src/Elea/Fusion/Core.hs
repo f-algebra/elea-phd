@@ -67,16 +67,13 @@ fuse transform outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     . Env.bind fix_b
     . transform 0 
   --  . Env.mapBranchesWhileM True calledWithNonFreeArgs transformBranch
-    . trace s1
+ --   . trace s1
     $ unfolded_t
   
   -- I gave up commenting at this point, it works because it does...
-  reverted_t <- id
-    . Env.bind fix_b
-    . Float.run
-    . Env.trackIndices 0
-    . Term.revertMatchesWhen isInnerFixMatch 
-    $ transformed_t
+  let reverted_t = transformed_t
+        |> Term.revertMatchesWhen isInnerFixMatch
+        |> Env.trackIndices 0
        
   trn_s <- Env.bind fix_b (showM reverted_t)
   let s2 = "\nTRANS:\n" ++ trn_s
@@ -85,7 +82,7 @@ fuse transform outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   let replaced_t = id
         . Env.trackIndices 0
         . Fold.transformM (replace fix_idx arg_vars)
-        . trace s2
+   --     . trace s2
         $ reverted_t
       
   rep_s <- Env.bindAt 0 fix_b
@@ -96,8 +93,8 @@ fuse transform outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   let inner_f_remained = 0 `Set.member` Indices.free replaced_t
  
   let fix_body = id
-        . trace s3
-      --  . trace (s1 ++ s2 ++ s3)
+    --    . trace s3
+        . trace (s1 ++ s2 ++ s3)
         . unflattenLam arg_bs
         . substAt 0 inner_fix
         $ replaced_t
@@ -236,7 +233,7 @@ split transform (Fix fix_info fix_b fix_t) (Indices.lift -> outer_ctx) =
   o_s <- showM output
   let s3 = s1 ++ "\n\nGIVES\n" ++ o_s
   return   
- --   . trace s3
+   -- . trace s3
     $ output
   where
   (arg_bs, _) = flattenPi (get boundType fix_b)

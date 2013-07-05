@@ -46,12 +46,22 @@ run term = do
       ts <- showM term
       ts' <- showM term'
       ts'' <- showM fused
-      id
-      -- . trace ("\n\nUNFLOATED:\n\n" ++ ts ++ "\n\nUNFUSED:\n\n" ++ ts' ++ "\n\nFINISHED\n\n" ++ ts'') 
-        $ run fused
+      run fused
+      --  |> trace ("\n\nUNFUSED:\n\n" ++ ts' ++ "\n\nFINISHED\n\n" ++ ts'') 
   where
   applyStep :: Term -> (Term -> m (Maybe Term)) -> m (Maybe Term)
-  applyStep t = ($ t) . Fold.rewriteOnceM 
+  applyStep t f = Fold.rewriteOnceM withTrace t
+    where
+    withTrace t = do
+      mby_t <- f t 
+      case mby_t of
+        Nothing -> return Nothing
+        Just t' -> do
+          ts <- showM t
+          ts' <- showM t'
+          Just t'
+         --   |> trace ("\n\nTRANSFORMED:\n" ++ ts ++ "\n\nTO:\n" ++ ts')
+            |> return
 
 simpleSteps :: Env.Readable m => [Term -> m (Maybe Term)]
 simpleSteps = Simp.stepsM ++ Float.steps
@@ -239,7 +249,7 @@ fusion full_t@(flattenApp ->
         -- If we have already fused in a different pattern matched
         -- to the same term, then this is an absurd branch.
         -- Not sure if this ever comes up though.
-        else return (Just (App Absurd full_ty))
+        else return (Just (Absurd full_ty))
         
       | isFix (leftmost match_t)
  --     , all isVar match_args
@@ -282,7 +292,7 @@ fusion full_t@(flattenApp ->
           new_vars = map (Var . toEnum) (reverse [0..bs_count - 1])
           
           alt_t 
-            | alt_n /= inj_n = App Absurd full_ty
+            | alt_n /= inj_n = Absurd full_ty
             | otherwise = id
                 . concatEndos (zipWith replaceAt arg_idxs new_vars)
                 . liftMany bs_count
@@ -306,11 +316,11 @@ fusion full_t@(flattenApp ->
         floatCtxMatchInwards = Float.commuteMatchesWhen when 
           where
           when :: Term -> Term -> m Bool
-          when (Case outer_t _ _) (Case inner_t _ _) = do
+          when (Case outer_t _ _) (Case inner_t _ _) =
             return
               $ Unifier.exists match_t outer_t
               && not (Unifier.exists match_t inner_t)
-                
+
     fuseMatch _ = 
       return Nothing
   
@@ -493,6 +503,6 @@ fixfixSimplifier inner_arg_count inner_f = id
           t' <- lift (run t)
           ts <- showM t'
           t' 
-            |> trace ("GOT: " ++ ts) 
+          --  |> trace ("GOT: " ++ ts) 
             |> return
 

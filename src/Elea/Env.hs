@@ -5,7 +5,7 @@ module Elea.Env
   Writable (..), Readable (..),
   TrackIndices, TrackIndicesT (..),
   trackIndices, trackIndicesT,
-  bind, bindMany, matchedWith,
+  bind, bindMany, matchedWith, inconsistent,
   AlsoTrack, alsoTrack, alsoWith,
 )
 where
@@ -47,6 +47,14 @@ class Writable m => Readable m where
   
 matchedWith :: Readable m => Term -> m (Maybe Term)
 matchedWith t = liftM (Map.lookup t) matches
+
+inconsistent :: Readable m => m Bool
+inconsistent = matches
+  $> Map.toList
+  $> any absurd
+  where
+  absurd (leftmost -> Inj n _, leftmost -> Inj m _) = n /= m
+  absurd _ = False
   
 instance Fold.FoldableM Term where
   -- To fold over a 'Term' we require that our monad implement a writable
@@ -316,7 +324,7 @@ instance Unifiable Term where
     
     uni :: forall m . Fail.Monad m => 
       Term -> Term -> TrackIndicesT Index m (Unifier Term)
-    uni Absurd Absurd = return mempty
+    uni (Absurd t1) (Absurd t2) = t1 `uni` t2
     uni Type Type = return mempty
     uni Set Set = return mempty
     uni (Var x1) (Var x2)

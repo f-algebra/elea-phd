@@ -98,7 +98,7 @@ strip (Context (Lam _ ctx_t)) term = do
   uni <- Unifier.find ctx_t (Indices.lift term)
   Fail.when (Map.size uni > 1)
   if Map.size uni == 0
-  then return Absurd
+  then return (Absurd Set)
   else do
     let [(idx, hole_term)] = Map.toList uni
     Fail.when (idx /= 0)
