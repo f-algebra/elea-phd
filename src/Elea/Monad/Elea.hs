@@ -85,10 +85,10 @@ instance Env.Writable Elea where
   bindAt at b = local (mapBinds *** mapMatches)
     where
     mapBinds = insertAt (convertEnum at) (liftAt at b) . map (liftAt at)
-    mapMatches = Map.mapKeysMonotonic (liftAt at) . fmap (liftAt at)
+    mapMatches = Map.mapKeysMonotonic (liftAt at) . fmap (liftAt at *** succ)
   
-  equals t k =
-    local (second (Map.insert t k))
+  equals t k = 
+    local (second (Map.insert t (k, 0)))
     
   forgetMatches = 
     local (second (Map.filterWithKey (\k _ -> isVar k)))

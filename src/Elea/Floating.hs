@@ -97,7 +97,7 @@ unfoldFixInj :: Env.Readable m => Term -> m (Maybe Term)
 unfoldFixInj term@(flattenApp -> fix@(Fix _ _ rhs) : args@(last -> arg))
   | not (null args)
   , isInj (leftmost arg) = do
-    is_pat <- isPattern arg
+   -- is_pat <- isPattern arg
     return $ do
       guard (not (True {- is_pat -} && matchesRecCall rhs))
       {-trace ("UNFINJFIX: " ++ show term) $ -}
@@ -106,8 +106,11 @@ unfoldFixInj term@(flattenApp -> fix@(Fix _ _ rhs) : args@(last -> arg))
   isPattern :: Env.Readable m => Term -> m Bool
   isPattern t = do
     ms <- Env.matches
-    return (t `elem` Map.elems ms)
-  
+    Map.elems ms
+      |> map fst
+      |> elem t
+      |> return
+      
   matchesRecCall :: Term -> Bool
   matchesRecCall = Env.trackIndices 0 . Fold.anyM matchingCall
     where

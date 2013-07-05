@@ -231,9 +231,10 @@ fusion full_t@(flattenApp ->
   fixFact :: Type -> m (Maybe Term)
   fixFact full_ty = do
     matches <- Env.matches
-    mby_t <- firstM 
-      . map fuseMatch
-      $ Map.toList matches
+    mby_t <- matches
+      |> Map.toList
+      |> map fuseMatch
+      |> firstM
     return mby_t {-
     case mby_t of
       Nothing -> return Nothing
@@ -241,8 +242,8 @@ fusion full_t@(flattenApp ->
         ms <- showM matches
         trace ms (return (Just t)) -}
     where
-    fuseMatch :: (Term, Term) -> m (Maybe Term)
-    fuseMatch (match_t, flattenApp -> Inj inj_n ind_ty : inj_args)
+    fuseMatch :: (Term, (Term, Int)) -> m (Maybe Term)
+    fuseMatch (match_t, (flattenApp -> Inj inj_n ind_ty : inj_args, m_depth))
       | Just inj_n' <- fusedMatch match_t outer_f =
         if inj_n' == inj_n  
         then return Nothing
@@ -266,10 +267,18 @@ fusion full_t@(flattenApp ->
       match_vars = Simp.strictVars match_t
       strict_vars = Simp.strictVars full_t
       
-      -- A fact is only relevant to this term if there is a shared variable.
-      relevantFact = 
-        (not . Set.null . Set.intersection match_vars) strict_vars
-        
+      -- A fact is only relevant to this term if there is a shared variable,
+      -- and no variables that have been bound after the match was made.
+      relevantFact = not distinct_vars && not bound_later
+        where 
+        distinct_vars = strict_vars 
+          |> Set.intersection match_vars
+          |> Set.null
+          
+        bound_later = strict_vars
+          |> concatMap Indices.free
+          |> any (< toEnum m_depth)
+      
       buildContext :: Term -> Term
       buildContext gap_t = 
         Case match_t ind_ty alts

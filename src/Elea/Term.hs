@@ -132,8 +132,9 @@ mkLabels [ ''Term, ''Alt, ''Bind, ''FixInfo
          , ''Term', ''Alt', ''Bind', ''FixInfo']
 
 -- | A set of equations between terms as mapped keys and constructor terms
--- as mapped values.
-type Matches = Map Term Term
+-- as mapped values (along with the binding depth when that match was made,
+-- this is useful for knowing when not to apply fix-fact fusion).
+type Matches = Map Term (Term, Int)
 
 projectAlt :: Alt -> Alt' Term
 projectAlt (Alt bs t) = Alt' (map projectBind bs) t
