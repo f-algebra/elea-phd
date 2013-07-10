@@ -56,6 +56,7 @@ instance Fold.FoldableM Term where
   -- we move into the syntax tree of the term.
   type FoldM Term m = Writable m
   
+  {-# INLINEABLE distM #-}
   distM (Lam' (Bind' l (mty, _ty)) (mt, _)) = do
     ty <- mty
     t <- bind (Bind l _ty) mt
@@ -91,6 +92,7 @@ instance Fold.FoldableM Term where
 instance Fold.Transformable Term where
   -- Provided my own instance of this to make sure "case-of" terms are
   -- transformed before their branches.
+  {-# INLINEABLE transformM #-}
   transformM f (Case cse_t ind_ty alts) = do
     cse_t' <- Fold.transformM f cse_t
     ind_ty' <- Fold.transformM f ind_ty

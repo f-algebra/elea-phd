@@ -99,9 +99,13 @@ let t50 = fun (t: tree nat) ->
 let t50' = fun (tree nat) -> False
 
 let t51 = fun (n: nat) (as: list nat) (bs: list nat) -> 
-  match sorted bs with
-  | True -> False
-  | False -> sorted (app nat as (Cons nat n bs))
+  match sorted as with
+  | True ->
+    match sorted bs with
+    | True -> sorted (app nat as (Cons nat n bs))
+    | False -> False
+    end
+  | False -> False
   end
 let t51' = fun nat (list nat) (list nat) -> False
 

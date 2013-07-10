@@ -6,9 +6,11 @@ module Elea.Terms
   recursiveInjArgs, recursivePatternArgs,
   replace, contains, nthArgument,
   collectM, occurrences,
-  generalise, generaliseMany, buildCaseOf,
+  generalise, generaliseMany, 
+  buildCaseOfM, buildCaseOf,
   revertMatchesWhen, descendWhileM,
   isProductive,
+  module Elea.Term,
 )
 where
 
@@ -29,18 +31,18 @@ import qualified Control.Monad.Trans as Trans
 -- | For a given inductive type, return whether the constructor at that 
 -- index is a base case.
 isBaseCase :: Type -> Nat -> Bool
-isBaseCase (Ind _ cons) = id
-  . not
-  . Set.member 0
-  . Indices.free
-  -- These next three strip the return type out, since it will always contain
-  -- an instance of the defined inductive type.
-  . uncurry unflattenPi
-  . second (const Set)
-  . flattenPi
-  . get boundType
-  . (cons !!)
-  . fromEnum
+isBaseCase (Ind _ cons) inj_n = fromEnum inj_n
+  |> (cons !!)
+  |> get boundType 
+  -- This flatten -> replace -> unflatten combo is to remove the return
+  -- type of the constructor, since this will always be an instance of
+  -- the inductive type.
+  |> flattenPi
+  |> second (const Set)
+  |> uncurry unflattenPi
+  |> Indices.free
+  |> Set.member 0
+  |> not
   
 -- | For a given inductive type and constructor number this returns the
 -- argument positions which are recursive.
@@ -164,7 +166,10 @@ revertMatchesWhen when = Fold.transformM revert
       return (Case cse_t ind_ty alts')
     where
     revertAlt :: Nat -> Alt -> Alt
-    revertAlt n (Alt bs alt_t) = Alt bs alt_t'
+    revertAlt n alt
+      | isBaseCase ind_ty n = alt
+    revertAlt n alt@(Alt bs alt_t) = 
+      Alt bs alt_t'
       where
       rep_t = Indices.liftMany (length bs) cse_t
       alt_t' = replace (altPattern ind_ty n) rep_t alt_t
@@ -240,15 +245,22 @@ collectM p = Env.alsoTrack 0 . Fold.collectM collect
 occurrences :: Term -> Term -> Int
 occurrences t = Env.trackIndices t . Fold.countM (\t -> asks (== t))
   
-buildCaseOf :: Term -> Type -> (Nat -> Term) -> Term
-buildCaseOf cse_of ind_ty@(Typing.unfoldInd -> cons) mkAlt = 
-  Case cse_of ind_ty (zipWith buildAlt [0..] cons)
+buildCaseOfM :: forall m . Monad m => 
+  Term -> Type -> (Nat -> m Term) -> m Term
+buildCaseOfM cse_of ind_ty@(Typing.unfoldInd -> cons) mkAlt = do
+  alts' <- zipWithM buildAlt [0..] cons
+  return (Case cse_of ind_ty alts')
   where
-  buildAlt :: Nat -> Bind -> Alt
-  buildAlt n bind = Alt bs alt_t
+  buildAlt :: Nat -> Bind -> m Alt
+  buildAlt n bind = do
+    alt_t <- mkAlt n $> Indices.liftMany (length bs)
+    return (Alt bs alt_t)
     where
     bs = fst . flattenPi . get boundType $ bind
-    alt_t = Indices.liftMany (length bs) (mkAlt n)
+    
+buildCaseOf :: Term -> Type -> (Nat -> Term) -> Term
+buildCaseOf cse_of ind_ty mkAlt = 
+  runIdentity (buildCaseOfM cse_of ind_ty (Identity . mkAlt))
 
 -- | A function is "productive" if it will return something in HNF
 -- if unrolled once. We implement this by checking for a constructor

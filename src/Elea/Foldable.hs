@@ -28,10 +28,12 @@ class Refoldable t => FoldableM t where
   
   distM :: (Monad m, FoldM t m) => Base t (m a, t) -> m (Base t a)
   
+  {-# INLINEABLE cataM #-}
   cataM :: forall m a . (Monad m, FoldM t m) => 
     (Base t a -> m a) -> t -> m a
   cataM f = join . liftM f . distM . fmap (cataM f &&& id) . project
 
+  {-# INLINEABLE paraM #-}
   paraM :: forall m a . (Monad m, FoldM t m) =>
     (Base t (a, t) -> m a) -> t -> m a
   paraM f = liftM fst . cataM g
@@ -42,10 +44,12 @@ class Refoldable t => FoldableM t where
       return (a, recover x)
   
 class FoldableM t => Transformable t where
+  {-# INLINEABLE transformM #-}
   transformM :: (Monad m, FoldM t m) => 
     (t -> m t) -> t -> m t
   transformM f = cataM (f . embed)
   
+{-# INLINEABLE foldM #-}
 foldM :: (Transformable t, Monad m, FoldM t (WriterT w m), Monoid w) =>
   (t -> m w) -> t -> m w
 foldM f = execWriterT . rewriteM rrwt
@@ -84,6 +88,7 @@ any :: (Transformable t, FoldM t (WriterT Monoid.All Identity)) =>
   (t -> Bool) -> t -> Bool
 any p = not . all (not . p)
 
+{-# INLINEABLE rewriteOnceM #-}
 -- | Apply a given transformation exactly once. If it is never applied
 -- then this returns 'Nothing'.
 rewriteOnceM :: forall m t .
@@ -108,12 +113,14 @@ rewriteOnceM f t = do
           State.put True
           return t'
           
+{-# INLINEABLE rewriteM #-}
 rewriteM :: (Transformable t, Monad m, FoldM t m) =>
   (t -> m (Maybe t)) -> t -> m t
 rewriteM f = transformM rrwt
   where
   rrwt t = join . liftM (maybe (return t) (rewriteM f)) . f $ t
 
+{-# INLINEABLE rewriteStepsM #-}
 rewriteStepsM :: (Transformable t, Monad m, FoldM t m) =>
   [t -> m (Maybe t)] -> t -> m t
 rewriteStepsM steps = rewriteM (\t -> firstM (map ($ t) steps))
@@ -133,7 +140,8 @@ rewriteSteps steps = rewrite step
   step t = Monoid.getFirst (concatMap (Monoid.First . ($ t)) steps)
 
 type SelectorM m t = t -> m (Bool, Base t (Bool, t))
-  
+
+{-# INLINEABLE selectiveTransformM #-}
 selectiveTransformM :: forall t m . (FoldableM t, FoldM t m, Monad m) => 
   SelectorM m t -> (t -> m t) -> t -> m t
 selectiveTransformM p f t = do

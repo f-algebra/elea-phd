@@ -94,7 +94,7 @@ fuse transform outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
  
   let fix_body = id
     --    . trace s3
-        . trace (s1 ++ s2 ++ s3)
+      --  . trace (s1 ++ s2 ++ s3)
         . unflattenLam arg_bs
         . substAt 0 inner_fix
         $ replaced_t
@@ -113,7 +113,7 @@ fuse transform outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     $ Fix fix_info new_fix_b fix_body
      
   done_s <- showM done
-  let s4 = "\nDONE:\n" ++ done_s
+  let s4 = s1 ++ "\nDONE:\n" ++ done_s
   
   Fail.when (leftmost done == inner_fix)
   
@@ -233,7 +233,7 @@ split transform (Fix fix_info fix_b fix_t) (Indices.lift -> outer_ctx) =
   o_s <- showM output
   let s3 = s1 ++ "\n\nGIVES\n" ++ o_s
   return   
-   -- . trace s3
+    . trace s3
     $ output
   where
   (arg_bs, _) = flattenPi (get boundType fix_b)
@@ -275,16 +275,17 @@ split transform (Fix fix_info fix_b fix_t) (Indices.lift -> outer_ctx) =
           return (Alt bs inner')
     floatCtxUp _ = mzero
 
-invent :: (Fail.Monad m, Env.Readable m) => Term -> Term -> m Term
-invent inner_t top_t = do
+    
+invent :: forall m . (Fail.Monad m, Env.Readable m) => 
+  (Term -> m Term) -> Term -> Term -> m Term
+invent transform inner_t top_t = do
   Fail.when (inner_t `Term.contains` reverted_top)
   ind_ty <- Err.noneM (Typing.typeOf inner_t)
   Fail.unless (isInd ind_ty && not (Term.isRecursiveInd ind_ty))
   inner_s <- showM inner_t
   top_s <- showM top_t
-  return
-    . trace ("\n\nEXTRACTING:\n" ++ inner_s ++ "\n\nFROM:\n" ++ top_s)
-    $ Term.buildCaseOf inner_t ind_ty (const top_t)
+ --   . trace ("\n\nEXTRACTING:\n" ++ inner_s ++ "\n\nFROM:\n" ++ top_s)
+  Term.buildCaseOfM inner_t ind_ty (buildBranch ind_ty)
   where
   reverted_top = top_t
     |> Term.revertMatchesWhen isInnerMatch
@@ -294,3 +295,8 @@ invent inner_t top_t = do
   isInnerMatch (Var x) = asks (Set.member x . Indices.free)
   isInnerMatch _ = return False
   
+  buildBranch :: Type -> Nat -> m Term 
+  buildBranch ind_ty inj_n = top_t
+    |> transform
+    |> Env.equals inner_t (Term.altPattern ind_ty inj_n)
+

@@ -67,7 +67,8 @@ simpleSteps :: Env.Readable m => [Term -> m (Maybe Term)]
 simpleSteps = Simp.stepsM ++ Float.steps
 
 simpleAndFloat :: Env.Readable m => Term -> m Term
-simpleAndFloat = Fold.rewriteStepsM (simpleSteps ++ [floatConstructors])
+simpleAndFloat = Fold.rewriteStepsM 
+  $ simpleSteps ++ [Fold.rewriteOnceM floatConstructors]
 
 checkedSimple :: Env.Readable m => Term -> m Term
 checkedSimple = Fold.rewriteStepsM ({- map Typing.checkStep -} simpleSteps)
@@ -130,6 +131,11 @@ floatConstructors term@(Fix _ fix_b fix_t)
       suggestAlt (Alt bs alt_t) =
         local (liftMany (length bs)) (suggest alt_t)
         
+    suggest (Absurd _) = const (Absurd fix_ty)
+      |> Context.make fix_ty fix_ty
+      |> Set.singleton
+      |> return
+      
     suggest inj_t@(flattenApp -> (Inj inj_n ind_ty : args)) = do
       free_limit <- ask
       let idx_offset = fromEnum free_limit - length arg_bs
@@ -243,7 +249,8 @@ fusion full_t@(flattenApp ->
         trace ms (return (Just t)) -}
     where
     fuseMatch :: (Term, (Term, Int)) -> m (Maybe Term)
-    fuseMatch (match_t, (flattenApp -> Inj inj_n ind_ty : inj_args, m_depth))
+    fuseMatch (match_t, 
+              (inj_t@(flattenApp -> Inj inj_n ind_ty : inj_args), m_depth))
       | Just inj_n' <- fusedMatch match_t outer_f =
         if inj_n' == inj_n  
         then return Nothing
@@ -251,19 +258,31 @@ fusion full_t@(flattenApp ->
         -- to the same term, then this is an absurd branch.
         -- Not sure if this ever comes up though.
         else return (Just (Absurd full_ty))
-        
+
       | isFix (leftmost match_t)
  --     , all isVar match_args
       , relevantFact = do
         outer_ty <- Err.noneM (Typing.typeOf outer_f)
         let ctx = Context.make outer_ty full_ty buildContext
-        mby_t <- Fail.toMaybe (fuse innerTransform ctx outer_f)
-        return $ do
+        -- We add the new fused matches to the info of our existing 
+        -- fixpoint, since this will be carried over to the fixpoint
+        -- that fusion produces.
+        let outer_f' = outer_f
+              |> addFusedMatch (match_t, inj_n)
+              |> addFusedMatches (get fusedMatches match_inf)
+        mby_t <- Fail.toMaybe (fuse innerTransform ctx outer_f')
+        match_s <- showM match_t
+        outer_s <- showM full_t
+        inj_s <- showM inj_t
+        let msg | isJust mby_t = id
+                | otherwise = 
+                    trace ("\n\nFailed to merge:\n" ++ match_s ++ "\n == " ++ inj_s ++ "\n\nwith:\n" ++ outer_s)
+        msg $ return $ do
           t <- mby_t
-         -- guard (Fold.all (/= outer_f) t)
-          return (addFusedMatch (match_t, inj_n) t)
+          t |> cleanupAbsurdities
+            |> return
       where
-      Fix {} : match_args = flattenApp match_t
+      Fix match_inf _ _ : match_args = flattenApp match_t
       match_vars = Simp.strictVars match_t
       strict_vars = Simp.strictVars full_t
       
@@ -329,6 +348,28 @@ fusion full_t@(flattenApp ->
             return
               $ Unifier.exists match_t outer_t
               && not (Unifier.exists match_t inner_t)
+              
+      cleanupAbsurdities :: Term -> Term
+      cleanupAbsurdities = Fold.rewrite cleanup
+        where
+        cleanup :: Term -> Maybe Term
+        cleanup (Case _ _ alts) = do
+          (alt_t:alt_ts) <- alts 
+            |> mapM loweredAltTerm
+            $> sortBy absurdsGreater
+          guard (all isAbsurd alt_ts)
+          return alt_t
+          where
+          absurdsGreater (Absurd _) (Absurd _) = EQ
+          absurdsGreater (Absurd _) _ = LT
+          absurdsGreater _ (Absurd _) = GT
+          absurdsGreater _ _ = EQ
+          
+          loweredAltTerm :: Alt -> Maybe Term
+          loweredAltTerm (Alt bs alt_t) = do
+            guard (Indices.lowerableBy (length bs) alt_t)
+            return (Indices.lowerMany (length bs) alt_t)
+        cleanup _ = Nothing
 
     fuseMatch _ = 
       return Nothing
@@ -504,14 +545,13 @@ fixfixSimplifier inner_arg_count inner_f = id
             |> Set.intersection gen_vars
             |> Set.toList
       mby_t <- term
-        |> concatEndosM (map (invent . App outer_f . Var) gen_vars') 
+        |> concatEndosM (map (invent run . App outer_f . Var) gen_vars') 
         |> Fail.toMaybe
       case mby_t of 
         Nothing -> return term
         Just t -> do
-          t' <- lift (run t)
-          ts <- showM t'
-          t' 
+          ts <- showM t
+          t |> return
           --  |> trace ("GOT: " ++ ts) 
-            |> return
+            
 

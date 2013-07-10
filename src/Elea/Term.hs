@@ -11,6 +11,7 @@ module Elea.Term
   altBindings', altInner',
   boundLabel, boundType,
   boundLabel', boundType',
+  fusedMatches, fusedMatches',
   leftmost, returnType,
   flattenApp, unflattenApp, 
   flattenPi, unflattenPi,
@@ -19,7 +20,7 @@ module Elea.Term
   isFix, isAbsurd, isCase,
   fromVar, emptyFixInfo,
   altPattern, argumentCount, 
-  fusedMatch, addFusedMatch,
+  fusedMatch, addFusedMatch, addFusedMatches,
 )
 where
 
@@ -217,7 +218,7 @@ isCase (Case {}) = True
 isCase _ = False
 
 isAbsurd :: Term -> Bool
-isAbsurd (leftmost -> Absurd {}) = True
+isAbsurd (Absurd {}) = True
 isAbsurd _ = False
 
 fromVar :: Term -> Index
@@ -267,7 +268,7 @@ fusedMatch :: Term -> Term -> Maybe Nat
 fusedMatch match (leftmost -> Fix (FixInfo ms) _ _) =
   lookup match ms
   
-addFusedMatch :: Show Term => (Term, Nat) -> Term -> Term
+addFusedMatch :: (Term, Nat) -> Term -> Term
 addFusedMatch (m_t, m_n) (flattenApp -> Fix inf b t : args) = id
   . assert (fusedMatch m_t (Fix inf b t) == Nothing)
   $ unflattenApp (Fix inf' b t : args)
@@ -275,6 +276,9 @@ addFusedMatch (m_t, m_n) (flattenApp -> Fix inf b t : args) = id
   FixInfo ms = inf
   inf' = FixInfo ((m_t, m_n) : ms)
 addFusedMatch _ other = other
+
+addFusedMatches :: [(Term, Nat)] -> Term -> Term
+addFusedMatches = flip (foldr addFusedMatch)
 
 -- | Given an inductive type and a constructor index this will return
 -- a fully instantiated constructor term.

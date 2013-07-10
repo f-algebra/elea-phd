@@ -68,11 +68,8 @@ commuteMatchesWhen _ _ = return Nothing
 varEqApply :: Env.Readable m => Term -> m (Maybe Term)
 varEqApply term 
   | isFix (leftmost term) || isVar term = Env.matchedWith term
+-- varEqApply t@(Var {}) = Env.matchedWith t
 varEqApply _ = return Nothing
-{-
-varEqApply t@(Var {}) = Env.matchedWith t
-varEqApply _ = return Nothing
--}
 
 absurdity :: Env.Readable m => Term -> m (Maybe Term)
 absurdity (Absurd _) = return Nothing
@@ -83,10 +80,15 @@ absurdity term
   where
   isAbsurd (App (Absurd _) _) = True
   isAbsurd (Case (Absurd _) _ _) = True
+  isAbsurd (Fix (FixInfo inf) _ _) = 
+    any absurdMatch inf
+    where
+    absurdMatch (leftmost -> Inj inj_n _, inj_n') = inj_n /= inj_n'
+    absurdMatch _ = False
   isAbsurd _ = False
+    
 absurdity _ =
   return Nothing
-
 
 -- | Unfolds a 'Fix' if any arguments are a constructor term
 -- which does not match a recursive call to the function itself.
@@ -97,10 +99,10 @@ unfoldFixInj :: Env.Readable m => Term -> m (Maybe Term)
 unfoldFixInj term@(flattenApp -> fix@(Fix _ _ rhs) : args@(last -> arg))
   | not (null args)
   , isInj (leftmost arg) = do
-   -- is_pat <- isPattern arg
+    is_pat <- isPattern arg
     return $ do
-      guard (not (True {- is_pat -} && matchesRecCall rhs))
-      {-trace ("UNFINJFIX: " ++ show term) $ -}
+      guard (not (is_pat && matchesRecCall rhs))
+      {- trace ("UNFINJFIX: " ++ show term) $ -}
       return (unflattenApp (subst fix rhs : args))
   where
   isPattern :: Env.Readable m => Term -> m Bool
@@ -398,14 +400,14 @@ uselessFix _ = mzero
 
 -- | Removes a pattern match if every branch returns the same value.
 constantCase :: Term -> Maybe Term
-constantCase (Case _ _ alts) = do
+constantCase cse_t@(Case _ _ alts) = do
   lowered <- mapM loweredAltTerm alts
   let filtered = lowered -- filter (not . isAbsurd) lowered
   case filtered of
     [] -> return (head lowered)
     alt_t:alt_ts -> do
       guard (all (== alt_t) alt_ts)
-      guard (not (containsFunctionCall alt_t))
+   --   guard (not (containsFunctionCall alt_t))
       return alt_t
   where
   containsFunctionCall :: Term -> Bool

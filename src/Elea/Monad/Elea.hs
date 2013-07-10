@@ -12,6 +12,7 @@ import Elea.Prelude hiding ( log )
 import Elea.Index
 import Elea.Term
 import Elea.Show ( showM )
+import qualified Elea.Foldable as Fold
 import qualified Elea.Term as Term
 import qualified Elea.Env as Env
 import qualified Elea.Typing as Typing
