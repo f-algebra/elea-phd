@@ -36,6 +36,7 @@ steps = id
     , removeIdFix
     ]
         
+{-# INLINEABLE run #-}
 run :: forall m . Env.Readable m => Term -> m Term
 run term = do
   term' <- Float.run term
@@ -60,7 +61,7 @@ run term = do
           ts <- showM t
           ts' <- showM t'
           Just t'
-         --   |> trace ("\n\nTRANSFORMED:\n" ++ ts ++ "\n\nTO:\n" ++ ts')
+          --  |> trace ("\n\nTRANSFORMED:\n" ++ ts ++ "\n\nTO:\n" ++ ts')
             |> return
 
 simpleSteps :: Env.Readable m => [Term -> m (Maybe Term)]
@@ -202,22 +203,20 @@ fusion full_t@(flattenApp ->
             $ \t -> unflattenApp 
               $ outer_f : unflattenApp (t : inner_args) : tail outer_args
       runMaybeT
-      --  $ runFusion outer_ctx
         . Env.alsoTrack outer_f
-        $ fuse (fixfixSimplifier (argumentCount inner_f)) outer_ctx inner_f
+        $ runFusion outer_ctx
     where
     inner_f@(Fix {}) : inner_args = flattenApp (head outer_args)
-    {-
+    
     runFusion :: Context -> Env.AlsoTrack Term (MaybeT m) Term 
     runFusion outer_ctx
-      | isVar rec_arg = fuse (fixfixSimplifier inner_f) outer_ctx inner_f
+      | isVar rec_arg = fuse run extract outer_ctx inner_f
       | otherwise = id
-          . Typing.generalise (head inner_args) 
-            (\_ t -> fuse (fixfixSimplifier inner_f) t (Indices.lift inner_f))
+          . Term.generalise (head inner_args) 
+            (\_ ctx -> fuse run extract ctx (Indices.lift inner_f))
           $ outer_ctx
       where
       rec_arg = head inner_args
-      -}
   fixfix _ = 
     return Nothing
   
@@ -230,7 +229,7 @@ fusion full_t@(flattenApp ->
       let ctx = id
             . Context.make outer_ty full_ty
             $ \t -> unflattenApp (t : outer_args)
-      Fail.toMaybe (fuse (const run) ctx outer_f)
+      Fail.toMaybe (fuse run (const return) ctx outer_f)
   repeatedArg _ =
     return Nothing
     
@@ -270,7 +269,7 @@ fusion full_t@(flattenApp ->
         let outer_f' = outer_f
               |> addFusedMatch (match_t, inj_n)
               |> addFusedMatches (get fusedMatches match_inf)
-        mby_t <- Fail.toMaybe (fuse innerTransform ctx outer_f')
+        mby_t <- Fail.toMaybe (fuse run floatInwards ctx outer_f')
         match_s <- showM match_t
         outer_s <- showM full_t
         inj_s <- showM inj_t
@@ -329,13 +328,11 @@ fusion full_t@(flattenApp ->
       -- The transformation function that is passed to the Core.fuse
       -- call for fixFact fusion. It is fusion plus 
       -- the 'floatCtxMatchInwards' transformation.
-      innerTransform :: forall m . (Env.Readable m, Fail.Monad m) => 
+      floatInwards :: forall m . (Env.Readable m, Fail.Monad m) => 
         Index -> Term -> m Term
-      innerTransform _ = run >=> finalFloating
-        where
-        finalFloating = Fold.rewriteStepsM 
+      floatInwards _ = Fold.rewriteStepsM 
           $ Simp.stepsM ++ Float.steps ++ [floatCtxMatchInwards]
-        
+        where
         -- We need the pattern match for the context (viz. over match_t) 
         -- to be as far in as possible in order for fusion to succeed,
         -- viz. that C[f] can be unified at some point. Otherwise we
@@ -376,25 +373,28 @@ fusion full_t@(flattenApp ->
   
 fusion _ =
   return Nothing
-{-
-simplifyAndExtract :: forall m . Env.Readable m =>  
-  Term -> Index -> Term -> m Term
-simplifyAndExtract outer_fix inner_f term = do
-  term' <- run term
-  can_extract <- Env.alsoTrack outer_fix extractable
+
+extract :: forall m . Env.Readable m =>  
+  Index -> Term -> Env.AlsoTrack Term m Term
+extract inner_f term = do
+  can_extract <- extractable
   if not can_extract
-  then return term'
+  then return term
   else do
-    Env.alsoTrack (outer_fix, inner_f) 
+    outer_f <- ask
+    lift
+      . Env.alsoTrack (outer_f, inner_f) 
       -- We descend into branches as long as the 'inner_f' function
       -- is not pattern matched by that branch.
-      . Env.mapBranchesWhileM False functionNonMatched extract 
-      $ term'
+      . Term.descendWhileM functionNonMatched doExtract 
+      $ term
   where
   functionNonMatched :: Term -> Env.AlsoTrack (Term, Index) m Bool
   functionNonMatched (Case cse_t _ _) = do
     (_, inner_f) <- ask
     return (not (inner_f `Set.member` Indices.free cse_t))
+  functionNonMatched _ = 
+    return False
   
   extractable :: Env.AlsoTrack Term m Bool
   extractable = do
@@ -404,21 +404,21 @@ simplifyAndExtract outer_fix inner_f term = do
     return 
       $ length args == 1
       && isInd ret 
-      && not (isRecursiveInd ret)
+      && not (Term.isRecursiveInd ret)
   
-  extract :: Term -> Env.AlsoTrack (Term, Index) m Term
-  extract (flattenApp -> inj@(Inj {}) : args) = do
-    args' <- mapM extract args
+  doExtract :: Term -> Env.AlsoTrack (Term, Index) m Term
+  doExtract (flattenApp -> inj@(Inj {}) : args) = do
+    args' <- mapM doExtract args
     return (unflattenApp (inj : args'))
-  extract term = do
+  doExtract term = do
     (outer_f, inner_f) <- ask
     inner_calls <- id
       . lift
       . Env.alsoTrack inner_f 
-      $ Env.collectTermsM isInnerCall term
+      $ Term.collectM isInnerCall term
     lift
       . Env.alsoTrack outer_f
-      . Typing.generaliseMany (Set.toList inner_calls) extraction
+      . Term.generaliseMany (Set.toList inner_calls) extraction
       $ term
     where
     isInnerCall :: Term -> Env.AlsoTrack Index m Bool
@@ -437,15 +437,15 @@ simplifyAndExtract outer_fix inner_f term = do
       outer_f <- ask
       mby_t <- lift 
         . Fail.toMaybe 
-        . concatEndosM (map (invent . App outer_f . Var) gen_vars) 
+        . concatEndosM (map (invent run . App outer_f . Var) gen_vars) 
         $ term
       case mby_t of 
         Nothing -> return term
         Just t -> do
           t' <- lift (run t)
           ts <- showM t'
-          return $ trace ("GOT: " ++ ts) t'
-  -}
+          return $ {- trace ("GOT: " ++ ts) -} t'
+  {-
 fixfixSimplifier :: forall m . Env.Readable m =>  
   Int -> Index -> Term -> Env.AlsoTrack Term m Term
 fixfixSimplifier inner_arg_count inner_f = id
@@ -485,7 +485,7 @@ fixfixSimplifier inner_arg_count inner_f = id
     Env.alsoWith (\(outer_f, _) -> outer_f)
       . Term.generaliseMany 
           (Set.toList fix_uses) 
-          (\ixs t -> {- trace ("\nGEN:" ++ show fix_uses ++ "\nWITHIN:\n" ++ show term ++ "\nGIVES:\n" ++ show t) $ -} simplifyAndExtract (Set.fromList ixs) t) 
+          (\ixs t -> trace ("\nGEN:" ++ show fix_uses ++ "\nWITHIN:\n" ++ show term ++ "\nGIVES:\n" ++ show t) $ simplifyAndExtract (Set.fromList ixs) t) 
       $ term
     where
     isInnerCall :: Term -> Env.AlsoTrack Index m Bool
@@ -554,4 +554,4 @@ fixfixSimplifier inner_arg_count inner_f = id
           t |> return
           --  |> trace ("GOT: " ++ ts) 
             
-
+-}

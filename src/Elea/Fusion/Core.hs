@@ -30,8 +30,8 @@ import qualified Data.Map as Map
 -- TODO only pull in the variables that you need as arguments, not all of them
 
 fuse :: forall m . (Env.Readable m, Fail.Monad m) => 
-  (Index -> Term -> m Term) -> Context -> Term -> m Term
-fuse transform outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = 
+  (Term -> m Term) -> (Index -> Term -> m Term) -> Context -> Term -> m Term
+fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = 
     Env.forgetMatches $ do
   ctx_s <- showM outer_ctx
   t_s <- showM inner_fix
@@ -56,22 +56,18 @@ fuse transform outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
       arg_bs = zipWith Indices.lowerMany offsets var_bs
       new_fix_ty = unflattenPi arg_bs result_ty
       new_fix_b = Bind new_label new_fix_ty
-  
-  unfolded_t <- id
-    . Env.bind fix_b
-    . Float.run
-    . Context.apply (Indices.lift outer_ctx)
-    $ fix_t
-      
-  transformed_t <- id 
-    . Env.bind fix_b
-    . transform 0 
-  --  . Env.mapBranchesWhileM True calledWithNonFreeArgs transformBranch
- --   . trace s1
-    $ unfolded_t
+
+  simplified_t <- fix_t
+    |> Context.apply (Indices.lift outer_ctx)
+    |> simplify
+    |> Env.bind fix_b
+    
+  extracted_t <- simplified_t
+    |> extract 0
+    |> Env.bind fix_b
   
   -- I gave up commenting at this point, it works because it does...
-  let reverted_t = transformed_t
+  let reverted_t = extracted_t
         |> Term.revertMatchesWhen isInnerFixMatch
         |> Env.trackIndices 0
        
@@ -107,11 +103,9 @@ fuse transform outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     
   Err.noneM (Typing.check (Fix fix_info new_fix_b fix_body)) 
   
-  done <- id
-    . Float.run
-    . (\t -> unflattenApp (t : arg_vars))
-    $ Fix fix_info new_fix_b fix_body
-     
+  done <- unflattenApp (Fix fix_info new_fix_b fix_body : arg_vars)
+    |> simplify
+    
   done_s <- showM done
   let s4 = s1 ++ "\nDONE:\n" ++ done_s
   

@@ -3,7 +3,7 @@
 -- definitions statefully.
 module Elea.Monad.Elea
 (
-  Elea, unsafe
+  Elea, run
 )
 where
 
@@ -17,12 +17,18 @@ import qualified Elea.Term as Term
 import qualified Elea.Env as Env
 import qualified Elea.Typing as Typing
 import qualified Elea.Simplifier as Simp
+import qualified Elea.Floating as Float
+import qualified Elea.Fusion as Fusion
 import qualified Elea.Monad.Definitions as Defs
-import qualified Elea.Monad.Logging as Log
 import qualified Elea.Monad.Error as Err
 import qualified Elea.Monad.Failure as Fail
 import qualified Control.Monad.State as State
 import qualified Data.Map as Map
+
+{-# SPECIALISE 
+  Fusion.run :: Term -> Elea Term #-} 
+{-# SPECIALISE 
+  Float.run :: Term -> Elea Term #-}
 
 type Defs = Map String Term
 
@@ -31,56 +37,39 @@ data EleaValue a
   | Error !Err.Err
   | Value !a
   deriving ( Functor )
-  
-data EleaWrite a
-  = EW  { _writeDefs :: !Defs
-        , _writeLog :: ![String]
-        , _writeValue :: !(EleaValue a) }
-  deriving ( Functor )
         
 data EleaRead
-  = ER  { _readDefs :: !Defs
-        , _readBinds :: ![Bind]
+  = ER  { _readBinds :: ![Bind]
         , _readMatches :: !Matches }
   
 newtype Elea a 
-  = Elea      { runElea :: EleaRead -> EleaWrite a }
+  = Elea { runElea :: EleaRead -> EleaValue a }
  
-mkLabels [''EleaWrite, ''EleaRead]
-  
-unsafe :: Elea a -> a
-unsafe (Elea el) = unsafePerformIO $ do
-  -- mapM_ putStrLn log
-  case val of
-    Fail -> fail "FAIL"
-    Error e -> fail ("ERROR: " ++ e)
-    Value x -> return x
-  where
-  EW _ log val = el (ER mempty mempty mempty)
-  
+mkLabels [''EleaRead]
+
+run :: Elea a -> a
+run el =
+  case runElea el (ER mempty mempty) of
+    Value x -> x
+    Fail -> error "FAIL"
+    Error e -> error e
+
 instance Functor Elea where
   fmap f (Elea g) = Elea (fmap f . g)
   
 instance Monad Elea where
-  return x = Elea $ \r -> EW (get readDefs r) [] (Value x)
+  return x = Elea $ \_ -> (Value x)
   Elea el >>= f = Elea $ \r ->
-    let EW defs log val = el r in 
-    case val of
-      Fail -> EW defs log Fail 
-      Error e -> EW defs log (Error e)
-      Value x -> 
-        let EW defs' log' val' = runElea (f x) (set readDefs defs r) in
-        EW defs' (log ++ log') val'
+    case el r of
+      Fail -> Fail
+      Error e -> Error e
+      Value x -> runElea (f x) r
         
 instance MonadReader ([Bind], Matches) Elea where
-  ask = Elea $ \(ER ds bs mts) -> EW ds [] (Value (bs, mts))
-  local f el = Elea $ \(ER ds bs mts) ->
+  ask = Elea $ \(ER bs mts) -> (Value (bs, mts))
+  local f el = Elea $ \(ER bs mts) ->
     let (bs', mts') = f (bs, mts) in
-    runElea el (ER ds bs' mts')
-  
-instance MonadState Defs Elea where
-  get = Elea $ \(ER ds _ _) -> EW ds [] (Value ds)
-  put ds = Elea $ \_ -> EW ds [] (Value ())
+    runElea el (ER bs' mts')
 
 instance Env.Writable Elea where
   bindAt at b = local (mapBinds *** mapMatches)
@@ -105,29 +94,13 @@ instance Env.Readable Elea where
       $ "Index " ++ show at ++ " not bound in " ++ show bs
     return (bs !! fromEnum at)
 
-instance Defs.Monad Elea where
-  lookup name = State.gets (Map.lookup name)
-  
-  add name term = do
-    term_s <- showM term
-    term_ty <- Typing.typeOf term
-    ty_s <- showM term_ty
-    Log.info
-      $  "\nval " ++ name ++ ": " ++ ty_s ++ " = " ++ term_s
-    State.modify (Map.insert name term)
-  
 instance Err.Monad Elea where
-  throw e = Elea $ \r ->
-    EW (get readDefs r) [] (Error e)
+  throw e = Elea $ \_ -> (Error e)
   catch (Elea el) handle = Elea $ \r ->
-    let w = el r in
-    case get writeValue w of
+    case el r of
       Error e -> runElea (handle e) r
-      _ -> w
+      other -> other 
 
 instance Fail.Monad Elea where
-  here = Elea $ \r -> EW (get readDefs r) [] Fail
-
-instance Log.Monad Elea where
-  info msg = Elea $ \r -> EW (get readDefs r) [msg] (Value ())
+  here = Elea $ \_ -> Fail
 

@@ -1,5 +1,5 @@
 module Elea.Testing (
-  Test, execute,
+  Test, M, execute,
   label, list, run, 
   assert, assertEq, assertNot,
   loadPrelude, loadFile,
@@ -13,12 +13,12 @@ import Elea.Monad.Elea ( Elea )
 
 import qualified Elea.Parser as Parse
 import qualified Elea.Typing as Typing
-import qualified Elea.Monad.Elea as Elea
 import qualified Elea.Monad.Definitions as Defs
-import qualified Elea.Monad.Error as Error
+import qualified Elea.Monad.Error as Err
 import qualified Test.HUnit as HUnit
 
 type Test = HUnit.Test
+type M a = State (Map String Term) a
 
 execute :: Test -> IO ()
 execute test = do
@@ -31,8 +31,8 @@ list = HUnit.TestList
 label :: String -> Test -> Test
 label = HUnit.TestLabel
 
-run :: HUnit.Testable t => Elea t -> Test
-run = HUnit.test . Elea.unsafe
+run :: HUnit.Testable t => M t -> Test
+run = HUnit.test . flip evalState mempty 
 
 assert :: HUnit.Assertable t => t -> Test
 assert = HUnit.TestCase . HUnit.assert
@@ -47,12 +47,12 @@ prelude :: String
 prelude = unsafePerformIO
   $ readFile "prelude.elea"
   
-loadFile :: String -> Elea ()
-loadFile = Parse.program . unsafePerformIO . readFile
+loadFile :: Defs.Monad m => String -> m ()
+loadFile = Err.noneM . Parse.program . unsafePerformIO . readFile
 
-loadPrelude :: Elea ()
-loadPrelude = Parse.program prelude
+loadPrelude :: Defs.Monad m => m ()
+loadPrelude = Err.noneM (Parse.program prelude)
 
-term :: String -> Elea Term
-term = Parse.term
+term :: Defs.Monad m => String -> m Term
+term = Err.noneM . Parse.term
 

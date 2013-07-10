@@ -12,19 +12,24 @@ import qualified Elea.Typing as Typing
 import qualified Elea.Testing as Test
 import qualified Elea.Parser as Parse
 import qualified Elea.Monad.Elea as Elea
-import qualified Elea.Monad.Definitions as Defs
+import qualified Elea.Monad.Error as Err
 
 tests = Test.label "Typing" 
     $ Test.run $ do
   Test.loadPrelude
  
-  add <- Parse.term "add"
-  add_ty <- Parse.term "pi nat nat -> nat"
-  add_ty' <- Typing.typeOf add
-  
-  rev <- Parse.term "rev"
-  rev_ty <- Parse.term "pi (a:*) (list a) -> list a"
-  rev_ty' <- Typing.typeOf rev
+  add <- Test.term "add"
+  add_ty <- Test.term "pi nat nat -> nat"
+  let add_ty' = Typing.typeOf add
+        |> Err.noneM
+        |> Elea.run
+    
+  rev <- Test.term "rev"
+  rev_ty <- Test.term "pi (a:*) (list a) -> list a"
+  let rev_ty' = Typing.typeOf rev
+        |> Err.noneM
+        |> Elea.run
+    
   return
     $ Test.list
     [ Test.assertEq add_ty add_ty'

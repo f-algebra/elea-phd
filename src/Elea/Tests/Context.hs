@@ -7,11 +7,10 @@ where
 import Prelude ()
 import Elea.Prelude             
 import Elea.Index
-import Elea.Monad.Elea ( Elea )
 import qualified Elea.Context as Context
 import qualified Elea.Testing as Test
 
-context :: String -> Elea Context.Context
+context :: String -> Test.M Context.Context
 context = liftM Context.fromLambda . Test.term
 
 tests = Test.label "Contexts"                                          
@@ -40,7 +39,7 @@ tests = Test.label "Contexts"
   aim3 = "fun (gap:nat) (y:nat) -> add y gap"
                                     
   
-contextTest :: String -> String -> String -> Elea Test.Test
+contextTest :: String -> String -> String -> Test.M Test.Test
 contextTest ctx_s sub_s aim_s = do
   ctx <- context ctx_s
   sub <- Test.term sub_s
@@ -51,7 +50,7 @@ contextTest ctx_s sub_s aim_s = do
       test2 = Test.assertEq sub sub'
   return $ Test.list [test1, test2]
   
-dropLambdasTest :: String -> String -> Elea Test.Test
+dropLambdasTest :: String -> String -> Test.M Test.Test
 dropLambdasTest ctx_s aim_s = do
   ctx <- context ctx_s
   aim <- context aim_s

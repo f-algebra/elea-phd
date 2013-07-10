@@ -24,6 +24,7 @@ import qualified Data.Monoid as Monoid
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 
+{-# INLINEABLE run #-}
 run :: Env.Readable m => Term -> m Term
 run = Fold.rewriteStepsM (Simp.stepsM ++ steps)
 
@@ -66,9 +67,8 @@ commuteMatchesWhen when outer_cse@(Case _ _ alts)
 commuteMatchesWhen _ _ = return Nothing
     
 varEqApply :: Env.Readable m => Term -> m (Maybe Term)
-varEqApply term 
-  | isFix (leftmost term) || isVar term = Env.matchedWith term
--- varEqApply t@(Var {}) = Env.matchedWith t
+-- varEqApply term | isFix (leftmost term) || isVar term = Env.matchedWith term
+varEqApply t@(Var {}) = Env.matchedWith t
 varEqApply _ = return Nothing
 
 absurdity :: Env.Readable m => Term -> m (Maybe Term)

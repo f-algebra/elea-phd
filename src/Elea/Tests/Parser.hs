@@ -15,9 +15,9 @@ import qualified Elea.Monad.Definitions as Defs
 tests = Test.label "Parser" 
     $ Test.run $ do
   Test.loadPrelude
-  t_nat <- Parse.term "nat"
-  t_suc <- Parse.term "Suc"
-  t_add <- Parse.term "add"
+  t_nat <- Test.term "nat"
+  t_suc <- Test.term "Suc"
+  t_add <- Test.term "add"
   return
     $ Test.list 
     [ Test.assertEq nat t_nat

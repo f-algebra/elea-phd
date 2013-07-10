@@ -290,7 +290,7 @@ instance Readable m => Readable (StateT s m) where
   matches = Trans.lift matches
   boundAt = Trans.lift . boundAt
   bindingDepth = Trans.lift bindingDepth
-  
+ 
 instance Writable Identity where
   bindAt _ _ = id
   equals _ _ = id

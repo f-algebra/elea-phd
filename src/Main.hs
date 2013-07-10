@@ -18,3 +18,4 @@ time a = do
 test :: IO ()
 test = time runTests
 
+main = test

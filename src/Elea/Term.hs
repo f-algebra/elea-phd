@@ -275,6 +275,7 @@ addFusedMatch (m_t, m_n) (flattenApp -> Fix inf b t : args) = id
   where
   FixInfo ms = inf
   inf' = FixInfo ((m_t, m_n) : ms)
+  b' = modify boundLabel (fmap ("INF@" ++)) b
 addFusedMatch _ other = other
 
 addFusedMatches :: [(Term, Nat)] -> Term -> Term

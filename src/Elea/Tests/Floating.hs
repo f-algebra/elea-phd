@@ -7,18 +7,18 @@ where
 import Prelude ()
 import Elea.Prelude
 import Elea.Term ( Term )
-import Elea.Monad.Elea ( Elea )
+import qualified Elea.Monad.Elea as Elea
 import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Testing as Test
 import qualified Elea.Floating as Float
 import qualified Elea.Simplifier as Simp
 
-assertFloatEq :: Int -> Elea Test.Test
+assertFloatEq :: Int -> Test.M Test.Test
 assertFloatEq n = do
   Just t <- Defs.lookup ("t" ++ show n)
   Just t' <- Defs.lookup ("t" ++ show n ++ "'")
-  ft <- Float.run t
-  ft' <- Float.run t'
+  let ft  = t  |> Float.run |> Elea.run
+  let ft' = t' |> Float.run |> Elea.run
   return (Test.assertEq ft' ft)
 
 tests = Test.label "Floating"

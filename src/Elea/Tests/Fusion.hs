@@ -7,19 +7,19 @@ where
 import Prelude ()
 import Elea.Prelude
 import Elea.Term ( Term )
-import Elea.Monad.Elea ( Elea )
 import Elea.Show ( showM )
 import qualified Elea.Monad.Definitions as Defs
+import qualified Elea.Monad.Elea as Elea
 import qualified Elea.Testing as Test
 import qualified Elea.Context as Context
 import qualified Elea.Fusion as Fusion
 
-assertFusionEq :: Int -> Elea Test.Test
+assertFusionEq :: Int -> Test.M Test.Test
 assertFusionEq n = do
   Just t <- Defs.lookup ("t" ++ show n)
   Just t' <- Defs.lookup ("t" ++ show n ++ "'")
-  ft <- Fusion.run t
-  ft' <- Fusion.run t'
+  let ft  = t  |> Fusion.run |> Elea.run
+  let ft' = t' |> Fusion.run |> Elea.run
   return (Test.assertEq ft' ft)
 
 tests = Test.label "Fusion"
