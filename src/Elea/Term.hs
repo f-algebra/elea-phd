@@ -5,6 +5,7 @@ module Elea.Term
   Matches, ContainsTerms (..), mapTerms,
   projectAlt, embedAlt, 
   projectBind, embedBind,   
+  projectFixInfo, embedFixInfo,
   inner, varIndex, alts, argument, 
   inductiveType, binding, constructors,
   altBindings, altInner,
@@ -12,6 +13,7 @@ module Elea.Term
   boundLabel, boundType,
   boundLabel', boundType',
   fusedMatches, fusedMatches',
+  normalForm, normalForm',
   leftmost, returnType,
   flattenApp, unflattenApp, 
   flattenPi, unflattenPi,
@@ -86,7 +88,8 @@ data Alt
   deriving ( Eq, Ord )
   
 data FixInfo =
-  FixInfo { _fusedMatches :: [(Term, Nat)] }
+  FixInfo { _fusedMatches :: ![(Term, Nat)]
+          , _normalForm :: !Bool }
 
 -- The info stored in a 'Fix' has no bearing on its value  
 instance Eq FixInfo where
@@ -95,7 +98,7 @@ instance Ord FixInfo where
   _ `compare` _ = EQ
 
 emptyFixInfo :: FixInfo
-emptyFixInfo = FixInfo mempty
+emptyFixInfo = FixInfo mempty False
   
 -- * Base types for generalised cata/para morphisms.
   
@@ -126,7 +129,8 @@ data Alt' a
   deriving ( Functor, Foldable, Traversable )
   
 data FixInfo' a =
-  FixInfo'  { _fusedMatches' :: [(a, Nat)] }
+  FixInfo'  { _fusedMatches' :: [(a, Nat)]
+            , _normalForm' :: !Bool }
   deriving ( Functor, Foldable, Traversable )
   
 mkLabels [ ''Term, ''Alt, ''Bind, ''FixInfo
@@ -150,12 +154,13 @@ embedBind :: Bind' Term -> Bind
 embedBind (Bind' lbl t) = Bind lbl t
 
 projectFixInfo :: FixInfo -> FixInfo' Term
-projectFixInfo (FixInfo ms) = FixInfo' ms
+projectFixInfo (FixInfo ms nf) = FixInfo' ms nf
 
 embedFixInfo :: FixInfo' Term -> FixInfo
-embedFixInfo (FixInfo' ms) = FixInfo ms
+embedFixInfo (FixInfo' ms nf) = FixInfo ms nf
 
 instance Fold.Foldable Term where
+  {-# INLINEABLE project #-}
   project (Var x) = Var' x
   project (App t1 t2) = App' t1 t2
   project (Lam b t) = Lam' (projectBind b) t
@@ -169,6 +174,7 @@ instance Fold.Foldable Term where
   project Type = Type'
 
 instance Fold.Unfoldable Term where
+  {-# INLINEABLE embed #-}
   embed (Var' x) = Var x
   embed (App' t1 t2) = App t1 t2
   embed (Lam' b t) = Lam (embedBind b) t
@@ -265,7 +271,7 @@ argumentCount pi@(Pi _ _) =
 -- pattern match fused into it, this returns which constructor 
 -- it was matched to.
 fusedMatch :: Term -> Term -> Maybe Nat
-fusedMatch match (leftmost -> Fix (FixInfo ms) _ _) =
+fusedMatch match (leftmost -> Fix (FixInfo ms _) _ _) =
   lookup match ms
   
 addFusedMatch :: (Term, Nat) -> Term -> Term
@@ -273,8 +279,7 @@ addFusedMatch (m_t, m_n) (flattenApp -> Fix inf b t : args) = id
   . assert (fusedMatch m_t (Fix inf b t) == Nothing)
   $ unflattenApp (Fix inf' b t : args)
   where
-  FixInfo ms = inf
-  inf' = FixInfo ((m_t, m_n) : ms)
+  inf' = modify fusedMatches (\ms -> (m_t, m_n) : ms) inf
   b' = modify boundLabel (fmap ("INF@" ++)) b
 addFusedMatch _ other = other
 

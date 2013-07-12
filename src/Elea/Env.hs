@@ -67,9 +67,9 @@ instance Fold.FoldableM Term where
     inf <- forgetMatches (distInfo minf)
     return (Fix' inf (Bind' l ty) t)
     where
-    distInfo (FixInfo' mms) = do
+    distInfo (FixInfo' mms nf) = do
       ms <- mapM distMatch mms
-      return (FixInfo' ms)
+      return (FixInfo' ms nf)
       where
       distMatch :: Monad m => ((m a, b), Nat) -> m (a, Nat)
       distMatch ((ma, _), n) = liftM (\a -> (a, n)) ma
@@ -165,8 +165,8 @@ instance Indexed Bind where
   shift f (Bind l t) = Bind l (Indices.shift f t)
   
 instance Indexed FixInfo where
-  free (FixInfo ms) = concatMap (Indices.free . fst) ms
-  shift f (FixInfo ms) = FixInfo (map (first (Indices.shift f)) ms)
+  free = concatMap (Indices.free . fst) . get fusedMatches
+  shift f = modify fusedMatches (map (first (Indices.shift f)))
       
 instance Substitutable Term where
   type Inner Term = Term

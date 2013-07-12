@@ -6,7 +6,8 @@ module Elea.Foldable
   allM, findM, anyM, any, all,
   transform, rewrite, recover,
   rewriteStepsM, rewriteSteps, countM,
-  SelectorM, selectiveTransformM, 
+  
+  SelectorM, selectiveTransformM, selectAll,
 )
 where
 
@@ -26,6 +27,8 @@ class Refoldable t => FoldableM t where
   type FoldM t m :: Constraint 
   type FoldM t m = ()
   
+  -- We can implement all of these transformations purely in terms
+  -- of this distributivity law. Sexy.
   distM :: (Monad m, FoldM t m) => Base t (m a, t) -> m (Base t a)
   
   {-# INLINEABLE cataM #-}
@@ -139,7 +142,17 @@ rewriteSteps steps = rewrite step
   where
   step t = Monoid.getFirst (concatMap (Monoid.First . ($ t)) steps)
 
+
+-- | This "selector" restricts how you transform something recursively. 
+-- The outermost boolean tells you when to apply the transformation. 
+-- The inner boolean tells you when and where to recurse.
 type SelectorM m t = t -> m (Bool, Base t (Bool, t))
+
+selectAll :: (Foldable t, Monad m) => SelectorM m t
+selectAll = return 
+  . (\t -> (True, t))
+  . fmap (\t -> (True, t)) 
+  . project
 
 {-# INLINEABLE selectiveTransformM #-}
 selectiveTransformM :: forall t m . (FoldableM t, FoldM t m, Monad m) => 

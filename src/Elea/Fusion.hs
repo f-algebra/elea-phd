@@ -42,7 +42,7 @@ run term = do
   term' <- Float.run term
   mby_fused <- firstM (map (applyStep term') steps)
   case mby_fused of 
-    Nothing -> return term'
+    Nothing -> return (Term.normalised term')
     Just fused -> do
       ts <- showM term
       ts' <- showM term'
@@ -51,7 +51,7 @@ run term = do
       --  |> trace ("\n\nUNFUSED:\n\n" ++ ts' ++ "\n\nFINISHED\n\n" ++ ts'') 
   where
   applyStep :: Term -> (Term -> m (Maybe Term)) -> m (Maybe Term)
-  applyStep t f = Fold.rewriteOnceM withTrace t
+  applyStep t f = Term.restrictedRewriteOnceM withTrace t
     where
     withTrace t = do
       mby_t <- f t 
@@ -63,17 +63,13 @@ run term = do
           Just t'
           --  |> trace ("\n\nTRANSFORMED:\n" ++ ts ++ "\n\nTO:\n" ++ ts')
             |> return
-
-simpleSteps :: Env.Readable m => [Term -> m (Maybe Term)]
-simpleSteps = Simp.stepsM ++ Float.steps
-
+            
 simpleAndFloat :: Env.Readable m => Term -> m Term
-simpleAndFloat = Fold.rewriteStepsM 
-  $ simpleSteps ++ [Fold.rewriteOnceM floatConstructors]
-
-checkedSimple :: Env.Readable m => Term -> m Term
-checkedSimple = Fold.rewriteStepsM ({- map Typing.checkStep -} simpleSteps)
-
+simpleAndFloat term = do
+  term' <- Float.run term
+  mby_t <- Term.restrictedRewriteOnceM floatConstructors term'
+  maybe (return term') simpleAndFloat mby_t
+  
 varEqApply :: Env.Readable m => Term -> m (Maybe Term)
 varEqApply t@(Var {}) = Env.matchedWith t
 varEqApply _ = return Nothing
@@ -84,7 +80,7 @@ removeIdFix fix_t@(Fix _ (Bind _ fix_ty) _)
   , Indices.lift arg_ty == res_ty = do
     let ctx = Context.make fix_ty fix_ty
           $ \_ -> Lam arg_b (Var 0)
-    Fail.toMaybe (split checkedSimple fix_t ctx)
+    Fail.toMaybe (split Float.run fix_t ctx)
 removeIdFix _ = 
   return Nothing
 

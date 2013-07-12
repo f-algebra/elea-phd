@@ -100,10 +100,8 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
       replaced_enough = new_rec_call_count >= rec_call_count
 
   Fail.unless (replaced_enough || not inner_f_remained)
-    
-  Err.noneM (Typing.check (Fix fix_info new_fix_b fix_body)) 
   
-  done <- unflattenApp (Fix fix_info new_fix_b fix_body : arg_vars)
+  done <- unflattenApp (Fix fix_info' new_fix_b fix_body : arg_vars)
     |> simplify
     
   done_s <- showM done
@@ -116,53 +114,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     $ return done
   where 
   fused_t = Context.apply outer_ctx inner_fix
-  
-  {-
-  This code doesn't play well with fixFact.
-  
-  -- Whether the given index is called as a function using arguments
-  -- that contain variables which are not free here. We cannot generalise
-  -- an inner function call unless all of the variables it is called with
-  -- are free, so we use this to recurse into the branches of the term
-  -- until they become free.
-  calledWithNonFreeArgs :: Term -> Env.AlsoTrack Index m Bool
-  calledWithNonFreeArgs term = do
-    inner_f <- ask
-    Fold.anyM (nonFreeArgs inner_f) term
-    where
-    nonFreeArgs :: Index -> Term -> Env.AlsoTrack Index m Bool
-    nonFreeArgs inner_f term@(flattenApp -> Var f : args) = do
-      inner_f_here <- ask
-      if inner_f_here /= f
-      then return False
-      else do
-        let idx_diff = inner_f_here - inner_f
-        return (any (< idx_diff) (Indices.free term))
-    nonFreeArgs _ _ = 
-      return False
-  
-  transformBranch :: Term -> Env.AlsoTrack Index m Term
-  transformBranch term = do
-    -- Collect every recursive call to the inner unrolled function
-    -- so that we can generalise them
-    fix_uses <- Env.collectTermsM isInnerCall term
-    
-    id 
-      . lift 
-      . Typing.generaliseMany 
-          mempty  -- (Set.toList fix_uses) 
-          (\ixs t -> trace ("\nGEN:" ++ show fix_uses ++ "\nWITHIN:\n" ++ show term ++ "\nGIVES:\n" ++ show t) $ transform (Set.fromList ixs) t) 
-      $ term
-    where
-    isInnerCall :: Term -> Env.AlsoTrack Index m Bool
-    isInnerCall term@(flattenApp -> Var f : args) = do
-      inner_f <- ask
-      return 
-         $ inner_f == f 
-        && length args == argumentCount inner_fix
-    isInnerCall _ = 
-      return False
-    -}
+  fix_info' = set normalForm False fix_info
     
   isInnerFixMatch :: Term -> Env.TrackIndices Index Bool
   isInnerFixMatch cse_t = asks (`Set.member` Indices.free cse_t)

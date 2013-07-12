@@ -26,7 +26,7 @@ import qualified Data.Map as Map
 
 {-# INLINEABLE run #-}
 run :: Env.Readable m => Term -> m Term
-run = Fold.rewriteStepsM (Simp.stepsM ++ steps)
+run = Term.restrictedRewriteStepsM (Simp.stepsM ++ steps)
 
 steps :: Env.Readable m => [Term -> m (Maybe Term)]
 steps = id
@@ -79,12 +79,14 @@ absurdity term
     return (Just (Absurd ty))
   where
   isAbsurd (App (Absurd _) _) = True
-  isAbsurd (Case (Absurd _) _ _) = True
-  isAbsurd (Fix (FixInfo inf) _ _) = 
+  isAbsurd (Case (Absurd _) _ _) = True 
+  {-
+  isAbsurd (Fix (FixInfo inf _) _ _) = 
     any absurdMatch inf
     where
     absurdMatch (leftmost -> Inj inj_n _, inj_n') = inj_n /= inj_n'
     absurdMatch _ = False
+  -}
   isAbsurd _ = False
     
 absurdity _ =

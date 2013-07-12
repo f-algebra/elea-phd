@@ -9,7 +9,9 @@ module Elea.Terms
   generalise, generaliseMany, 
   buildCaseOfM, buildCaseOf,
   revertMatchesWhen, descendWhileM,
-  isProductive,
+  isProductive, normalised,
+  restrictedRewriteStepsM, restrictedRewriteM, 
+  restrictedRewriteOnceM, restrictedTransformM,
   module Elea.Term,
 )
 where
@@ -278,4 +280,102 @@ isProductive (Fix _ _ fix_t) = fix_t
       |> Set.member fix_f
       |> not
       |> return
+      
+-- | Sets all the internal normal form flags to true.
+normalised :: Term -> Term
+normalised = runIdentity . restrictedTransformM (return . normal)
+  where
+  normal (Fix (FixInfo ms _) b t) = Fix (FixInfo ms True) b t
+  normal other = other
+
+-- | Restricts where transformations will be applied within a 'Term'.
+-- Only use for semantic preserving transformations.
+newtype RestrictedTerm = Restrict { derestrict :: Term }
+  deriving ( Eq, Ord, Show )
   
+restrictRewrite :: Monad m => 
+  (Term -> m (Maybe Term)) -> RestrictedTerm -> m (Maybe RestrictedTerm) 
+restrictRewrite f = liftM (fmap Restrict) . f . derestrict
+
+derestrictRewrite :: Monad m =>
+  (RestrictedTerm -> m (Maybe RestrictedTerm)) -> Term -> m (Maybe Term)
+derestrictRewrite f = liftM (fmap derestrict) . f . Restrict
+
+restrictTransform :: Monad m => 
+  (Term -> m Term) -> RestrictedTerm -> m RestrictedTerm
+restrictTransform f = liftM Restrict . f . derestrict
+
+derestrictTransform :: Monad m =>
+  (RestrictedTerm -> m RestrictedTerm) -> Term -> m Term
+derestrictTransform f = liftM derestrict . f . Restrict
+  
+restrictedTransformM :: Env.Writable m =>
+  (Term -> m Term) -> Term -> m Term
+restrictedTransformM = 
+  derestrictTransform . Fold.transformM . restrictTransform
+
+restrictedRewriteM :: Env.Writable m => 
+  (Term -> m (Maybe Term)) -> Term -> m Term
+restrictedRewriteM = 
+  derestrictTransform . Fold.rewriteM . restrictRewrite
+  
+restrictedRewriteStepsM :: Env.Writable m =>
+  [Term -> m (Maybe Term)] -> Term -> m Term
+restrictedRewriteStepsM = 
+  derestrictTransform . Fold.rewriteStepsM . map restrictRewrite 
+  
+restrictedRewriteOnceM :: Env.Writable m =>
+  (Term -> m (Maybe Term)) -> Term -> m (Maybe Term)
+restrictedRewriteOnceM =
+  derestrictRewrite . Fold.rewriteOnceM . restrictRewrite
+  
+type instance Fold.Base RestrictedTerm = Term'
+  
+instance Fold.Foldable RestrictedTerm where
+  project = fmap Restrict . Fold.project . derestrict
+  
+instance Fold.Unfoldable RestrictedTerm where
+  embed = Restrict . Fold.embed . fmap derestrict
+  
+instance Fold.FoldableM RestrictedTerm where
+  type FoldM RestrictedTerm m = Env.Writable m
+  distM = Fold.distM . fmap (second derestrict) 
+  
+instance Fold.Transformable RestrictedTerm where
+  transformM f = id
+    . liftM Restrict 
+    . Fold.selectiveTransformM (return . select) f'
+    . derestrict
+    where
+    f' = liftM derestrict . f . Restrict
+    
+    ignoreBind :: Bind -> Bind' (Bool, Term)
+    ignoreBind = fmap (\t -> (False, t)) . projectBind
+    
+    ignoreInfo :: FixInfo -> FixInfo' (Bool, Term)
+    ignoreInfo = fmap (\t -> (False, t)) . projectFixInfo
+    
+    ignoreAll :: Term -> (Bool, Term' (Bool, Term))
+    ignoreAll term = 
+      (False, fmap (\t -> (False, t)) (Fold.project term))
+    
+    select :: Term -> (Bool, Term' (Bool, Term))
+    -- I haven't implemented any type transformations yet.
+    select term 
+      | isPi term || isInj term || isInd term = ignoreAll term
+    select (Lam b t) = (True, Lam' (ignoreBind b) (True, t))
+    select fix@(Fix inf b t) 
+      | get normalForm inf = ignoreAll fix
+      | otherwise = 
+          (True, Fix' (ignoreInfo inf) (ignoreBind b) (True, t))
+    select (Case cse_t ind_ty alts) = 
+      (True, Case' (True, cse_t) (False, ind_ty) (map selectAlt alts))
+      where
+      selectAlt :: Alt -> Alt' (Bool, Term)
+      selectAlt (Alt bs t) = 
+        Alt' (map ignoreBind bs) (True, t)
+    select term =
+      -- selectAll is monadic, so we use runIdentity to strip the monad off.
+      runIdentity (Fold.selectAll term)
+
+
