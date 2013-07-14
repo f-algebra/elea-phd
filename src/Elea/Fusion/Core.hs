@@ -102,7 +102,8 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   Fail.unless (replaced_enough || not inner_f_remained)
   
   done <- unflattenApp (Fix fix_info' new_fix_b fix_body : arg_vars)
-    |> simplify
+   -- |> simplify
+    |> Float.run
     
   done_s <- showM done
   let s4 = s1 ++ "\nDONE:\n" ++ done_s
@@ -159,7 +160,7 @@ split transform (Fix fix_info fix_b fix_t) (Indices.lift -> outer_ctx) =
   unfloated <- id 
     . Env.bind fix_b 
     . transform 
-  --  . trace s1 
+   -- . trace s1 
     . Indices.replaceAt 0 (Context.apply outer_ctx (Var 0))
     $ fix_t
   unf_s <- Env.bind fix_b $ showM unfloated

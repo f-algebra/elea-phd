@@ -24,6 +24,7 @@ module Elea.Prelude
   module Data.Maybe,
   module Data.Either,
   module Data.Monoid,
+  module Data.Semigroup,
   module Data.Map,
   module Data.Sequence,
   module Data.Set,
@@ -54,6 +55,7 @@ module Elea.Prelude
   isLeft, isRight, modifyM', modifyM, removeAt,
   insertAt, convertEnum, indent, indentBy, debugNth,
   arrowSum, supremum, (|>), ($>),
+  Maximum (..), Minimum (..), sconcatMap,
 )
 where
 
@@ -91,7 +93,8 @@ import Data.Label ( mkLabels )
 import Data.Label.Maybe ( (:~>) )
 import Data.Maybe
 import Data.Either ( lefts, rights, partitionEithers )
-import Data.Monoid hiding ( Sum, All )
+import Data.Monoid hiding ( Sum, All, (<>) )
+import Data.Semigroup ( Semigroup (..) )
 import Data.Map ( Map )
 import Data.Sequence ( Seq )
 import Data.Set ( Set )
@@ -121,6 +124,8 @@ import qualified Prelude as Pre
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
 import qualified Data.Label.Maybe as Maybe
+import qualified Data.List.NonEmpty as NonEmpty
+import qualified Data.Nat as Nat
 
 infixr 6 ++
 
@@ -141,6 +146,9 @@ map = fmap
 
 concat :: Monoid m => [m] -> m
 concat = mconcat
+
+sconcatMap :: (Semigroup m, Foldable f) => (a -> m) -> f a -> m
+sconcatMap f = sconcat . map f . NonEmpty.fromList . toList
   
 instance Monad m => Monoid (Kleisli m a a) where
   mempty = arr id
@@ -333,3 +341,24 @@ supremum set
   | Set.null set = toEnum 0
   | otherwise = succ . head . Set.toDescList $ set
 
+newtype Minimum a = Minimum { getMinimum :: a }
+  deriving ( Eq, Ord, Enum, Num )
+
+instance Ord a => Semigroup (Minimum a) where
+  x <> y | x <= y = x
+         | otherwise = y
+ 
+newtype Maximum a = Maximum { getMaximum :: a }
+  deriving ( Eq, Ord, Enum, Num )
+
+instance Ord a => Semigroup (Maximum a) where
+  x <> y | x >= y = x
+         | otherwise = y
+         
+instance Monoid (Maximum Nat) where
+  mappend = (<>)
+  mempty = toEnum 0
+  
+instance Monoid (Minimum CoNat) where
+  mappend = (<>)
+  mempty = Minimum Nat.omega

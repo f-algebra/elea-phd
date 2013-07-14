@@ -1188,7 +1188,7 @@ happyError :: [Token] -> a
 happyError tokens = error $ "Parse error\n" ++ (show tokens)
 
 isNameChar :: Char -> Bool
-isNameChar c = isAlphaNum c || c `elem` "'_"
+isNameChar c = isAlphaNum c || c `elem` "'_[]"
   
 lexer :: String -> [Token]
 lexer [] = []
@@ -1206,10 +1206,11 @@ lexer ('*':cs) = TokenSet : lexer cs
 lexer (':':cs) = TokenTypeOf : lexer cs
 lexer ('(':cs) = TokenOP : lexer cs
 lexer (')':cs) = TokenCP : lexer cs
-lexer ('[':cs) = TokenOS : lexer cs
-lexer (']':cs) = TokenCS : lexer cs
 lexer ('|':cs) = TokenBar : lexer cs
 lexer ('=':cs) = TokenEq : lexer cs
+lexer ('{':cs) = TokenName name : lexer rest
+  where
+  (name, '}':rest) = span (not . (== '}')) cs
 lexer (c:cs) 
   | isSpace c = lexer cs
   | isNameChar c = lexVar (c : cs)

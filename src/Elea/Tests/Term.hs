@@ -52,10 +52,22 @@ tests = Test.label "Terms"
       test14 = Test.assert (isProductive ins_fix)
       test15 = Test.assertNot (isProductive srtd_fix)
       test16 = Test.assertNot (isProductive eq_fix)
+    
+  nil <- Test.term "Nil nat"
+  one_nil <- Test.term "Cons nat 2 (Nil nat)"
+  tree <- Test.term "Node nat 1 (Node nat 2 (Leaf nat) (Leaf nat)) (Leaf nat)"
+  
+  let test17 = Test.assertEq 0 (maximumInjDepth take_fix)
+      test18 = Test.assertEq 0 (minimumInjDepth take_fix)
+      test19 = Test.assertEq 0 (maximumInjDepth nil)
+      test20 = Test.assertEq 1 (minimumInjDepth one_nil)
+      test21 = Test.assertEq 1 (minimumInjDepth tree)
+      test22 = Test.assertEq 2 (maximumInjDepth tree)
       
-  return 
+  return
     $ Test.list
     [ test0, test1, test2, test3, test4
     , test5, test6, test7, test8, test9 
-    , test10, test11, test12, test13, test14, test15, test16 ]
+    , test10, test11, test12, test13, test14, test15, test16
+    , test17, test18, test19, test20, test21, test22 ]
   

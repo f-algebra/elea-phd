@@ -10,6 +10,7 @@ module Elea.Terms
   buildCaseOfM, buildCaseOf,
   revertMatchesWhen, descendWhileM,
   isProductive, normalised,
+  minimumInjDepth, maximumInjDepth, injDepth,
   restrictedRewriteStepsM, restrictedRewriteM, 
   restrictedRewriteOnceM, restrictedTransformM,
   module Elea.Term,
@@ -287,6 +288,23 @@ normalised = runIdentity . restrictedTransformM (return . normal)
   where
   normal (Fix (FixInfo ms _) b t) = Fix (FixInfo ms True) b t
   normal other = other
+
+injDepth :: (Enum w, Semigroup w) => Term -> w
+injDepth (flattenApp -> Inj inj_n ind_ty : args) 
+  | not (isBaseCase ind_ty inj_n) = 
+    succ (sconcatMap injDepth rec_args)
+  where
+  rec_args = Set.map (args !!) (recursiveInjArgs ind_ty inj_n)
+injDepth _ = toEnum 0
+  
+-- | Returns how unrolled a given HNF term is down the shortest recursive
+-- path. This is a terrible explanation...
+minimumInjDepth :: Term -> Int
+minimumInjDepth = getMinimum . injDepth
+
+maximumInjDepth :: Term -> Int
+maximumInjDepth = getMaximum . injDepth
+
 
 -- | Restricts where transformations will be applied within a 'Term'.
 -- Only use for semantic preserving transformations.
