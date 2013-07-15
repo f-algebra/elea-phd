@@ -79,7 +79,7 @@ absurdity term
     return (Just (Absurd ty))
   where
   isAbsurd (App (Absurd _) _) = True
-  isAbsurd (Case (Absurd _) _ _) = True
+  isAbsurd (Case (Absurd _) _ _) = True 
   {-
   isAbsurd (Fix (FixInfo inf _) _ _) = 
     any absurdMatch inf
@@ -103,15 +103,13 @@ unfoldFixInj term@(flattenApp -> fix@(Fix _ _ rhs) : args@(last -> arg))
   , isInj (leftmost arg) = do
     is_pat <- isPattern arg
     return $ do
-    --  guard (not ({- is_pat -} True && matchesRecCall rhs))
-      guard (is_base || not is_pat || not_looping)
+      guard (Term.isFinite arg || not is_pat || not_looping)
       {- trace ("UNFINJFIX: " ++ show term) $ -}
       return (unflattenApp (subst fix rhs : args))
   where
   Inj inj_n ind_ty = leftmost arg
-  is_base = Term.isBaseCase ind_ty inj_n
   not_looping = Term.minimumInjDepth arg > maximumRecDepth rhs
-    
+     
   maximumRecDepth :: Term -> Int
   maximumRecDepth = id
     . fromEnum
@@ -135,8 +133,20 @@ unfoldFixInj term@(flattenApp -> fix@(Fix _ _ rhs) : args@(last -> arg))
     Map.elems ms
       |> map fst
       |> elem t
-      |> return 
-
+      |> return
+      
+  matchesRecCall :: Term -> Bool
+  matchesRecCall = Env.trackIndices 0 . Fold.anyM matchingCall
+    where
+    matchingCall :: Term -> Env.TrackIndices Index Bool
+    matchingCall (flattenApp -> Var f_var : f_args@(last -> f_arg)) 
+      | length f_args == length args
+      , isInj (leftmost f_arg) = do
+        fix_var <- ask
+        return 
+          $ f_var == fix_var
+          && Unifier.exists arg f_arg
+    matchingCall _ = return False
 unfoldFixInj _ =
   return Nothing
   
@@ -377,8 +387,7 @@ freeCaseFix fix_t@(Fix _ _ fix_body) = do
   freeCases :: Term -> Env.TrackIndices Index (Maybe Term)
   freeCases cse@(Case cse_of _ _) = do
     idx_offset <- ask
-    if isVar cse_of 
-      || any (< idx_offset) (Indices.free cse_of) 
+    if any (< idx_offset) (Indices.free cse_of) 
     then return Nothing
     else return 
        . Just
