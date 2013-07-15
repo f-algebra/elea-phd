@@ -80,6 +80,8 @@ absurdity term
   where
   isAbsurd (App (Absurd _) _) = True
   isAbsurd (Case (Absurd _) _ _) = True
+  isAbsurd (Case _ _ alts) = 
+    all (isAbsurd . get altInner) alts
   {-
   isAbsurd (Fix (FixInfo inf _) _ _) = 
     any absurdMatch inf
@@ -104,12 +106,11 @@ unfoldFixInj term@(flattenApp -> fix@(Fix _ _ rhs) : args@(last -> arg))
     is_pat <- isPattern arg
     return $ do
     --  guard (not ({- is_pat -} True && matchesRecCall rhs))
-      guard (is_base || not is_pat || not_looping)
-      {- trace ("UNFINJFIX: " ++ show term) $ -}
+      guard (Term.isFinite arg || not is_pat || not_looping)
+     -- trace ("UNFINJFIX: " ++ show term) $
       return (unflattenApp (subst fix rhs : args))
   where
   Inj inj_n ind_ty = leftmost arg
-  is_base = Term.isBaseCase ind_ty inj_n
   not_looping = Term.minimumInjDepth arg > maximumRecDepth rhs
     
   maximumRecDepth :: Term -> Int
@@ -377,10 +378,9 @@ freeCaseFix fix_t@(Fix _ _ fix_body) = do
   freeCases :: Term -> Env.TrackIndices Index (Maybe Term)
   freeCases cse@(Case cse_of _ _) = do
     idx_offset <- ask
-    if isVar cse_of 
-      || any (< idx_offset) (Indices.free cse_of) 
+    if any (< idx_offset) (Indices.free cse_of) 
     then return Nothing
-    else return 
+    else return   
        . Just
        . Indices.lowerMany (fromEnum idx_offset) 
        $ cse
