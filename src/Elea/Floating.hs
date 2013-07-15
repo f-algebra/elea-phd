@@ -80,6 +80,8 @@ absurdity term
   where
   isAbsurd (App (Absurd _) _) = True
   isAbsurd (Case (Absurd _) _ _) = True 
+  isAbsurd (Case _ _ alts) = 
+    all (isAbsurd . get altInner) alts
   {-
   isAbsurd (Fix (FixInfo inf _) _ _) = 
     any absurdMatch inf
@@ -103,8 +105,9 @@ unfoldFixInj term@(flattenApp -> fix@(Fix _ _ rhs) : args@(last -> arg))
   , isInj (leftmost arg) = do
     is_pat <- isPattern arg
     return $ do
+    --  guard (not ({- is_pat -} True && matchesRecCall rhs))
       guard (Term.isFinite arg || not is_pat || not_looping)
-      {- trace ("UNFINJFIX: " ++ show term) $ -}
+     -- trace ("UNFINJFIX: " ++ show term) $
       return (unflattenApp (subst fix rhs : args))
   where
   Inj inj_n ind_ty = leftmost arg
@@ -389,7 +392,7 @@ freeCaseFix fix_t@(Fix _ _ fix_body) = do
     idx_offset <- ask
     if any (< idx_offset) (Indices.free cse_of) 
     then return Nothing
-    else return 
+    else return   
        . Just
        . Indices.lowerMany (fromEnum idx_offset) 
        $ cse
