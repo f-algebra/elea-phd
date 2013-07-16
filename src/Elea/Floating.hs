@@ -103,10 +103,31 @@ unfoldFixInj term@(flattenApp -> fix@(Fix _ _ rhs) : args@(last -> arg))
   , isInj (leftmost arg) = do
     is_pat <- isPattern arg
     return $ do
-      guard (not (is_pat && matchesRecCall rhs))
+     -- guard (not (is_pat && matchesRecCall rhs))
+      guard (Term.isFinite arg || not is_pat || not_looping)
       {- trace ("UNFINJFIX: " ++ show term) $ -}
       return (unflattenApp (subst fix rhs : args))
   where
+  Inj inj_n ind_ty = leftmost arg
+  not_looping = Term.minimumInjDepth arg > maximumRecDepth rhs
+  
+  maximumRecDepth :: Term -> Int
+  maximumRecDepth = id
+    . fromEnum
+    . getMaximum 
+    . Env.trackIndices 0 
+    . Fold.foldM recDepth
+    where
+    recDepth :: Term -> Env.TrackIndices Index (Maximum Nat)
+    recDepth (flattenApp -> Var f_var : f_args@(last -> f_arg)) 
+      | length f_args == length args
+      , isInj (leftmost f_arg) = do
+        fix_var <- ask
+        if f_var == fix_var
+        then return (Term.injDepth f_arg)
+        else return mempty
+    recDepth _ = return mempty
+  
   isPattern :: Env.Readable m => Term -> m Bool
   isPattern t = do
     ms <- Env.matches
@@ -129,8 +150,8 @@ unfoldFixInj term@(flattenApp -> fix@(Fix _ _ rhs) : args@(last -> arg))
     matchingCall _ = return False
 unfoldFixInj _ =
   return Nothing
-  
-  
+
+
 -- | Unfolds a 'Fix' which is being pattern matched upon if that pattern
 -- match only uses a finite amount of information from the 'Fix'.
 -- TODO: Extend this to arbitrary depth of unrolling, currently
