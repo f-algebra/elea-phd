@@ -31,7 +31,8 @@ import qualified Data.Map as Map
 
 fuse :: forall m . (Env.Readable m, Fail.Monad m) => 
   (Term -> m Term) -> (Index -> Term -> m Term) -> Context -> Term -> m Term
-fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
+fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = 
+    Env.forgetMatches $ do
   ctx_s <- showM outer_ctx
   t_s <- showM inner_fix
   let s1 = "FUSING:\n" ++ ctx_s ++ "\nWITH\n" ++ t_s
@@ -101,15 +102,12 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   Fail.unless (replaced_enough || not inner_f_remained)
   
   done <- unflattenApp (Fix fix_info' new_fix_b fix_body : arg_vars)
-   -- |> simplify
-    |> Float.run
+    |> simplify
     
   done_s <- showM done
   let s4 = s1 ++ "\nDONE:\n" ++ done_s
   
-  -- This is only really useful for fixFact, and it stops us adding the 
-  -- extract fact folded in, so I've taken it out.
-  -- Fail.when (leftmost done == inner_fix)
+  Fail.when (leftmost done == inner_fix)
   
   id 
     . trace s4 
@@ -150,33 +148,18 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
         . liftHere
         . Context.apply (Indices.lift outer_ctx) 
         $ Var 0   
-        
-  cleanupAbsurdities :: Term -> Term
-  cleanupAbsurdities = Fold.rewrite cleanup
-    where
-    cleanup :: Term -> Maybe Term
-    cleanup (Case _ _ alts) = do
-      (abs, not_abs) <- alts 
-        |> mapM loweredAltTerm
-        $> partition isAbsurd
-      guard (length not_abs == 1)
-      return (head not_abs)
-      where
-      loweredAltTerm :: Alt -> Maybe Term
-      loweredAltTerm (Alt bs alt_t) = 
-        Indices.tryLowerMany (length bs) alt_t
-    cleanup _ = Nothing
 
 split :: forall m . (Fail.Monad m, Env.Readable m) => 
   (Term -> m Term) -> Term -> Context -> m Term
-split transform (Fix fix_info fix_b fix_t) (Indices.lift -> outer_ctx) = do
+split transform (Fix fix_info fix_b fix_t) (Indices.lift -> outer_ctx) =
+    Env.forgetMatches $ do
   full_t_s <- showM (Fix fix_info fix_b fix_t)
   ctx_s <- Env.bind fix_b $ showM outer_ctx
   let s1 = "\n\nSPITTING\n" ++ ctx_s ++ "\n\nFROM\n\n" ++ full_t_s
   unfloated <- id 
     . Env.bind fix_b 
     . transform 
-   -- . trace s1 
+  --  . trace s1 
     . Indices.replaceAt 0 (Context.apply outer_ctx (Var 0))
     $ fix_t
   unf_s <- Env.bind fix_b $ showM unfloated

@@ -96,18 +96,9 @@ floatConstructors term@(Fix _ fix_b fix_t)
   fix_ty = get boundType fix_b
   (arg_bs, return_ty) = flattenPi fix_ty
   
-  absurd_ctx = id
-    . Context.make fix_ty fix_ty
-    . const
-    . unflattenLam arg_bs
-    $ Absurd return_ty
-    
   floatable :: Bool
-  floatable = cons == 1 
-    || (cons == 0 && suggestions == Set.singleton absurd_ctx) 
+  floatable = Set.size (returnCons fix_t) == 1
     where
-    cons = Set.size (returnCons fix_t)
-    
     returnCons :: Term -> Set Nat
     returnCons (Lam _ t) = returnCons t
     returnCons (Case _ _ alts) = 
@@ -137,8 +128,10 @@ floatConstructors term@(Fix _ fix_b fix_t)
       suggestAlt (Alt bs alt_t) =
         local (liftMany (length bs)) (suggest alt_t)
         
-    suggest (Absurd _) = 
-      return (Set.singleton absurd_ctx)
+    suggest (Absurd _) = const (Absurd fix_ty)
+      |> Context.make fix_ty fix_ty
+      |> Set.singleton
+      |> return
       
     suggest inj_t@(flattenApp -> (Inj inj_n ind_ty : args)) = do
       free_limit <- ask
