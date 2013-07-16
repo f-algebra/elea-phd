@@ -32,7 +32,7 @@ import qualified Data.Map as Map
 fuse :: forall m . (Env.Readable m, Fail.Monad m) => 
   (Term -> m Term) -> (Index -> Term -> m Term) -> Context -> Term -> m Term
 fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = 
-    Env.forgetMatches $ do
+    Env.forgetFacts $ do
   ctx_s <- showM outer_ctx
   t_s <- showM inner_fix
   let s1 = "FUSING:\n" ++ ctx_s ++ "\nWITH\n" ++ t_s
@@ -102,7 +102,12 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   Fail.unless (replaced_enough || not inner_f_remained)
   
   done <- unflattenApp (Fix fix_info' new_fix_b fix_body : arg_vars)
-    |> simplify
+   -- You have to do this bit first, otherwise unfoldFixInj doesn't
+   -- treat the patterns as matched patterns (since they now feature
+   -- lambda bound variables).
+    |> Float.removeConstArgs
+   -- |> simplify
+    |> Float.run
     
   done_s <- showM done
   let s4 = s1 ++ "\nDONE:\n" ++ done_s
@@ -151,8 +156,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
 
 split :: forall m . (Fail.Monad m, Env.Readable m) => 
   (Term -> m Term) -> Term -> Context -> m Term
-split transform (Fix fix_info fix_b fix_t) (Indices.lift -> outer_ctx) =
-    Env.forgetMatches $ do
+split transform (Fix fix_info fix_b fix_t) (Indices.lift -> outer_ctx) = do
   full_t_s <- showM (Fix fix_info fix_b fix_t)
   ctx_s <- Env.bind fix_b $ showM outer_ctx
   let s1 = "\n\nSPITTING\n" ++ ctx_s ++ "\n\nFROM\n\n" ++ full_t_s

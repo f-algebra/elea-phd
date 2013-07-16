@@ -23,7 +23,8 @@ import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Error as Err
 import qualified Elea.Monad.Failure as Fail
 import qualified Control.Monad.State as State
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 
 {-# SPECIALISE 
   Fusion.run :: Term -> Elea Term #-} 
@@ -65,29 +66,32 @@ instance Monad Elea where
       Error e -> Error e
       Value x -> runElea (f x) r
         
-instance MonadReader ([Bind], Matches) Elea where
-  ask = Elea $ \(ER bs mts) -> (Value (bs, mts))
-  local f el = Elea $ \(ER bs mts) ->
-    let (bs', mts') = f (bs, mts) in
-    runElea el (ER bs' mts')
+instance MonadReader EleaRead Elea where
+  ask = Elea Value
+  local f el = Elea (runElea el . f)
 
 instance Env.Writable Elea where
-  bindAt at b = local (mapBinds *** mapMatches)
+  bindAt at b = local mapAll
     where
+    mapAll = id
+      . modify readMatches mapMatches
+      . modify readBinds mapBinds
+      
     mapBinds = insertAt (convertEnum at) (liftAt at b) . map (liftAt at)
     mapMatches = Map.mapKeysMonotonic (liftAt at) . fmap (liftAt at *** succ)
-  
-  equals t k = 
-    local (second (Map.insert t (k, 0)))
     
-  forgetMatches = 
-    local (second (Map.filterWithKey (\k _ -> isVar k)))
-   -- local (second (const mempty))
+  equals t k = 
+    local (modify readMatches mapMatches)
+    where
+    mapMatches = Map.insert t (k, 0)
+    
+  filterMatches p = 
+    local (modify readMatches (Map.filterWithKey (\k _ -> p k)))
     
 instance Env.Readable Elea where
-  bindings = asks fst
-  matches = asks snd
-
+  bindings = asks (get readBinds)
+  matches = asks (get readMatches)
+  
   boundAt at = do
     bs <- Env.bindings
     Err.when (fromEnum at >= length bs)

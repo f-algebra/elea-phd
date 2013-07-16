@@ -1033,7 +1033,7 @@ instance Monad m => Env.Writable (ReaderT Scope m) where
       | otherwise = id
       
   equals _ _ = id
-  forgetMatches = id
+  filterMatches _ = id
 
 instance Err.Monad m => Env.Readable (ReaderT Scope m) where
   bindings = asks (get bindStack)
@@ -1208,7 +1208,7 @@ lexer ('(':cs) = TokenOP : lexer cs
 lexer (')':cs) = TokenCP : lexer cs
 lexer ('|':cs) = TokenBar : lexer cs
 lexer ('=':cs) = TokenEq : lexer cs
-lexer ('{':cs) = TokenName name : lexer rest
+lexer ('{':cs) = TokenName ("{" ++ name ++ "}") : lexer rest
   where
   (name, '}':rest) = span (not . (== '}')) cs
 lexer (c:cs) 

@@ -3,7 +3,8 @@
 module Elea.Floating
 (
   run, steps, 
-  commuteMatchesWhen
+  commuteMatchesWhen,
+  removeConstArgs
 )
 where
 
@@ -27,6 +28,9 @@ import qualified Data.Map as Map
 {-# INLINEABLE run #-}
 run :: Env.Readable m => Term -> m Term
 run = Term.restrictedRewriteStepsM (Simp.stepsM ++ steps)
+
+removeConstArgs :: Term -> Term
+removeConstArgs = Simp.run . Term.restrictedRewrite constArg
 
 steps :: Env.Readable m => [Term -> m (Maybe Term)]
 steps = id
@@ -101,12 +105,12 @@ unfoldFixInj :: Env.Readable m => Term -> m (Maybe Term)
 unfoldFixInj term@(flattenApp -> fix@(Fix _ _ rhs) : args@(last -> arg))
   | not (null args)
   , isInj (leftmost arg) = do
-    is_pat <- isPattern arg
+    is_pat <- Env.isMatchedPattern arg
     return $ do
      -- guard (not (is_pat && matchesRecCall rhs))
       guard (Term.isFinite arg || not is_pat || not_looping)
-      {- trace ("UNFINJFIX: " ++ show term) $ -}
       return (unflattenApp (subst fix rhs : args))
+     --   |> trace (show mss ++ " :: " ++ show bss ++ " - UNFINJFIX: " ++ ts)
   where
   Inj inj_n ind_ty = leftmost arg
   not_looping = Term.minimumInjDepth arg > maximumRecDepth rhs

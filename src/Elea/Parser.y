@@ -154,7 +154,7 @@ instance Monad m => Env.Writable (ReaderT Scope m) where
       | otherwise = id
       
   equals _ _ = id
-  forgetMatches = id
+  filterMatches _ = id
 
 instance Err.Monad m => Env.Readable (ReaderT Scope m) where
   bindings = asks (get bindStack)

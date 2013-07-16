@@ -13,6 +13,7 @@ module Elea.Terms
   minimumInjDepth, maximumInjDepth, injDepth,
   restrictedRewriteStepsM, restrictedRewriteM, 
   restrictedRewriteOnceM, restrictedTransformM,
+  restrictedRewrite,
   module Elea.Term,
 )
 where
@@ -346,6 +347,9 @@ restrictedRewriteOnceM :: Env.Writable m =>
   (Term -> m (Maybe Term)) -> Term -> m (Maybe Term)
 restrictedRewriteOnceM =
   derestrictRewrite . Fold.rewriteOnceM . restrictRewrite
+  
+restrictedRewrite :: (Term -> Maybe Term) -> Term -> Term
+restrictedRewrite f = runIdentity . restrictedRewriteM (return . f)
   
 type instance Fold.Base RestrictedTerm = Term'
   
