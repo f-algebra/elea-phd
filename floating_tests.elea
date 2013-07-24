@@ -156,7 +156,34 @@ let t14' = fun (a: *) (t: tree a) (m: nat) (y: nat) (n: nat) ->
       | Node x t1 t2 -> Suc (height t1 (height t2 y))
       end) t) y
 
+let t15 = fun (n: nat) (m: nat) ->
+  fix (f: pi (list nat) -> nat) (xs: list nat) ->
+  match xs with
+  | Nil -> add n m
+  | Cons y ys -> 
+    match ys with
+    | Nil -> add n m
+    | Cons z zs ->
+      match and (leq_nat y z) (leq_nat y n) with
+      | True -> _|_ nat
+      | False -> f ys 
+      end
+    end
+  end 
+let t15' = fun (n: nat) (m: nat) (list nat) -> add n m
 
+let t16 = fix (f: pi nat nat -> bool) (x: nat) (y: nat) ->
+  match x with
+  | 0 -> _|_ bool
+  | Suc x' -> 
+    match y with
+    | 0 -> _|_ bool
+    | Suc y' -> f x' y'
+    end
+  end
+let t16' = fun nat nat -> _|_ bool
+
+  
 /* Doesn't work for fiddly reasons */
 let t30 = 
   fix (app: pi (a:*) (xs:list a) (ys:list a) -> list a) ->

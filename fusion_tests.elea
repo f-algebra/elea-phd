@@ -94,17 +94,6 @@ let t17' = fun (a:*) ->
 let t18 = fun (n: nat) (m: nat) -> eq_nat (add n m) (add m n)
 let t18' = fun nat nat -> True
 
-let t19 = fix (f: pi nat nat -> bool) (x: nat) (y: nat) ->
-  match x with
-  | 0 -> _|_ bool
-  | Suc x' -> 
-    match y with
-    | 0 -> _|_ bool
-    | Suc y' -> f x' y'
-    end
-  end
-let t19' = fun nat nat -> _|_ bool
-
 let t50 = fun (t: tree nat) -> 
   sorted (flatten nat t)
 let t50' = fun (tree nat) -> False
@@ -120,30 +109,28 @@ let t51 = fun (n: nat) (as: list nat) (bs: list nat) ->
   end
 let t51' = fun nat (list nat) (list nat) -> False
 
-let t52 = fun (z:nat) (zs:list nat) (n: nat) ({flat t1}: list nat) ->
-  match sorted {flat t1} with
-  | True -> 
-      (fix ([app]: pi (list nat) -> bool) -> 
-        fun ({flat t1}: list nat) -> 
-          match {flat t1} with
-          | Nil -> sorted (Cons nat z zs)
-          | Cons x xs' -> 
-            match xs' with
-            | Nil -> 
-              match leq_nat x n with
-              | True -> sorted (Cons nat z zs)
-              | False -> False
-              end
-            | Cons x xs' -> 
-              match leq_nat n x with
-              | True -> [app] (Cons nat x xs')
-              | False -> False
-              end
-            end
-          end) {flat t1}
-  | False -> _|_ bool
+let t52 = fun (n: nat) (as: list nat) (bs: list nat) -> 
+  sorted (app nat as (Cons nat n bs))
+let t52' = fun nat (list nat) (list nat) -> False
+
+let last_leq = fun (n: nat) ->
+  fix (last: pi (list nat) -> bool) (xs: list nat) ->
+  match xs with
+  | Nil -> True
+  | Cons y ys -> 
+    match ys with
+    | Nil -> leq_nat n y
+    | Cons z zs -> 
+      match leq_nat y z with
+      | True -> last ys
+      | False -> _|_ bool
+      end
+    end
   end
-let t52' = _|_ bool
+  
+let t53 = fun (n: nat) (t: tree nat) -> 
+  last_leq n (flatten nat t)
+let t53' = fun nat (tree nat) -> False
 
 /* requires invention of list-fold functions */
 let t219 = fun (a: *) (t: tree a) -> length a (flatten a t)

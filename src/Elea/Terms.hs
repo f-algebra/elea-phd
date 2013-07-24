@@ -9,6 +9,7 @@ module Elea.Terms
   generalise, generaliseMany, 
   buildCaseOfM, buildCaseOf,
   revertMatchesWhen, descendWhileM,
+  mapBranchesM, foldBranchesM,
   isProductive, normalised,
   minimumInjDepth, maximumInjDepth, injDepth,
   restrictedRewriteStepsM, restrictedRewriteM, 
@@ -215,7 +216,7 @@ mapBranchesM = Fold.selectiveTransformM (return . branches)
   where
   branches :: Term -> (Bool, Term' (Bool, Term))
   branches (Case cse_t ind_ty alts) =
-    (False, Case' (True, cse_t) (False, ind_ty) (map descendAlt alts))
+    (False, Case' (False, cse_t) (False, ind_ty) (map descendAlt alts))
   branches (Lam (Bind lbl ty) t) = 
     (False, Lam' (Bind' lbl (False, ty)) (True, t))
   branches term = 
@@ -271,17 +272,20 @@ buildCaseOf cse_of ind_ty mkAlt =
 -- topmost down every pattern match branch.
 isProductive :: Term -> Bool
 isProductive (Fix _ _ fix_t) = fix_t
-  |> allBranchesM productive
+  |> descendWhileM into productive
+  |> runMaybeT
   |> Env.trackIndices 0
+  |> isJust
   where
-  productive :: Term -> Env.TrackIndices Index Bool
-  productive (leftmost -> Inj {}) = return True
-  productive other = do
+  into term = 
+    return (isCase term || isLam term)
+    
+  productive :: Term -> MaybeT (Env.TrackIndices Index) Term
+  productive term@(leftmost -> Inj {}) = return term
+  productive term = do
     fix_f <- ask
-    Indices.free other
-      |> Set.member fix_f
-      |> not
-      |> return
+    guard (not (fix_f `Set.member` Indices.free term))
+    return term
       
 -- | Sets all the internal normal form flags to true.
 normalised :: Term -> Term

@@ -48,7 +48,7 @@ run term = do
       ts' <- showM term'
       ts'' <- showM fused
       run fused
-      --  |> trace ("\n\nUNFUSED:\n\n" ++ ts' ++ "\n\nFINISHED\n\n" ++ ts'') 
+     --   |> trace ("\n\nUNFUSED:\n\n" ++ ts' ++ "\n\nFINISHED\n\n" ++ ts'') 
   where
   applyStep :: Term -> (Term -> m (Maybe Term)) -> m (Maybe Term)
   applyStep t f = Term.restrictedRewriteOnceM withTrace t
@@ -61,7 +61,7 @@ run term = do
           ts <- showM t
           ts' <- showM t'
           Just t'
-          --  |> trace ("\n\nTRANSFORMED:\n" ++ ts ++ "\n\nTO:\n" ++ ts')
+      --      |> trace ("\n\nTRANSFORMED:\n" ++ ts ++ "\n\nTO:\n" ++ ts')
             |> return
             
 simpleAndFloat :: Env.Readable m => Term -> m Term
@@ -438,16 +438,13 @@ extract inner_f term = do
     extraction :: [Index] -> Term -> Env.AlsoTrack Term m Term
     extraction gen_vars term = do
       outer_f <- ask
-      mby_t <- lift 
-        . Fail.toMaybe 
-        . concatEndosM (map (invent run . App outer_f . Var) gen_vars) 
+      lift (foldrM (extractContext outer_f) term gen_vars)
+      where
+      extractContext :: Term -> Index -> Term -> m Term
+      extractContext outer_f gen_var term = id
+        . Fail.withDefault term
+        . invent run (App outer_f (Var gen_var))
         $ term
-      case mby_t of 
-        Nothing -> return term
-        Just t -> do
-          t' <- lift (run t)
-          ts <- showM t'
-          return $ {- trace ("GOT: " ++ ts) -} t'
   {-
 fixfixSimplifier :: forall m . Env.Readable m =>  
   Int -> Index -> Term -> Env.AlsoTrack Term m Term

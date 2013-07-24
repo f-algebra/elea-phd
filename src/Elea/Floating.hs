@@ -50,6 +50,7 @@ steps = id
     , uselessFix
     , unfoldCaseFix
     , unfoldWithinFix 
+    , constantFix
     ]
     
 -- | Given a predicate P, if it finds a pattern match outside (outer)
@@ -179,7 +180,7 @@ unfoldCaseFix term@(Case cse_t@(leftmost -> fix@(Fix {})) ind_ty alts)
     isUsed = (`Set.member` Indices.free alt_t)
     args = Term.recursivePatternArgs ind_ty n
   
-unfoldCaseFix _ = mzero
+unfoldCaseFix _ = Nothing
 
 
 -- | Unfolds a 'Fix' within itself if it can be unrolled at
@@ -216,7 +217,47 @@ unfoldWithinFix fix@(Fix fix_i fix_b fix_t) =
   unfold other = 
     return other
   
-unfoldWithinFix _ = mzero
+unfoldWithinFix _ = Nothing
+
+
+-- | If a recursive function just returns the same value, regardless of its
+-- inputs, just reduce it to that value.
+constantFix :: Term -> Maybe Term
+constantFix (Fix _ fix_b fix_t)
+  | Just (toList -> [result]) <- mby_results = 
+    result
+      |> Indices.liftMany (length arg_bs)
+      |> unflattenLam arg_bs
+      |> Just
+  | Just (toList -> []) <- mby_results = 
+    Absurd result_ty
+      |> unflattenLam arg_bs
+      |> Just
+  where
+  (arg_bs, _) = flattenLam fix_t
+  (_, result_ty) = flattenPi (get boundType fix_b)
+  
+  mby_results = fix_t
+    |> Term.foldBranchesM resultTerm
+    |> runMaybeT
+    |> Env.trackIndices 0
+  
+  resultTerm :: Term -> MaybeT (Env.TrackIndices Index) (Set Term)
+  resultTerm (Absurd _) = return mempty
+  resultTerm term = do
+    fix_f <- ask
+    if leftmost term == Var fix_f
+    then return mempty
+    else do
+      let depth = fromEnum fix_f + 1
+      guard (Indices.lowerableBy depth term)
+      term
+        |> Indices.lowerMany depth
+        |> Set.singleton
+        |> return
+        
+constantFix _ = 
+  Nothing
 
  
 -- | Float lambdas out of the branches of a pattern match
@@ -241,7 +282,7 @@ lambdaCase (Case lhs ind_ty alts)
     . Indices.liftAt (toEnum (length bs + 1))
     $ rhs
     
-lambdaCase _ = mzero
+lambdaCase _ = Nothing
 
 
 -- | If we have a case statement on the left of term 'App'lication
@@ -254,7 +295,7 @@ funCase (App (Case lhs ind_ty alts) arg) = id
   appArg (Alt bs rhs) =
     Alt bs (App rhs (Indices.liftMany (length bs) arg))
     
-funCase _ = mzero
+funCase _ = Nothing
 
 
 -- | If we have a case statement on the right of term 'App'lication
@@ -267,7 +308,7 @@ argCase (App fun (Case lhs ind_ty alts)) = id
   appFun (Alt bs rhs) =
     Alt bs (App (Indices.liftMany (length bs) fun) rhs)
     
-argCase _ = mzero
+argCase _ = Nothing
 
 
 -- | If an argument to a 'Fix' never changes in any recursive call
@@ -357,7 +398,7 @@ constArg (Fix fix_info fix_b fix_rhs) = do
           unflattenApp 
         $ t : [ Var (toEnum i) | i <- reverse [1..n-1] ]    
       
-constArg _ = mzero
+constArg _ = Nothing
 
 -- | This isn't a step, but it's used in three steps below.
 -- It takes a case-of term and replaces the result term down each branch
@@ -401,7 +442,7 @@ freeCaseFix fix_t@(Fix _ _ fix_body) = do
   freeCases _ = 
     return Nothing
   
-freeCaseFix _ = mzero
+freeCaseFix _ = Nothing
 
 
 -- | This one is mostly to get rev-rev to go through. Removes a pattern
@@ -413,7 +454,7 @@ identityCase (Case cse_t ind_ty alts)
   isIdAlt :: Nat -> Alt -> Bool
   isIdAlt n (Alt bs alt_t) = 
     alt_t == altPattern (liftMany (length bs) ind_ty) n
-identityCase _ = mzero
+identityCase _ = Nothing
 
 
 -- | Dunno if this ever comes up but if we have a fix without any occurrence
@@ -422,7 +463,7 @@ uselessFix :: Term -> Maybe Term
 uselessFix (Fix _ _ fix_t)
   | not (0 `Set.member` Indices.free fix_t) = 
       Just (Indices.lower fix_t)
-uselessFix _ = mzero
+uselessFix _ = Nothing
 
 
 -- | Removes a pattern match if every branch returns the same value.
@@ -447,7 +488,7 @@ constantCase cse_t@(Case _ _ alts) = do
   loweredAltTerm (Alt bs alt_t) = do
     guard (Indices.lowerableBy (length bs) alt_t)
     return (Indices.lowerMany (length bs) alt_t)
-constantCase _ = mzero
+constantCase _ = Nothing
 
 
 -- | Pattern matches over variables should be above those over function
@@ -465,7 +506,7 @@ raiseVarCase outer_t@(Case outer_of _ outer_alts)
   varAlt (Alt bs (Case (Var idx) _ _)) = 
     fromEnum idx >= length bs
   varAlt _ = False
-raiseVarCase _ = mzero
+raiseVarCase _ = Nothing
 
 
 -- | If we are pattern matching on a pattern match then remove this 
@@ -473,5 +514,5 @@ raiseVarCase _ = mzero
 caseCase :: Term -> Maybe Term
 caseCase outer_cse@(Case inner_cse@(Case {}) _ _) =
   Just (applyCaseOf inner_cse outer_cse)
-caseCase _ = mzero
+caseCase _ = Nothing
 

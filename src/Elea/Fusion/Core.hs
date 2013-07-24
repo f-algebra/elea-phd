@@ -90,7 +90,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
  
   let fix_body = id
     --    . trace s3
-      --  . trace (s1 ++ s2 ++ s3)
+        . trace (s1 ++ s2 ++ s3)
         . unflattenLam arg_bs
         . substAt 0 inner_fix
         $ replaced_t
@@ -110,9 +110,9 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     |> Float.run
     
   done_s <- showM done
-  let s4 = s1 ++ "\nDONE:\n" ++ done_s
+  let s4 = {- s1 ++ -} "\nDONE:\n" ++ done_s
   
-  Fail.when (leftmost done == inner_fix)
+  -- Fail.when (leftmost done == inner_fix)
   
   id 
     . trace s4 
