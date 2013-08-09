@@ -82,21 +82,23 @@ let t16' = fun (a: *) (n: nat)
   (t1: tree a) (x: nat) (y: nat) -> 
     add n (add x y)
     
-let t17 = fun (a: *) (t: tree a) -> height a (mirror a t)
+let t17 = fun (a: *) (t: tree a) -> size a (mirror a t)
 let t17' = fun (a:*) ->
   fix (height: pi (tree a) -> nat) ->
     fun (t: tree a) ->
     match t with
-    | Leaf -> 0
+    | Leaf -> 1
     | Node x t1 t2 -> Suc (add (height t2) (height t1))
     end
 
 let t18 = fun (n: nat) (m: nat) -> eq_nat (add n m) (add m n)
 let t18' = fun nat nat -> True
 
-let t50 = fun (t: tree nat) -> 
-  sorted (flatten nat t)
-let t50' = fun (tree nat) -> False
+let t19 = fun (n: nat) (t: tree nat) -> add (size nat t) n
+let t19' = fun nat (tree nat) -> 0
+
+let t50 = fun (t: list nat) -> sorted (treesort t)
+let t50' = fun (list nat) -> True
 
 let t51 = fun (n: nat) (as: list nat) (bs: list nat) -> 
   match sorted as with
@@ -128,9 +130,12 @@ let last_leq = fun (n: nat) ->
     end
   end
   
-let t53 = fun (n: nat) (t: tree nat) -> 
-  last_leq n (flatten nat t)
-let t53' = fun nat (tree nat) -> False
+let t53 = fun (xs: list nat) (t: tree nat) -> 
+  app nat (flatten nat t) xs
+let t53' = fun (list nat) (tree nat) -> Nil nat
+
+let t54 = fun (n: nat) (t: tree nat) -> flatten nat (ins_tree n t)
+let t54' = fun nat (tree nat) -> Leaf nat
 
 /* requires invention of list-fold functions */
 let t219 = fun (a: *) (t: tree a) -> length a (flatten a t)

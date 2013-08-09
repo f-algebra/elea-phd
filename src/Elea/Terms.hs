@@ -2,7 +2,8 @@
 -- 'Term's, but which also require other modules based on Elea.Term.
 module Elea.Terms
 (
-  isBaseCase, isFinite, isRecursiveInd,
+  isBaseCase, isRecursiveInd,
+  isFinite, isFinitelyUsed,
   recursiveInjArgs, recursivePatternArgs,
   replace, contains, nthArgument,
   collectM, occurrences,
@@ -12,6 +13,7 @@ module Elea.Terms
   mapBranchesM, foldBranchesM,
   isProductive, normalised,
   minimumInjDepth, maximumInjDepth, injDepth,
+  fragmentedUnifierExists,
   restrictedRewriteStepsM, restrictedRewriteM, 
   restrictedRewriteOnceM, restrictedTransformM,
   restrictedRewrite,
@@ -27,8 +29,9 @@ import Elea.Show
 import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
 import qualified Elea.Typing as Typing
+import qualified Elea.Unifier as Unifier
 import qualified Elea.Foldable as Fold
-import qualified Elea.Monad.Error  as Err
+import qualified Elea.Monad.Error as Err
 import qualified Data.Set as Set
 import qualified Data.Monoid as Monoid
 import qualified Control.Monad.Trans as Trans
@@ -87,6 +90,18 @@ isFinite (flattenApp -> Inj n ind_ty : args) =
   where
   rec_args = Set.map (args !!) (recursiveInjArgs ind_ty n)
 isFinite _ = False
+
+-- | Given a set of branches from a pattern match, this checks whether
+-- the recursive match variables are actually used. 
+isFinitelyUsed :: Type -> [Alt] -> Bool
+isFinitelyUsed ind_ty = and . zipWith recArgsUsed [0..]
+  where
+  recArgsUsed :: Nat -> Alt -> Bool
+  recArgsUsed n (Alt _ alt_t) = 
+    not (any isUsed args)
+    where
+    isUsed = (`Set.member` Indices.free alt_t)
+    args = recursivePatternArgs ind_ty n
 
 nthArgument :: Int -> Type -> Type
 nthArgument n = id
@@ -286,7 +301,51 @@ isProductive (Fix _ _ fix_t) = fix_t
     fix_f <- ask
     guard (not (fix_f `Set.member` Indices.free term))
     return term
-      
+    
+fragmentedUnifierExists :: Term -> Term -> Bool
+fragmentedUnifierExists t1 t2 =
+  Env.trackIndices 0 (exists t1 t2)
+  where
+  orM, andM :: Monad m => [m Bool] -> m Bool
+  orM = liftM or . sequence
+  andM = liftM and . sequence
+  
+  existsB  = exists `on` get boundType
+  
+  exists :: Term -> Term -> Env.TrackIndices Index Bool
+  -- This first bit is where it differs from 'Unifier.exists'.
+  exists t1@(flattenApp -> app1) (flattenApp -> app2) 
+    | length app2 >= 2 = 
+      orM [ andM (zipWith exists app1 app2)
+          , anyM (exists t1) app2 ]
+  exists Type Type = return True
+  exists Set Set = return True
+  exists (Absurd t1) (Absurd t2) = exists t1 t2
+  exists (Fix _ b1 t1) (Fix _ b2 t2) =
+    andM [existsB b1 b2, local Indices.lift (exists t1 t2)]
+  exists (Lam b1 t1) (Lam b2 t2) =
+    andM [existsB b1 b2, local Indices.lift (exists t1 t2)]
+  exists (Pi b1 t1) (Pi b2 t2) =
+    andM [existsB b1 b2, local Indices.lift (exists t1 t2)]
+  exists (Var x) (Var y) 
+    | x == y = return True
+  exists (Var x) t2 = do
+    free_var_limit <- ask
+    return (x >= free_var_limit)
+  exists (Inj n1 t1) (Inj n2 t2) = do
+    andM [return (n1 == n2), exists t1 t2]
+  exists (Ind b1 cs1) (Ind b2 cs2) = 
+    andM (zipWith existsB (b1:cs1) (b2:cs2))
+  exists (Case t1 ty1 alts1) (Case t2 ty2 alts2) = 
+    andM ( exists t1 t2 
+         : exists ty1 ty2
+         : zipWith existsAlt alts1 alts2 )
+    where
+    existsAlt (Alt bs1 t1) (Alt _ t2) =
+      local (Indices.liftMany (length bs1)) (exists t1 t2)
+  exists _ _ = return False
+
+  
 -- | Sets all the internal normal form flags to true.
 normalised :: Term -> Term
 normalised = runIdentity . restrictedTransformM (return . normal)

@@ -3,11 +3,11 @@
 -- Requires qualified import (usually as "Fail").
 module Elea.Monad.Failure (
   Monad (..), when, unless, toMaybe, withDefault,
-  success, successM, catchWith, fromEither, has
+  success, successM, catchWith, fromEither, has, fromMaybe
 ) where
 
 import Prelude ()
-import Elea.Prelude hiding ( catch, Monad, when, unless )
+import Elea.Prelude hiding ( catch, Monad, when, unless, fromMaybe )
 import qualified Elea.Prelude as Prelude
 import qualified Data.Monoid as Monoid
 
@@ -62,7 +62,11 @@ successM mby_t = do
 -- | Strips 'Fail.Monad' by providing a default value to return
 -- if the computation has failed.
 catchWith :: Prelude.Monad m => a -> MaybeT m a -> m a
-catchWith def = liftM (fromMaybe def) . toMaybe
+catchWith def = liftM (Prelude.fromMaybe def) . toMaybe
+
+fromMaybe :: Monad m => Maybe a -> m a
+fromMaybe Nothing = here
+fromMaybe (Just x) = return x
   
 
 -- * Instance declarations

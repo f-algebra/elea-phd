@@ -61,6 +61,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     |> Context.apply (Indices.lift outer_ctx)
     |> simplify
     |> Env.bind fix_b
+ --   |> trace s1
     
   extracted_t <- simplified_t
     |> extract 0
@@ -78,7 +79,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   let replaced_t = id
         . Env.trackIndices 0
         . Fold.transformM (replace fix_idx arg_vars)
-   --     . trace s2
+    --    . trace s2
         $ reverted_t
       
   rep_s <- Env.bindAt 0 fix_b
@@ -86,21 +87,37 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     $ showM replaced_t
   let s3 = "\nREP:\n" ++ rep_s
   
-  let inner_f_remained = 0 `Set.member` Indices.free replaced_t
+  let 
  
   let fix_body = id
     --    . trace s3
-        . trace (s1 ++ s2 ++ s3)
+     --   . trace (s1 ++ s2 ++ s3)
         . unflattenLam arg_bs
         . substAt 0 inner_fix
         $ replaced_t
         
-  let rec_call_count = Term.occurrences (Var 0) fix_t
-      new_rec_call_count = Term.occurrences (Var 0) fix_body
-      replaced_enough = new_rec_call_count >= rec_call_count
-
-  Fail.unless (replaced_enough || not inner_f_remained)
+  let old_rc = Term.occurrences (Var 0) fix_t
+      new_rc = Term.occurrences (Var 0) fix_body
+      rem_rc = nonFiniteCalls (Var 0) replaced_t
+      
+  Fail.unless
+    . trace (s1 ++ s2 ++ s3)
+    $ rem_rc == 0 || new_rc >= old_rc
   
+      {-
+  let might_recurse = Fold.any (Term.fragmentedUnifierExists fused_t) fix_body
+  
+  fbs <- Env.bind new_fix_b $ showM fix_body
+  
+  if not might_recurse && not (new_rec_call_count >= rec_call_count)
+  then trace ("FAIL ON:\n" ++ fbs) Fail.here
+  else return ()
+      -}
+ -- Fail.unless (replaced_enough || not inner_f_remained)
+  
+  -- If this holds then fusion might repeat within itself
+  -- Fail.when might_recurse
+
   done <- unflattenApp (Fix fix_info' new_fix_b fix_body : arg_vars)
    -- You have to do this bit first, otherwise unfoldFixInj doesn't
    -- treat the patterns as matched patterns (since they now feature
@@ -112,6 +129,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   done_s <- showM done
   let s4 = {- s1 ++ -} "\nDONE:\n" ++ done_s
   
+  -- This doesn't block anything, and slows things down noticeably.
   -- Fail.when (leftmost done == inner_fix)
   
   id 
@@ -123,7 +141,29 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     
   isInnerFixMatch :: Term -> Env.TrackIndices Index Bool
   isInnerFixMatch cse_t = asks (`Set.member` Indices.free cse_t)
-    
+  
+  nonFiniteCalls :: Term -> Term -> Int
+  nonFiniteCalls func term = term
+    |> Fold.transformM removeFiniteCalls
+    |> Env.trackIndices func
+    |> Term.occurrences func
+    where
+    removeFiniteCalls :: Term -> Env.TrackIndices Term Term
+    removeFiniteCalls term@(Case cse_t ind_ty alts) = do
+      func <- ask
+      if leftmost cse_t == func 
+        && Term.isFinitelyUsed ind_ty alts
+      then return (Case (Var Indices.omega) ind_ty alts)
+      else return term
+    removeFiniteCalls term@(flattenApp -> term_f : args@(_:_)) = do
+      func <- ask
+      if term_f == func 
+        && Term.isFinite (last args)
+      then return (Var Indices.omega)
+      else return term
+    removeFiniteCalls term =
+      return term
+
   replace :: Index -> [Term] -> Term -> Env.TrackIndices Index Term
   replace fix_idx arg_vars term = do
     old_f <- ask
@@ -135,7 +175,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
       
       uni <- Unifier.find replace_t term
       guard (not (old_f `Map.member` uni))
-      
+       
       let mapped_to = concatMap Indices.free (Map.elems uni)
       guard (not (liftHere fix_idx `Set.member` mapped_to))
       

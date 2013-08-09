@@ -164,22 +164,12 @@ unfoldFixInj _ =
 unfoldCaseFix :: Term -> Maybe Term
 unfoldCaseFix term@(Case cse_t@(leftmost -> fix@(Fix {})) ind_ty alts)
   | Term.isProductive fix
-  , and (zipWith recArgsUsed [0..] alts) =
+  , Term.isFinitelyUsed ind_ty alts =
    -- trace ("UNFCASEFIX: " ++ show term) $ 
     return (Case cse_t' ind_ty alts)
   where
   fix@(Fix _ _ rhs) : args = flattenApp cse_t
   cse_t' = unflattenApp (subst fix rhs : args)
-  
-  -- Whether the recursive variables of a given pattern match
-  -- are used down that branch
-  recArgsUsed :: Nat -> Alt -> Bool
-  recArgsUsed n (Alt _ alt_t) = 
-    not (any isUsed args)
-    where
-    isUsed = (`Set.member` Indices.free alt_t)
-    args = Term.recursivePatternArgs ind_ty n
-  
 unfoldCaseFix _ = Nothing
 
 
