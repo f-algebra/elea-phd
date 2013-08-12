@@ -3,7 +3,7 @@ module Elea.Monad.Error
   Monad (..), Err, ErrorT,
   fromEither, augment, augmentM,
   none, noneM, wasThrown,
-  when, unless, dirty, check,
+  when, unless, check,
 )
 where
 
@@ -44,7 +44,11 @@ none (Right x) = x
 none (Left err) = error err
 
 noneM :: Prelude.Monad m => EitherT Err m b -> m b
-noneM = liftM none . runEitherT
+noneM et = do
+  e <- runEitherT et
+  case e of
+    Left err -> error err
+    Right val -> return val
 
 wasThrown :: Either Err b -> Bool
 wasThrown = isLeft
@@ -63,13 +67,6 @@ mapLeftT f eth_t = EitherT $ do
     case eth of
     Left l -> Left (f l)
     Right r -> Right r
-
-dirty :: Monad m => ErrorT m a -> m a
-dirty eth_t = do
-  eth <- runEitherT eth_t
-  case eth of
-    Left err -> error err
-    Right val -> return val
 
 instance Monad (Either Err) where
   throw = Left
