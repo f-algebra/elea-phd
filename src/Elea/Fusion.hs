@@ -239,16 +239,10 @@ fusion full_t@(flattenApp ->
   fixFact :: Type -> m (Maybe Term)
   fixFact full_ty = do
     matches <- Env.matches
-    mby_t <- matches
+    matches
       |> Map.toList
       |> map fuseMatch
       |> firstM
-    return mby_t {-
-    case mby_t of
-      Nothing -> return Nothing
-      Just t -> do
-        ms <- showM matches
-        trace ms (return (Just t)) -}
     where
     fuseMatch :: (Term, (Term, Int)) -> m (Maybe Term)
     fuseMatch (match_t, 
@@ -260,10 +254,17 @@ fusion full_t@(flattenApp ->
         -- to the same term, then this is an absurd branch.
         -- Not sure if this ever comes up though.
         else return (Just (Absurd full_ty))
-
+        {-
       | isFix (leftmost match_t)
- --     , all isVar match_args
-      , relevantFact = do
+      , match_fix_body `Term.containsUnifiable` outer_f = 
+        trace ("\n\nFAIL!!!!!!!\n" ++ show match_t ++ "\n\nWITH\n" ++ show outer_f) (return Nothing)
+        -}
+      | not (isFix (leftmost match_t)) 
+        || not relevantFact
+        || match_fix_body `Term.containsUnifiable` outer_f =
+        return Nothing
+
+      | otherwise = do
         outer_ty <- Err.noneM (Typing.typeOf outer_f)
         let ctx = Context.make outer_ty full_ty buildContext
         -- We add the new fused matches to the info of our existing 
@@ -272,6 +273,7 @@ fusion full_t@(flattenApp ->
         let outer_f' = outer_f
               |> addFusedMatch (match_t, inj_n)
               |> addFusedMatches (get fusedMatches match_inf)
+            full_t' = unflattenApp (outer_f' : outer_args)
         mby_t <- Fail.toMaybe (fuse run floatInwards ctx outer_f')
         match_s <- showM match_t
         outer_s <- showM full_t
@@ -279,12 +281,12 @@ fusion full_t@(flattenApp ->
         let msg | isJust mby_t = id
                 | otherwise = 
                     trace ("\n\nFailed to merge:\n" ++ match_s ++ "\n == " ++ inj_s ++ "\n\nwith:\n" ++ outer_s)
-        msg $ return $ do
-          t <- mby_t
-          t |> cleanupAbsurdities
-            |> return
+        return
+          . msg 
+          . Just
+          $ maybe full_t' cleanupAbsurdities mby_t
       where
-      Fix match_inf _ _ : match_args = flattenApp match_t
+      Fix match_inf _ match_fix_body : match_args = flattenApp match_t
       match_vars = Simp.strictVars match_t
       strict_vars = Simp.strictVars full_t
       
