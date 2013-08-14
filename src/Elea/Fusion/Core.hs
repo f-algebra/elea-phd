@@ -90,11 +90,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
  
   let fix_body = id
      --   . trace s3
-<<<<<<< HEAD
         . trace (s1 ++ s2 ++ s3)
-=======
-     --   . trace (s1 ++ s2 ++ s3)
->>>>>>> 4dc0a6aef37b0e77249c1cb03817348469050d49
         . unflattenLam arg_bs
         . substAt 0 inner_fix
         $ replaced_t

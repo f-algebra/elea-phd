@@ -336,7 +336,7 @@ fusion full_t@(flattenApp ->
       floatInwards :: forall m . (Env.Readable m, Fail.Monad m) => 
         Index -> Term -> m Term
       floatInwards _ = Fold.rewriteStepsM 
-          $ Simp.stepsM ++ Float.steps ++ [floatCtxMatchInwards]
+          $ Simp.stepsM ++ {- Float.steps ++ -} [floatCtxMatchInwards]
         where
         -- We need the pattern match for the context (viz. over match_t) 
         -- to be as far in as possible in order for fusion to succeed,

@@ -33,11 +33,7 @@ tests = Test.label "Fusion"
   liftM Test.list
     $ mapM assertFusionEq $
     [
-<<<<<<< HEAD
-    57
-=======
-    54
->>>>>>> 4dc0a6aef37b0e77249c1cb03817348469050d49
+    1..18
     ]
-    -- ++ [110]
+     ++ [110]
 
