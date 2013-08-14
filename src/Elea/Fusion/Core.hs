@@ -31,7 +31,9 @@ import qualified Data.Map as Map
 
 fuse :: forall m . (Env.Readable m, Fail.Monad m) => 
   (Term -> m Term) -> (Index -> Term -> m Term) -> Context -> Term -> m Term
-fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = 
+fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =   
+    -- This is important, having facts remain in a fusion step
+    -- is unsound.
     Env.forgetFacts $ do
   ctx_s <- showM outer_ctx
   t_s <- showM inner_fix
@@ -61,13 +63,12 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     |> Context.apply (Indices.lift outer_ctx)
     |> simplify
     |> Env.bind fix_b
- --   |> trace s1
+   -- |> trace s1
     
   extracted_t <- simplified_t
     |> extract 0
     |> Env.bind fix_b
   
-  -- I gave up commenting at this point, it works because it does...
   let reverted_t = extracted_t
         |> Term.revertMatchesWhen isInnerFixMatch
         |> Env.trackIndices 0
@@ -79,19 +80,17 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   let replaced_t = id
         . Env.trackIndices 0
         . Fold.transformM (replace fix_idx arg_vars)
-    --    . trace s2
+      --  . trace s2
         $ reverted_t
       
   rep_s <- Env.bindAt 0 fix_b
     . Env.bindAt fix_idx new_fix_b
     $ showM replaced_t
   let s3 = "\nREP:\n" ++ rep_s
-  
-  let 
  
   let fix_body = id
-    --    . trace s3
-     --   . trace (s1 ++ s2 ++ s3)
+     --   . trace s3
+        . trace (s1 ++ s2 ++ s3)
         . unflattenLam arg_bs
         . substAt 0 inner_fix
         $ replaced_t
@@ -101,7 +100,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
       rem_rc = nonFiniteCalls (Var 0) replaced_t
       
   Fail.unless
-    . trace (s1 ++ s2 ++ s3)
+  --  . trace (s1 ++ s2 ++ s3)
     $ rem_rc == 0 || new_rc >= old_rc
   
       {-
@@ -149,12 +148,15 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     |> Term.occurrences func
     where
     removeFiniteCalls :: Term -> Env.TrackIndices Term Term
-    removeFiniteCalls term@(Case cse_t ind_ty alts) = do
-      func <- ask
-      if leftmost cse_t == func 
-        && Term.isFinitelyUsed ind_ty alts
-      then return (Case (Var Indices.omega) ind_ty alts)
-      else return term
+    removeFiniteCalls term@(Case cse_t ind_ty alts) 
+      -- Finitely used recursive calls are only such if the recursive
+      -- function is productive
+      | Term.isProductive inner_fix = do
+        func <- ask
+        if leftmost cse_t == func 
+          && Term.isFinitelyUsed ind_ty alts
+        then return (Case (Var Indices.omega) ind_ty alts)
+        else return term
     removeFiniteCalls term@(flattenApp -> term_f : args@(_:_)) = do
       func <- ask
       if term_f == func 

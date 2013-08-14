@@ -305,10 +305,6 @@ instance Writable Identity where
   equals _ _ = id
   filterMatches _ = id
   
-instance Readable Identity where
-  bindings = return mempty
-  matches = return mempty
-  
 instance ContainsTerms Term where
   mapTermsM = ($)
 

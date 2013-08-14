@@ -5,15 +5,15 @@ module Elea.Terms
   isBaseCase, isRecursiveInd,
   isFinite, isFinitelyUsed,
   recursiveInjArgs, recursivePatternArgs,
-  replace, contains, nthArgument,
-  collectM, occurrences,
+  replace, contains, containsUnifiable,
+  nthArgument, collectM, occurrences,
   generalise, generaliseMany, 
   buildCaseOfM, buildCaseOf,
   revertMatchesWhen, descendWhileM,
   mapBranchesM, foldBranchesM,
   isProductive, normalised,
   minimumInjDepth, maximumInjDepth, injDepth,
-  fragmentedUnifierExists,
+  fragmentedUnifierExists, 
   restrictedRewriteStepsM, restrictedRewriteM, 
   restrictedRewriteOnceM, restrictedTransformM,
   restrictedRewrite,
@@ -123,11 +123,23 @@ replace me with = id
     if term == me
     then return with
     else return term
-
--- | If the first argument is a subterm of the second
-contains :: Term -> Term -> Bool
-contains sub = Env.trackIndices sub . Fold.anyM (\t -> asks (== t))
     
+-- | The predicate will be applied with the subterm as the first argument.
+containsAny :: (Term -> Term -> Bool) -> Term -> Term -> Bool
+containsAny pred outer inner = id
+  . Env.trackIndices inner
+  . Fold.anyM (\t -> asks (pred t))
+  $ outer
+    
+-- | If the second argument is a subterm of the first
+contains :: Term -> Term -> Bool
+contains = containsAny (==)
+  
+-- | If the second argument can be unified with a subterm of the first
+containsUnifiable :: Term -> Term -> Bool
+containsUnifiable = 
+  containsAny (\t t' -> not (isVar t) && Unifier.exists t t')
+
 -- | Takes a term to generalise, and modifies a term to term function,
 -- such that the supplied term is generalised going in,
 -- and ungeneralised coming out. Just treat t1 and t2 as Term, 
@@ -302,6 +314,7 @@ isProductive (Fix _ _ fix_t) = fix_t
     guard (not (fix_f `Set.member` Indices.free term))
     return term
     
+-- | An old attempt to control fusion termination. No longer used.
 fragmentedUnifierExists :: Term -> Term -> Bool
 fragmentedUnifierExists t1 t2 =
   Env.trackIndices 0 (exists t1 t2)

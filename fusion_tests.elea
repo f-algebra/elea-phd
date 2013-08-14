@@ -114,28 +114,62 @@ let t51' = fun nat (list nat) (list nat) -> False
 let t52 = fun (n: nat) (as: list nat) (bs: list nat) -> 
   sorted (app nat as (Cons nat n bs))
 let t52' = fun nat (list nat) (list nat) -> False
+  
+let t53 = fun (t: tree nat) -> sorted (flatten nat t)
+let t53' = fun (tree nat) -> True
 
-let last_leq = fun (n: nat) ->
-  fix (last: pi (list nat) -> bool) (xs: list nat) ->
-  match xs with
-  | Nil -> True
-  | Cons y ys -> 
-    match ys with
-    | Nil -> leq_nat n y
-    | Cons z zs -> 
-      match leq_nat y z with
-      | True -> last ys
-      | False -> _|_ bool
-      end
+let last_leq =
+  fun (n: nat) ->
+  fix (last_leq: pi (tree nat) -> bool) (t: tree nat) ->
+  match t with
+  | Leaf -> True
+  | Node x t1 t2 ->
+    match t2 with
+    | Leaf -> leq_nat x n
+    | Node y t21 t22 -> last_leq t2
     end
   end
   
-let t53 = fun (xs: list nat) (t: tree nat) -> 
-  app nat (flatten nat t) xs
-let t53' = fun (list nat) (tree nat) -> Nil nat
+let first_gt =
+  fun (n: nat) ->
+  fix (first_gt: pi (tree nat) -> bool) (t: tree nat) ->
+  match t with
+  | Leaf -> True
+  | Node x t1 t2 ->
+    match t1 with
+    | Leaf -> leq_nat n x
+    | Node y t11 t12 -> first_gt t1
+    end
+  end
 
-let t54 = fun (n: nat) (t: tree nat) -> flatten nat (ins_tree n t)
-let t54' = fun nat (tree nat) -> Leaf nat
+let sorted_tree = 
+  fix (srtd: pi (tree nat) -> bool) (t: tree nat) ->
+  match t with
+  | Leaf -> True
+  | Node x t1 t2 ->
+    and (and (srtd t1) (srtd t2)) 
+        (and (last_leq x t1) (first_gt x t2))
+  end
+
+let t55 = fun (xs: list nat) -> sorted_tree (build xs)
+let t55' = _|_ bool
+
+let t54 = fun (n: nat) (t: tree nat) -> 
+  match sorted_tree t with
+  | True -> sorted_tree (ins_tree n t)
+  | False -> False
+  end
+let t54' = _|_ bool
+
+let t56 = fun (k: nat) (t: tree nat) -> sorted_tree (ins_tree k t)
+let t56' = _|_ bool
+
+let t57 = fun (t: tree nat) -> 
+  match sorted_tree t with
+  | True -> sorted_tree t
+  | False -> _|_ bool
+  end
+let t57' = fun (tree nat) -> True
 
 /* requires invention of list-fold functions */
 let t219 = fun (a: *) (t: tree a) -> length a (flatten a t)

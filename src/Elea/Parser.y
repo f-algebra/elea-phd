@@ -10,10 +10,12 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Index
 import Elea.Show ( showM )
-import qualified Elea.Term as Term
+import qualified Elea.Terms as Term
 import qualified Elea.Typing as Typing
 import qualified Elea.Simplifier as Simp
+import qualified Elea.Floating as Float
 import qualified Elea.Env as Env
+import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Error as Err
 import qualified Data.Map as Map
@@ -169,15 +171,15 @@ localDef name term =
   $ Map.insert name (Left term)
   
 term :: (Err.Monad m, Defs.Monad m) => String -> m Term
-term = 
-    withEmptyScope 
+term = id
+  . withEmptyScope 
   . parseAndCheckTerm 
   . happyTerm 
   . lexer
   
 program :: (Err.Monad m, Defs.Monad m) => String -> m ()
-program = 
-    withEmptyScope
+program = id
+  . withEmptyScope
   . mapM_ define
   . happyProgram 
   . lexer
