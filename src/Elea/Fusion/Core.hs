@@ -90,7 +90,11 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
  
   let fix_body = id
      --   . trace s3
+<<<<<<< HEAD
         . trace (s1 ++ s2 ++ s3)
+=======
+     --   . trace (s1 ++ s2 ++ s3)
+>>>>>>> 4dc0a6aef37b0e77249c1cb03817348469050d49
         . unflattenLam arg_bs
         . substAt 0 inner_fix
         $ replaced_t
@@ -126,7 +130,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     |> Float.run
     
   done_s <- showM done
-  let s4 = {- s1 ++ -} "\nDONE:\n" ++ done_s
+  let s4 = s1 ++ "\nDONE:\n" ++ done_s
   
   -- This doesn't block anything, and slows things down noticeably.
   -- Fail.when (leftmost done == inner_fix)
