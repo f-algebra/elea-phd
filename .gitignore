@@ -2,3 +2,5 @@ obj/*
 *~
 *.o
 *.hi
+*.out
+*.exe
