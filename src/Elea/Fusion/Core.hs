@@ -74,7 +74,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
         |> Env.trackIndices 0
        
   trn_s <- Env.bind fix_b (showM reverted_t)
-  let s2 = "\nTRANS:\n" ++ trn_s
+  let s2 = "\nSIMPLIFIED:\n" ++ trn_s
   
   depth <- Env.bindingDepth
   let replaced_t = id
@@ -86,7 +86,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   rep_s <- Env.bindAt 0 fix_b
     . Env.bindAt fix_idx new_fix_b
     $ showM replaced_t
-  let s3 = "\nREP:\n" ++ rep_s
+  let s3 = "\nREPLACED:\n" ++ rep_s
  
   let fix_body = id
      --   . trace s3

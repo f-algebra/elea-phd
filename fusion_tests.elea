@@ -94,9 +94,6 @@ let t17' = fun (a:*) ->
 let t18 = fun (n: nat) (m: nat) -> eq_nat (add n m) (add m n)
 let t18' = fun nat nat -> True
 
-let t19 = fun (n: nat) (t: tree nat) -> add (size nat t) n
-let t19' = fun nat (tree nat) -> 0
-
 let t50 = fun (t: list nat) -> sorted (treesort t)
 let t50' = fun (list nat) -> True
 
@@ -150,6 +147,13 @@ let sorted_tree =
     and (and (srtd t1) (srtd t2)) 
         (and (last_leq x t1) (first_gt x t2))
   end
+  
+let t19 = fun (t: tree nat) ->
+  match sorted_tree t with
+  | True -> sorted_tree t
+  | False -> True
+  end
+let t19' = fun (tree nat) -> True
 
 let t55 = fun (xs: list nat) -> sorted_tree (build xs)
 let t55' = _|_ bool

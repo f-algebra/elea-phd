@@ -330,26 +330,85 @@ fusion full_t@(flattenApp ->
                 . liftMany bs_count
                 $ unflattenApp (gap_t : outer_args)
                 
-      -- The transformation function that is passed to the Core.fuse
-      -- call for fixFact fusion. It is fusion plus 
-      -- the 'floatCtxMatchInwards' transformation.
+      -- The extraction function that is passed to the Core.fuse
+      -- call for fixFact fusion. It floats the fact context
+      -- into the correct place in the term for fusion to be applied.
       floatInwards :: forall m . (Env.Readable m, Fail.Monad m) => 
         Index -> Term -> m Term
-      floatInwards _ = Fold.rewriteStepsM 
-          $ Simp.stepsM ++ {- Float.steps ++ -} [floatCtxMatchInwards]
+      floatInwards fix_f = id
+        . Env.alsoTrack fix_f
+        . Fold.rewriteStepsM steps
         where
+        steps = Simp.stepsM ++ [floatCtxMatchInwards]
+        
+        isContext :: Term -> Bool
+        isContext (Case cse_t ind_ty alts) = 
+          Unifier.exists match_t cse_t
+          && all (isAbsurd . get altInner) (left ++ right)
+          where
+          (left, _:right) = splitAt (fromEnum inj_n) alts
+        
         -- We need the pattern match for the context (viz. over match_t) 
         -- to be as far in as possible in order for fusion to succeed,
         -- viz. that C[f] can be unified at some point. Otherwise we
         -- end up with C[match ... with ... f ...].
-        floatCtxMatchInwards :: Term -> m (Maybe Term)
-        floatCtxMatchInwards = Float.commuteMatchesWhen when 
+        floatCtxMatchInwards :: Term -> Env.AlsoTrack Index m (Maybe Term)
+        floatCtxMatchInwards outer_cse@(Case outer_t outer_ty outer_alts)
+          | isContext outer_cse = do
+            fix_f <- ask
+            lift
+              . pushInwards fix_f
+              . Indices.lowerMany (length main_bs) 
+              $ main_t
           where
-          when :: Term -> Term -> m Bool
-          when (Case outer_t _ _) (Case inner_t _ _) =
-            return
-              $ Unifier.exists match_t outer_t
-              && not (Unifier.exists match_t inner_t)
+          (left_alts, main_alt:right_alts) = 
+            splitAt (fromEnum inj_n) outer_alts
+          abs_alts = left_alts ++ right_alts
+          Alt main_bs main_t = main_alt
+          
+          matchContext :: Type -> Context
+          matchContext ret_ty = Context.make outer_ty ret_ty mkCtx
+            where
+            mkCtx gap_t = 
+              Case outer_t outer_ty (left' ++ (main':right'))
+              where
+              left' = map updateType left_alts
+              right' = map updateType right_alts
+              main' = Alt main_bs (Indices.liftMany (length main_bs) gap_t)
+              
+              updateType (Alt bs (Absurd _)) = 
+                Alt bs (Absurd (Indices.liftMany (length bs) ret_ty))
+ 
+          pushInwards :: Index -> Term -> m (Maybe Term)
+          pushInwards fix_f inner_cse@(Case inner_t inner_ty inner_alts) 
+            | not (isContext inner_cse) = do
+              cse_ty <- Err.noneM (Typing.typeOf inner_cse)
+              return
+                . Just
+                . Case inner_t' inner_ty
+                $ map (applyToAlt cse_ty) inner_alts
+            where
+            inner_t' 
+              | fix_f `Set.member` Indices.free inner_t = 
+                Context.apply (matchContext inner_ty) inner_t
+              | otherwise = inner_t
+              
+            applyToAlt cse_ty (Alt bs alt_t)
+              | liftHere fix_f `Set.member` Indices.free alt_t = 
+                Alt bs (Context.apply match_ctx alt_t) 
+              | otherwise = 
+                Alt bs alt_t
+              where 
+              liftHere :: Indexed t => t -> t
+              liftHere = Indices.liftMany (length bs)
+              
+              match_ctx = liftHere (matchContext cse_ty)
+              
+          pushInwards _ _ = 
+            return Nothing
+            
+        floatCtxMatchInwards _ = 
+          return Nothing
               
       cleanupAbsurdities :: Term -> Term
       cleanupAbsurdities = Fold.rewrite cleanup
