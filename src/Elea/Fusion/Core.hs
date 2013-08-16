@@ -30,7 +30,9 @@ import qualified Data.Map as Map
 -- TODO only pull in the variables that you need as arguments, not all of them
 
 fuse :: forall m . (Env.Readable m, Fail.Monad m) => 
-  (Term -> m Term) -> (Index -> Term -> m Term) -> Context -> Term -> m Term
+  (Term -> m Term) -> 
+  (Index -> Context -> Term -> m Term) -> 
+  Context -> Term -> m Term
 fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =   
     -- This is important, having facts remain in a fusion step
     -- is unsound.
@@ -58,23 +60,25 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
       arg_bs = zipWith Indices.lowerMany offsets var_bs
       new_fix_ty = unflattenPi arg_bs result_ty
       new_fix_b = Bind new_label new_fix_ty
+      ctx_here = Indices.lift outer_ctx
 
   simplified_t <- fix_t
-    |> Context.apply (Indices.lift outer_ctx)
+    |> Context.apply ctx_here
     |> simplify
     |> Env.bind fix_b
    -- |> trace s1
     
   extracted_t <- simplified_t
-    |> extract 0
+    |> extract 0 ctx_here
     |> Env.bind fix_b
   
   let reverted_t = extracted_t
         |> Term.revertMatchesWhen isInnerFixMatch
         |> Env.trackIndices 0
        
-  trn_s <- Env.bind fix_b (showM reverted_t)
-  let s2 = "\nSIMPLIFIED:\n" ++ trn_s
+  simp_s <- Env.bind fix_b (showM simplified_t)
+  revt_t <- Env.bind fix_b (showM reverted_t)
+  let s2 = "\nSIMPLIFIED:\n" ++ simp_s ++ "\n\nEXTRACTED:\n" ++ revt_t
   
   depth <- Env.bindingDepth
   let replaced_t = id
@@ -90,7 +94,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
  
   let fix_body = id
      --   . trace s3
-        . trace (s1 ++ s2 ++ s3)
+      --  . trace (s1 ++ s2 ++ s3)
         . unflattenLam arg_bs
         . substAt 0 inner_fix
         $ replaced_t
@@ -100,7 +104,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
       rem_rc = nonFiniteCalls (Var 0) replaced_t
       
   Fail.unless
-  --  . trace (s1 ++ s2 ++ s3)
+    . trace (s1 ++ s2 ++ s3)
     $ rem_rc == 0 || new_rc >= old_rc
   
       {-
@@ -126,7 +130,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     |> Float.run
     
   done_s <- showM done
-  let s4 = s1 ++ "\nDONE:\n" ++ done_s
+  let s4 = {- s1 ++ -} "\nDONE:\n" ++ done_s
   
   -- This doesn't block anything, and slows things down noticeably.
   -- Fail.when (leftmost done == inner_fix)

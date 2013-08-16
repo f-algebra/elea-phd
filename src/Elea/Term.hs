@@ -22,7 +22,8 @@ module Elea.Term
   isFix, isAbsurd, isCase,
   fromVar, emptyFixInfo,
   altPattern, argumentCount, 
-  fusedMatch, addFusedMatch, addFusedMatches,
+  fusedMatch, addFusedMatch, 
+  addFusedMatches, clearFusedMatches,
 )
 where
 
@@ -285,6 +286,12 @@ addFusedMatch _ other = other
 
 addFusedMatches :: [(Term, Nat)] -> Term -> Term
 addFusedMatches = flip (foldr addFusedMatch)
+
+clearFusedMatches :: Term -> Term
+clearFusedMatches (flattenApp -> Fix inf b t : args) = 
+  unflattenApp (Fix inf' b t : args)
+  where
+  inf' = modify fusedMatches (const mempty) inf
 
 -- | Given an inductive type and a constructor index this will return
 -- a fully instantiated constructor term.

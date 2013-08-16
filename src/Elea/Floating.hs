@@ -214,37 +214,63 @@ unfoldWithinFix _ = Nothing
 -- inputs, just reduce it to that value.
 constantFix :: Term -> Maybe Term
 constantFix (Fix _ fix_b fix_t)
-  | Just (toList -> [result]) <- mby_results = 
-    result
-      |> Indices.liftMany (length arg_bs)
-      |> unflattenLam arg_bs
-      |> Just
-  | Just (toList -> []) <- mby_results = 
-    Absurd result_ty
-      |> unflattenLam arg_bs
-      |> Just
+  | Just [result] <- mby_results = guessConstant result
+  | Just [] <- mby_results = guessConstant (Absurd result_ty)
   where
   (arg_bs, _) = flattenLam fix_t
   (_, result_ty) = flattenPi (get boundType fix_b)
+  mby_results = potentialResults removed_t
   
-  mby_results = fix_t
-    |> Term.foldBranchesM resultTerm
-    |> runMaybeT
+  removed_t = fix_t
+    |> Fold.transformM removeMatchedRecs
     |> Env.trackIndices 0
+    where
+    removeMatchedRecs :: Term -> Env.TrackIndices Index Term
+    removeMatchedRecs cse@(Case cse_t _ _) = do
+      fix_f <- ask
+      if fix_f `Set.member` Indices.free cse_t
+      then return (Absurd Set)
+      else return cse
+    removeMatchedRecs other = 
+      return other
   
-  resultTerm :: Term -> MaybeT (Env.TrackIndices Index) (Set Term)
-  resultTerm (Absurd _) = return mempty
-  resultTerm term = do
-    fix_f <- ask
-    if leftmost term == Var fix_f
-    then return mempty
-    else do
-      let depth = fromEnum fix_f + 1
-      guard (Indices.lowerableBy depth term)
-      term
-        |> Indices.lowerMany depth
-        |> Set.singleton
-        |> return
+  potentialResults :: Term -> Maybe [Term]
+  potentialResults = id
+    . map toList
+    . Env.trackIndices 0
+    . runMaybeT
+    . Term.foldBranchesM resultTerm
+    where
+    resultTerm :: Term -> MaybeT (Env.TrackIndices Index) (Set Term)
+    resultTerm (Absurd _) = return mempty
+    resultTerm term = do
+      fix_f <- ask
+      if leftmost term == Var fix_f
+      then return mempty
+      else do
+        let depth = fromEnum fix_f
+        -- Checking we can lower by one extra makes sure there is no
+        -- occurrence of the 'fix'ed variable itself.
+        guard (Indices.lowerableBy (depth + 1) term)
+        term
+          |> Indices.lowerMany depth
+          |> Set.singleton
+          |> return
+        
+  guessConstant :: Term -> Maybe Term
+  guessConstant guess_t 
+    | Just [guess_t'] <- mby_results' = 
+      assert (guess_t == guess_t') (Just const_t)
+    | Just [] <- mby_results' = Just const_t
+    | otherwise = Nothing
+    where
+    rec_f = guess_t
+      |> Indices.liftMany (length arg_bs)
+      |> unflattenLam arg_bs
+      
+    fix_t' = Simp.run (Term.replace (Var 0) rec_f fix_t)
+    mby_results' = potentialResults fix_t'
+    const_t = Indices.lower rec_f
         
 constantFix _ = 
   Nothing

@@ -213,12 +213,13 @@ fusion full_t@(flattenApp ->
     
     runFusion :: Context -> Env.AlsoTrack Term (MaybeT m) Term 
     runFusion outer_ctx
-      | isVar rec_arg = fuse run extract outer_ctx inner_f
+      | isVar rec_arg = fuse run extract outer_ctx inner_f'
       | otherwise = id
           . Term.generalise (head inner_args) 
-            (\_ ctx -> fuse run extract ctx (Indices.lift inner_f))
+            (\_ ctx -> fuse run extract ctx (Indices.lift inner_f'))
           $ outer_ctx
       where
+      inner_f' = Term.clearFusedMatches inner_f
       rec_arg = head inner_args
   fixfix _ = 
     return Nothing
@@ -232,7 +233,7 @@ fusion full_t@(flattenApp ->
       let ctx = id
             . Context.make outer_ty full_ty
             $ \t -> unflattenApp (t : outer_args)
-      Fail.toMaybe (fuse run (const return) ctx outer_f)
+      Fail.toMaybe (fuse run (\_ _ -> return) ctx outer_f)
   repeatedArg _ =
     return Nothing
     
@@ -282,7 +283,7 @@ fusion full_t@(flattenApp ->
                 | otherwise = 
                     trace ("\n\nFailed to merge:\n" ++ match_s ++ "\n == " ++ inj_s ++ "\n\nwith:\n" ++ outer_s)
         return
-          . msg 
+          . msg
           . Just
           $ maybe full_t' cleanupAbsurdities mby_t
       where
@@ -329,17 +330,38 @@ fusion full_t@(flattenApp ->
                 . concatEndos (zipWith replaceAt arg_idxs new_vars)
                 . liftMany bs_count
                 $ unflattenApp (gap_t : outer_args)
-                
+         {-
+      -- The transformation function that is passed to the Core.fuse
+      -- call for fixFact fusion. It is fusion plus 
+      -- the 'floatCtxMatchInwards' transformation.
+      floatInwards :: forall m . (Env.Readable m, Fail.Monad m) => 
+        Index -> Context -> Term -> m Term
+      floatInwards _ _ = Fold.rewriteStepsM 
+          $ Simp.stepsM ++ Float.steps ++ [floatCtxMatchInwards]
+        where
+        -- We need the pattern match for the context (viz. over match_t) 
+        -- to be as far in as possible in order for fusion to succeed,
+        -- viz. that C[f] can be unified at some point. Otherwise we
+        -- end up with C[match ... with ... f ...].
+        floatCtxMatchInwards :: Term -> m (Maybe Term)
+        floatCtxMatchInwards = Float.commuteMatchesWhen when 
+          where
+          when :: Term -> Term -> m Bool
+          when (Case outer_t _ _) (Case inner_t _ _) =
+            return
+              $ Unifier.exists match_t outer_t
+              && not (Unifier.exists match_t inner_t)
+               -}
       -- The extraction function that is passed to the Core.fuse
       -- call for fixFact fusion. It floats the fact context
       -- into the correct place in the term for fusion to be applied.
       floatInwards :: forall m . (Env.Readable m, Fail.Monad m) => 
-        Index -> Term -> m Term
-      floatInwards fix_f = id
+        Index -> Context -> Term -> m Term
+      floatInwards fix_f _ = id
         . Env.alsoTrack fix_f
         . Fold.rewriteStepsM steps
         where
-        steps = Simp.stepsM ++ [floatCtxMatchInwards]
+        steps = [floatCtxMatchInwards]
         
         isContext :: Term -> Bool
         isContext (Case cse_t ind_ty alts) = 
@@ -388,13 +410,30 @@ fusion full_t@(flattenApp ->
                 . Case inner_t' inner_ty
                 $ map (applyToAlt cse_ty) inner_alts
             where
+            recCallExists :: Index -> Term -> Term -> Bool
+            recCallExists fix_f outer_t = id
+              . Env.trackIndices (fix_f, outer_t) 
+              . Fold.anyM isRecCall
+              where
+              isRecCall :: Term -> Env.TrackIndices (Index, Term) Bool
+              isRecCall (flattenApp -> Var f : args)
+                | length args == length outer_args = do
+                  (fix_f, outer_t) <- ask
+                  return 
+                    $ fix_f == f
+                    && Simp.strictVars outer_t `intersects` free_arg_vars
+                  where
+                  free_arg_vars = concatMap Indices.free args
+              isRecCall _ =
+                return False
+            
             inner_t' 
-              | fix_f `Set.member` Indices.free inner_t = 
+              | recCallExists fix_f outer_t inner_t = 
                 Context.apply (matchContext inner_ty) inner_t
               | otherwise = inner_t
               
             applyToAlt cse_ty (Alt bs alt_t)
-              | liftHere fix_f `Set.member` Indices.free alt_t = 
+              | recCallExists (liftHere fix_f) (liftHere outer_t) alt_t = 
                 Alt bs (Context.apply match_ctx alt_t) 
               | otherwise = 
                 Alt bs alt_t
@@ -409,7 +448,65 @@ fusion full_t@(flattenApp ->
             
         floatCtxMatchInwards _ = 
           return Nothing
-              
+          
+                {-
+      -- The extraction function that is passed to the Core.fuse
+      -- call for fixFact fusion. It floats the fact context
+      -- into the correct place in the term for fusion to be applied.
+      floatInwards :: forall m . (Env.Readable m, Fail.Monad m) => 
+        Index -> Context -> Term -> m Term
+      floatInwards fix_f ctx = id
+        . return  
+        . Env.trackIndices (fix_f, ctx)
+        . Fold.transformM floatCtxMatchInwards
+        where
+        -- We need the pattern match for the context (viz. over match_t) 
+        -- to be as far in as possible in order for fusion to succeed,
+        -- viz. that C[f] can be unified at some point. Otherwise we
+        -- end up with C[match ... with ... f ...].
+        floatCtxMatchInwards :: 
+          Term -> Env.TrackIndices (Index, Context) Term
+        floatCtxMatchInwards (Case outer_t outer_ty outer_alts)
+          | Unifier.exists match_t outer_t
+          , all (isAbsurd . get altInner) (left_alts ++ right_alts) = do
+            (fix_f, match_ctx) <- ask
+            return
+              . Context.apply outer_ctx
+              . Env.trackIndices (fix_f, (match_ctx, outer_ctx))
+              . Fold.transformM pushInwards 
+              . Indices.lowerMany (length main_bs)
+              $ main_t
+          where
+          (left_alts, main_alt:right_alts) = 
+            splitAt (fromEnum inj_n) outer_alts
+          abs_alts = left_alts ++ right_alts
+          Alt main_bs main_t = main_alt
+          
+          outer_ctx = Context.make full_ty full_ty mkCtx
+            where
+            mkCtx gap_t = Case outer_t outer_ty outer_alts'
+              where
+              outer_alts' = left_alts ++ (main_alt':right_alts)
+              main_alt' = 
+                Alt main_bs (Indices.liftMany (length main_bs) gap_t)
+          
+          pushInwards :: Term -> 
+            Env.TrackIndices (Index, (Context, Context)) Term
+          pushInwards term@(flattenApp -> Var var_f : args)
+            | length args == length outer_args = do
+              (fix_f, (match_ctx, outer_ctx)) <- ask
+              let inner_match = Context.apply outer_ctx term
+                  outer_match = Context.apply match_ctx (Var fix_f)
+              if var_f == fix_f
+                && Unifier.exists outer_match inner_match
+              then return inner_match
+              else return term
+          pushInwards other = 
+            return other
+            
+        floatCtxMatchInwards other = 
+          return other
+              -}
       cleanupAbsurdities :: Term -> Term
       cleanupAbsurdities = Fold.rewrite cleanup
         where
@@ -439,8 +536,8 @@ fusion _ =
   return Nothing
 
 extract :: forall m . Env.Readable m =>  
-  Index -> Term -> Env.AlsoTrack Term m Term
-extract inner_f term = do
+  Index -> Context -> Term -> Env.AlsoTrack Term m Term
+extract inner_f _ term = do
   can_extract <- extractable
   if not can_extract
   then return term
@@ -506,113 +603,4 @@ extract inner_f term = do
         . Fail.withDefault term
         . invent run (App outer_f (Var gen_var))
         $ term
-  {-
-fixfixSimplifier :: forall m . Env.Readable m =>  
-  Int -> Index -> Term -> Env.AlsoTrack Term m Term
-fixfixSimplifier inner_arg_count inner_f = id
-  . Env.alsoWith (\outer_f -> (outer_f, inner_f))
-  . Term.descendWhileM calledWithNonFreeArgs transformBranch
-  where
-  -- Whether the given index is called as a function using arguments
-  -- that contain variables which are not free here. We cannot generalise
-  -- an inner function call unless all of the variables it is called with
-  -- are free, so we use this to recurse into the branches of the term
-  -- until they become free.
-  calledWithNonFreeArgs :: Term -> Env.AlsoTrack (Term, Index) m Bool
-  calledWithNonFreeArgs term@(Case {}) = do
-    (_, inner_f) <- ask
-    Fold.anyM (nonFreeArgs inner_f) term
-    where
-    nonFreeArgs :: Index -> Term -> Env.AlsoTrack (Term, Index) m Bool
-    nonFreeArgs inner_f term@(flattenApp -> Var f : args) = do
-      (_, inner_f_here) <- ask
-      if inner_f_here /= f
-      then return False
-      else do
-        let idx_diff = inner_f_here - inner_f
-        return (any (< idx_diff) (Indices.free term))
-    nonFreeArgs _ _ = 
-      return False
-  calledWithNonFreeArgs _ = return False
-  
-  transformBranch :: Term -> Env.AlsoTrack (Term, Index) m Term
-  transformBranch term = do
-    -- Collect every recursive call to the inner unrolled function
-    -- so that we can generalise them
-    fix_uses <- id 
-      . Env.alsoWith snd
-      $ Term.collectM isInnerCall term
-    (outer_f, _) <- ask
-    Env.alsoWith (\(outer_f, _) -> outer_f)
-      . Term.generaliseMany 
-          (Set.toList fix_uses) 
-          (\ixs t -> trace ("\nGEN:" ++ show fix_uses ++ "\nWITHIN:\n" ++ show term ++ "\nGIVES:\n" ++ show t) $ simplifyAndExtract (Set.fromList ixs) t) 
-      $ term
-    where
-    isInnerCall :: Term -> Env.AlsoTrack Index m Bool
-    isInnerCall term@(flattenApp -> Var f : args) = do
-      inner_f <- ask
-      return 
-         $ inner_f == f 
-        && length args == inner_arg_count
-    isInnerCall _ = 
-      return False
-      
-  simplifyAndExtract :: forall m . Env.Readable m =>  
-    Set Index -> Term -> Env.AlsoTrack Term m Term
-  simplifyAndExtract gen_vars term = do
-    term' <- lift (run term)
-    can_extract <- extractable
-    if not can_extract
-    then return term'
-    else do
-      outer_f <- ask
-      lift
-        . Env.alsoTrack (outer_f, gen_vars) 
-        -- We descend into branches as long as the 'inner_f' function
-        -- is not pattern matched by that branch.
-        . Term.descendWhileM functionNonMatched extract 
-        $ term'
-    where
-    functionNonMatched :: Term -> Env.AlsoTrack (Term, Set Index) m Bool
-    functionNonMatched (Case cse_t _ _) = do
-      (_, gen_vars) <- ask
-      cse_t
-        |> Indices.free
-        |> Set.intersection gen_vars
-        |> Set.null
-        |> return
-    functionNonMatched _ =
-      return False
-    
-    extractable :: Env.AlsoTrack Term m Bool
-    extractable = do
-      outer_f <- ask
-      ty <- Err.noneM (Typing.typeOf outer_f)
-      let (args, ret) = flattenPi ty
-      return 
-        $ length args == 1
-        && isInd ret 
-        && not (Term.isRecursiveInd ret)
-  
-    extract :: Term -> Env.AlsoTrack (Term, Set Index) m Term
-    extract (flattenApp -> inj@(Inj {}) : args) = do
-      args' <- mapM extract args
-      return (unflattenApp (inj : args'))
-    extract term = do
-      (outer_f, gen_vars) <- ask
-      let gen_vars' = term
-            |> Indices.free
-            |> Set.intersection gen_vars
-            |> Set.toList
-      mby_t <- term
-        |> concatEndosM (map (invent run . App outer_f . Var) gen_vars') 
-        |> Fail.toMaybe
-      case mby_t of 
-        Nothing -> return term
-        Just t -> do
-          ts <- showM t
-          t |> return
-          --  |> trace ("GOT: " ++ ts) 
-            
--}
+

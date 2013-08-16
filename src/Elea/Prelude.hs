@@ -56,6 +56,7 @@ module Elea.Prelude
   insertAt, convertEnum, indent, indentBy, debugNth,
   arrowSum, supremum, (|>), ($>),
   Maximum (..), Minimum (..), sconcatMap,
+  intersects,
 )
 where
 
@@ -362,3 +363,6 @@ instance Monoid (Maximum Nat) where
 instance Monoid (Minimum CoNat) where
   mappend = (<>)
   mempty = Minimum Nat.omega
+  
+intersects :: Ord a => Set a -> Set a -> Bool
+intersects x = not . Set.null . Set.intersection x
