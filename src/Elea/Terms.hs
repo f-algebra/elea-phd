@@ -363,7 +363,7 @@ fragmentedUnifierExists t1 t2 =
 normalised :: Term -> Term
 normalised = runIdentity . restrictedTransformM (return . normal)
   where
-  normal (Fix (FixInfo ms _) b t) = Fix (FixInfo ms True) b t
+  normal (Fix (FixInfo ms _ al) b t) = Fix (FixInfo ms True al) b t
   normal other = other
 
 injDepth :: (Enum w, Semigroup w) => Term -> w
@@ -462,10 +462,12 @@ instance Fold.Transformable RestrictedTerm where
     select term 
       | isPi term || isInj term || isInd term = ignoreAll term
     select (Lam b t) = (True, Lam' (ignoreBind b) (True, t))
-    select fix@(Fix inf b t) 
-      | get normalForm inf = ignoreAll fix
-      | otherwise = 
+    select fix@(Fix inf b t)
+      -- To simplify a fix it must not be in normal form,
+      -- and must allow simplifications (@see 'FixInfo').
+      | FixInfo _ False True <- inf = 
           (True, Fix' (ignoreInfo inf) (ignoreBind b) (True, t))
+      | otherwise = ignoreAll fix
     select (Case cse_t ind_ty alts) = 
       (True, Case' (True, cse_t) (False, ind_ty) (map selectAlt alts))
       where

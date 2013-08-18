@@ -58,7 +58,7 @@ instance Show (Term' String) where
     name = fromJust (get boundLabel' b)
   show (Pi' (show -> b) t) =
     "pi " ++ b ++ mergePi t
-  show (Fix' (FixInfo' inf _) (show -> b) t) =
+  show (Fix' (FixInfo' inf _ _) (show -> b) t) =
     indent $ "\nfix " {- ++ show inf ++ " " -} ++ b ++ " -> " ++ t
   show (Lam' (show -> b) t) =
     indent $ "\nfun " ++ b ++ " -> " ++ t

@@ -87,7 +87,7 @@ removeIdFix _ =
 floatConstructors :: forall m . Env.Readable m => Term -> m (Maybe Term)
 floatConstructors term@(Fix _ fix_b fix_t) 
   | Set.size suggestions == 0 = return Nothing
-  | not floatable = return Nothing
+  | not (floatable || Term.simplifiable term) = return Nothing
   | otherwise = id
       . firstM 
       . map (Fail.toMaybe . split simpleAndFloat term)
@@ -191,347 +191,228 @@ floatConstructors _ =
   
 fusion :: forall m . Env.Readable m => Term -> m (Maybe Term)
 fusion full_t@(flattenApp -> 
-    outer_f@(Fix outer_info outer_b _) : outer_args@(_:_)) = do
-  full_ty <- Err.noneM (Typing.typeOf full_t)
-  if not (isInd full_ty)
-  then return Nothing
-  else firstM $ map ($ full_ty) [ fixfix, repeatedArg, fixFact ]
-  where
-  fixfix :: Type -> m (Maybe Term)
-  fixfix full_ty
-    | isFix (leftmost (head outer_args)) = do
-      inner_ty <- Err.noneM (Typing.typeOf inner_f)
-      let outer_ctx = id
-            . Context.make inner_ty full_ty
-            $ \t -> unflattenApp 
-              $ outer_f : unflattenApp (t : inner_args) : tail outer_args
-      runMaybeT
-        . Env.alsoTrack outer_f
-        $ runFusion outer_ctx
+      outer_f@(Fix outer_info outer_b _) : outer_args@(_:_)) 
+  | Term.simplifiable full_t = do
+    full_ty <- Err.noneM (Typing.typeOf full_t)
+    if not (isInd full_ty)
+    then return Nothing
+    else firstM $ map ($ full_ty) [ fixfix, repeatedArg, fixFact ]
     where
-    inner_f@(Fix {}) : inner_args = flattenApp (head outer_args)
-    
-    runFusion :: Context -> Env.AlsoTrack Term (MaybeT m) Term 
-    runFusion outer_ctx
-      | isVar rec_arg = fuse run extract outer_ctx inner_f'
-      | otherwise = id
-          . Term.generalise (head inner_args) 
-            (\_ ctx -> fuse run extract ctx (Indices.lift inner_f'))
-          $ outer_ctx
+    fixfix :: Type -> m (Maybe Term)
+    fixfix full_ty
+      | isFix (leftmost (head outer_args)) = do
+        inner_ty <- Err.noneM (Typing.typeOf inner_f)
+        let outer_ctx = id
+              . Context.make inner_ty full_ty
+              $ \t -> unflattenApp 
+                $ outer_f : unflattenApp (t : inner_args) : tail outer_args
+        runMaybeT
+          . Env.alsoTrack outer_f
+          $ runFusion outer_ctx
       where
-      inner_f' = Term.clearFusedMatches inner_f
-      rec_arg = head inner_args
-  fixfix _ = 
-    return Nothing
-  
-  repeatedArg :: Type -> m (Maybe Term)
-  repeatedArg full_ty
-    | x@(Var {}) <- head outer_args
-    , any (== x) (tail outer_args) = do
-      full_s <- showM full_t
-      outer_ty <- Err.noneM (Typing.typeOf outer_f)
-      let ctx = id
-            . Context.make outer_ty full_ty
-            $ \t -> unflattenApp (t : outer_args)
-      Fail.toMaybe (fuse run (\_ _ -> return) ctx outer_f)
-  repeatedArg _ =
-    return Nothing
-    
-  fixFact :: Type -> m (Maybe Term)
-  fixFact full_ty = do
-    matches <- Env.matches
-    matches
-      |> Map.toList
-      |> map fuseMatch
-      |> firstM
-    where
-    fuseMatch :: (Term, (Term, Int)) -> m (Maybe Term)
-    fuseMatch (match_t, 
-              (inj_t@(flattenApp -> Inj inj_n ind_ty : inj_args), m_depth))
-      | Just inj_n' <- fusedMatch match_t outer_f =
-        if inj_n' == inj_n  
-        then return Nothing
-        -- If we have already fused in a different pattern matched
-        -- to the same term, then this is an absurd branch.
-        -- Not sure if this ever comes up though.
-        else return (Just (Absurd full_ty))
-        {-
-      | isFix (leftmost match_t)
-      , match_fix_body `Term.containsUnifiable` outer_f = 
-        trace ("\n\nFAIL!!!!!!!\n" ++ show match_t ++ "\n\nWITH\n" ++ show outer_f) (return Nothing)
-        -}
-      | not (isFix (leftmost match_t)) 
-        || not relevantFact
-        || match_fix_body `Term.containsUnifiable` outer_f =
-        return Nothing
-
-      | otherwise = do
-        outer_ty <- Err.noneM (Typing.typeOf outer_f)
-        let ctx = Context.make outer_ty full_ty buildContext
-        -- We add the new fused matches to the info of our existing 
-        -- fixpoint, since this will be carried over to the fixpoint
-        -- that fusion produces.
-        let outer_f' = outer_f
-              |> addFusedMatch (match_t, inj_n)
-              |> addFusedMatches (get fusedMatches match_inf)
-            full_t' = unflattenApp (outer_f' : outer_args)
-        mby_t <- Fail.toMaybe (fuse run floatInwards ctx outer_f')
-        match_s <- showM match_t
-        outer_s <- showM full_t
-        inj_s <- showM inj_t
-        let msg | isJust mby_t = id
-                | otherwise = 
-                    trace ("\n\nFailed to merge:\n" ++ match_s ++ "\n == " ++ inj_s ++ "\n\nwith:\n" ++ outer_s)
-        return
-          . msg
-          . Just
-          $ maybe full_t' cleanupAbsurdities mby_t
-      where
-      Fix match_inf _ match_fix_body : match_args = flattenApp match_t
-      match_vars = Simp.strictVars match_t
-      strict_vars = Simp.strictVars full_t
+      inner_f@(Fix {}) : inner_args = flattenApp (head outer_args)
       
-      -- A fact is only relevant to this term if there is a shared variable,
-      -- and no variables that have been bound after the match was made.
-      relevantFact = not distinct_vars && not bound_later
-        where 
-        distinct_vars = strict_vars 
-          |> Set.intersection match_vars
-          |> Set.null
-          
-        bound_later = strict_vars
-          |> concatMap Indices.free
-          |> any (< toEnum m_depth)
-      
-      buildContext :: Term -> Term
-      buildContext gap_t = 
-        Case match_t ind_ty alts
+      runFusion :: Context -> Env.AlsoTrack Term (MaybeT m) Term 
+      runFusion outer_ctx
+        | isVar rec_arg = fuse run extract outer_ctx inner_f'
+        | otherwise = id
+            . Term.generalise (head inner_args) 
+              (\_ ctx -> fuse run extract ctx (Indices.lift inner_f'))
+            $ outer_ctx
         where
-        ind_cons = Typing.unfoldInd ind_ty
-        alts = map (buildAlt . toEnum) [0..length ind_cons - 1]
-        
-        buildAlt :: Nat -> Alt
-        buildAlt alt_n = Alt alt_bs alt_t
-          where
-          alt_bs = id
-            . fst
-            . flattenPi
-            . get boundType
-            $ ind_cons !! fromEnum alt_n
-            
-          bs_count = length alt_bs
-          
-          arg_idxs = map (_varIndex . liftMany bs_count) inj_args
-          new_vars = map (Var . toEnum) (reverse [0..bs_count - 1])
-          
-          alt_t 
-            | alt_n /= inj_n = Absurd full_ty
-            | otherwise = id
-                . concatEndos (zipWith replaceAt arg_idxs new_vars)
-                . liftMany bs_count
-                $ unflattenApp (gap_t : outer_args)
-         {-
-      -- The transformation function that is passed to the Core.fuse
-      -- call for fixFact fusion. It is fusion plus 
-      -- the 'floatCtxMatchInwards' transformation.
-      floatInwards :: forall m . (Env.Readable m, Fail.Monad m) => 
-        Index -> Context -> Term -> m Term
-      floatInwards _ _ = Fold.rewriteStepsM 
-          $ Simp.stepsM ++ Float.steps ++ [floatCtxMatchInwards]
-        where
-        -- We need the pattern match for the context (viz. over match_t) 
-        -- to be as far in as possible in order for fusion to succeed,
-        -- viz. that C[f] can be unified at some point. Otherwise we
-        -- end up with C[match ... with ... f ...].
-        floatCtxMatchInwards :: Term -> m (Maybe Term)
-        floatCtxMatchInwards = Float.commuteMatchesWhen when 
-          where
-          when :: Term -> Term -> m Bool
-          when (Case outer_t _ _) (Case inner_t _ _) =
-            return
-              $ Unifier.exists match_t outer_t
-              && not (Unifier.exists match_t inner_t)
-               -}
-      -- The extraction function that is passed to the Core.fuse
-      -- call for fixFact fusion. It floats the fact context
-      -- into the correct place in the term for fusion to be applied.
-      floatInwards :: forall m . (Env.Readable m, Fail.Monad m) => 
-        Index -> Context -> Term -> m Term
-      floatInwards fix_f _ = id
-        . Env.alsoTrack fix_f
-        . Fold.rewriteStepsM steps
-        where
-        steps = [floatCtxMatchInwards]
-        
-        isContext :: Term -> Bool
-        isContext (Case cse_t ind_ty alts) = 
-          Unifier.exists match_t cse_t
-          && all (isAbsurd . get altInner) (left ++ right)
-          where
-          (left, _:right) = splitAt (fromEnum inj_n) alts
-        
-        -- We need the pattern match for the context (viz. over match_t) 
-        -- to be as far in as possible in order for fusion to succeed,
-        -- viz. that C[f] can be unified at some point. Otherwise we
-        -- end up with C[match ... with ... f ...].
-        floatCtxMatchInwards :: Term -> Env.AlsoTrack Index m (Maybe Term)
-        floatCtxMatchInwards outer_cse@(Case outer_t outer_ty outer_alts)
-          | isContext outer_cse = do
-            fix_f <- ask
-            lift
-              . pushInwards fix_f
-              . Indices.lowerMany (length main_bs) 
-              $ main_t
-          where
-          (left_alts, main_alt:right_alts) = 
-            splitAt (fromEnum inj_n) outer_alts
-          abs_alts = left_alts ++ right_alts
-          Alt main_bs main_t = main_alt
-          
-          matchContext :: Type -> Context
-          matchContext ret_ty = Context.make outer_ty ret_ty mkCtx
-            where
-            mkCtx gap_t = 
-              Case outer_t outer_ty (left' ++ (main':right'))
-              where
-              left' = map updateType left_alts
-              right' = map updateType right_alts
-              main' = Alt main_bs (Indices.liftMany (length main_bs) gap_t)
-              
-              updateType (Alt bs (Absurd _)) = 
-                Alt bs (Absurd (Indices.liftMany (length bs) ret_ty))
- 
-          pushInwards :: Index -> Term -> m (Maybe Term)
-          pushInwards fix_f inner_cse@(Case inner_t inner_ty inner_alts) 
-            | not (isContext inner_cse) = do
-              cse_ty <- Err.noneM (Typing.typeOf inner_cse)
-              return
-                . Just
-                . Case inner_t' inner_ty
-                $ map (applyToAlt cse_ty) inner_alts
-            where
-            recCallExists :: Index -> Term -> Term -> Bool
-            recCallExists fix_f outer_t = id
-              . Env.trackIndices (fix_f, outer_t) 
-              . Fold.anyM isRecCall
-              where
-              isRecCall :: Term -> Env.TrackIndices (Index, Term) Bool
-              isRecCall (flattenApp -> Var f : args)
-                | length args == length outer_args = do
-                  (fix_f, outer_t) <- ask
-                  return 
-                    $ fix_f == f
-                    && Simp.strictVars outer_t `intersects` free_arg_vars
-                  where
-                  free_arg_vars = concatMap Indices.free args
-              isRecCall _ =
-                return False
-            
-            inner_t' 
-              | recCallExists fix_f outer_t inner_t = 
-                Context.apply (matchContext inner_ty) inner_t
-              | otherwise = inner_t
-              
-            applyToAlt cse_ty (Alt bs alt_t)
-              | recCallExists (liftHere fix_f) (liftHere outer_t) alt_t = 
-                Alt bs (Context.apply match_ctx alt_t) 
-              | otherwise = 
-                Alt bs alt_t
-              where 
-              liftHere :: Indexed t => t -> t
-              liftHere = Indices.liftMany (length bs)
-              
-              match_ctx = liftHere (matchContext cse_ty)
-              
-          pushInwards _ _ = 
-            return Nothing
-            
-        floatCtxMatchInwards _ = 
-          return Nothing
-          
-                {-
-      -- The extraction function that is passed to the Core.fuse
-      -- call for fixFact fusion. It floats the fact context
-      -- into the correct place in the term for fusion to be applied.
-      floatInwards :: forall m . (Env.Readable m, Fail.Monad m) => 
-        Index -> Context -> Term -> m Term
-      floatInwards fix_f ctx = id
-        . return  
-        . Env.trackIndices (fix_f, ctx)
-        . Fold.transformM floatCtxMatchInwards
-        where
-        -- We need the pattern match for the context (viz. over match_t) 
-        -- to be as far in as possible in order for fusion to succeed,
-        -- viz. that C[f] can be unified at some point. Otherwise we
-        -- end up with C[match ... with ... f ...].
-        floatCtxMatchInwards :: 
-          Term -> Env.TrackIndices (Index, Context) Term
-        floatCtxMatchInwards (Case outer_t outer_ty outer_alts)
-          | Unifier.exists match_t outer_t
-          , all (isAbsurd . get altInner) (left_alts ++ right_alts) = do
-            (fix_f, match_ctx) <- ask
-            return
-              . Context.apply outer_ctx
-              . Env.trackIndices (fix_f, (match_ctx, outer_ctx))
-              . Fold.transformM pushInwards 
-              . Indices.lowerMany (length main_bs)
-              $ main_t
-          where
-          (left_alts, main_alt:right_alts) = 
-            splitAt (fromEnum inj_n) outer_alts
-          abs_alts = left_alts ++ right_alts
-          Alt main_bs main_t = main_alt
-          
-          outer_ctx = Context.make full_ty full_ty mkCtx
-            where
-            mkCtx gap_t = Case outer_t outer_ty outer_alts'
-              where
-              outer_alts' = left_alts ++ (main_alt':right_alts)
-              main_alt' = 
-                Alt main_bs (Indices.liftMany (length main_bs) gap_t)
-          
-          pushInwards :: Term -> 
-            Env.TrackIndices (Index, (Context, Context)) Term
-          pushInwards term@(flattenApp -> Var var_f : args)
-            | length args == length outer_args = do
-              (fix_f, (match_ctx, outer_ctx)) <- ask
-              let inner_match = Context.apply outer_ctx term
-                  outer_match = Context.apply match_ctx (Var fix_f)
-              if var_f == fix_f
-                && Unifier.exists outer_match inner_match
-              then return inner_match
-              else return term
-          pushInwards other = 
-            return other
-            
-        floatCtxMatchInwards other = 
-          return other
-              -}
-      cleanupAbsurdities :: Term -> Term
-      cleanupAbsurdities = Fold.rewrite cleanup
-        where
-        cleanup :: Term -> Maybe Term
-        cleanup (Case _ _ alts) = do
-          (alt_t:alt_ts) <- alts 
-            |> mapM loweredAltTerm
-            $> sortBy absurdsGreater
-          guard (all isAbsurd alt_ts)
-          return alt_t
-          where
-          absurdsGreater (Absurd _) (Absurd _) = EQ
-          absurdsGreater (Absurd _) _ = LT
-          absurdsGreater _ (Absurd _) = GT
-          absurdsGreater _ _ = EQ
-          
-          loweredAltTerm :: Alt -> Maybe Term
-          loweredAltTerm (Alt bs alt_t) = do
-            guard (Indices.lowerableBy (length bs) alt_t)
-            return (Indices.lowerMany (length bs) alt_t)
-        cleanup _ = Nothing
-
-    fuseMatch _ = 
+        inner_f' = Term.clearFusedMatches inner_f
+        rec_arg = head inner_args
+    fixfix _ = 
       return Nothing
+    
+    repeatedArg :: Type -> m (Maybe Term)
+    repeatedArg full_ty
+      | x@(Var {}) <- head outer_args
+      , any (== x) (tail outer_args) = do
+        full_s <- showM full_t
+        outer_ty <- Err.noneM (Typing.typeOf outer_f)
+        let ctx = id
+              . Context.make outer_ty full_ty
+              $ \t -> unflattenApp (t : outer_args)
+        Fail.toMaybe (fuse run (\_ _ -> return) ctx outer_f)
+    repeatedArg _ =
+      return Nothing
+      
+    fixFact :: Type -> m (Maybe Term)
+    fixFact full_ty = do
+      matches <- Env.matches
+      matches
+        |> Map.toList
+        |> map fuseMatch
+        |> firstM
+      where
+      fuseMatch :: (Term, (Term, Int)) -> m (Maybe Term)
+      fuseMatch (match_t, 
+                (inj_t@(flattenApp -> Inj inj_n ind_ty : inj_args), m_depth))
+        | Just inj_n' <- fusedMatch match_t outer_f =
+          if inj_n' == inj_n  
+          then return Nothing
+          -- If we have already fused in a different pattern matched
+          -- to the same term, then this is an absurd branch.
+          -- Not sure if this ever comes up though.
+          else return (Just (Absurd full_ty))
+          {-
+        | isFix (leftmost match_t)
+        , match_fix_body `Term.containsUnifiable` outer_f = 
+          trace ("\n\nFAIL!!!!!!!\n" ++ show match_t ++ "\n\nWITH\n" ++ show outer_f) (return Nothing)
+          -}
+        | not (isFix (leftmost match_t)) 
+          || not relevantFact
+          -- If you do fix-fact fusion with a fact that contains the
+          -- fix within it, you will get an infinite loop. Noob.
+          || match_fix_body `Term.containsUnifiable` outer_f =
+          return Nothing
   
+        | otherwise = do
+          outer_ty <- Err.noneM (Typing.typeOf outer_f)
+          let ctx = Context.make outer_ty full_ty buildContext
+          -- We add the new fused matches to the info of our existing 
+          -- fixpoint, since this will be carried over to the fixpoint
+          -- that fusion produces.
+          let outer_f' = outer_f
+                |> addFusedMatch (match_t, inj_n)
+                |> addFusedMatches (get fusedMatches match_inf)
+              full_t' = unflattenApp (outer_f' : outer_args)
+          mby_t <- Fail.toMaybe (fuse run floatInwards ctx outer_f')
+          match_s <- showM match_t
+          outer_s <- showM full_t
+          inj_s <- showM inj_t
+          let msg | isJust mby_t = id
+                  | otherwise = 
+                      trace ("\n\nFailed to merge:\n" ++ match_s ++ "\n == " ++ inj_s ++ "\n\nwith:\n" ++ outer_s)
+          return
+            . msg
+            . Just
+            $ fromMaybe full_t' mby_t
+        where
+        match_fix@(Fix match_inf _ match_fix_body) : match_args = 
+          flattenApp match_t
+        match_vars = Simp.strictVars match_t
+        strict_vars = Simp.strictVars full_t
+        
+        -- A fact is only relevant to this term if there is a shared variable,
+        -- and no variables that have been bound after the match was made.
+        relevantFact = not distinct_vars && not bound_later
+          where 
+          distinct_vars = strict_vars 
+            |> Set.intersection match_vars
+            |> Set.null
+            
+          bound_later = strict_vars
+            |> concatMap Indices.free
+            |> any (< toEnum m_depth)
+        
+        buildContext :: Term -> Term
+        buildContext gap_t = 
+          Case match_t' ind_ty alts
+          where
+          -- In order for replacement to work, the match context term must not 
+          -- get fused with anything. I had a problem with argument order
+          -- being scrambled by a pointless fusion step within 
+          -- sorted-isort, blocking the replacement step.
+          match_fix' = Term.blockSimplification match_fix
+          match_t' = unflattenApp (match_fix' : match_args)
+          ind_cons = Typing.unfoldInd ind_ty
+          alts = map (buildAlt . toEnum) [0..length ind_cons - 1]
+          
+          buildAlt :: Nat -> Alt
+          buildAlt alt_n = Alt alt_bs alt_t
+            where
+            alt_bs = id
+              . fst
+              . flattenPi
+              . get boundType
+              $ ind_cons !! fromEnum alt_n
+              
+            bs_count = length alt_bs
+            
+            arg_idxs = map (_varIndex . liftMany bs_count) inj_args
+            new_vars = map (Var . toEnum) (reverse [0..bs_count - 1])
+            
+            alt_t 
+              | alt_n /= inj_n = Absurd full_ty
+              | otherwise = id
+                  . concatEndos (zipWith replaceAt arg_idxs new_vars)
+                  . liftMany bs_count
+                  $ unflattenApp (gap_t : outer_args)
+          
+        -- The extraction function that is passed to the Core.fuse
+        -- call for fixFact fusion. It floats the fact context
+        -- into the correct place in the term for fusion to be applied.
+        floatInwards :: forall m . (Env.Readable m, Fail.Monad m) => 
+          Index -> Context -> Term -> m Term
+        floatInwards fix_f match_ctx = id
+          . return
+          . Env.trackIndices (fix_f, match_ctx)
+          . Term.restrictedTransformM floatCtxMatchInwards
+          where
+          floatCtxMatchInwards :: 
+            Term -> Env.TrackIndices (Index, Context) Term
+          floatCtxMatchInwards cse_t@(Case outer_t outer_ty outer_alts) = do
+              (fix_f, match_ctx) <- ask
+              let match_t = getMatchTerm match_ctx
+              if not (Unifier.exists match_t outer_t)
+              then return cse_t
+              else do
+                let main_alt' = id
+                      . Alt main_bs
+                      . Env.trackIndices (fix_f, (match_ctx, outer_ctx))
+                      . local (Indices.liftMany (length main_bs))
+                      . Term.restrictedTransformM pushInwards
+                      $ main_t
+                return 
+                  . Case outer_t outer_ty 
+                  $ left_alts ++ (main_alt':right_alts)
+            where
+            (left_alts, main_alt:right_alts) = 
+              splitAt (fromEnum inj_n) outer_alts
+            abs_alts = left_alts ++ right_alts
+            Alt main_bs main_t = main_alt
+            
+            getMatchTerm ctx = match_t
+              where
+              Case match_t _ _ = Context.apply ctx (Absurd Set)
+  
+            outer_ctx = Context.make full_ty full_ty mkCtx
+              where
+              mkCtx gap_t = Case outer_t outer_ty outer_alts'
+                where
+                makeAbsurd (Alt bs _) = id
+                  . Alt bs
+                  . Indices.liftMany (length bs)
+                  $ Absurd full_ty
+                
+                left_alts' = map makeAbsurd left_alts
+                right_alts' = map makeAbsurd right_alts
+                outer_alts' = left_alts' ++ (main_alt':right_alts')
+                main_alt' = 
+                  Alt main_bs (Indices.liftMany (length main_bs) gap_t)
+            
+            pushInwards :: Term -> 
+              Env.TrackIndices (Index, (Context, Context)) Term
+            pushInwards term@(flattenApp -> Var var_f : args)
+              | length args == length outer_args = do
+                (fix_f, (match_ctx, outer_ctx)) <- ask
+                let inner_match = Context.apply outer_ctx term
+                    outer_match = Context.apply match_ctx (Var fix_f)
+                if var_f == fix_f
+                  && Unifier.exists outer_match inner_match
+                then return inner_match
+                else return term
+            pushInwards other = 
+              return other
+              
+          floatCtxMatchInwards other = 
+            return other
+
+      fuseMatch _ = 
+        return Nothing
+    
 fusion _ =
   return Nothing
 

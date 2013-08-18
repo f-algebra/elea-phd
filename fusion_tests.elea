@@ -150,17 +150,10 @@ let sorted_tree =
   
 let t19 = fun (t: tree nat) ->
   match sorted_tree t with
-  | True -> sorted_tree t
-  | False -> True
-  end
-let t19' = fun (tree nat) -> True
-
-let t24 = fun (xs: list nat) (n: nat) -> 
-  match sorted xs with
   | True -> False
-  | False -> sorted (insert n xs)
+  | False -> sorted_tree t
   end
-let t24' = _|_ bool
+let t19' = fun (tree nat) -> False
 
 let t55 = fun (xs: list nat) -> sorted_tree (build xs)
 let t55' = _|_ bool
@@ -174,13 +167,6 @@ let t54' = _|_ bool
 
 let t56 = fun (k: nat) (t: tree nat) -> sorted_tree (ins_tree k t)
 let t56' = _|_ bool
-
-let t57 = fun (k: nat) (t: tree nat) -> 
-  match sorted_tree t with
-  | True -> False
-  | False -> sorted_tree t
-  end
-let t57' = fun nat (tree nat) -> False
 
 /* requires invention of list-fold functions */
 let t219 = fun (a: *) (t: tree a) -> length a (flatten a t)

@@ -84,7 +84,11 @@ absurdity term
     return (Just (Absurd ty))
   where
   isAbsurd (App (Absurd _) _) = True
-  isAbsurd (Case (Absurd _) _ _) = True 
+  isAbsurd (Case (Absurd _) _ _) = True
+  -- For now we assume fixpoints are strict in all their arguments.
+  isAbsurd (flattenApp -> fun : args)
+    | isFix fun || isInj fun
+    , any isAbsurd args = True
   {-
   isAbsurd (Fix (FixInfo inf _) _ _) = 
     any absurdMatch inf

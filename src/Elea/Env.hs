@@ -76,9 +76,9 @@ instance Fold.FoldableM Term where
     inf <- forgetFacts (distInfo minf)
     return (Fix' inf (Bind' l ty) t)
     where
-    distInfo (FixInfo' mms nf) = do
+    distInfo (FixInfo' mms nf al) = do
       ms <- mapM distMatch mms
-      return (FixInfo' ms nf)
+      return (FixInfo' ms nf al)
       where
       distMatch :: Monad m => ((m a, b), Nat) -> m (a, Nat)
       distMatch ((ma, _), n) = liftM (\a -> (a, n)) ma

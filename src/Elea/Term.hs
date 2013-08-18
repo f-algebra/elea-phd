@@ -24,6 +24,7 @@ module Elea.Term
   altPattern, argumentCount, 
   fusedMatch, addFusedMatch, 
   addFusedMatches, clearFusedMatches,
+  blockSimplification, allowSimplification, simplifiable
 )
 where
 
@@ -90,7 +91,8 @@ data Alt
   
 data FixInfo =
   FixInfo { _fusedMatches :: ![(Term, Nat)]
-          , _normalForm :: !Bool }
+          , _normalForm :: !Bool
+          , _canSimplify :: !Bool }
 
 -- The info stored in a 'Fix' has no bearing on its value  
 instance Eq FixInfo where
@@ -99,7 +101,7 @@ instance Ord FixInfo where
   _ `compare` _ = EQ
 
 emptyFixInfo :: FixInfo
-emptyFixInfo = FixInfo mempty False
+emptyFixInfo = FixInfo mempty False True
   
 -- * Base types for generalised cata/para morphisms.
   
@@ -131,7 +133,8 @@ data Alt' a
   
 data FixInfo' a =
   FixInfo'  { _fusedMatches' :: [(a, Nat)]
-            , _normalForm' :: !Bool }
+            , _normalForm' :: !Bool
+            , _canSimplify' :: !Bool }
   deriving ( Functor, Foldable, Traversable )
   
 mkLabels [ ''Term, ''Alt, ''Bind, ''FixInfo
@@ -155,10 +158,10 @@ embedBind :: Bind' Term -> Bind
 embedBind (Bind' lbl t) = Bind lbl t
 
 projectFixInfo :: FixInfo -> FixInfo' Term
-projectFixInfo (FixInfo ms nf) = FixInfo' ms nf
+projectFixInfo (FixInfo ms nf al) = FixInfo' ms nf al
 
 embedFixInfo :: FixInfo' Term -> FixInfo
-embedFixInfo (FixInfo' ms nf) = FixInfo ms nf
+embedFixInfo (FixInfo' ms nf al) = FixInfo ms nf al
 
 instance Fold.Foldable Term where
   {-# INLINEABLE project #-}
@@ -272,8 +275,8 @@ argumentCount pi@(Pi _ _) =
 -- pattern match fused into it, this returns which constructor 
 -- it was matched to.
 fusedMatch :: Term -> Term -> Maybe Nat
-fusedMatch match (leftmost -> Fix (FixInfo ms _) _ _) =
-  lookup match ms
+fusedMatch match (leftmost -> Fix inf _ _) =
+  lookup match (get fusedMatches inf)
   
 addFusedMatch :: (Term, Nat) -> Term -> Term
 addFusedMatch (m_t, m_n) (flattenApp -> Fix inf b t : args) = id
@@ -287,6 +290,19 @@ addFusedMatch _ other = other
 addFusedMatches :: [(Term, Nat)] -> Term -> Term
 addFusedMatches = flip (foldr addFusedMatch)
 
+allowSimplification :: Term -> Term
+allowSimplification (Fix inf b t) = 
+  Fix (set canSimplify True inf) b t
+  
+blockSimplification :: Term -> Term
+blockSimplification (Fix inf b t) = 
+  Fix (set canSimplify False inf) b t
+
+simplifiable :: Term -> Bool
+simplifiable (leftmost -> Fix inf _ _) = 
+  get canSimplify inf
+simplifiable _ = True
+  
 clearFusedMatches :: Term -> Term
 clearFusedMatches (flattenApp -> Fix inf b t : args) = 
   unflattenApp (Fix inf' b t : args)
