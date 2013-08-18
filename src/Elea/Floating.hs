@@ -35,13 +35,12 @@ removeConstArgs = Simp.run . Term.restrictedRewrite constArg
 steps :: Env.Readable m => [Term -> m (Maybe Term)]
 steps = id
   . map Typing.checkStep
-  $ nonMonadic ++ [ unfoldFixInj, absurdity, varEqApply ]
+  $ nonMonadic ++ [ caseFun, unfoldFixInj, absurdity, varEqApply ]
   where
   nonMonadic = map (return .)
-    [ constArg   
-    , lambdaCase
-    , funCase
-    , argCase
+    [ constArg
+    , caseApp
+    , appCase
     , freeCaseFix
     , identityCase
     , caseCase
@@ -88,14 +87,7 @@ absurdity term
   -- For now we assume fixpoints are strict in all their arguments.
   isAbsurd (flattenApp -> fun : args)
     | isFix fun || isInj fun
-    , any isAbsurd args = True
-  {-
-  isAbsurd (Fix (FixInfo inf _) _ _) = 
-    any absurdMatch inf
-    where
-    absurdMatch (leftmost -> Inj inj_n _, inj_n') = inj_n /= inj_n'
-    absurdMatch _ = False
-  -}
+    , any Term.isAbsurd args = True
   isAbsurd _ = False
     
 absurdity _ =
@@ -281,54 +273,52 @@ constantFix _ =
 
  
 -- | Float lambdas out of the branches of a pattern match
-lambdaCase :: Term -> Maybe Term
-lambdaCase (Case lhs ind_ty alts)
-  -- This step only works if every branch has a lambda topmost
-  | all (isLam . get altInner) alts = id
-    . return
-    . Lam new_b
-    . Case (Indices.lift lhs) (Indices.lift ind_ty) 
-    $ map lctAlt alts
+caseFun :: Env.Readable m => Term -> m (Maybe Term)
+caseFun cse@(Case lhs ind_ty alts) 
+  | any (\t -> isFix t || isFun t) alt_ts = do
+    Pi arg_b _ <- Err.noneM (Typing.typeOf cse)
+    return
+      . Just
+      . Lam arg_b
+      . Case (Indices.lift lhs) (Indices.lift ind_ty)
+      $ map appAlt alts
   where
-  -- Use the binding of the first alt's lambda as our new outer binding
-  getBinding (Alt bs (Lam lam_b _)) = 
-    Indices.lowerMany (length bs) lam_b
-  new_b = getBinding (head alts)
+  alt_ts = map (leftmost . get altInner) alts
   
-  -- Lots of careful de-Bruijn index adjustment here
-  lctAlt (Alt bs (Lam lam_b rhs)) = id
+  appAlt (Alt bs alt_t) = id
     . Alt (map Indices.lift bs)
-    . subst (Var (toEnum (length bs)))
-    . Indices.liftAt (toEnum (length bs + 1))
-    $ rhs
+    $ App alt_t' arg
+    where
+    alt_t' = Indices.liftAt (toEnum (length bs)) alt_t
+    arg = Var (toEnum (length bs))
     
-lambdaCase _ = Nothing
+caseFun _ = return Nothing
 
 
 -- | If we have a case statement on the left of term 'App'lication
 -- then float it out.
-funCase :: Term -> Maybe Term
-funCase (App (Case lhs ind_ty alts) arg) = id
+caseApp :: Term -> Maybe Term
+caseApp (App (Case lhs ind_ty alts) arg) = id
   . return
   $ Case lhs ind_ty (map appArg alts)
   where
   appArg (Alt bs rhs) =
     Alt bs (App rhs (Indices.liftMany (length bs) arg))
     
-funCase _ = Nothing
+caseApp _ = Nothing
 
 
 -- | If we have a case statement on the right of term 'App'lication
 -- then float it out.
-argCase :: Term -> Maybe Term
-argCase (App fun (Case lhs ind_ty alts)) = id
+appCase :: Term -> Maybe Term
+appCase (App fun (Case lhs ind_ty alts)) = id
   . return 
   $ Case lhs ind_ty (map appFun alts)
   where
   appFun (Alt bs rhs) =
     Alt bs (App (Indices.liftMany (length bs) fun) rhs)
     
-argCase _ = Nothing
+appCase _ = Nothing
 
 
 -- | If an argument to a 'Fix' never changes in any recursive call
