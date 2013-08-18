@@ -275,7 +275,7 @@ constantFix _ =
 -- | Float lambdas out of the branches of a pattern match
 caseFun :: Env.Readable m => Term -> m (Maybe Term)
 caseFun cse@(Case lhs ind_ty alts) 
-  | any (\t -> isFix t || isFun t) alt_ts = do
+  | any (\t -> isFix t || isLam t) alt_ts = do
     Pi arg_b _ <- Err.noneM (Typing.typeOf cse)
     return
       . Just
