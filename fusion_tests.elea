@@ -36,23 +36,23 @@ let t6' = fun (n:nat) (xs:list nat) -> Suc (count n xs)
 let t7 = fun (n:nat) (xs:list nat) -> count n (rev nat xs)
 let t7' = fun (n:nat) (xs:list nat) -> count n xs
 
-let t8 = fun (a: *) (xs: list a) -> rev a (rev a xs)
-let t8' = fun (a: *) (xs: list a) -> xs
+let t8 = fun (n:nat) (xs:list nat) (ys:list nat) -> 
+  count n (app nat xs ys)
+let t8' = fun (n:nat) (xs:list nat) (ys:list nat) -> 
+  add (count n xs) (count n ys)
 
-let t9 = fix (f: pi (a:*) (list a) -> list a) (a:*) (xs:list a) -> 
+let t9 = fun (a: *) (xs: list a) -> rev a (rev a xs)
+let t9' = fun (a: *) (xs: list a) -> xs
+
+let t10 = fix (f: pi (a:*) (list a) -> list a) (a:*) (xs:list a) -> 
   match xs with
   | Nil -> Nil a
   | Cons x xs' -> Cons a x (f a xs')
   end
-let t9' = fun (a:*) (xs:list a) -> xs
+let t10' = fun (a:*) (xs:list a) -> xs
 
-let t10 = fun (x:nat) (y:nat) -> or (leq_nat x y) (leq_nat y x)
-let t10' = fun nat nat -> True
-
-let t11 = fun (n:nat) (xs:list nat) (ys:list nat) -> 
-  count n (app nat xs ys)
-let t11' = fun (n:nat) (xs:list nat) (ys:list nat) -> 
-  add (count n xs) (count n ys)
+let t11 = fun (x:nat) (y:nat) -> or (leq_nat x y) (leq_nat y x)
+let t11' = fun nat nat -> True
 
 let t12 = fun (x:nat) (y:nat) (z:nat) -> 
   implies (and (leq_nat x y) (leq_nat y z)) (leq_nat x z)
@@ -155,6 +155,30 @@ let t19 = fun (t: tree nat) ->
   end
 let t19' = fun (tree nat) -> False
 
+let t20 = fun (x: nat) (y: nat) (z: nat) ->
+  implies (and (not (leq_nat y x)) (leq_nat y z)) (leq_nat x z)
+let t20' = fun nat nat nat -> True
+
+let t21 = fun (n: nat) (k: nat) ->
+  match leq_nat n k with
+  | True ->
+    fix (f: pi (list nat) -> bool) (xs: list nat) ->
+    match xs with
+    | Nil -> True
+    | Cons y ys ->
+      match ys with
+      | Nil -> 
+        match leq_nat n y with
+        | True -> leq_nat n k 
+        | False -> leq_nat y k
+        end
+      | Cons z zs -> f ys
+      end
+    end
+  | False -> fun (list nat) -> True
+  end
+let t21' = fun nat nat (list nat) -> True
+
 let t55 = fun (xs: list nat) -> sorted_tree (build xs)
 let t55' = _|_ bool
 
@@ -164,6 +188,13 @@ let t54 = fun (n: nat) (t: tree nat) ->
   | False -> False
   end
 let t54' = _|_ bool
+
+let t541 = fun (n: nat) (k: nat) (t: tree nat) -> 
+  match and (leq_nat n k) (last_leq k t) with
+  | True -> last_leq k (ins_tree n t)
+  | False -> True
+  end
+let t541' = _|_ bool
 
 let t56 = fun (k: nat) (t: tree nat) -> sorted_tree (ins_tree k t)
 let t56' = _|_ bool

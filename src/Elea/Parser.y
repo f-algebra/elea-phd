@@ -157,15 +157,15 @@ instance Monad m => Env.Writable (ReaderT Scope m) where
       
   equals _ _ = id
   filterMatches _ = id
+  fixpointHere = id
 
 instance Err.Monad m => Env.Readable (ReaderT Scope m) where
   bindings = asks (get bindStack)
-  matches = return mempty
   
 type ParserMonad m a = (Err.Monad m, Defs.Monad m) => ReaderT Scope m a
     
 localDef :: MonadReader Scope m => String -> Term -> m a -> m a
-localDef name term = 
+localDef name term =    
     local 
   $ modify bindMap 
   $ Map.insert name (Left term)

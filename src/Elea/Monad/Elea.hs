@@ -41,7 +41,8 @@ data EleaValue a
         
 data EleaRead
   = ER  { _readBinds :: ![Bind]
-        , _readMatches :: !Matches }
+        , _readMatches :: !Matches
+        , _readFixpointDepth :: !Int }
   
 newtype Elea a 
   = Elea { runElea :: EleaRead -> EleaValue a }
@@ -50,7 +51,7 @@ mkLabels [''EleaRead]
 
 run :: Elea a -> a
 run el =
-  case runElea el (ER mempty mempty) of
+  case runElea el (ER mempty mempty 0) of
     Value x -> x
     Fail -> error "FAIL"
     Error e -> error e
@@ -86,7 +87,11 @@ instance Env.Writable Elea where
     mapMatches = Map.insert t (k, 0)
     
   filterMatches p = 
-    local (modify readMatches (Map.filterWithKey (\k _ -> p k)))
+    local (modify readMatches (Map.filterWithKey (\k (v, _) -> p k v)))
+    
+  fixpointHere m = do
+    d <- Env.bindingDepth
+    local (set readFixpointDepth d) m
     
 instance Env.Readable Elea where
   bindings = asks (get readBinds)
@@ -97,6 +102,8 @@ instance Env.Readable Elea where
     Err.when (fromEnum at >= length bs)
       $ "Index " ++ show at ++ " not bound in " ++ show bs
     return (bs !! fromEnum at)
+    
+  fixpointDepth = asks (get readFixpointDepth)
 
 instance Err.Monad Elea where
   throw e = Elea $ \_ -> (Error e)

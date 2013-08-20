@@ -6,7 +6,8 @@ module Elea.Env
   TrackIndices, TrackIndicesT (..),
   trackIndices, trackIndicesT,
   bind, bindMany, matchedWith,
-  forgetFacts, isMatchedPattern,
+  forgetFacts, isMatchedPattern, 
+  fixpointOffset,
   AlsoTrack, alsoTrack, alsoWith,
 )
 where
@@ -25,9 +26,19 @@ import qualified Data.Map as Map
 import qualified Control.Monad.Trans as Trans
 
 class Monad m => Writable m where
+  -- | Binding variables to types within the environment
   bindAt :: Index -> Bind -> m a -> m a
+  
+  -- | Declare that one term is equal to another locally.
   equals :: Term -> Term -> m a -> m a
-  filterMatches :: (Term -> Bool) -> m a -> m a
+  
+  -- | Filter the list of equal terms
+  filterMatches :: (Term -> Term -> Bool) -> m a -> m a
+  
+  -- | Declare that a fixpoint exists at this binding depth.
+  -- So far this is only used to stop fix-fact fusion occurring on a term
+  -- whose variables exist entirely outside of the local fixpoint.
+  fixpointHere :: m a -> m a
   
 bind :: Writable m => Bind -> m a -> m a
 bind = bindAt 0
@@ -37,7 +48,13 @@ bindMany = concatEndos . map bind
 
 class Writable m => Readable m where
   bindings :: m [Bind]
+  bindings = error "No bindings stored."
+  
   matches :: m Matches
+  matches = error "No matches stored."
+  
+  fixpointDepth :: m Int
+  fixpointDepth = error "No fixpoint depth stored."
   
   boundAt :: Index -> m Bind
   boundAt at = liftM (!! fromEnum at) bindings
@@ -57,8 +74,14 @@ isMatchedPattern term=
   liftM (elemOrd term . map fst . Map.elems) matches
   
 forgetFacts :: Writable m => m a -> m a
-forgetFacts = filterMatches isVar
- 
+forgetFacts = filterMatches (\_ _ -> False) -- (\t _ -> isVar t)
+
+fixpointOffset :: Readable m => m Index
+fixpointOffset = do
+  b <- bindingDepth
+  f <- fixpointDepth
+  return (toEnum (b - f))
+  
 instance Fold.FoldableM Term where
   -- To fold over a 'Term' we require that our monad implement a writable
   -- environment. This environment can then be correctly updated as 
@@ -72,7 +95,7 @@ instance Fold.FoldableM Term where
     return (Lam' (Bind' l ty) t)
   distM (Fix' minf (Bind' l (mty, _ty)) (mt, _)) = do
     ty <- mty
-    t <- bind (Bind l _ty) mt
+    t <- bind (Bind l _ty) (fixpointHere mt)
     inf <- forgetFacts (distInfo minf)
     return (Fix' inf (Bind' l ty) t)
     where
@@ -219,6 +242,7 @@ instance (Monad m, Indexed r) => Writable (TrackIndicesT r m) where
   bindAt at _ = local (liftAt at)
   equals _ _ = id
   filterMatches _ = id
+  fixpointHere = id
 
 -- | An environment monad which tracks indices but also passes environment
 -- bindings to an inner monad (see the 'Writable' class for details).
@@ -240,12 +264,14 @@ instance (Writable m, Indexed r) => Writable (AlsoTrack r m) where
   bindAt at b = local (liftAt at) . mapAlsoTrack (bindAt at b)
   equals x y = mapAlsoTrack (equals x y)
   filterMatches p = mapAlsoTrack (filterMatches p)
+  fixpointHere = mapAlsoTrack fixpointHere
   
 instance (Readable m, Indexed r) => Readable (AlsoTrack r m) where
   bindings = Trans.lift bindings
   matches = Trans.lift matches
   boundAt = Trans.lift . boundAt
   bindingDepth = Trans.lift bindingDepth
+  fixpointDepth = Trans.lift fixpointDepth
   
 instance Fail.Monad m => Fail.Monad (AlsoTrack r m) where
   here = Trans.lift Fail.here
@@ -254,6 +280,7 @@ instance (Monoid w, Writable m) => Writable (WriterT w m) where
   bindAt at b = WriterT . bindAt at b . runWriterT
   equals t1 t2 = WriterT . equals t1 t2 . runWriterT
   filterMatches p = WriterT . filterMatches p . runWriterT
+  fixpointHere = WriterT . fixpointHere . runWriterT
   
 instance Monad m => Writable (ReaderT [Bind] m) where
   bindAt at b = 
@@ -262,48 +289,57 @@ instance Monad m => Writable (ReaderT [Bind] m) where
     . map (liftAt at)
   equals _ _ = id
   filterMatches _ = id
+  fixpointHere = id
   
 instance Monad m => Readable (ReaderT [Bind] m) where 
   bindings = ask
-  matches = return mempty
+  matches = error "No matches stored."
+  fixpointDepth = error "No fusion depth stored."
   
 instance Writable m => Writable (MaybeT m) where
   bindAt at b = MaybeT . bindAt at b . runMaybeT
   equals x y = MaybeT . equals x y . runMaybeT
   filterMatches p = MaybeT . filterMatches p . runMaybeT
+  fixpointHere = MaybeT . fixpointHere . runMaybeT
   
 instance Readable m => Readable (MaybeT m) where
   bindings = Trans.lift bindings
   matches = Trans.lift matches
   boundAt = Trans.lift . boundAt
   bindingDepth = Trans.lift bindingDepth
+  fixpointDepth = Trans.lift fixpointDepth
   
 instance Writable m => Writable (EitherT e m) where
   bindAt at b = EitherT . bindAt at b . runEitherT
   equals x y = EitherT . equals x y . runEitherT
   filterMatches p = EitherT . filterMatches p . runEitherT
+  fixpointHere = EitherT . fixpointHere . runEitherT
   
 instance Readable m => Readable (EitherT e m) where
   bindings = Trans.lift bindings
   matches = Trans.lift matches
   boundAt = Trans.lift . boundAt
   bindingDepth = Trans.lift bindingDepth
+  fixpointDepth = Trans.lift fixpointDepth
   
 instance Writable m => Writable (StateT s m) where
   bindAt at b = StateT . (bindAt at b .) . runStateT
   equals x y = StateT . (equals x y .) . runStateT
   filterMatches p = StateT . (filterMatches p .) . runStateT
+  fixpointHere = StateT . (fixpointHere .) . runStateT
   
 instance Readable m => Readable (StateT s m) where
   bindings = Trans.lift bindings
   matches = Trans.lift matches
   boundAt = Trans.lift . boundAt
   bindingDepth = Trans.lift bindingDepth
+  fixpointDepth = Trans.lift fixpointDepth
   
 instance Writable Identity where
   bindAt _ _ = id
   equals _ _ = id
   filterMatches _ = id
+  fixpointHere = id
   
 instance ContainsTerms Term where
   mapTermsM = ($)

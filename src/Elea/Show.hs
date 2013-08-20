@@ -59,7 +59,7 @@ instance Show (Term' String) where
   show (Pi' (show -> b) t) =
     "pi " ++ b ++ mergePi t
   show (Fix' (FixInfo' inf _ _) (show -> b) t) =
-    indent $ "\nfix " {- ++ show inf ++ " " -} ++ b ++ " -> " ++ t
+    indent $ "\nfix " {- ++ show inf -} ++ " " ++ b ++ " -> " ++ t
   show (Lam' (show -> b) t) =
     indent $ "\nfun " ++ b ++ " -> " ++ t
         

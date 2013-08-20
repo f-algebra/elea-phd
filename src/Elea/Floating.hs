@@ -27,15 +27,15 @@ import qualified Data.Map as Map
 
 {-# INLINEABLE run #-}
 run :: Env.Readable m => Term -> m Term
-run = Term.restrictedRewriteStepsM (Simp.stepsM ++ steps)
+run = Fold.isoRewriteStepsM Term.restricted (Simp.stepsM ++ steps)
 
 removeConstArgs :: Term -> Term
-removeConstArgs = Simp.run . Term.restrictedRewrite constArg
+removeConstArgs = Simp.run . Fold.isoRewrite Term.restricted constArg
 
 steps :: Env.Readable m => [Term -> m (Maybe Term)]
 steps = id
   . map Typing.checkStep
-  $ nonMonadic ++ [ caseFun, unfoldFixInj, absurdity, varEqApply ]
+  $ nonMonadic ++ [ caseFun, unfoldFixInj, absurdity, freeFix, varEqApply ]
   where
   nonMonadic = map (return .)
     [ constArg
@@ -69,7 +69,7 @@ commuteMatchesWhen when outer_cse@(Case _ _ alts)
     Indices.tryLowerMany (length bs) alt_t
   innerMatch _ = Nothing
 commuteMatchesWhen _ _ = return Nothing
-    
+
 varEqApply :: Env.Readable m => Term -> m (Maybe Term)
 -- varEqApply term | isFix (leftmost term) || isVar term = Env.matchedWith term
 varEqApply t@(Var {}) = Env.matchedWith t
@@ -429,7 +429,6 @@ applyCaseOf (Case cse_t ind_ty old_alts) inner_t =
       . liftHere
       $ inner_t
 
-
 -- | If we pattern match inside a 'Fix', but only using variables that exist
 -- outside of the 'Fix', then we can float this pattern match outside
 -- of the 'Fix'.
@@ -453,6 +452,36 @@ freeCaseFix fix_t@(Fix _ _ fix_body) = do
     return Nothing
   
 freeCaseFix _ = Nothing
+
+
+freeFix :: Env.Readable m => Term -> m (Maybe Term)
+freeFix outer_fix@(Fix _ _ outer_body)
+  | Just free_fix <- mby_free_fix = do
+    ind_ty <- Err.noneM (Typing.typeOf free_fix)
+    -- While this step will work for recursive inductive types,
+    -- it doesn't make much sense to me to ever do this.
+    if Term.isRecursiveInd ind_ty
+    then return Nothing
+    else return 
+       . Just
+       . Term.buildCaseOf free_fix ind_ty 
+       $ const outer_fix
+  where
+  mby_free_fix = id
+    . Env.trackIndices 1
+    $ Fold.isoFindM Term.restricted freeFixes outer_body
+  
+  freeFixes :: Term -> Env.TrackIndices Index (Maybe Term)
+  freeFixes term@(flattenApp -> fix@(Fix {}) : args)
+    | length args == Term.argumentCount fix = do
+      idx_offset <- ask
+      return 
+        . Indices.tryLowerMany (fromEnum idx_offset)
+        $ term
+  freeFixes _ = 
+    return Nothing
+  
+freeFix _ = return Nothing
 
 
 -- | This one is mostly to get rev-rev to go through. Removes a pattern

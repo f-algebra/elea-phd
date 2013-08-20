@@ -62,23 +62,28 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
       new_fix_b = Bind new_label new_fix_ty
       ctx_here = Indices.lift outer_ctx
 
-  simplified_t <- fix_t
-    |> Context.apply ctx_here
-    |> simplify
-    |> Env.bind fix_b
-   -- |> trace s1
+  simplified_t <- id
+    -- . trace s1
+    . Env.bind fix_b
+    . Env.fixpointHere
+    . simplify
+    . Context.apply ctx_here
+    $ fix_t
     
-  extracted_t <- simplified_t
-    |> extract 0 ctx_here
-    |> Env.bind fix_b
+  extracted_t <- id
+    . Env.bind fix_b
+    . Env.fixpointHere
+    . extract 0 ctx_here 
+    $ simplified_t
   
-  let reverted_t = extracted_t
-        |> Term.revertMatchesWhen isInnerFixMatch
-        |> Env.trackIndices 0
+  let reverted_t = id
+        . Env.trackIndices 0
+        . Term.revertMatchesWhen isInnerFixMatch
+        $ extracted_t
        
   simp_s <- Env.bind fix_b (showM simplified_t)
   revt_t <- Env.bind fix_b (showM extracted_t)
-  let s2 = "\nSIMPLIFIED:\n" ++ simp_s ++ "\n\nEXTRACTED:\n" ++ revt_t
+  let s2 = "\nSIMPLIFIED:\n" ++ simp_s {- ++ "\n\nEXTRACTED:\n" ++ revt_t -}
   
   depth <- Env.bindingDepth
   let replaced_t = id
@@ -86,7 +91,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
         . Fold.transformM (replace fix_idx arg_vars)
       --  . trace s2
         $ reverted_t
-      
+  
   rep_s <- Env.bindAt 0 fix_b
     . Env.bindAt fix_idx new_fix_b
     $ showM replaced_t
