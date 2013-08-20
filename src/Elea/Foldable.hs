@@ -1,12 +1,15 @@
 module Elea.Foldable
 (
   module Data.Functor.Foldable,
-  Refoldable, FoldableM (..), Transformable (..),
+  Refoldable, FoldableM (..), Transformable (..), 
+  Iso, iso, 
+  isoTransformM, isoRewriteM, isoRewriteStepsM,
+  isoFindM, isoAnyM, isoAllM, isoRewriteOnceM,
+  isoRewrite, isoTransform,
   rewriteM, foldM, rewriteOnceM, collectM,
   allM, findM, anyM, any, all,
   transform, rewrite, recover,
   rewriteStepsM, rewriteSteps, countM,
-  
   SelectorM, selectiveTransformM, selectAll,
 )
 where
@@ -18,6 +21,7 @@ import Data.Functor.Foldable
 import qualified Elea.Prelude as Prelude
 import qualified Data.Monoid as Monoid
 import qualified Control.Monad.State as State
+import qualified Data.Isomorphism as Iso
 import qualified Data.Set as Set
 
 type Refoldable t = (Foldable t, Unfoldable t)
@@ -51,25 +55,70 @@ class FoldableM t => Transformable t where
   transformM :: (Monad m, FoldM t m) => 
     (t -> m t) -> t -> m t
   transformM f = cataM (f . embed)
+ 
+-- | I was fed up of having to rewrite the 'transform', 'rewrite', 'any', etc.
+-- functions for isomorphisms of an existing datatype.
+type Iso = Iso.Iso (->) 
+
+iso :: (a -> b) -> (b -> a) -> Iso a b
+iso = Iso.Iso
+
+isoTransformM :: (Transformable t, Monad m, FoldM t m) =>
+  Iso a t -> (a -> m a) -> a -> m a
+isoTransformM iso f = id
+  . liftM (Iso.project iso)
+  . transformM (liftM (Iso.embed iso) . f . Iso.project iso) 
+  . Iso.embed iso
   
-{-# INLINEABLE foldM #-}
-foldM :: (Transformable t, Monad m, FoldM t (WriterT w m), Monoid w) =>
-  (t -> m w) -> t -> m w
-foldM f = execWriterT . rewriteM rrwt
+isoRewriteM :: (Transformable t, Monad m, FoldM t m) =>
+  Iso a t -> (a -> m (Maybe a)) -> a -> m a
+isoRewriteM iso f = id
+  . liftM (Iso.project iso)
+  . transformM rrwt 
+  . Iso.embed iso
+  where
+  f' = liftM (fmap (Iso.embed iso)) . f . Iso.project iso
+  rrwt t = join . liftM (maybe (return t) (rewriteM f')) . f' $ t
+  
+rewriteM :: (Transformable t, Monad m, FoldM t m) =>
+  (t -> m (Maybe t)) -> t -> m t
+rewriteM = isoRewriteM id
+
+isoFoldM :: (Transformable t, Monad m, FoldM t (WriterT w m), Monoid w) =>
+  Iso a t -> (a -> m w) -> a -> m w
+isoFoldM iso f = execWriterT . isoRewriteM iso rrwt
   where
   rrwt = const (return Nothing) <=< tell <=< (lift . f)
   
-findM :: (Transformable t, Monad m, FoldM t (WriterT (Monoid.First a) m)) =>
-  (t -> m (Maybe a)) -> t -> m (Maybe a)
-findM f = liftM (Monoid.getFirst) . foldM (liftM Monoid.First . f)
+isoFindM :: (Transformable t, Monad m, FoldM t (WriterT (Monoid.First f) m)) =>
+  Iso a t -> (a -> m (Maybe f)) -> a -> m (Maybe f)
+isoFindM iso f = id
+  . liftM (Monoid.getFirst) 
+  . isoFoldM iso (liftM Monoid.First . f)
+  
+isoAllM :: (Transformable t, Monad m, FoldM t (WriterT Monoid.All m)) =>
+  Iso a t -> (a -> m Bool) -> a -> m Bool
+isoAllM iso p = liftM Monoid.getAll . isoFoldM iso (liftM Monoid.All . p)
+
+isoAnyM :: (Transformable t, Monad m, FoldM t (WriterT Monoid.All m)) =>
+  Iso a t -> (a -> m Bool) -> a -> m Bool
+isoAnyM iso p = liftM not . isoAllM iso (liftM not . p)
+
+foldM :: (Transformable t, Monad m, FoldM t (WriterT w m), Monoid w) =>
+  (t -> m w) -> t -> m w
+foldM = isoFoldM id
+  
+findM :: (Transformable t, Monad m, FoldM t (WriterT (Monoid.First f) m)) =>
+  (t -> m (Maybe f)) -> t -> m (Maybe f)
+findM = isoFindM id
 
 allM :: (Transformable t, Monad m, FoldM t (WriterT Monoid.All m)) =>
   (t -> m Bool) -> t -> m Bool
-allM p = liftM Monoid.getAll . foldM (liftM Monoid.All . p)
+allM = isoAllM id
 
 anyM :: (Transformable t, Monad m, FoldM t (WriterT Monoid.All m)) =>
   (t -> m Bool) -> t -> m Bool
-anyM p = liftM not . allM (liftM not . p)
+anyM = isoAnyM id
 
 collectM :: (Ord a, Transformable t, Monad m, FoldM t (WriterT (Set a) m)) =>
   (t -> MaybeT m a) -> t -> m (Set a)
@@ -91,19 +140,18 @@ any :: (Transformable t, FoldM t (WriterT Monoid.All Identity)) =>
   (t -> Bool) -> t -> Bool
 any p = not . all (not . p)
 
-{-# INLINEABLE rewriteOnceM #-}
 -- | Apply a given transformation exactly once. If it is never applied
 -- then this returns 'Nothing'.
-rewriteOnceM :: forall m t .
+isoRewriteOnceM :: forall a m t .
     (Transformable t, Monad m, FoldM t (StateT Bool m)) =>
-  (t -> m (Maybe t)) -> t -> m (Maybe t)
-rewriteOnceM f t = do
-  (t', done) <- runStateT (transformM once t) False
+  Iso a t -> (a -> m (Maybe a)) -> a -> m (Maybe a)
+isoRewriteOnceM iso f t = do
+  (t', done) <- runStateT (isoTransformM iso once t) False
   if done
   then return (Just t')
   else return Nothing
   where
-  once :: Monad m => t -> StateT Bool m t
+  once :: Monad m => a -> StateT Bool m a
   once t = do
     already <- State.get
     if already 
@@ -116,26 +164,38 @@ rewriteOnceM f t = do
           State.put True
           return t'
           
-{-# INLINEABLE rewriteM #-}
-rewriteM :: (Transformable t, Monad m, FoldM t m) =>
-  (t -> m (Maybe t)) -> t -> m t
-rewriteM f = transformM rrwt
-  where
-  rrwt t = join . liftM (maybe (return t) (rewriteM f)) . f $ t
+rewriteOnceM :: (Transformable t, Monad m, FoldM t (StateT Bool m)) =>
+  (t -> m (Maybe t)) -> t -> m (Maybe t)
+rewriteOnceM = isoRewriteOnceM id
 
-{-# INLINEABLE rewriteStepsM #-}
+isoRewriteStepsM :: (Transformable t, Monad m, FoldM t m) =>
+  Iso a t -> [a -> m (Maybe a)] -> a -> m a
+isoRewriteStepsM iso steps = isoRewriteM iso (\t -> firstM (map ($ t) steps))
+   
 rewriteStepsM :: (Transformable t, Monad m, FoldM t m) =>
   [t -> m (Maybe t)] -> t -> m t
-rewriteStepsM steps = rewriteM (\t -> firstM (map ($ t) steps))
-      
+rewriteStepsM = isoRewriteStepsM id
+
 recover :: Unfoldable t => Base t (a, t) -> t
 recover = embed . fmap snd
     
+isoTransform :: Refoldable t => Iso a t -> (a -> a) -> a -> a
+isoTransform iso f = id
+  . Iso.project iso
+  . cata (Iso.embed iso . f . Iso.project iso . embed)
+  . Iso.embed iso
+
 transform :: Refoldable t => (t -> t) -> t -> t
-transform f = cata (f . embed)
+transform = isoTransform id
+
+isoRewrite :: Refoldable t => Iso a t -> (a -> Maybe a) -> a -> a
+isoRewrite iso f = Iso.project iso . transform rrwt . Iso.embed iso
+  where
+  f' = fmap (Iso.embed iso) . f . Iso.project iso
+  rrwt t = maybe t (rewrite f') (f' t)
 
 rewrite :: Refoldable t => (t -> Maybe t) -> t -> t
-rewrite f = transform $ \t -> maybe t (rewrite f) (f t)
+rewrite = isoRewrite id
 
 rewriteSteps :: Refoldable t => [t -> Maybe t] -> t -> t
 rewriteSteps steps = rewrite step
