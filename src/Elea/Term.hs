@@ -2,7 +2,7 @@ module Elea.Term
 (
   Type, Term (..), Alt (..), Bind (..), FixInfo (..),
   Term' (..), Alt' (..), Bind' (..), FixInfo' (..),
-  Matches, ContainsTerms (..), mapTerms,
+  ContainsTerms (..), mapTerms,
   projectAlt, embedAlt, 
   projectBind, embedBind,   
   projectFixInfo, embedFixInfo,
@@ -140,11 +140,6 @@ data FixInfo' a =
 mkLabels [ ''Term, ''Alt, ''Bind, ''FixInfo
          , ''Term', ''Alt', ''Bind', ''FixInfo']
 
--- | A set of equations between terms as mapped keys and constructor terms
--- as mapped values (along with the binding depth when that match was made,
--- this is useful for knowing when not to apply fix-fact fusion).
-type Matches = Map Term (Term, Int)
-
 projectAlt :: Alt -> Alt' Term
 projectAlt (Alt bs t) = Alt' (map projectBind bs) t
 
@@ -265,7 +260,7 @@ returnType = snd . flattenPi
 
 -- | If given a function type, returns the number of arguments it takes.
 -- If given a function it does the same with its type.
-argumentCount :: Type -> Int
+argumentCount :: Term -> Int
 argumentCount (Fix _ fix_b _) = 
   argumentCount (get boundType fix_b)
 argumentCount pi@(Pi _ _) = 

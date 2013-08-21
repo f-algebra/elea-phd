@@ -41,7 +41,7 @@ data EleaValue a
         
 data EleaRead
   = ER  { _readBinds :: ![Bind]
-        , _readMatches :: !Matches
+        , _readMatches :: !Env.Matches
         , _readFixpointDepth :: !Int }
   
 newtype Elea a 

@@ -1033,10 +1033,6 @@ instance Monad m => Env.Writable (ReaderT Scope m) where
       | Bind (Just lbl) _ <- b = 
           Map.insert lbl (Right at)
       | otherwise = id
-      
-  equals _ _ = id
-  filterMatches _ = id
-  fixpointHere = id
 
 instance Err.Monad m => Env.Readable (ReaderT Scope m) where
   bindings = asks (get bindStack)

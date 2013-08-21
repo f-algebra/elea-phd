@@ -35,7 +35,8 @@ removeConstArgs = Simp.run . Fold.isoRewrite Term.restricted constArg
 steps :: Env.Readable m => [Term -> m (Maybe Term)]
 steps = id
   . map Typing.checkStep
-  $ nonMonadic ++ [ caseFun, unfoldFixInj, absurdity, freeFix, varEqApply ]
+  $ nonMonadic 
+  ++ [ caseFun, unfoldFixInj, absurdity, freeFix, caseOfRec, varEqApply ]
   where
   nonMonadic = map (return .)
     [ constArg
@@ -55,7 +56,7 @@ steps = id
 -- | Given a predicate P, if it finds a pattern match outside (outer)
 -- of another pattern match (inner), where the P(outer, inner) holds,
 -- then inner is floated outside outer.
-commuteMatchesWhen :: Env.Readable m => 
+commuteMatchesWhen :: Monad m => 
   (Term -> Term -> m Bool) -> Term -> m (Maybe Term)
 commuteMatchesWhen when outer_cse@(Case _ _ alts) 
   | Just inner_cse <- (msum . map innerMatch) alts = do
@@ -425,7 +426,7 @@ applyCaseOf (Case cse_t ind_ty old_alts) inner_t =
     liftHere = Indices.liftMany (length binds)
     pat = altPattern (liftHere ind_ty) (toEnum n)
     alt_t = id
-      . Term.replace (liftHere cse_t) pat
+      . Term.replaceRestricted (liftHere cse_t) pat
       . liftHere
       $ inner_t
 
@@ -453,7 +454,63 @@ freeCaseFix fix_t@(Fix _ _ fix_body) = do
   
 freeCaseFix _ = Nothing
 
+-- | This one is important to stop infinite loops. It pushes pattern matches
+-- over recursive calls as far inside the term as possible (past any
+-- fixpoints). Otherwise, if you unroll the function you could perform
+-- fix-fact fusion using the recursive call, which would unroll the function
+-- again, and so on.
+caseOfRec :: forall m . Env.Readable m => Term -> m (Maybe Term)
+caseOfRec (Fix fix_i fix_b fix_t) = do
+  (fix_t', any) <- id
+    . Env.alsoTrack (Var 0)
+    . runWriterT
+    . Fold.isoRewriteM Term.restricted floatOut
+    $ fix_t
+  if getAny any
+  then return (Just (Fix fix_i fix_b fix_t'))
+  else return Nothing
+  where
+  floatOut :: Term -> WriterT Monoid.Any (Env.AlsoTrack Term m) (Maybe Term)
+  floatOut outer_cse@(Case outer_t _ _) = do
+    fix_f <- ask
+    if leftmost outer_t /= fix_f 
+      || isNothing mby_inner
+    then return Nothing
+    else do
+      tell (Any True)
+      let Just inner_t = mby_inner 
+      inner_ty <- Err.noneM (Typing.typeOf inner_t)
+      return 
+        . Just
+        . Term.buildCaseOf inner_t inner_ty 
+        $ const outer_cse
+    where
+    mby_inner = id
+      . Env.trackIndices 0
+      . Fold.isoFindM Term.restricted floatable
+      $ outer_cse
+      where
+      outer_vars = id
+        . concatMap Indices.free
+        . tail 
+        $ flattenApp outer_t
+      
+      floatable :: Term -> Env.TrackIndices Index (Maybe Term)
+      floatable term@(flattenApp -> fix@(Fix {}) : args)
+        | length args == Term.argumentCount fix
+        , outer_vars `intersects` Simp.strictVars term = do
+          offset <- asks fromEnum
+          return (Indices.tryLowerMany offset term)
+      floatable _ = 
+        return Nothing
+      
+  floatOut _ =
+    return Nothing  
+      
+caseOfRec _ = 
+  return Nothing
 
+  
 freeFix :: Env.Readable m => Term -> m (Maybe Term)
 freeFix outer_fix@(Fix _ _ outer_body)
   | Just free_fix <- mby_free_fix = do

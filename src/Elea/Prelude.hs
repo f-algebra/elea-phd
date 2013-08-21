@@ -366,3 +366,4 @@ instance Monoid (Minimum CoNat) where
   
 intersects :: Ord a => Set a -> Set a -> Bool
 intersects x = not . Set.null . Set.intersection x
+

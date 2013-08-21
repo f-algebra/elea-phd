@@ -4,6 +4,7 @@ module Elea.Env
 (
   Writable (..), Readable (..),
   TrackIndices, TrackIndicesT (..),
+  Matches,
   trackIndices, trackIndicesT,
   bind, bindMany, matchedWith,
   forgetFacts, isMatchedPattern, 
@@ -25,20 +26,26 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Control.Monad.Trans as Trans
 
+type Matches = Map Term (Term, Int)
+
 class Monad m => Writable m where
   -- | Binding variables to types within the environment
   bindAt :: Index -> Bind -> m a -> m a
+  bindAt _ _ = id
   
   -- | Declare that one term is equal to another locally.
   equals :: Term -> Term -> m a -> m a
+  equals _ _ = id
   
   -- | Filter the list of equal terms
   filterMatches :: (Term -> Term -> Bool) -> m a -> m a
+  filterMatches _ = id
   
   -- | Declare that a fixpoint exists at this binding depth.
   -- So far this is only used to stop fix-fact fusion occurring on a term
   -- whose variables exist entirely outside of the local fixpoint.
   fixpointHere :: m a -> m a
+  fixpointHere = id
   
 bind :: Writable m => Bind -> m a -> m a
 bind = bindAt 0
@@ -282,19 +289,21 @@ instance (Monoid w, Writable m) => Writable (WriterT w m) where
   filterMatches p = WriterT . filterMatches p . runWriterT
   fixpointHere = WriterT . fixpointHere . runWriterT
   
+instance (Monoid w, Readable m) => Readable (WriterT w m) where
+  bindings = Trans.lift bindings
+  matches = Trans.lift matches
+  boundAt = Trans.lift . boundAt
+  bindingDepth = Trans.lift bindingDepth
+  fixpointDepth = Trans.lift fixpointDepth
+  
 instance Monad m => Writable (ReaderT [Bind] m) where
   bindAt at b = 
       local 
     $ insertAt (convertEnum at) (liftAt at b) 
     . map (liftAt at)
-  equals _ _ = id
-  filterMatches _ = id
-  fixpointHere = id
   
 instance Monad m => Readable (ReaderT [Bind] m) where 
   bindings = ask
-  matches = error "No matches stored."
-  fixpointDepth = error "No fusion depth stored."
   
 instance Writable m => Writable (MaybeT m) where
   bindAt at b = MaybeT . bindAt at b . runMaybeT
@@ -321,7 +330,7 @@ instance Readable m => Readable (EitherT e m) where
   boundAt = Trans.lift . boundAt
   bindingDepth = Trans.lift bindingDepth
   fixpointDepth = Trans.lift fixpointDepth
-  
+
 instance Writable m => Writable (StateT s m) where
   bindAt at b = StateT . (bindAt at b .) . runStateT
   equals x y = StateT . (equals x y .) . runStateT
@@ -336,10 +345,6 @@ instance Readable m => Readable (StateT s m) where
   fixpointDepth = Trans.lift fixpointDepth
   
 instance Writable Identity where
-  bindAt _ _ = id
-  equals _ _ = id
-  filterMatches _ = id
-  fixpointHere = id
   
 instance ContainsTerms Term where
   mapTermsM = ($)

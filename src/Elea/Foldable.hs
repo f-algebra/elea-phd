@@ -5,7 +5,7 @@ module Elea.Foldable
   Iso, iso, 
   isoTransformM, isoRewriteM, isoRewriteStepsM,
   isoFindM, isoAnyM, isoAllM, isoRewriteOnceM,
-  isoRewrite, isoTransform,
+  isoRewrite, isoTransform, isoFind,
   rewriteM, foldM, rewriteOnceM, collectM,
   allM, findM, anyM, any, all,
   transform, rewrite, recover,
@@ -185,14 +185,18 @@ isoTransform iso f = id
   . cata (Iso.embed iso . f . Iso.project iso . embed)
   . Iso.embed iso
 
-transform :: Refoldable t => (t -> t) -> t -> t
-transform = isoTransform id
-
 isoRewrite :: Refoldable t => Iso a t -> (a -> Maybe a) -> a -> a
 isoRewrite iso f = Iso.project iso . transform rrwt . Iso.embed iso
   where
   f' = fmap (Iso.embed iso) . f . Iso.project iso
   rrwt t = maybe t (rewrite f') (f' t)
+  
+isoFind :: (Transformable t, FoldM t (Writer (Monoid.First f))) =>
+  Iso a t -> (a -> Maybe f) -> a -> Maybe f
+isoFind iso f = runIdentity . isoFindM iso (return . f) 
+  
+transform :: Refoldable t => (t -> t) -> t -> t
+transform = isoTransform id
 
 rewrite :: Refoldable t => (t -> Maybe t) -> t -> t
 rewrite = isoRewrite id

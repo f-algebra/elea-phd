@@ -5,7 +5,7 @@ module Elea.Terms
   isBaseCase, isRecursiveInd,
   isFinite, isFinitelyUsed,
   recursiveInjArgs, recursivePatternArgs,
-  replace, contains, containsUnifiable,
+  replace, replaceRestricted, contains, containsUnifiable,
   nthArgument, collectM, occurrences,
   generalise, generaliseMany, 
   buildCaseOfM, buildCaseOf,

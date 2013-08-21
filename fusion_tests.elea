@@ -185,16 +185,30 @@ let t55' = _|_ bool
 let t54 = fun (n: nat) (t: tree nat) -> 
   match sorted_tree t with
   | True -> sorted_tree (ins_tree n t)
-  | False -> False
+  | False -> True
   end
-let t54' = _|_ bool
+let t54' = fun nat (tree nat) -> True
+
+let t55 = fun (n: nat) (t: tree nat) -> 
+  match sorted_tree t with
+  | True -> False
+  | False -> sorted_tree (ins_tree n t)
+  end
+let t55' = fun nat (tree nat) -> False
 
 let t541 = fun (n: nat) (k: nat) (t: tree nat) -> 
   match and (leq_nat n k) (last_leq k t) with
   | True -> last_leq k (ins_tree n t)
   | False -> True
   end
-let t541' = _|_ bool
+let t541' = fun nat nat (tree nat) -> True
+
+let t542 = fun (n: nat) (k: nat) (t: tree nat) -> 
+  match and (not (leq_nat n k)) (first_gt k t) with
+  | True -> first_gt k (ins_tree n t)
+  | False -> True
+  end
+let t542' = fun nat nat (tree nat) -> True
 
 let t56 = fun (k: nat) (t: tree nat) -> sorted_tree (ins_tree k t)
 let t56' = _|_ bool

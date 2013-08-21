@@ -63,7 +63,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
       ctx_here = Indices.lift outer_ctx
 
   simplified_t <- id
-    -- . trace s1
+   -- . trace s1
     . Env.bind fix_b
     . Env.fixpointHere
     . simplify
@@ -109,7 +109,8 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
       rem_rc = nonFiniteCalls (Var 0) replaced_t
       
   Fail.unless
-    . trace (s1 ++ s2 ++ s3)
+    . trace s1
+  --  . trace (s1 ++ s2 ++ s3)
     $ rem_rc == 0 || new_rc >= old_rc
   
       {-
