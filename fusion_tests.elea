@@ -144,8 +144,8 @@ let sorted_tree =
   match t with
   | Leaf -> True
   | Node x t1 t2 ->
-    and (and (srtd t1) (srtd t2)) 
-        (and (last_leq x t1) (first_gt x t2))
+    and (and (last_leq x t1) (first_gt x t2))
+        (and (srtd t1) (srtd t2)) 
   end
   
 let t19 = fun (t: tree nat) ->
@@ -188,6 +188,10 @@ let t54 = fun (n: nat) (t: tree nat) ->
   | False -> True
   end
 let t54' = fun nat (tree nat) -> True
+
+let t540 = fun (n: nat) (t: tree nat) -> 
+  sorted_tree (ins_tree n t)
+let t540' = _|_ bool
 
 let t55 = fun (n: nat) (t: tree nat) -> 
   match sorted_tree t with

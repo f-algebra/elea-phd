@@ -35,10 +35,18 @@ removeConstArgs = Simp.run . Fold.isoRewrite Term.restricted constArg
 steps :: Env.Readable m => [Term -> m (Maybe Term)]
 steps = id
   . map Typing.checkStep
-  $ nonMonadic 
-  ++ [ caseFun, unfoldFixInj, absurdity, freeFix, caseOfRec, varEqApply ]
+  $ map (return .) nonMonadic ++ monadic 
   where
-  nonMonadic = map (return .)
+  monadic = 
+    [ caseFun
+    , unfoldFixInj
+    , absurdity
+    , freeFix
+  --  , caseOfRec
+    , varEqApply 
+    ]
+  
+  nonMonadic =
     [ constArg
     , caseApp
     , appCase
@@ -462,7 +470,7 @@ freeCaseFix _ = Nothing
 caseOfRec :: forall m . Env.Readable m => Term -> m (Maybe Term)
 caseOfRec (Fix fix_i fix_b fix_t) = do
   (fix_t', any) <- id
-    . Env.alsoTrack (Var 0)
+    . Env.alsoTrack 0
     . runWriterT
     . Fold.isoRewriteM Term.restricted floatOut
     $ fix_t
@@ -470,10 +478,11 @@ caseOfRec (Fix fix_i fix_b fix_t) = do
   then return (Just (Fix fix_i fix_b fix_t'))
   else return Nothing
   where
-  floatOut :: Term -> WriterT Monoid.Any (Env.AlsoTrack Term m) (Maybe Term)
+  floatOut :: Term -> WriterT Monoid.Any (Env.AlsoTrack Index m) (Maybe Term)
   floatOut outer_cse@(Case outer_t _ _) = do
     fix_f <- ask
-    if leftmost outer_t /= fix_f 
+    let mby_inner = findInner (fromEnum fix_f)
+    if leftmost outer_t /= Var fix_f 
       || isNothing mby_inner
     then return Nothing
     else do
@@ -485,7 +494,10 @@ caseOfRec (Fix fix_i fix_b fix_t) = do
         . Term.buildCaseOf inner_t inner_ty 
         $ const outer_cse
     where
-    mby_inner = id
+    findInner :: Int -> Maybe Term
+    findInner offset = id
+      . join
+      . map (Indices.tryLowerMany offset)
       . Env.trackIndices 0
       . Fold.isoFindM Term.restricted floatable
       $ outer_cse
