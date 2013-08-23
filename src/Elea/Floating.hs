@@ -42,7 +42,7 @@ steps = id
     , unfoldFixInj
     , absurdity
     , freeFix
-  --  , caseOfRec
+    , caseOfRec
     , varEqApply 
     ]
   
@@ -57,8 +57,9 @@ steps = id
     , constantCase
     , uselessFix
     , unfoldCaseFix
-    , unfoldWithinFix 
+    , unfoldWithinFix
     , constantFix
+  --  , recursiveBranchConstraints
     ]
     
 -- | Given a predicate P, if it finds a pattern match outside (outer)
@@ -79,10 +80,12 @@ commuteMatchesWhen when outer_cse@(Case _ _ alts)
   innerMatch _ = Nothing
 commuteMatchesWhen _ _ = return Nothing
 
+
 varEqApply :: Env.Readable m => Term -> m (Maybe Term)
 -- varEqApply term | isFix (leftmost term) || isVar term = Env.matchedWith term
 varEqApply t@(Var {}) = Env.matchedWith t
 varEqApply _ = return Nothing
+
 
 absurdity :: Env.Readable m => Term -> m (Maybe Term)
 absurdity (Absurd _) = return Nothing
@@ -101,6 +104,41 @@ absurdity term
     
 absurdity _ =
   return Nothing
+  
+  
+-- | Constraints (pattern matches with absurd branches) that only constrain
+-- a recursive call to a function add no information and often severly
+-- slow down the proof process. They are usually a side-effect of fix-fact
+-- fusion, but I made this a general simplification because who knows where
+-- it could crop up.
+recursiveBranchConstraints :: Term -> Maybe Term
+recursiveBranchConstraints (Fix fix_i fix_b fix_t) = id
+  . fmap (Fix fix_i fix_b)
+  . Env.trackIndices 0
+  . Fold.isoRewriteM' Term.restricted removeRecBC
+  $ fix_t
+  where
+  removeRecBC :: Term -> Env.TrackIndices Index (Maybe Term)
+  removeRecBC (Case _ _ alts) = 
+    runMaybeT $ do
+      (alt_t:alt_ts) <- mapM recAlt not_absurd_alts
+      guard (all (== alt_t) alt_ts)
+      return alt_t
+    where
+    (_, not_absurd_alts) = 
+      partition (isAbsurd . get altInner) alts
+    
+    recAlt :: Alt -> MaybeT (Env.TrackIndices Index) Term
+    recAlt (Alt bs alt_t) = do
+      fix_f <- asks (Var . Indices.liftMany (length bs))
+      guard (leftmost alt_t == fix_f)
+      return (Indices.lowerMany (length bs) alt_t)
+      
+  removeRecBC _ = 
+    return Nothing
+    
+recursiveBranchConstraints _ = Nothing
+
 
 -- | Unfolds a 'Fix' if any arguments are a constructor term
 -- which does not match a recursive call to the function itself.
@@ -332,6 +370,8 @@ appCase _ = Nothing
 
 -- | If an argument to a 'Fix' never changes in any recursive call
 -- then we should float that lambda abstraction outside the 'Fix'.
+-- This function is mostly horrific de-Brujin index shifting.
+-- I coded it almost entirely by trial and error.
 constArg :: Term -> Maybe Term
 constArg (Fix fix_info fix_b fix_rhs) = do
   -- Find if any arguments never change in any recursive calls, 
@@ -370,8 +410,6 @@ constArg (Fix fix_info fix_b fix_rhs) = do
 
   -- Returns the original argument to constArg, with the argument
   -- at the given index floated outside of the 'Fix'.
-  -- Code like this makes me hate de-Bruijn indices, particularly since
-  -- it's mostly just me not being clever enough to do it more concisely.
   removeConstArg :: Int -> Term
   removeConstArg arg_pos = id
     . Indices.lower
@@ -419,6 +457,7 @@ constArg (Fix fix_info fix_b fix_rhs) = do
       
 constArg _ = Nothing
 
+
 -- | This isn't a step, but it's used in three steps below.
 -- It takes a case-of term and replaces the result term down each branch
 -- with the provided term.
@@ -438,6 +477,7 @@ applyCaseOf (Case cse_t ind_ty old_alts) inner_t =
       . liftHere
       $ inner_t
 
+      
 -- | If we pattern match inside a 'Fix', but only using variables that exist
 -- outside of the 'Fix', then we can float this pattern match outside
 -- of the 'Fix'.
@@ -462,23 +502,20 @@ freeCaseFix fix_t@(Fix _ _ fix_body) = do
   
 freeCaseFix _ = Nothing
 
+
 -- | This one is important to stop infinite loops. It pushes pattern matches
 -- over recursive calls as far inside the term as possible (past any
 -- fixpoints). Otherwise, if you unroll the function you could perform
 -- fix-fact fusion using the recursive call, which would unroll the function
 -- again, and so on.
 caseOfRec :: forall m . Env.Readable m => Term -> m (Maybe Term)
-caseOfRec (Fix fix_i fix_b fix_t) = do
-  (fix_t', any) <- id
-    . Env.alsoTrack 0
-    . runWriterT
-    . Fold.isoRewriteM Term.restricted floatOut
-    $ fix_t
-  if getAny any
-  then return (Just (Fix fix_i fix_b fix_t'))
-  else return Nothing
+caseOfRec (Fix fix_i fix_b fix_t) = id
+  . liftM (fmap (Fix fix_i fix_b))
+  . Env.alsoTrack 0
+  . Fold.isoRewriteM' Term.restricted floatOut
+  $ fix_t
   where
-  floatOut :: Term -> WriterT Monoid.Any (Env.AlsoTrack Index m) (Maybe Term)
+  floatOut :: Term -> Env.AlsoTrack Index m (Maybe Term)
   floatOut outer_cse@(Case outer_t _ _) = do
     fix_f <- ask
     let mby_inner = findInner (fromEnum fix_f)
@@ -486,7 +523,6 @@ caseOfRec (Fix fix_i fix_b fix_t) = do
       || isNothing mby_inner
     then return Nothing
     else do
-      tell (Any True)
       let Just inner_t = mby_inner 
       inner_ty <- Err.noneM (Typing.typeOf inner_t)
       return 
@@ -496,8 +532,6 @@ caseOfRec (Fix fix_i fix_b fix_t) = do
     where
     findInner :: Int -> Maybe Term
     findInner offset = id
-      . join
-      . map (Indices.tryLowerMany offset)
       . Env.trackIndices 0
       . Fold.isoFindM Term.restricted floatable
       $ outer_cse

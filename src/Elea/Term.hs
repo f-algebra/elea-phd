@@ -288,14 +288,16 @@ addFusedMatches = flip (foldr addFusedMatch)
 allowSimplification :: Term -> Term
 allowSimplification (Fix inf b t) = 
   Fix (set canSimplify True inf) b t
+allowSimplification other = other
   
 blockSimplification :: Term -> Term
 blockSimplification (Fix inf b t) = 
   Fix (set canSimplify False inf) b t
+blockSimplification other = other
 
 simplifiable :: Term -> Bool
-simplifiable (leftmost -> Fix inf _ _) = 
-  get canSimplify inf
+simplifiable (flattenApp -> fix@(Fix inf _ _) : args) = 
+  length args == argumentCount fix && get canSimplify inf
 simplifiable _ = True
   
 clearFusedMatches :: Term -> Term

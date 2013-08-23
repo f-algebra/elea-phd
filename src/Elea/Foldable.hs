@@ -5,7 +5,7 @@ module Elea.Foldable
   Iso, iso, 
   isoTransformM, isoRewriteM, isoRewriteStepsM,
   isoFindM, isoAnyM, isoAllM, isoRewriteOnceM,
-  isoRewrite, isoTransform, isoFind,
+  isoRewrite, isoTransform, isoFind, isoRewriteM',
   rewriteM, foldM, rewriteOnceM, collectM,
   allM, findM, anyM, any, all,
   transform, rewrite, recover,
@@ -79,6 +79,23 @@ isoRewriteM iso f = id
   where
   f' = liftM (fmap (Iso.embed iso)) . f . Iso.project iso
   rrwt t = join . liftM (maybe (return t) (rewriteM f')) . f' $ t
+  
+-- | A version of 'isoRewriteM' which checks whether any rewrites 
+-- were actually performed; returning 'Nothing' if none were.
+isoRewriteM' :: forall a t m .
+    (Transformable t, Monad m, FoldM t (WriterT Monoid.Any m)) =>
+  Iso a t -> (a -> m (Maybe a)) -> a -> m (Maybe a)
+isoRewriteM' iso f x = do
+  (x', any) <- runWriterT (isoRewriteM iso f' x)
+  if Monoid.getAny any
+  then return (Just x')
+  else return Nothing
+  where
+  f' :: a -> WriterT Monoid.Any m (Maybe a)
+  f' x = do
+    mby_x' <- lift (f x)
+    when (isJust mby_x') (tell (Monoid.Any True))
+    return mby_x'
   
 rewriteM :: (Transformable t, Monad m, FoldM t m) =>
   (t -> m (Maybe t)) -> t -> m t

@@ -83,7 +83,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
        
   simp_s <- Env.bind fix_b (showM simplified_t)
   revt_t <- Env.bind fix_b (showM extracted_t)
-  let s2 = "\nSIMPLIFIED:\n" ++ simp_s {- ++ "\n\nEXTRACTED:\n" ++ revt_t -}
+  let s2 = "\nSIMPLIFIED:\n" ++ simp_s ++ "\n\nEXTRACTED:\n" ++ revt_t
   
   depth <- Env.bindingDepth
   let replaced_t = id
