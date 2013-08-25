@@ -1,14 +1,16 @@
+{-# LANGUAGE UndecidableInstances #-}
 -- | Type environments, but also a lot of class instances for 'Term',
 -- since they require type environments.
 module Elea.Env 
 (
   Writable (..), Readable (..),
   TrackIndices, TrackIndicesT (..),
-  Matches,
+  Matches, Tracker (..),
+  liftTracked, trackeds,
   trackIndices, trackIndicesT,
   bind, bindMany, matchedWith,
   forgetFacts, isMatchedPattern, 
-  fixpointOffset,
+  fixpointOffset, 
   AlsoTrack, alsoTrack, alsoWith,
 )
 where
@@ -179,7 +181,7 @@ instance Indexed Term where
     where
     freeR :: Term -> TrackIndices Index (Set Index)
     freeR (Var x) = do
-      at <- ask
+      at <- tracked
       if x >= at
       then return (Set.singleton (x - at))
       else return mempty
@@ -192,7 +194,7 @@ instance Indexed Term where
     where
     shiftVar :: Term -> TrackIndices Index Term
     shiftVar (Var x) = do
-      at <- ask
+      at <- tracked
       let x' | x >= at = f (x - at) + at
              | otherwise = x
       return (Var x')
@@ -216,7 +218,7 @@ instance Substitutable Term where
     where
     substVar :: Term -> TrackIndices (Index, Term) Term
     substVar (Var var) = do
-      (at, with) <- ask
+      (at, with) <- tracked
       return $ case at `compare` var of
         -- Substitution occurs
         EQ -> with
@@ -230,14 +232,32 @@ instance Substitutable Bind where
   type Inner Bind = Term
   substAt at with = modify boundType (substAt at with)
   
+class (Indexed r, Monad m) => Tracker r m | m -> r where
+  tracked :: m r
+  liftTrackedMany :: Int -> m a -> m a 
+  
+instance Tracker r m => Tracker r (MaybeT m) where
+  tracked = Trans.lift tracked
+  liftTrackedMany = mapMaybeT . liftTrackedMany
+  
+liftTracked :: Tracker r m => m a -> m a
+liftTracked = liftTrackedMany 1
+  
 newtype TrackIndicesT r m a 
-  = TrackIndicesT { runTrackIndicesT :: ReaderT r m a }
-  deriving ( Monad, MonadReader r, MonadTrans )
+  = TrackIndicesT { runTrackIndicesT :: ReaderT (Int, r) m a }
+  deriving ( Monad, MonadTrans )
+  
+instance (Indexed r, Monad m) => Tracker r (TrackIndicesT r m) where
+  tracked = TrackIndicesT (asks (uncurry Indices.liftMany))
+  liftTrackedMany n = TrackIndicesT . local (first (+ n)) . runTrackIndicesT
+  
+trackeds :: Tracker a m => (a -> b) -> m b
+trackeds f = liftM f tracked
   
 type TrackIndices r = TrackIndicesT r Identity
 
 trackIndicesT :: r -> TrackIndicesT r m a -> m a
-trackIndicesT r = flip runReaderT r . runTrackIndicesT
+trackIndicesT r = flip runReaderT (0, r) . runTrackIndicesT
 
 trackIndices :: r -> TrackIndices r a -> a
 trackIndices r = runIdentity . trackIndicesT r
@@ -246,7 +266,7 @@ instance Fail.Monad m => Fail.Monad (TrackIndicesT r m) where
   here = Trans.lift Fail.here
   
 instance (Monad m, Indexed r) => Writable (TrackIndicesT r m) where
-  bindAt at _ = local (liftAt at)
+  bindAt at _ = TrackIndicesT . local (first (+1)) . runTrackIndicesT
   equals _ _ = id
   filterMatches _ = id
   fixpointHere = id
@@ -255,7 +275,11 @@ instance (Monad m, Indexed r) => Writable (TrackIndicesT r m) where
 -- bindings to an inner monad (see the 'Writable' class for details).
 newtype AlsoTrack r m a
   = AlsoTrack { runAlsoTrack :: ReaderT r m a }
-  deriving ( Monad, MonadReader r, MonadTrans )
+  deriving ( Monad, MonadTrans )
+  
+instance (Indexed r, Monad m) => Tracker r (AlsoTrack r m) where
+  tracked = AlsoTrack ask
+  liftTrackedMany n = AlsoTrack . local (Indices.liftMany n) . runAlsoTrack
   
 mapAlsoTrack :: Monad m => (m a -> m a) -> 
   (AlsoTrack r m a -> AlsoTrack r m a)
@@ -268,7 +292,11 @@ alsoWith :: Monad m => (r' -> r) -> AlsoTrack r m a -> AlsoTrack r' m a
 alsoWith f = AlsoTrack . withReaderT f . runAlsoTrack
    
 instance (Writable m, Indexed r) => Writable (AlsoTrack r m) where
-  bindAt at b = local (liftAt at) . mapAlsoTrack (bindAt at b)
+  bindAt at b = id
+    . AlsoTrack 
+    . local (liftAt at)
+    . runAlsoTrack 
+    . mapAlsoTrack (bindAt at b)
   equals x y = mapAlsoTrack (equals x y)
   filterMatches p = mapAlsoTrack (filterMatches p)
   fixpointHere = mapAlsoTrack fixpointHere
@@ -372,7 +400,7 @@ instance Unifiable Term where
     uni (Var x1) (Var x2)
       | x1 == x2 = return mempty
     uni (Var idx) t2 = do
-      free_var_limit <- ask
+      free_var_limit <- tracked
       -- If the variable on the left is not locally scoped
       -- then we can substitute it for something.
       -- We subtract 'free_var_limit' to get the index
@@ -385,15 +413,15 @@ instance Unifiable Term where
         return (Unifier.singleton lowered_idx lowered_t2)
     uni (Lam b1 t1) (Lam b2 t2) = do
       ub <- b1 `uniBind` b2
-      ut <- local Indices.lift (t1 `uni` t2)
+      ut <- liftTracked (t1 `uni` t2)
       Unifier.union ub ut
     uni (Pi b1 t1) (Pi b2 t2) = do
       ub <- b1 `uniBind` b2
-      ut <- local Indices.lift (t1 `uni` t2)
+      ut <- liftTracked (t1 `uni` t2)
       Unifier.union ub ut
     uni (Fix _ b1 t1) (Fix _ b2 t2) = do
       ub <- b1 `uniBind` b2
-      ut <- local Indices.lift (t1 `uni` t2)
+      ut <- liftTracked (t1 `uni` t2)
       Unifier.union ub ut
     uni (App l1 r1) (App l2 r2) = do
       uni1 <- uni l1 l2
@@ -404,7 +432,7 @@ instance Unifiable Term where
       uni t1 t2
     uni (Ind b1 cs1) (Ind b2 cs2) = do
       ub <- uniBind b1 b2
-      ucs <- local Indices.lift (zipWithM uniBind cs1 cs2)
+      ucs <- liftTracked (zipWithM uniBind cs1 cs2)
       Unifier.unions (ub:ucs)
     uni (Case t1 ty1 alts1) (Case t2 ty2 alts2) = do
       Fail.when (length alts1 /= length alts2)
@@ -416,11 +444,10 @@ instance Unifiable Term where
       uniAlt :: Alt -> Alt -> TrackIndicesT Index m (Unifier Term)
       uniAlt (Alt bs1 t1) (Alt bs2 t2) = do
         ubs <- zipWithM uniBindL [0..] (bs1 `zip` bs2)
-        ut <- local (Indices.liftMany (length bs1)) 
-          $ uni t1 t2
+        ut <- liftTrackedMany (length bs1) (uni t1 t2)
         Unifier.unions (ut:ubs)
         where
         uniBindL n (b1, b2) = do
-          local (Indices.liftMany n) (b1 `uniBind` b2)
+          liftTrackedMany n (b1 `uniBind` b2)
     uni _ _ = Fail.here 
 

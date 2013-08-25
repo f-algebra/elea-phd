@@ -384,7 +384,7 @@ fixfactFusion full_t@(flattenApp ->
         floatCtxMatchInwards :: 
           Term -> Env.TrackIndices (Index, Context) Term
         floatCtxMatchInwards cse_t@(Case outer_t outer_ty outer_alts) = do
-          (fix_f, match_ctx) <- ask
+          (fix_f, match_ctx) <- Env.tracked
           let match_t = getMatchTerm match_ctx
           if not (Unifier.exists match_t outer_t)
             -- Without this second check sorted-flatten wasn't simplifying
@@ -396,7 +396,7 @@ fixfactFusion full_t@(flattenApp ->
             let main_alt' = id
                   . Alt main_bs
                   . Env.trackIndices (fix_f, (match_ctx, outer_ctx))
-                  . local (Indices.liftMany (length main_bs))
+                  . Env.liftTrackedMany (length main_bs)
                   . Fold.isoTransformM Term.restricted pushInwards
                   $ main_t
             return 
@@ -431,7 +431,7 @@ fixfactFusion full_t@(flattenApp ->
             Env.TrackIndices (Index, (Context, Context)) Term
           pushInwards term@(flattenApp -> Var var_f : args)
             | length args == length outer_args = do
-              (fix_f, (match_ctx, outer_ctx)) <- ask
+              (fix_f, (match_ctx, outer_ctx)) <- Env.tracked
               let inner_match = Context.apply outer_ctx term
                   outer_match = Context.apply match_ctx (Var fix_f)
               if var_f == fix_f
@@ -519,7 +519,7 @@ factfixFusion full_t@(flattenApp ->
         floatCtxMatchInwards :: 
           Term -> Env.TrackIndices (Index, Context) Term
         floatCtxMatchInwards cse_t@(Case outer_t outer_ty outer_alts) = do
-          (fix_f, match_ctx) <- ask
+          (fix_f, match_ctx) <- Env.tracked
           let full_t = Context.apply match_ctx (Var fix_f)
           if not (leftmost outer_t == Var fix_f)
             || Unifier.exists full_t cse_t
@@ -528,7 +528,7 @@ factfixFusion full_t@(flattenApp ->
             let main_alt' = id
                   . Alt main_bs
                   . Env.trackIndices (full_t, 0)
-                  . local (Indices.liftMany (length main_bs))
+                  . Env.liftTrackedMany (length main_bs)
                   . Fold.isoTransformM Term.restricted pushInwards
                   $ main_t
             return 
@@ -565,7 +565,7 @@ factfixFusion full_t@(flattenApp ->
             Env.TrackIndices (Term, Index) Term
           pushInwards term@(flattenApp -> fix@(Fix {}) : args)
             | length args == Term.argumentCount inner_f = do
-              (full_t, fromEnum -> offset) <- ask
+              (full_t, fromEnum -> offset) <- Env.tracked
               let inner_match = makeInnerMatch offset term
               if Unifier.exists full_t inner_match
               then return inner_match 
@@ -591,7 +591,7 @@ extract inner_f _ term = do
   if not can_extract
   then return term
   else do
-    outer_f <- ask
+    outer_f <- Env.tracked
     lift
       . Env.alsoTrack (outer_f, inner_f) 
       -- We descend into branches as long as the 'inner_f' function
@@ -601,14 +601,14 @@ extract inner_f _ term = do
   where
   functionNonMatched :: Term -> Env.AlsoTrack (Term, Index) m Bool
   functionNonMatched (Case cse_t _ _) = do
-    (_, inner_f) <- ask
+    (_, inner_f) <- Env.tracked
     return (not (inner_f `Set.member` Indices.free cse_t))
   functionNonMatched _ = 
     return False
   
   extractable :: Env.AlsoTrack Term m Bool
   extractable = do
-    outer_f <- ask
+    outer_f <- Env.tracked
     ty <- Err.noneM (Typing.typeOf outer_f)
     let (args, ret) = flattenPi ty
     return 
@@ -621,7 +621,7 @@ extract inner_f _ term = do
     args' <- mapM doExtract args
     return (unflattenApp (inj : args'))
   doExtract term = do
-    (outer_f, inner_f) <- ask
+    (outer_f, inner_f) <- Env.tracked
     inner_calls <- id
       . lift
       . Env.alsoTrack inner_f 
@@ -633,7 +633,7 @@ extract inner_f _ term = do
     where
     isInnerCall :: Term -> Env.AlsoTrack Index m Bool
     isInnerCall term@(flattenApp -> Var f : args) = do
-      inner_f <- ask
+      inner_f <- Env.tracked
       if inner_f /= f 
       then return False
       else do
@@ -644,7 +644,7 @@ extract inner_f _ term = do
       
     extraction :: [Index] -> Term -> Env.AlsoTrack Term m Term
     extraction gen_vars term = do
-      outer_f <- ask
+      outer_f <- Env.tracked
       lift (foldrM (extractContext outer_f) term gen_vars)
       where
       extractContext :: Term -> Index -> Term -> m Term

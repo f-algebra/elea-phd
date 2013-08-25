@@ -146,8 +146,28 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   fix_info' = set normalForm False fix_info
     
   isInnerFixMatch :: Term -> Env.TrackIndices Index Bool
-  isInnerFixMatch cse_t = asks (`Set.member` Indices.free cse_t)
+  isInnerFixMatch cse_t = Env.trackeds (`Set.member` Indices.free cse_t)
+  {-
+  expandFiniteCalls :: Term -> MaybeT (Env.TrackIndices Index) Term
+  expandFiniteCalls (Case (flattenApp -> Var f : args) ind_ty alts) = do
+    fix_f <- Env.trackeds
+    guard (f == fix_f)
+    guard (not (Indices.omega `Set.member` Indices.free expanded))
+    return expanded
+    where
+    fix_t_omega = substAt 0 (Var Indices.omega) fix_t
+    expanded = id
+      . Float.run
+      $ Case (unflattenApp (fix_t_omega : args)) ind_ty alts
+  expandFiniteCalls term@(flattenApp -> Var f : args)
+    | length args == Term.argumentCount inner_fix = do
+      fix_f <- Env.tracked
+      guard (f == fix_f)
+      guard (any Term.isFinite args)
+      return (
   
+  expandFiniteCalls _ = mzero
+  -}
   nonFiniteCalls :: Term -> Term -> Int
   nonFiniteCalls func term = term
     |> Fold.transformM removeFiniteCalls
@@ -159,13 +179,13 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
       -- Finitely used recursive calls are only such if the recursive
       -- function is productive
       | Term.isProductive inner_fix = do
-        func <- ask
+        func <- Env.tracked
         if leftmost cse_t == func 
           && Term.isFinitelyUsed ind_ty alts
         then return (Case (Var Indices.omega) ind_ty alts)
         else return term
     removeFiniteCalls term@(flattenApp -> term_f : args@(_:_)) = do
-      func <- ask
+      func <- Env.tracked
       if term_f == func 
         && Term.isFinite (last args)
       then return (Var Indices.omega)
@@ -175,7 +195,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
 
   replace :: Index -> [Term] -> Term -> Env.TrackIndices Index Term
   replace fix_idx arg_vars term = do
-    old_f <- ask
+    old_f <- Env.tracked
     return (fromMaybe term (tryReplace old_f))
     where
     tryReplace :: Index -> Maybe Term
@@ -258,7 +278,7 @@ split transform (Fix fix_info fix_b fix_t) (Indices.lift -> outer_ctx) = do
     
     floatCtxUp :: Term -> MaybeT (Env.TrackIndices Context) Term
     floatCtxUp cse@(Case t ty alts) = do
-      ctx <- ask
+      ctx <- Env.tracked
       alts' <- mapM floatAlt alts
       return 
         . Context.apply ctx 
@@ -269,7 +289,7 @@ split transform (Fix fix_info fix_b fix_t) (Indices.lift -> outer_ctx) = do
         -- If a branch is absurd we can float any context out of it.
         | isAbsurd inner = return (Alt bs inner)
         | otherwise = do
-          ctx <- asks (Indices.liftMany (length bs))
+          ctx <- Env.trackeds (Indices.liftMany (length bs))
           inner' <- Context.strip ctx inner
           return (Alt bs inner')
     floatCtxUp _ = mzero
@@ -291,7 +311,7 @@ invent transform inner_t top_t = do
     |> Env.trackIndices inner_t
   
   isInnerMatch :: Term -> Env.TrackIndices Term Bool
-  isInnerMatch (Var x) = asks (Set.member x . Indices.free)
+  isInnerMatch (Var x) = Env.trackeds (Set.member x . Indices.free)
   isInnerMatch _ = return False
   
   buildBranch :: Type -> Nat -> m Term 

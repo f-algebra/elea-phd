@@ -110,7 +110,7 @@ nthArgument n = id
   
 doReplace :: Term -> Env.TrackIndices (Term, Term) Term
 doReplace term = do
-  (me, with) <- ask
+  (me, with) <- Env.tracked
   if term == me
   then return with
   else return term
@@ -131,7 +131,7 @@ replaceRestricted me with = id
 containsAny :: (Term -> Term -> Bool) -> Term -> Term -> Bool
 containsAny pred outer inner = id
   . Env.trackIndices inner
-  . Fold.anyM (\t -> asks (pred t))
+  . Fold.anyM (\t -> Env.trackeds (pred t))
   $ outer
     
 -- | If the second argument is a subterm of the first
@@ -273,12 +273,12 @@ collectM p = Env.alsoTrack 0 . Fold.collectM collect
   collect t = do
     c <- Trans.lift . Trans.lift $ p t
     guard c
-    offset <- Trans.lift ask
+    offset <- Trans.lift Env.tracked
     return (Indices.lowerMany (fromEnum offset) t)
     
 -- | Return the number of times a given subterm occurs in a larger term.
 occurrences :: Term -> Term -> Int
-occurrences t = Env.trackIndices t . Fold.countM (\t -> asks (== t))
+occurrences t = Env.trackIndices t . Fold.countM (\t -> Env.trackeds (== t))
   
 buildCaseOfM :: forall m . Monad m => 
   Term -> Type -> (Nat -> m Term) -> m Term
@@ -320,7 +320,7 @@ isProductive (Fix _ _ fix_t) = fix_t
   productive :: Term -> MaybeT (Env.TrackIndices Index) Term
   productive term@(leftmost -> Inj {}) = return term
   productive term = do
-    fix_f <- ask
+    fix_f <- Env.tracked
     guard (not (fix_f `Set.member` Indices.free term))
     return term
   

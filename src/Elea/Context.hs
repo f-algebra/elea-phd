@@ -79,7 +79,7 @@ dropLambdas (Context
   merge :: Term -> Env.TrackIndices Index Term
   merge orig@(App (Var x1) (Var x2)) 
     | x2 == Indices.omega = do
-      idx <- ask
+      idx <- Env.tracked
       if x1 == idx 
       then return (Var idx)
       else return orig

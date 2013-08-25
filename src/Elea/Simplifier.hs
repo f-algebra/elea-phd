@@ -43,7 +43,7 @@ strictVars (flattenApp -> Fix _ _ fix_t : args) = id
   where
   matchedUpon :: Term -> Env.TrackIndices Index (Set Index)
   matchedUpon (Case (Var x) _ _) = do
-    offset <- ask
+    offset <- Env.tracked
     if x >= offset
     then return (Set.singleton (x - offset))
     else return mempty

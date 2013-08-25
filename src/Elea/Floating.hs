@@ -59,7 +59,6 @@ steps = id
     , unfoldCaseFix
     , unfoldWithinFix
     , constantFix
-  --  , recursiveBranchConstraints
     ]
     
 -- | Given a predicate P, if it finds a pattern match outside (outer)
@@ -82,7 +81,6 @@ commuteMatchesWhen _ _ = return Nothing
 
 
 varEqApply :: Env.Readable m => Term -> m (Maybe Term)
--- varEqApply term | isFix (leftmost term) || isVar term = Env.matchedWith term
 varEqApply t@(Var {}) = Env.matchedWith t
 varEqApply _ = return Nothing
 
@@ -104,41 +102,7 @@ absurdity term
     
 absurdity _ =
   return Nothing
-  
-  
--- | Constraints (pattern matches with absurd branches) that only constrain
--- a recursive call to a function add no information and often severly
--- slow down the proof process. They are usually a side-effect of fix-fact
--- fusion, but I made this a general simplification because who knows where
--- it could crop up.
-recursiveBranchConstraints :: Term -> Maybe Term
-recursiveBranchConstraints (Fix fix_i fix_b fix_t) = id
-  . fmap (Fix fix_i fix_b)
-  . Env.trackIndices 0
-  . Fold.isoRewriteM' Term.restricted removeRecBC
-  $ fix_t
-  where
-  removeRecBC :: Term -> Env.TrackIndices Index (Maybe Term)
-  removeRecBC (Case _ _ alts) = 
-    runMaybeT $ do
-      (alt_t:alt_ts) <- mapM recAlt not_absurd_alts
-      guard (all (== alt_t) alt_ts)
-      return alt_t
-    where
-    (_, not_absurd_alts) = 
-      partition (isAbsurd . get altInner) alts
-    
-    recAlt :: Alt -> MaybeT (Env.TrackIndices Index) Term
-    recAlt (Alt bs alt_t) = do
-      fix_f <- asks (Var . Indices.liftMany (length bs))
-      guard (leftmost alt_t == fix_f)
-      return (Indices.lowerMany (length bs) alt_t)
-      
-  removeRecBC _ = 
-    return Nothing
-    
-recursiveBranchConstraints _ = Nothing
-
+ 
 
 -- | Unfolds a 'Fix' if any arguments are a constructor term
 -- which does not match a recursive call to the function itself.
@@ -170,7 +134,7 @@ unfoldFixInj term@(flattenApp -> fix@(Fix _ _ rhs) : args@(last -> arg))
     recDepth (flattenApp -> Var f_var : f_args@(last -> f_arg)) 
       | length f_args == length args
       , isInj (leftmost f_arg) = do
-        fix_var <- ask
+        fix_var <- Env.tracked
         if f_var == fix_var
         then return (Term.injDepth f_arg)
         else return mempty
@@ -191,7 +155,7 @@ unfoldFixInj term@(flattenApp -> fix@(Fix _ _ rhs) : args@(last -> arg))
     matchingCall (flattenApp -> Var f_var : f_args@(last -> f_arg)) 
       | length f_args == length args
       , isInj (leftmost f_arg) = do
-        fix_var <- ask
+        fix_var <- Env.tracked
         return 
           $ f_var == fix_var
           && Unifier.exists arg f_arg
@@ -231,10 +195,10 @@ unfoldWithinFix fix@(Fix fix_i fix_b fix_t) =
   where
   arg_count = argumentCount fix
   
-  unfoldable :: forall a . Term -> Env.TrackIndices (Index, a) Bool
+  unfoldable :: Term -> Env.TrackIndices (Index, Term) Bool
   unfoldable (flattenApp -> Var f : args)
     | length args == arg_count = do
-      (fix_f, _) <- ask
+      (fix_f, _) <- Env.tracked
       return (f == fix_f && all Term.isFinite args)
   unfoldable _ =
     return False
@@ -245,7 +209,7 @@ unfoldWithinFix fix@(Fix fix_i fix_b fix_t) =
     if not can_unfold
     then return term
     else do
-      (_, fix_t) <- ask
+      (_, fix_t) <- Env.tracked
       return (unflattenApp (fix_t : args))
   unfold other = 
     return other
@@ -270,7 +234,7 @@ constantFix (Fix _ fix_b fix_t)
     where
     removeMatchedRecs :: Term -> Env.TrackIndices Index Term
     removeMatchedRecs cse@(Case cse_t _ _) = do
-      fix_f <- ask
+      fix_f <- Env.tracked
       if fix_f `Set.member` Indices.free cse_t
       then return (Absurd Set)
       else return cse
@@ -287,7 +251,7 @@ constantFix (Fix _ fix_b fix_t)
     resultTerm :: Term -> MaybeT (Env.TrackIndices Index) (Set Term)
     resultTerm (Absurd _) = return mempty
     resultTerm term = do
-      fix_f <- ask
+      fix_f <- Env.tracked
       if leftmost term == Var fix_f
       then return mempty
       else do
@@ -397,7 +361,7 @@ constArg (Fix fix_info fix_b fix_rhs) = do
     isConst :: Term -> Env.TrackIndices (Index, Index) Bool
     isConst (flattenApp -> (Var fun_idx) : args) 
       | length args > arg_pos = do
-          (fix_idx, arg_idx) <- ask
+          (fix_idx, arg_idx) <- Env.tracked
           let arg = args !! arg_pos
               Var var_idx = arg
           return 
@@ -490,7 +454,7 @@ freeCaseFix fix_t@(Fix _ _ fix_body) = do
   where
   freeCases :: Term -> Env.TrackIndices Index (Maybe Term)
   freeCases cse@(Case cse_of _ _) = do
-    idx_offset <- ask
+    idx_offset <- Env.tracked
     if any (< idx_offset) (Indices.free cse_of) 
     then return Nothing
     else return 
@@ -517,7 +481,7 @@ caseOfRec (Fix fix_i fix_b fix_t) = id
   where
   floatOut :: Term -> Env.AlsoTrack Index m (Maybe Term)
   floatOut outer_cse@(Case outer_t _ _) = do
-    fix_f <- ask
+    fix_f <- Env.tracked
     let mby_inner = findInner (fromEnum fix_f)
     if leftmost outer_t /= Var fix_f 
       || isNothing mby_inner
@@ -545,7 +509,7 @@ caseOfRec (Fix fix_i fix_b fix_t) = id
       floatable term@(flattenApp -> fix@(Fix {}) : args)
         | length args == Term.argumentCount fix
         , outer_vars `intersects` Simp.strictVars term = do
-          offset <- asks fromEnum
+          offset <- Env.trackeds fromEnum
           return (Indices.tryLowerMany offset term)
       floatable _ = 
         return Nothing
@@ -577,7 +541,7 @@ freeFix outer_fix@(Fix _ _ outer_body)
   freeFixes :: Term -> Env.TrackIndices Index (Maybe Term)
   freeFixes term@(flattenApp -> fix@(Fix {}) : args)
     | length args == Term.argumentCount fix = do
-      idx_offset <- ask
+      idx_offset <- Env.tracked
       return 
         . Indices.tryLowerMany (fromEnum idx_offset)
         $ term
