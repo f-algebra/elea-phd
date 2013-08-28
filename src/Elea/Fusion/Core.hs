@@ -63,7 +63,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
       ctx_here = Indices.lift outer_ctx
 
   simplified_t <- id
-   -- . trace s1
+    . trace s1
     . Env.bind fix_b
     . Env.fixpointHere
     . simplify
@@ -78,7 +78,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   
   let reverted_t = id
         . Env.trackIndices 0
-        . Term.revertMatchesWhen isInnerFixMatch
+        . Term.revertMatchesWhenM isInnerFixMatch
         $ extracted_t
        
   simp_s <- Env.bind fix_b (showM simplified_t)
@@ -89,28 +89,35 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   let replaced_t = id
         . Env.trackIndices 0
         . Fold.transformM (replace fix_idx arg_vars)
-      --  . trace s2
+        . trace s2
         $ reverted_t
+      
+  expanded_t <- id
+    . Env.bindAt 0 fix_b
+    . Env.bindAt fix_idx new_fix_b
+    . Env.alsoTrack (0, Indices.lift inner_fix)
+    . Fold.isoRewriteM Term.restricted (runMaybeT . expandFiniteCalls)
+    $ replaced_t
   
   rep_s <- Env.bindAt 0 fix_b
     . Env.bindAt fix_idx new_fix_b
-    $ showM replaced_t
-  let s3 = "\nREPLACED:\n" ++ rep_s
+    $ showM expanded_t
+  let s3 = "\nEXPANDED:\n" ++ rep_s
  
   let fix_body = id
-     --   . trace s3
-      --  . trace (s1 ++ s2 ++ s3)
+        . trace s3
+     --   . trace (s1 ++ s2 ++ s3)
         . unflattenLam arg_bs
         . substAt 0 inner_fix
-        $ replaced_t
+        $ expanded_t
         
   let old_rc = Term.occurrences (Var 0) fix_t
       new_rc = Term.occurrences (Var 0) fix_body
-      rem_rc = nonFiniteCalls (Var 0) replaced_t
+      rem_rc = Term.occurrences (Var 0) expanded_t
       
   Fail.unless
   --  . trace s1
-    . trace (s1 ++ s2 ++ s3)
+  --  . trace (s1 ++ s2 ++ s3)
     $ rem_rc == 0 || new_rc >= old_rc
   
       {-
@@ -147,51 +154,25 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     
   isInnerFixMatch :: Term -> Env.TrackIndices Index Bool
   isInnerFixMatch cse_t = Env.trackeds (`Set.member` Indices.free cse_t)
-  {-
-  expandFiniteCalls :: Term -> MaybeT (Env.TrackIndices Index) Term
+  
+  expandFiniteCalls :: Term -> MaybeT (Env.AlsoTrack (Index, Term) m) Term
   expandFiniteCalls (Case (flattenApp -> Var f : args) ind_ty alts) = do
-    fix_f <- Env.trackeds
+    (fix_f, inner_fix) <- Env.tracked
     guard (f == fix_f)
-    guard (not (Indices.omega `Set.member` Indices.free expanded))
-    return expanded
-    where
-    fix_t_omega = substAt 0 (Var Indices.omega) fix_t
-    expanded = id
-      . Float.run
-      $ Case (unflattenApp (fix_t_omega : args)) ind_ty alts
+    MaybeT  
+      . lift
+      . Float.unfoldCaseFix 
+      $ Case (unflattenApp (inner_fix : args)) ind_ty alts
+    
   expandFiniteCalls term@(flattenApp -> Var f : args)
     | length args == Term.argumentCount inner_fix = do
-      fix_f <- Env.tracked
+      (fix_f, inner_fix) <- Env.tracked
       guard (f == fix_f)
       guard (any Term.isFinite args)
-      return (
+      return (unflattenApp (inner_fix : args))
   
   expandFiniteCalls _ = mzero
-  -}
-  nonFiniteCalls :: Term -> Term -> Int
-  nonFiniteCalls func term = term
-    |> Fold.transformM removeFiniteCalls
-    |> Env.trackIndices func
-    |> Term.occurrences func
-    where
-    removeFiniteCalls :: Term -> Env.TrackIndices Term Term
-    removeFiniteCalls term@(Case cse_t ind_ty alts) 
-      -- Finitely used recursive calls are only such if the recursive
-      -- function is productive
-      | Term.isProductive inner_fix = do
-        func <- Env.tracked
-        if leftmost cse_t == func 
-          && Term.isFinitelyUsed ind_ty alts
-        then return (Case (Var Indices.omega) ind_ty alts)
-        else return term
-    removeFiniteCalls term@(flattenApp -> term_f : args@(_:_)) = do
-      func <- Env.tracked
-      if term_f == func 
-        && Term.isFinite (last args)
-      then return (Var Indices.omega)
-      else return term
-    removeFiniteCalls term =
-      return term
+  
 
   replace :: Index -> [Term] -> Term -> Env.TrackIndices Index Term
   replace fix_idx arg_vars term = do
@@ -307,7 +288,7 @@ invent transform inner_t top_t = do
   Term.buildCaseOfM inner_t ind_ty (buildBranch ind_ty)
   where
   reverted_top = top_t
-    |> Term.revertMatchesWhen isInnerMatch
+    |> Term.revertMatchesWhenM isInnerMatch
     |> Env.trackIndices inner_t
   
   isInnerMatch :: Term -> Env.TrackIndices Term Bool

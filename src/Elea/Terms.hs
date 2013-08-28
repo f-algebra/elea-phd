@@ -3,15 +3,16 @@
 module Elea.Terms
 (
   isBaseCase, isRecursiveInd,
-  isFinite, isFinitelyUsed,
+  isFinite, variablesFinitelyUsed,
+  variablesUnused, recursionDepth,
   recursiveInjArgs, recursivePatternArgs,
   replace, replaceRestricted, contains, containsUnifiable,
   nthArgument, collectM, occurrences,
   generalise, generaliseMany, 
   buildCaseOfM, buildCaseOf,
-  revertMatchesWhen, descendWhileM,
-  mapBranchesM, foldBranchesM,
-  isProductive, normalised,
+  revertMatchesWhenM, revertMatches, revertMatchesWhen,
+  descendWhileM, mapBranchesM, foldBranchesM,
+  isProductive, normalised, expressMatches,
   minimumInjDepth, maximumInjDepth, injDepth,
   restricted,
   module Elea.Term,
@@ -30,6 +31,7 @@ import qualified Elea.Unifier as Unifier
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Error as Err
 import qualified Data.Set as Set
+import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
 import qualified Control.Monad.Trans as Trans
 
@@ -77,6 +79,33 @@ recursivePatternArgs ty n =
 isRecursiveInd :: Type -> Bool
 isRecursiveInd ty@(Ind _ cons) = 
   not . all (isBaseCase ty) . map toEnum $ [0..length cons - 1]
+  
+recursionDepth :: Term -> Int
+recursionDepth (Fix _ _ rhs) = id
+  . fromEnum
+  . getMaximum
+  . concatMap (flip matchDepth body . toEnum)
+  $ [0..length args - 1]
+  where
+  (args, body) = flattenLam rhs 
+  
+  matchDepth :: Index -> Term -> Maximum Nat
+  matchDepth idx = id
+    . Env.trackIndices idx
+    . Fold.isoFoldM restricted caseDepth
+    where 
+    caseDepth :: Term -> Env.TrackIndices Index (Maximum Nat)
+    caseDepth (Case (Var x) ind_ty alts) = do
+      t <- Env.tracked
+      if x == t 
+      then return (succ (concat (zipWith altDepth [0..] alts)))
+      else return mempty
+      where 
+      altDepth alt_n (Alt _ alt_t) = id
+        . concatMap (flip matchDepth alt_t) 
+        $ recursivePatternArgs ind_ty alt_n
+    caseDepth _ = 
+      return mempty
 
 -- | Whether a term contains a finite amount of information, from a
 -- strictness point of view. So @[x]@ is finite, even though @x@ is a variable
@@ -90,15 +119,24 @@ isFinite _ = False
 
 -- | Given a set of branches from a pattern match, this checks whether
 -- the recursive match variables are actually used. 
-isFinitelyUsed :: Type -> [Alt] -> Bool
-isFinitelyUsed ind_ty = and . zipWith recArgsUsed [0..]
+variablesFinitelyUsed :: Type -> [Alt] -> Bool
+variablesFinitelyUsed ind_ty = and . zipWith recArgsUsed [0..]
   where
   recArgsUsed :: Nat -> Alt -> Bool
   recArgsUsed n (Alt _ alt_t) = 
     not (any isUsed args)
     where
-    isUsed = (`Set.member` Indices.free alt_t)
+    isUsed = (`Set.member` Env.isoFree restricted alt_t)
     args = recursivePatternArgs ind_ty n
+    
+variablesUnused :: Term -> Bool
+variablesUnused (revertMatches -> Case _ _ alts) = 
+  all unused alts
+  where
+  unused (Alt bs alt_t) = id
+    . all (>= toEnum (length bs)) 
+    $ Env.isoFree restricted alt_t
+    
 
 nthArgument :: Int -> Type -> Type
 nthArgument n = id
@@ -187,9 +225,9 @@ generaliseMany ts f = foldr gen f lifted_ts []
 -- | Pattern matches are automatically applied as replacements down
 -- every branch. This will revert any such replacements of any term
 -- that fulfils the given predicate.
-revertMatchesWhen :: forall m . Env.Writable m => 
-  (Term -> m Bool) -> Term -> m  Term
-revertMatchesWhen when = Fold.transformM revert
+revertMatchesWhenM :: forall m . Env.Writable m => 
+  (Term -> m Bool) -> Term -> m Term
+revertMatchesWhenM when = Fold.isoTransformM restricted revert
   where 
   revert :: Term -> m Term
   revert term@(Case cse_t ind_ty alts) = do
@@ -210,7 +248,13 @@ revertMatchesWhen when = Fold.transformM revert
       alt_t' = replace (altPattern ind_ty n) rep_t alt_t
   revert other = 
     return other
-  
+    
+revertMatchesWhen :: (Term -> Bool) -> Term -> Term
+revertMatchesWhen when = runIdentity . revertMatchesWhenM (return . when)
+    
+revertMatches :: Term -> Term
+revertMatches = revertMatchesWhen (const True)
+
 -- | Some simple code shared by descendWhileM and mapBranchesM.
 descendAlt :: Alt -> Alt' (Bool, Term)
 descendAlt (Alt bs alt_t) = Alt' bs' (True, alt_t)
@@ -349,6 +393,45 @@ minimumInjDepth = getMinimum . injDepth
 maximumInjDepth :: Term -> Int
 maximumInjDepth = getMaximum . injDepth
 
+expressMatches :: forall m . Env.Readable m => 
+  ((Term, Term) -> Term -> Term -> m Bool) -> Term -> m Term
+expressMatches when = 
+  Fold.isoTransformM restricted express
+  where
+  express :: Term -> m Term
+  express term = do
+    ms <- liftM (map (second fst) . Map.toList) Env.matches
+    term_ty <- Err.noneM (Typing.typeOf term)
+    liftM (fromMaybe term)
+      $ firstM (map (expressMatch term_ty) ms) 
+    where
+    expressMatch :: Type -> (Term, Term) -> m (Maybe Term) 
+    expressMatch term_ty 
+        match@(match_t, flattenApp -> Inj inj_n ind_ty : inj_args) = do
+      now <- when match term expressed
+      if now
+      then return (Just expressed)
+      else return Nothing
+      where
+      expressed = 
+        Case match_t ind_ty (zipWith mkAlt [0..] ind_cons)
+        where
+        ind_cons = Typing.unfoldInd ind_ty
+        
+        mkAlt :: Nat -> Bind -> Alt
+        mkAlt alt_n bind = Alt bs alt_t
+          where
+          bs = (fst . flattenPi . get boundType) bind
+          liftHere = Indices.liftMany (length bs)
+          
+          arg_idxs = map (fromVar . liftHere) inj_args
+          new_vars = map (Var . toEnum) (reverse [0..length bs - 1])
+          
+          alt_t 
+            | alt_n /= inj_n = liftHere (Absurd term_ty)
+            | otherwise = id
+                . concatEndos (zipWith replaceAt arg_idxs new_vars)
+                $ liftHere term
 
 -- | Restricts where transformations will be applied within a 'Term'.
 -- Only use for semantic preserving transformations.
@@ -368,8 +451,8 @@ instance Fold.Unfoldable RestrictedTerm where
   
 instance Fold.FoldableM RestrictedTerm where
   type FoldM RestrictedTerm m = Env.Writable m
-  distM = Fold.distM . fmap (second derestrict) 
-  
+  distM = Fold.distM . fmap (second derestrict)
+
 instance Fold.Transformable RestrictedTerm where
   transformM f = id
     . liftM Restrict 

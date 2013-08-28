@@ -37,13 +37,14 @@ steps :: Env.Readable m => [Term -> m (Maybe Term)]
 steps = id
   . map Typing.checkStep
   $ [ floatConstructors 
+    , refoldFusion
     , fixfixFusion
     , repeatedArgFusion
-    , factfixFusion
     , fixfactFusion
-    , removeIdFix
+    , factfixFusion
+    , removeIdFix 
     ]
-        
+
 {-# INLINEABLE run #-}
 run :: forall m . Env.Readable m => Term -> m Term
 run term = do
@@ -56,7 +57,7 @@ run term = do
       ts' <- showM term'
       ts'' <- showM fused
       run fused
-     --   |> trace ("\n\nUNFUSED:\n\n" ++ ts' ++ "\n\nFINISHED\n\n" ++ ts'') 
+        |> trace ("\n\nUNFUSED:\n\n" ++ ts' ++ "\n\nFINISHED\n\n" ++ ts'') 
   where
   applyStep :: Term -> (Term -> m (Maybe Term)) -> m (Maybe Term)
   applyStep t f = Fold.isoRewriteOnceM Term.restricted withTrace t
@@ -69,7 +70,7 @@ run term = do
           ts <- showM t
           ts' <- showM t'
           Just t'
-      --      |> trace ("\n\nTRANSFORMED:\n" ++ ts ++ "\n\nTO:\n" ++ ts')
+            |> trace ("\n\nTRANSFORMED:\n" ++ ts ++ "\n\nTO:\n" ++ ts')
             |> return
 
 simpleAndFloat :: Env.Readable m => Term -> m Term
@@ -205,11 +206,17 @@ fixfixFusion full_t@(flattenApp ->
     full_ty <- Err.noneM (Typing.typeOf full_t)
     if not (isInd full_ty)
     then return Nothing
-    else fixfix full_ty
+    else fixfix (head outer_args) full_ty
   where
-  fixfix :: Type -> m (Maybe Term)
-  fixfix full_ty
-    | isFix (leftmost (head outer_args)) = do
+  fixfix :: Term -> Type -> m (Maybe Term)
+  fixfix fix_arg full_ty
+    | isInj (leftmost fix_arg) = do
+      mby_t <- Env.matchedFrom fix_arg
+      if isNothing mby_t
+      then return Nothing
+      else fixfix (fromJust mby_t) full_ty
+      
+    | isFix (leftmost fix_arg) = do
       inner_ty <- Err.noneM (Typing.typeOf inner_f)
       let outer_ctx = id
             . Context.make inner_ty full_ty
@@ -219,19 +226,19 @@ fixfixFusion full_t@(flattenApp ->
         . Env.alsoTrack outer_f
         $ runFusion outer_ctx
     where
-    inner_f@(Fix {}) : inner_args = flattenApp (head outer_args)
+    inner_f@(Fix {}) : inner_args = flattenApp fix_arg
     
     runFusion :: Context -> Env.AlsoTrack Term (MaybeT m) Term 
     runFusion outer_ctx
       | isVar rec_arg = fuse run extract outer_ctx inner_f'
       | otherwise = id
-          . Term.generalise (head inner_args) 
+          . Term.generalise rec_arg
             (\_ ctx -> fuse run extract ctx (Indices.lift inner_f'))
           $ outer_ctx
       where
       inner_f' = Term.clearFusedMatches inner_f
       rec_arg = head inner_args
-  fixfix _ = 
+  fixfix _ _ = 
     return Nothing
     
 fixfixFusion _ = 
@@ -453,7 +460,7 @@ fixfactFusion _ =
   
 factfixFusion :: forall m . Env.Readable m => Term -> m (Maybe Term)
 factfixFusion full_t@(flattenApp -> 
-      inner_f@(Fix _ _ _) : inner_args@(_:_)) 
+      inner_f@(Fix _ _ inner_f_body) : inner_args@(_:_)) 
   | Term.simplifiable full_t = do
     full_ty <- Err.noneM (Typing.typeOf full_t)
     if not (isInd full_ty)
@@ -471,16 +478,28 @@ factfixFusion full_t@(flattenApp ->
     fuseMatch :: (Term, (Term, Int)) -> m (Maybe Term)
     fuseMatch (match_t, (flattenApp -> Inj inj_n ind_ty : inj_args, _))
       | isFix match_f
-      , length shared_idxs == 1 = do
+      , length shared_idxs == 1 
+      -- Since caseRec in Floating favours fix-fact fusion, we need to do
+      -- this clumsy check to prevent infinite loops.
+      , not (inner_f_body `Term.containsUnifiable` match_f) = do
         match_ty <- Err.noneM (Typing.typeOf match_f)
         let ctx = Context.make match_ty full_ty buildContext
-        Fail.toMaybe (fuse run floatInwards ctx match_f)
+        runMaybeT (runFusion ctx)
       where
       match_f : match_args = flattenApp match_t
       strict_vars = Simp.strictVars full_t
       shared_idxs@(~[shared_idx]) = 
         findIndices ((`Set.member` strict_vars) . fromVar) inj_args
       new_arg = toEnum (length inj_args - (shared_idx + 1))
+      rec_arg = head match_args
+      
+      runFusion :: Context -> MaybeT m Term
+      runFusion outer_ctx
+        | isVar rec_arg = fuse Float.run floatInwards outer_ctx match_f
+        | otherwise = id
+            . Term.generalise rec_arg
+              (\_ ctx -> fuse Float.run floatInwards ctx (Indices.lift match_f))
+            $ outer_ctx
       
       buildContext :: Term -> Term
       buildContext gap_t = 
@@ -549,16 +568,19 @@ factfixFusion full_t@(flattenApp ->
             outer_t' = liftHere outer_t
             outer_ty' = liftHere outer_ty
             old_arg = liftHere new_arg
-            gap_t' = Indices.replaceAt old_arg (Var new_arg) gap_t
- 
+            main_alt' = id
+              . Alt main_bs 
+              . Indices.replaceAt old_arg (Var new_arg)
+              . Indices.liftMany (length main_bs)
+              $ gap_t
+            
             makeAbsurd (Alt bs _) = id
               . Alt bs
               . Indices.liftMany (length bs)
               $ Absurd full_ty
-            
+             
             left_alts' = map makeAbsurd left_alts
             right_alts' = map makeAbsurd right_alts
-            main_alt' = Alt main_bs gap_t
             outer_alts' = left_alts' ++ (main_alt':right_alts')
           
           pushInwards :: Term -> 
@@ -569,7 +591,7 @@ factfixFusion full_t@(flattenApp ->
               let inner_match = makeInnerMatch offset term
               if Unifier.exists full_t inner_match
               then return inner_match 
-              else trace ("Failed on\n" ++ show full_t ++ "\nwith\n" ++ show term) $ return term
+              else return term
           pushInwards other = 
             return other
             
@@ -582,7 +604,84 @@ factfixFusion full_t@(flattenApp ->
 factfixFusion _ =
   return Nothing
   
+
+refoldFusion :: forall m . Env.Readable m => Term -> m (Maybe Term)
+refoldFusion cse_t@(Case (Var x) ind_ty alts)
+  | Term.variablesUnused cse_t = do
+    var_ty <- Err.noneM (Typing.typeOf (Var x))
+    var_name <- showM (Var x)
+    let new_b = Bind (Just ("_" ++ var_name)) var_ty
+    Env.bindAt 0 new_b $ do
+      full_ty <- Err.noneM (Typing.typeOf reverted_t)
+      potentials <- id
+        . liftM toList
+        . Env.alsoTrack 0
+        . Fold.isoCollectM Term.restricted (potentialRefold full_ty)
+        $ reverted_t
+      liftM (fmap (Indices.substAt 0 (Var x)))
+        $ firstM (map applyPotential potentials)
+  where
+  reverted_t = Indices.lift (Term.revertMatches cse_t)
   
+  applyPotential :: (Context, Term) -> m (Maybe Term)
+  applyPotential (ctx, inner_f) = 
+    Fail.toMaybe
+      $ fuse Float.run extract ctx inner_f
+    where
+    extract :: Index -> Context -> Term -> MaybeT m Term
+    extract idx ctx = id
+      . Env.alsoTrack (idx, ctx)
+      . Term.expressMatches expressWhen
+      . Term.revertMatches
+      where
+      expressWhen :: (Term, Term) -> Term -> Term -> 
+        Env.AlsoTrack (Index, Context) (MaybeT m) Bool
+      expressWhen (Var _, _) _ expressed = do
+        (inner_f, ctx) <- Env.tracked
+        let full_t = Context.apply ctx (Var inner_f)
+        return (Unifier.exists full_t expressed)
+      expressWhen _ _ _ = 
+        return False
+  
+  potentialRefold :: Type -> Term -> 
+    MaybeT (Env.AlsoTrack Index m) (Context, Term) 
+  potentialRefold full_ty inner_t@(flattenApp -> inner_f@(Fix {}) : args)
+    | length args == Term.argumentCount inner_f = do
+      offset <- Env.tracked
+      guard (any (== Var (x + offset + 1)) args)
+      
+      inner_t' <- id
+        . MaybeT 
+        . return
+        . Indices.tryLowerMany (fromEnum offset)
+        $ inner_t
+        
+      guard (Term.occurrences inner_t' reverted_t == 1)
+      inner_ty <- id
+        . liftM (Indices.lowerMany (fromEnum offset))
+        $ Err.noneM (Typing.typeOf inner_t)
+      let ctx = buildContext inner_ty inner_t' 
+      return (ctx, leftmost inner_t')
+    where
+    buildContext inner_ty inner_t'@(flattenApp -> inner_f' : args') = 
+      Context.make inner_ty full_ty mkCtx
+      where 
+      -- We replace the matching variables with our new variable created
+      -- at the index which will match "offset".
+      mkCtx gap_t = 
+        Case (Var 0) ind_ty alts
+        where
+        args'' = 
+          map (Indices.replaceAt (x + 1) (Var 0)) args'
+        
+        Case (Var _) ind_ty alts = 
+          Term.replace inner_t' (unflattenApp (gap_t:args'')) reverted_t
+        
+  potentialRefold _ _ = mzero
+  
+refoldFusion _ =
+  return Nothing
+
 
 extract :: forall m . Env.Readable m =>  
   Index -> Context -> Term -> Env.AlsoTrack Term m Term

@@ -183,6 +183,17 @@ let t16 = fix (f: pi nat nat -> bool) (x: nat) (y: nat) ->
   end
 let t16' = fun nat nat -> _|_ bool
 
+let t17 = fun (t: tree nat) ->
+  match flatten nat t with
+  | Nil -> True
+  | Cons x xs -> False
+  end
+let t17' = fun (t: tree nat) ->
+  match t with
+  | Leaf -> True
+  | Node x t1 t2 -> False
+  end
+
   
 /* Doesn't work for fiddly reasons */
 let t30 = 

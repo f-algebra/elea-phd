@@ -6,11 +6,13 @@ module Elea.Env
   Writable (..), Readable (..),
   TrackIndices, TrackIndicesT (..),
   Matches, Tracker (..),
-  liftTracked, trackeds,
+  liftTracked, trackeds, 
   trackIndices, trackIndicesT,
-  bind, bindMany, matchedWith,
+  bind, bindMany, 
+  matchedWith, matchedFrom,
   forgetFacts, isMatchedPattern, 
   fixpointOffset, 
+  isoFree, isoShift,
   AlsoTrack, alsoTrack, alsoWith,
 )
 where
@@ -77,9 +79,21 @@ matchedWith :: Readable m => Term -> m (Maybe Term)
 matchedWith t = matches
   $> Map.lookup t
   $> fmap fst
+
+matchedFrom :: Readable m => Term -> m (Maybe Term)
+matchedFrom t 
+  | isInj (leftmost t) = do
+    ms <- matches
+    return 
+      . Map.lookup t
+      . Map.fromList 
+      . map (\(x, (y, _)) -> (y, x))
+      $ Map.toList ms
+matchedFrom _ = 
+  return Nothing
   
 isMatchedPattern :: Readable m => Term -> m Bool
-isMatchedPattern term= 
+isMatchedPattern term = 
   liftM (elemOrd term . map fst . Map.elems) matches
   
 forgetFacts :: Writable m => m a -> m a
@@ -174,32 +188,41 @@ distAltM cse_t ind_ty alt_n (Alt' mbs (mt, _)) = do
   cse_t' = liftMany (length _bs) cse_t
   ind_ty' = liftMany (length _bs) ind_ty
 
+isoFree :: 
+    (Fold.Transformable t, 
+     Fold.FoldM t (WriterT (Set Index) (TrackIndices Index))) => 
+  Fold.Iso Term t -> Term -> Set Index
+isoFree iso = id
+  . trackIndices 0
+  . Fold.isoFoldM iso freeR
+  where
+  freeR :: Term -> TrackIndices Index (Set Index)
+  freeR (Var x) = do
+    at <- tracked
+    if x >= at
+    then return (Set.singleton (x - at))
+    else return mempty
+  freeR _ = 
+    return mempty
+    
+isoShift :: (Fold.Transformable t, Fold.FoldM t (TrackIndices Index)) => 
+  Fold.Iso Term t -> (Index -> Index) -> Term -> Term
+isoShift iso f = id
+  . trackIndices 0
+  . Fold.isoTransformM iso shiftVar
+  where
+  shiftVar :: Term -> TrackIndices Index Term
+  shiftVar (Var x) = do
+    at <- tracked
+    let x' | x >= at = f (x - at) + at
+           | otherwise = x
+    return (Var x')
+  shiftVar other = 
+    return other
+  
 instance Indexed Term where
-  free = id
-    . trackIndices 0 
-    . Fold.foldM freeR
-    where
-    freeR :: Term -> TrackIndices Index (Set Index)
-    freeR (Var x) = do
-      at <- tracked
-      if x >= at
-      then return (Set.singleton (x - at))
-      else return mempty
-    freeR _ = 
-      return mempty
-
-  shift f = id
-    . trackIndices 0
-    . Fold.transformM shiftVar
-    where
-    shiftVar :: Term -> TrackIndices Index Term
-    shiftVar (Var x) = do
-      at <- tracked
-      let x' | x >= at = f (x - at) + at
-             | otherwise = x
-      return (Var x')
-    shiftVar other = 
-      return other
+  free = isoFree id
+  shift = isoShift id
       
 instance Indexed Bind where
   free (Bind _ t) = Indices.free t
@@ -382,10 +405,11 @@ instance ContainsTerms Bind where
 
 instance Unifiable Term where
   find t1 t2 = do
-    possible_uni <- trackIndicesT 0 (uni t1 t2)
+    possible_uni <- trackIndicesT 0 (t1 `uni` t2)
     -- Need to test out the unifier. It could be invalid if at some
     -- points a variable needs to be replaced, but at others it stays the same.
-    Fail.when (Unifier.apply possible_uni t1 /= t2)
+    test_uni <- trackIndicesT 0 (Unifier.apply possible_uni t1 `uni` t2)
+    Fail.when (test_uni /= mempty)
     return possible_uni
     where
     uniBind :: forall m . Fail.Monad m =>
@@ -394,7 +418,9 @@ instance Unifiable Term where
     
     uni :: forall m . Fail.Monad m => 
       Term -> Term -> TrackIndicesT Index m (Unifier Term)
-    uni (Absurd t1) (Absurd t2) = t1 `uni` t2
+   --  uni (Absurd t1) (Absurd t2) = t1 `uni` t2
+    -- Experimental concept w.r.t. unification of absurdities 
+    uni _ (Absurd _) = return mempty
     uni Type Type = return mempty
     uni Set Set = return mempty
     uni (Var x1) (Var x2)

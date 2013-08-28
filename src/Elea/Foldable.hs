@@ -4,10 +4,10 @@ module Elea.Foldable
   Refoldable, FoldableM (..), Transformable (..), 
   Iso, iso, 
   isoTransformM, isoRewriteM, isoRewriteStepsM,
-  isoFindM, isoAnyM, isoAllM, isoRewriteOnceM,
+  isoFindM, isoAnyM, isoAllM, isoRewriteOnceM, isoFoldM,
   isoRewrite, isoTransform, isoFind, isoRewriteM',
-  rewriteM, foldM, rewriteOnceM, collectM,
-  allM, findM, anyM, any, all,
+  rewriteM, foldM, rewriteOnceM, collectM, isoCollectM,
+  allM, findM, anyM, any, all, isoFold, isoAny,
   transform, rewrite, recover,
   rewriteStepsM, rewriteSteps, countM,
   SelectorM, selectiveTransformM, selectAll,
@@ -121,6 +121,16 @@ isoAnyM :: (Transformable t, Monad m, FoldM t (WriterT Monoid.All m)) =>
   Iso a t -> (a -> m Bool) -> a -> m Bool
 isoAnyM iso p = liftM not . isoAllM iso (liftM not . p)
 
+isoFold :: (Transformable t, FoldM t (Writer w), Monoid w) =>
+  Iso a t -> (a -> w) -> a -> w
+isoFold iso f = runIdentity . isoFoldM iso (Identity . f)
+
+isoCollectM :: 
+    (Ord b, Transformable t, Monad m, FoldM t (WriterT (Set b) m)) =>
+  Iso a t -> (a -> MaybeT m b) -> a -> m (Set b)
+isoCollectM iso f = 
+  isoFoldM iso (liftM (maybe mempty Set.singleton) . runMaybeT . f)
+
 foldM :: (Transformable t, Monad m, FoldM t (WriterT w m), Monoid w) =>
   (t -> m w) -> t -> m w
 foldM = isoFoldM id
@@ -139,7 +149,7 @@ anyM = isoAnyM id
 
 collectM :: (Ord a, Transformable t, Monad m, FoldM t (WriterT (Set a) m)) =>
   (t -> MaybeT m a) -> t -> m (Set a)
-collectM f = foldM (liftM (maybe mempty Set.singleton) . runMaybeT . f)
+collectM = isoCollectM id
 
 countM :: (Transformable t, Monad m, FoldM t (WriterT (Monoid.Sum Int) m)) => 
   (t -> m Bool) -> t -> m Int
@@ -149,11 +159,11 @@ countM p = liftM Monoid.getSum . foldM (liftM (Monoid.Sum . found) . p)
   found False = 0
   found True = 1
 
-all :: (Transformable t, FoldM t (WriterT Monoid.All Identity)) => 
+all :: (Transformable t, FoldM t (Writer Monoid.All)) => 
   (t -> Bool) -> t -> Bool
 all p = runIdentity . allM (return . p)
 
-any :: (Transformable t, FoldM t (WriterT Monoid.All Identity)) => 
+any :: (Transformable t, FoldM t (Writer Monoid.All)) => 
   (t -> Bool) -> t -> Bool
 any p = not . all (not . p)
 
@@ -211,6 +221,10 @@ isoRewrite iso f = Iso.project iso . transform rrwt . Iso.embed iso
 isoFind :: (Transformable t, FoldM t (Writer (Monoid.First f))) =>
   Iso a t -> (a -> Maybe f) -> a -> Maybe f
 isoFind iso f = runIdentity . isoFindM iso (return . f) 
+
+isoAny :: (Transformable t, FoldM t (Writer Monoid.All)) =>
+  Iso a t -> (a -> Bool) -> a -> Bool
+isoAny iso p = runIdentity . isoAnyM iso (return . p)
   
 transform :: Refoldable t => (t -> t) -> t -> t
 transform = isoTransform id
