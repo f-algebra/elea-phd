@@ -37,11 +37,11 @@ steps :: Env.Readable m => [Term -> m (Maybe Term)]
 steps = id
   . map Typing.checkStep
   $ [ floatConstructors 
-    , refoldFusion
+ --   , refoldFusion
     , fixfixFusion
     , repeatedArgFusion
     , fixfactFusion
-    , factfixFusion
+  --  , factfixFusion
     , removeIdFix 
     ]
 
@@ -57,7 +57,7 @@ run term = do
       ts' <- showM term'
       ts'' <- showM fused
       run fused
-        |> trace ("\n\nUNFUSED:\n\n" ++ ts' ++ "\n\nFINISHED\n\n" ++ ts'') 
+     --   |> trace ({- "\n\nUNFUSED:\n\n" ++ ts' ++  -} "\nFINISHED\n\n" ++ ts'') 
   where
   applyStep :: Term -> (Term -> m (Maybe Term)) -> m (Maybe Term)
   applyStep t f = Fold.isoRewriteOnceM Term.restricted withTrace t
@@ -70,7 +70,7 @@ run term = do
           ts <- showM t
           ts' <- showM t'
           Just t'
-            |> trace ("\n\nTRANSFORMED:\n" ++ ts ++ "\n\nTO:\n" ++ ts')
+        --    |> trace ("\n\nTRANSFORMED:\n" ++ ts ++ "\n\nTO:\n" ++ ts')
             |> return
 
 simpleAndFloat :: Env.Readable m => Term -> m Term
@@ -309,10 +309,13 @@ fixfactFusion full_t@(flattenApp ->
         -- We add the new fused matches to the info of our existing 
         -- fixpoint, since this will be carried over to the fixpoint
         -- that fusion produces.
-        let outer_f' = outer_f
-              |> addFusedMatch (match_t, inj_n)
-              |> addFusedMatches (get fusedMatches match_inf)
-            full_t' = unflattenApp (outer_f' : outer_args)
+        outer_f' <- id
+          . return
+         -- . Fold.isoRewriteM Term.restricted Float.caseOfRec
+          . addFusedMatches (get fusedMatches match_inf)
+          . addFusedMatch (match_t, inj_n)
+          $ outer_f
+        let full_t' = unflattenApp (outer_f' : outer_args)
         mby_t <- Fail.toMaybe (fuse run floatInwards ctx outer_f')
         match_s <- showM match_t
         outer_s <- showM full_t
@@ -484,7 +487,14 @@ factfixFusion full_t@(flattenApp ->
       , not (inner_f_body `Term.containsUnifiable` match_f) = do
         match_ty <- Err.noneM (Typing.typeOf match_f)
         let ctx = Context.make match_ty full_ty buildContext
-        runMaybeT (runFusion ctx)
+        mby_res <- runMaybeT (runFusion ctx)
+        full_s <- showM full_t
+        res_s <- mapM showM mby_res
+        match_s <- showM match_t
+        let msg | isJust mby_res = id -- trace ("!!!\n" ++ match_s ++ "\n+++\n" ++ full_s ++ "\n===>\n" ++ fromJust res_s)
+                | otherwise = id
+        
+        msg $ return mby_res
       where
       match_f : match_args = flattenApp match_t
       strict_vars = Simp.strictVars full_t

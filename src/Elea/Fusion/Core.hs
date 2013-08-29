@@ -82,7 +82,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
         $ extracted_t
        
   simp_s <- Env.bind fix_b (showM simplified_t)
-  revt_t <- Env.bind fix_b (showM extracted_t)
+  revt_t <- Env.bind fix_b (showM reverted_t)
   let s2 = "\nSIMPLIFIED:\n" ++ simp_s ++ "\n\nEXTRACTED:\n" ++ revt_t
   
   depth <- Env.bindingDepth
@@ -91,7 +91,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
         . Fold.transformM (replace fix_idx arg_vars)
         . trace s2
         $ reverted_t
-      
+        
   expanded_t <- id
     . Env.bindAt 0 fix_b
     . Env.bindAt fix_idx new_fix_b
@@ -106,33 +106,27 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
  
   let fix_body = id
         . trace s3
-     --   . trace (s1 ++ s2 ++ s3)
+      --   . trace (s1 ++ s2 ++ s3)
         . unflattenLam arg_bs
         . substAt 0 inner_fix
         $ expanded_t
         
-  let old_rc = Term.occurrences (Var 0) fix_t
-      new_rc = Term.occurrences (Var 0) fix_body
+  let old_rc = id
+        . Set.size
+        . functionCalls (Term.argumentCount inner_fix) (Var 0) 
+        $ expanded_t
+      new_rc = id
+        . Set.size
+        . functionCalls (length arg_vars) (Var 0) 
+        $ fix_body
+      old_rc' = Term.occurrences (Var 0) fix_t
+      new_rc' = Term.occurrences (Var 0) fix_body
       rem_rc = Term.occurrences (Var 0) expanded_t
       
   Fail.unless
   --  . trace s1
   --  . trace (s1 ++ s2 ++ s3)
-    $ rem_rc == 0 || new_rc >= old_rc
-  
-      {-
-  let might_recurse = Fold.any (Term.fragmentedUnifierExists fused_t) fix_body
-  
-  fbs <- Env.bind new_fix_b $ showM fix_body
-  
-  if not might_recurse && not (new_rec_call_count >= rec_call_count)
-  then trace ("FAIL ON:\n" ++ fbs) Fail.here
-  else return ()
-      -}
- -- Fail.unless (replaced_enough || not inner_f_remained)
-  
-  -- If this holds then fusion might repeat within itself
-  -- Fail.when might_recurse
+    $ rem_rc == 0 || new_rc' >= old_rc'
 
   done <- unflattenApp (Fix fix_info' new_fix_b fix_body : arg_vars)
    -- You have to do this bit first, otherwise unfoldFixInj doesn't
@@ -155,25 +149,43 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   isInnerFixMatch :: Term -> Env.TrackIndices Index Bool
   isInnerFixMatch cse_t = Env.trackeds (`Set.member` Indices.free cse_t)
   
+  functionCalls :: Int -> Term -> Term -> Set Term
+  functionCalls arg_count func = id
+    . Env.trackIndices func
+    . Fold.isoFoldM Term.restricted call
+    where
+    call :: Term -> Env.TrackIndices Term (Set Term)
+    call term@(flattenApp -> func' : args) 
+      | length args == arg_count = do
+        func <- Env.tracked
+        if func' /= func
+        then return mempty
+        else do
+          let min = minimum (Indices.free term)
+          return (Set.singleton (Indices.lowerMany (fromEnum min) term))
+    call _ = return mempty
+  
   expandFiniteCalls :: Term -> MaybeT (Env.AlsoTrack (Index, Term) m) Term
-  expandFiniteCalls (Case (flattenApp -> Var f : args) ind_ty alts) = do
+  expandFiniteCalls from@(Case (flattenApp -> Var f : args) ind_ty alts) = do
     (fix_f, inner_fix) <- Env.tracked
     guard (f == fix_f)
-    MaybeT  
-      . lift
-      . Float.unfoldCaseFix 
-      $ Case (unflattenApp (inner_fix : args)) ind_ty alts
-    
+    let cse = Case (unflattenApp (inner_fix : args)) ind_ty alts
+        mby_cse' = Float.unfoldCaseFix cse
+    if isJust mby_cse'
+    then MaybeT (return mby_cse')
+    else MaybeT
+       . lift 
+       . const (return Nothing)
+ --      . Float.unsafeUnfoldCaseFix
+       $ cse
   expandFiniteCalls term@(flattenApp -> Var f : args)
     | length args == Term.argumentCount inner_fix = do
       (fix_f, inner_fix) <- Env.tracked
       guard (f == fix_f)
       guard (any Term.isFinite args)
       return (unflattenApp (inner_fix : args))
-  
   expandFiniteCalls _ = mzero
   
-
   replace :: Index -> [Term] -> Term -> Env.TrackIndices Index Term
   replace fix_idx arg_vars term = do
     old_f <- Env.tracked

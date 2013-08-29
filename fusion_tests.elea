@@ -149,40 +149,33 @@ let first_gt_inner =
     end
   end
   
+
 let first_gt =
   fun (n: nat) (t: tree nat) ->
   match flatten nat t with
   | Nil -> True
   | Cons x xs -> leq_nat n x
   end
-  
 
-
-/* 
-let first_gt = 
-  fun (n: nat) (t: tree nat) ->
+let first_gt2 = 
+  fun (n: nat) ->
+  fix (first_gt: pi (tree nat) -> bool) (t: tree nat) ->
   match t with
   | Leaf -> True
-  | Node x t1 t2 ->  
-    (fix (first_gt: pi (tree nat) -> bool) (t: tree nat) ->
-      match t with
-      | Leaf -> _|_ bool
-      | Node x t1 t2 ->
-        match t1 with
-        | Leaf -> leq_nat n x
-        | Node y t11 t12 -> first_gt t1
-        end
-      end) t
+  | Node x t1 t2 ->
+    match t1 with
+    | Leaf -> leq_nat n x
+    | Node y t11 t12 -> first_gt t1
+    end
   end
-  */
   
 let sorted_tree = 
   fix (srtd: pi (tree nat) -> bool) (t: tree nat) ->
   match t with
   | Leaf -> True
   | Node x t1 t2 ->
-    and (and (srtd t1) (srtd t2)) 
-        (and (last_leq x t1) (first_gt x t2))
+    and (and (last_leq x t1) (first_gt2 x t2))
+        (and (srtd t1) (srtd t2)) 
   end
   
 let t19 = fun (t: tree nat) ->
@@ -234,12 +227,12 @@ let t540 = fun (n: nat) (t: tree nat) ->
   sorted_tree (ins_tree n t)
 let t540' = _|_ bool
 
-let t55 = fun (n: nat) (t: tree nat) -> 
+let t56 = fun (n: nat) (t: tree nat) -> 
   match sorted_tree t with
   | True -> False
   | False -> sorted_tree (ins_tree n t)
   end
-let t55' = fun nat (tree nat) -> False
+let t56' = fun nat (tree nat) -> False
 
 let t541 = fun (n: nat) (k: nat) (t: tree nat) -> 
   match and (leq_nat n k) (last_leq k t) with
@@ -249,8 +242,8 @@ let t541 = fun (n: nat) (k: nat) (t: tree nat) ->
 let t541' = fun nat nat (tree nat) -> True
 
 let t542 = fun (n: nat) (k: nat) (t: tree nat) -> 
-  match and (not (leq_nat n k)) (first_gt k t) with
-  | True -> first_gt k (ins_tree n t)
+  match and (not (leq_nat n k)) (first_gt2 k t) with
+  | True -> first_gt2 k (ins_tree n t)
   | False -> True
   end
 let t542' = fun nat nat (tree nat) -> True
@@ -260,30 +253,55 @@ let t5421 = fun (n: nat) (k: nat) (t: tree nat) ->
 let t5421' = fun nat nat (tree nat) -> True
 
 let t5422 =
+  fun (n: nat) ->
   fix (srtd: pi (tree nat) -> bool) (t: tree nat) ->
   match t with
   | Leaf -> True
   | Node x t1 t2 ->
-    match srtd t1 with
-    | True ->
-      match flatten nat t2 with
-      | Nil ->
-        last_leq_list x (flatten nat t1)
-      | Cons z zs ->
-        match leq_nat x z with
-        | True ->
-          match srtd t2 with
-          | True -> last_leq_list x (flatten nat t1)
-          | False -> False
-          end
-        | False -> False
-        end
+    match flatten nat t2 with
+    | Nil -> leq_nat n x
+    | Cons y ys ->
+      match leq_nat x y with
+      | True -> srtd t2
+      | False -> _|_ bool
       end
-    | False -> False
+    end
+  end          
+let t5422' = _|_ bool
+
+let t5423 = 
+  fix (flat: pi (tree nat) -> bool) (t: tree nat) ->
+  match t with
+  | Leaf -> True
+  | Node x t1 t2 ->
+    match flatten nat t2 with
+    | Nil -> False
+    | Cons y ys ->
+      match leq_nat x y with
+      | True ->
+        match 
+          (fix (flat2: pi (tree nat) -> bool) (t: tree nat) ->
+            match t with
+            | Leaf -> True
+            | Node z t1 t2 ->
+              match flatten nat t2 with
+              | Nil -> leq_nat x z
+              | Cons b bs -> 
+                match leq_nat z b with
+                | True -> flat2 t2
+                | False -> _|_ bool
+                end
+              end
+            end) t2 with
+        | True -> flat t2
+        | False -> _|_ bool
+        end
+      | False -> _|_ bool
+      end
     end
   end
-let t5422' = _|_ bool
-  
+let t5423' = _|_ bool
+
 let t56 = fun (k: nat) (t: tree nat) -> sorted_tree (ins_tree k t)
 let t56' = _|_ bool
 

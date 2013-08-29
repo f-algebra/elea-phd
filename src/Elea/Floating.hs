@@ -7,6 +7,8 @@ module Elea.Floating
   commuteMatchesWhen,
   removeConstArgs,
   unfoldCaseFix,
+  unsafeUnfoldCaseFix,
+  caseOfRec,
 )
 where
 
@@ -42,7 +44,7 @@ steps = id
   unsafe =  
     [ const (return Nothing)
     , unfoldFixInj
-    , unfoldCaseFix
+    , return . unfoldCaseFix
     , return . unfoldWithinFix
     ]
 
@@ -69,7 +71,8 @@ safeSteps =
     , caseFun
     , absurdity
     , freeFix
-    , caseOfRec
+    -- Moved to being just before fix-fact fusion
+  --  , caseOfRec
     , varEqApply 
     ]
     
@@ -160,12 +163,32 @@ unfoldFixInj _ =
   return Nothing
 
 
--- | Tries unfolding a  'Fix' which is being pattern matched upon once
--- and sees whether all recursive calls disappear.
--- This is exposed because it is used by expandFiniteCalls in Fusion.Core.
-unfoldCaseFix :: Env.Readable m => Term -> m (Maybe Term)
-unfoldCaseFix cse_t@(Case (leftmost -> fix@(Fix _ fix_b fix_t)) _ _)
-  | unfoldHere = {- trace ("ENTERING:\n" ++ show (Case (unflattenApp (fix_t:args)) ind_ty alts)) $ -} do
+-- | Unfolds a 'Fix' which is being pattern matched upon if that pattern
+-- match only uses a finite amount of information from the 'Fix'.
+-- TODO: Extend this to arbitrary depth of unrolling, currently
+-- it only works for depth 1.
+unfoldCaseFix :: Term -> Maybe Term
+unfoldCaseFix term@(Case cse_t@(leftmost -> fix@(Fix {})) ind_ty alts)
+  | Term.isProductive fix
+  , Term.variablesFinitelyUsed ind_ty alts = 
+    Just (Case cse_t' ind_ty alts)
+  where
+  fix@(Fix _ _ rhs) : args = flattenApp cse_t
+  cse_t' = unflattenApp (subst fix rhs : args)
+unfoldCaseFix _ = Nothing
+  
+
+-- | Oh the grief this has caused me. It seems like an innocuous enough
+-- step but jesus the infinite loops this'll give you...
+-- As a reminder to myself, what it does it cause non-productive functions
+-- to be expanded (like flatten), which creates a pattern-match on a variable
+-- which'll float to the top and expand out a bunch of unrelated functions
+-- one of which will probably contain flatten again, and so it repeats.
+-- I am only using this inside a very particular step, very ad hoc I know
+-- but I'll figure out a way around it at some point.
+unsafeUnfoldCaseFix :: Env.Readable m => Term -> m (Maybe Term)
+unsafeUnfoldCaseFix cse_t@(Case (leftmost -> Fix _ fix_b fix_t) _ _)
+  | Term.isRecursiveInd ind_ty && Term.variablesUnused cse_t = do
     expanded <- id
       . Env.bindAt 0 fix_b
       . safeRun
@@ -174,22 +197,19 @@ unfoldCaseFix cse_t@(Case (leftmost -> fix@(Fix _ fix_b fix_t)) _ _)
     from_s <- showM cse_t
     if Indices.lowerableBy 1 expanded
     then return (Just (Indices.lower expanded))
-          -- |> trace ("CASEFIX:\n" ++ exp_s)
+      --     |> trace ("CASEFIX:\n" ++ exp_s)
     else return Nothing
+       --   |> trace ("FAILEDCASEFIX:\n" ++ from_s)
   where    
   -- We lift indices by one to allow for the recursive call of the 
   -- inner fix we will be unrolling to be at index 0.
   Case (flattenApp -> _:args) ind_ty alts = Indices.lift cse_t
   term' = Case (unflattenApp (fix_t:args)) ind_ty alts
   
-  unfoldHere = (Term.isRecursiveInd ind_ty && Term.variablesUnused cse_t)
-    || (Term.isProductive fix && Term.variablesFinitelyUsed ind_ty alts)
-    
   safeRun = id
     . Fold.isoRewriteStepsM Term.restricted 
-    $ safeSteps ++ [unfoldCaseFix]
-  
-unfoldCaseFix _ = 
+    $ safeSteps ++ [unsafeUnfoldCaseFix]
+unsafeUnfoldCaseFix _ = 
   return Nothing
 
 
@@ -485,10 +505,6 @@ freeCaseFix _ = Nothing
 -- fixpoints). Otherwise, if you unroll the function you could perform
 -- fix-fact fusion using the recursive call, which would unroll the function
 -- again, and so on.
--- This is a bit ad-hoc atm., it's a good idea in principle but
--- a couple of the features are there to work with specific examples.
--- Needs improvement, especially the limitation that the outwards floated
--- terms should be not of recursive type.
 caseOfRec :: forall m . Env.Readable m => Term -> m (Maybe Term)
 caseOfRec (Fix fix_i fix_b fix_t) = id
   . liftM (fmap (Fix fix_i fix_b))
@@ -525,8 +541,7 @@ caseOfRec (Fix fix_i fix_b fix_t) = id
       floatable :: Term -> Env.TrackIndices Index (Maybe Term)
       floatable term@(flattenApp -> fix@(Fix _ fix_b _) : args)
         | length args == Term.argumentCount fix
-        , outer_vars `intersects` Simp.strictVars term
-        , not is_rec_type = do
+        , outer_vars `intersects` Simp.strictVars term = do
           offset <- Env.trackeds fromEnum
           return (Indices.tryLowerMany offset term)
         where

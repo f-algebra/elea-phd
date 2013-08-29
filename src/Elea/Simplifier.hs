@@ -15,7 +15,7 @@ import Elea.Show
 import qualified Elea.Env as Env
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Index as Indices
-import qualified Elea.Term as Term
+import qualified Elea.Terms as Term
 import qualified Elea.Env as Env
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
@@ -37,7 +37,7 @@ strictVars :: Term -> Set Index
 strictVars (flattenApp -> Fix _ _ fix_t : args) = id
   . Set.intersection (Indices.free args)
   . Env.trackIndices 0
-  . Fold.foldM matchedUpon
+  . Fold.isoFoldM Term.restricted matchedUpon
   . run
   $ unflattenApp (fix_t : args)
   where

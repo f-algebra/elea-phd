@@ -260,11 +260,14 @@ returnType = snd . flattenPi
 
 -- | If given a function type, returns the number of arguments it takes.
 -- If given a function it does the same with its type.
-argumentCount :: Term -> Int
+argumentCount :: Show Term => Term -> Int
 argumentCount (Fix _ fix_b _) = 
   argumentCount (get boundType fix_b)
 argumentCount pi@(Pi _ _) = 
   length (fst (flattenPi pi))
+argumentCount (Ind {}) = 0
+argumentCount other = 
+  error ("argumentCount called with: " ++ show other) 
   
 -- | If the provided 'Fix' term has already had a given 
 -- pattern match fused into it, this returns which constructor 
@@ -295,7 +298,7 @@ blockSimplification (Fix inf b t) =
   Fix (set canSimplify False inf) b t
 blockSimplification other = other
 
-simplifiable :: Term -> Bool
+simplifiable :: Show Term => Term -> Bool
 simplifiable (flattenApp -> fix@(Fix inf _ _) : args) = 
   length args == argumentCount fix && get canSimplify inf
 simplifiable _ = True

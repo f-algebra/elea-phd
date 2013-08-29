@@ -474,7 +474,7 @@ instance Fold.Transformable RestrictedTerm where
     select :: Term -> (Bool, Term' (Bool, Term))
     -- I haven't implemented any type transformations yet.
     select term 
-      | isPi term || isInj term || isInd term = ignoreAll term
+      | isPi term || isInd term = ignoreAll term
     select (Lam b t) = (True, Lam' (ignoreBind b) (True, t))
     select fix@(Fix inf b t)
       -- To simplify a fix it must not be in normal form,
