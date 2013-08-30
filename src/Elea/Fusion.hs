@@ -41,7 +41,7 @@ steps = id
     , fixfixFusion
     , repeatedArgFusion
     , fixfactFusion
-  --  , factfixFusion
+    , factfixFusion
     , removeIdFix 
     ]
 

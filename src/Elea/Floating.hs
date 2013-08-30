@@ -46,6 +46,7 @@ steps = id
     , unfoldFixInj
     , return . unfoldCaseFix
     , return . unfoldWithinFix
+    , unsafeUnfoldCaseFix
     ]
 
 safeSteps :: Env.Readable m => [Term -> m (Maybe Term)]
@@ -71,7 +72,6 @@ safeSteps =
     , caseFun
     , absurdity
     , freeFix
-    -- Moved to being just before fix-fact fusion
   --  , caseOfRec
     , varEqApply 
     ]
@@ -248,6 +248,9 @@ unfoldWithinFix fix@(Fix fix_i fix_b fix_t) =
     return other
   
 unfoldWithinFix _ = Nothing
+
+
+-- unnecessaryConstraints :: 
 
 
 -- | If a recursive function just returns the same value, regardless of its
@@ -645,6 +648,34 @@ raiseVarCase = commuteMatchesWhen raiseVar
     isFix (leftmost cse_of)
   raiseVar _ _ = False
 
+
+{-
+-- | Pattern matches over variables should be above those over function
+-- results.
+raiseVarCase :: Term -> Maybe Term
+raiseVarCase outer_cse@(Case (flattenApp -> Fix {} : args) ind_ty alts)
+  | Just (var, ind_ty) <- mby_inner = id
+    . Just 
+    . Term.buildCaseOf (Var var) ind_ty
+    $ const outer_cse
+  where
+  mby_inner = id
+    . Env.trackIndices 0
+    . Fold.isoFindM Term.restricted (runMaybeT . innerVarCase)
+    $ outer_cse
+    where
+    arg_vars = (Set.fromList . map fromVar . filter isVar) args
+  
+    innerVarCase :: Term -> MaybeT (Env.TrackIndices Index) (Index, Type)
+    innerVarCase (Case (Var x) ind_ty _) = do
+      offset <- Env.tracked
+      guard (x >= offset)
+      let x' = x - offset
+      guard (x' `Set.member` arg_vars)
+      return (x', Indices.lowerMany (fromEnum offset) ind_ty)
+    innerVarCase _ = mzero
+raiseVarCase _ = Nothing
+-}
 
 -- | If we are pattern matching on a pattern match then remove this 
 -- using distributivity.

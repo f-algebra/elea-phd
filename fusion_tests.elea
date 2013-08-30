@@ -169,12 +169,28 @@ let first_gt2 =
     end
   end
   
+let first_gt3 = 
+  fun (n: nat) (t: tree nat) ->
+  match t with
+  | Leaf -> True
+  | Node x t1 t2 ->
+    (fix (first_gt: pi (tree nat) -> bool) (t: tree nat) ->
+      match t with
+      | Leaf -> _|_ bool
+      | Node x t1 t2 ->
+        match t1 with
+        | Leaf -> leq_nat n x
+        | Node y t11 t12 -> first_gt t1
+        end
+      end) t
+  end
+  
 let sorted_tree = 
   fix (srtd: pi (tree nat) -> bool) (t: tree nat) ->
   match t with
   | Leaf -> True
   | Node x t1 t2 ->
-    and (and (last_leq x t1) (first_gt2 x t2))
+    and (and (last_leq x t1) (first_gt3 x t2))
         (and (srtd t1) (srtd t2)) 
   end
   
@@ -242,14 +258,14 @@ let t541 = fun (n: nat) (k: nat) (t: tree nat) ->
 let t541' = fun nat nat (tree nat) -> True
 
 let t542 = fun (n: nat) (k: nat) (t: tree nat) -> 
-  match and (not (leq_nat n k)) (first_gt2 k t) with
-  | True -> first_gt2 k (ins_tree n t)
+  match and (not (leq_nat n k)) (first_gt3 k t) with
+  | True -> first_gt3 k (ins_tree n t)
   | False -> True
   end
 let t542' = fun nat nat (tree nat) -> True
 
 let t5421 = fun (n: nat) (k: nat) (t: tree nat) ->
-  first_gt k t
+  first_gt2 k (ins_tree n t)
 let t5421' = fun nat nat (tree nat) -> True
 
 let t5422 =
@@ -302,8 +318,8 @@ let t5423 =
   end
 let t5423' = _|_ bool
 
-let t56 = fun (k: nat) (t: tree nat) -> sorted_tree (ins_tree k t)
-let t56' = _|_ bool
+let t57 = fun (k: nat) (t: tree nat) -> sorted_tree (ins_tree k t)
+let t57' = _|_ bool
 
 /* requires invention of list-fold functions */
 let t219 = fun (a: *) (t: tree a) -> length a (flatten a t)

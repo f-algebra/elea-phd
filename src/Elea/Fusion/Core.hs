@@ -63,7 +63,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
       ctx_here = Indices.lift outer_ctx
 
   simplified_t <- id
-    . trace s1
+   -- . trace s1
     . Env.bind fix_b
     . Env.fixpointHere
     . simplify
@@ -89,7 +89,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   let replaced_t = id
         . Env.trackIndices 0
         . Fold.transformM (replace fix_idx arg_vars)
-        . trace s2
+      --  . trace s2
         $ reverted_t
         
   expanded_t <- id
@@ -105,7 +105,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   let s3 = "\nEXPANDED:\n" ++ rep_s
  
   let fix_body = id
-        . trace s3
+      --  . trace s3
       --   . trace (s1 ++ s2 ++ s3)
         . unflattenLam arg_bs
         . substAt 0 inner_fix
@@ -137,7 +137,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     |> Float.run
     
   done_s <- showM done
-  let s4 = {- s1 ++ -} "\nDONE:\n" ++ done_s
+  let s4 = s1 ++ "\nDONE:\n" ++ done_s
   
   id 
     . trace s4 
@@ -175,8 +175,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     then MaybeT (return mby_cse')
     else MaybeT
        . lift 
-       . const (return Nothing)
- --      . Float.unsafeUnfoldCaseFix
+       . Float.unsafeUnfoldCaseFix
        $ cse
   expandFiniteCalls term@(flattenApp -> Var f : args)
     | length args == Term.argumentCount inner_fix = do
