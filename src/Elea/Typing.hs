@@ -73,26 +73,30 @@ typeOf term = id
   . Fold.paraM doBoth
   $ term
   where
-  -- | This is added to the existing error 
+  -- This is added to the existing error 
   -- if a type checking error is thrown.
   termErr :: TypingMonad m => Term -> m Err.Err
   termErr t = do
     t_s <- showM t
     return $ "When type checking: [" ++ t_s ++ "]."
   
-  -- | Check the term for type errors, then return the type.
+  -- Check the term for type errors, then return the type.
   doBoth :: TypingMonad m => Term' (Type, Term) -> m Type
   doBoth ft = 
     Err.augmentM (termErr $ Fold.recover ft)
       $ fcheck ft >> ftype ft
       
-  -- | The type of an pattern match branch has to be lowered by any
+  -- The type of an pattern match branch has to be lowered by any
   -- indexes bound by the match
   altType :: Alt' (Type, Term) -> Type
   altType (Alt' bs (ty, t)) =
     Indices.lowerMany (length bs) ty
-  
-  -- | Checks the term for any type errors.
+    
+  applyArg :: Term' (Type, Term) -> Term' (Type, Term)
+  applyArg (App' (Pi _ res_ty, f) ((_, t):ts)) =  
+    App' (subst t res_ty, app f [t]) ts
+    
+  -- Checks the term for any type errors.
   -- Is combined with 'ftype' in 'doBoth'
   -- to get the full monadic Term'-algebra for typing.
   fcheck :: TypingMonad m => Term' (Type, Term) -> m ()
@@ -102,7 +106,7 @@ typeOf term = id
     Err.when (fromEnum idx >= depth)
       $ "Found index: " ++ show idx ++ " in an environment which only "
       ++ "has type bindings up to index: " ++ show depth
-  fcheck (App' (fun_ty, fun_t) (arg_ty, arg_t))
+  fcheck app_t@(App' (fun_ty, fun_t) ((arg_ty, arg_t):_))
     | Pi (Bind _ arg_ty') _ <- fun_ty
     , arg_ty /= arg_ty' = do
         ty_s <- showM arg_ty
@@ -118,7 +122,9 @@ typeOf term = id
         t_s <- showM fun_t
         Err.throw 
           $ "Found an applied term [" ++ t_s
-          ++ "] of non-function type [" ++ ty_s ++ "]."       
+          ++ "] of non-function type [" ++ ty_s ++ "]."   
+    | otherwise = 
+      fcheck (applyArg app_t)
   fcheck fx@(Fix' _ (Bind' _ (_, b_ty)) (Indices.lower -> ty, _))
     | b_ty /= ty = do
         b_ty_s <- showM b_ty
@@ -180,8 +186,10 @@ typeOf term = id
     liftM (get boundType) (Env.boundAt idx)
   ftype (Lam' (Bind' lbl (_, arg)) (res, _)) = 
     return (Pi (Bind lbl arg) res)
-  ftype (App' (Pi _ res, _) (_, arg)) = 
-    return (subst arg res)
+  ftype (App' (ty, _) []) = 
+    return ty
+  ftype t@(App' {}) = 
+    ftype (applyArg t)
   ftype (Fix' _ (Bind' _ (_, ty)) _) = 
     return ty
   ftype (Ind' (Bind' _ (_, ty)) _) = 

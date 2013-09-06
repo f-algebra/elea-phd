@@ -38,5 +38,5 @@ tests = Test.label "Parser"
     $ Lam (bind nat)
     $ Case (Var 1) nat
     [ Alt [] (Var 0)
-    , Alt [bind nat] (suc `App` 
-        (unflattenApp [Var 3, Var 0, Var 1])) ]
+    , Alt [bind nat] (App suc 
+        [App (Var 3) [Var 0, Var 1]]) ]

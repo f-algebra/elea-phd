@@ -11,10 +11,10 @@ module Elea.Terms
   generalise, generaliseMany, 
   buildCaseOfM, buildCaseOf,
   revertMatchesWhenM, revertMatches, revertMatchesWhen,
-  descendWhileM, mapBranchesM, foldBranchesM,
+  descendWhileM, strictVars,
   isProductive, normalised, expressMatches,
   minimumInjDepth, maximumInjDepth, injDepth,
-  restricted,
+  restricted, branchesOnly,
   module Elea.Term,
 )
 where
@@ -27,6 +27,7 @@ import Elea.Show
 import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
 import qualified Elea.Typing as Typing
+import qualified Elea.Simplifier as Simp
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Error as Err
@@ -76,9 +77,10 @@ recursivePatternArgs ty n =
   where
   args = tail (flattenApp (altPattern ty n))
   
-isRecursiveInd :: Type -> Bool
+isRecursiveInd :: Show Term => Type -> Bool
 isRecursiveInd ty@(Ind _ cons) = 
   not . all (isBaseCase ty) . map toEnum $ [0..length cons - 1]
+isRecursiveInd other = error (show other)
   
 recursionDepth :: Term -> Int
 recursionDepth (Fix _ _ rhs) = id
@@ -128,7 +130,7 @@ variablesFinitelyUsed ind_ty = and . zipWith recArgsUsed [0..]
     where
     isUsed = (`Set.member` Env.isoFree restricted alt_t)
     args = recursivePatternArgs ind_ty n
-    
+
 variablesUnused :: Term -> Bool
 variablesUnused (revertMatches -> Case _ _ alts) = 
   all unused alts
@@ -255,7 +257,7 @@ revertMatchesWhen when = runIdentity . revertMatchesWhenM (return . when)
 revertMatches :: Term -> Term
 revertMatches = revertMatchesWhen (const True)
 
--- | Some simple code shared by descendWhileM and mapBranchesM.
+-- | Some simple code shared by descendWhileM and BranchesOnly.
 descendAlt :: Alt -> Alt' (Bool, Term)
 descendAlt (Alt bs alt_t) = Alt' bs' (True, alt_t)
   where
@@ -278,36 +280,44 @@ descendWhileM when = Fold.selectiveTransformM while
       (False, Case' (True, cse_t) (False, ind_ty) (map descendAlt alts))
     descend (Lam (Bind lbl ty) t) = 
       (False, Lam' (Bind' lbl (False, ty)) (True, t))
-      
     -- TODO: Missing cases here
 
--- | Applies a given transformation function to the innermost branches
--- of a term made of pattern matches, and the terms they match upon.
--- Will also move inside lambda abstractions.
-mapBranchesM :: forall m . Env.Writable m => 
-  (Term -> m Term) -> Term -> m Term
-mapBranchesM = Fold.selectiveTransformM (return . branches)
-  where
-  branches :: Term -> (Bool, Term' (Bool, Term))
-  branches (Case cse_t ind_ty alts) =
-    (False, Case' (False, cse_t) (False, ind_ty) (map descendAlt alts))
-  branches (Lam (Bind lbl ty) t) = 
-    (False, Lam' (Bind' lbl (False, ty)) (True, t))
-  branches term = 
-    (True, fmap (\t -> (False, t)) (Fold.project term))
+    
+newtype BranchesOnly = BranchesOnly { notBranchesOnly :: Term }
+  deriving ( Eq, Ord, Show )
 
-foldBranchesM :: (Env.Writable m, Monoid w) => (Term -> m w) -> Term -> m w
-foldBranchesM f = execWriterT . mapBranchesM fold
-  where
-  fold t = do
-    t |> f |> Trans.lift >>= tell
-    return t
+-- A term isomorphism whose Tranformable instance only runs on the innermost
+-- terms of pattern matches and lambda abstractions.
+branchesOnly :: Fold.Iso Term BranchesOnly
+branchesOnly = Fold.iso BranchesOnly notBranchesOnly
 
-allBranchesM :: Env.Writable m => (Term -> m Bool) -> Term -> m Bool
-allBranchesM p = liftM Monoid.getAll . foldBranchesM (liftM Monoid.All . p)
+type instance Fold.Base BranchesOnly = Term'
+  
+instance Fold.Foldable BranchesOnly where
+  project = fmap BranchesOnly . Fold.project . notBranchesOnly
+  
+instance Fold.Unfoldable BranchesOnly where
+  embed = BranchesOnly . Fold.embed . fmap notBranchesOnly
+  
+instance Fold.FoldableM BranchesOnly where
+  type FoldM BranchesOnly m = Env.Writable m
+  distM = Fold.distM . fmap (second notBranchesOnly)
 
-allBranches :: (Term -> Bool) -> Term -> Bool
-allBranches p = runIdentity . allBranchesM (Identity . p)
+instance Fold.Transformable BranchesOnly where
+  transformM f = id
+    . liftM BranchesOnly 
+    . Fold.selectiveTransformM (return . branches) f'
+    . notBranchesOnly
+    where
+    f' = liftM notBranchesOnly . f . BranchesOnly
+    
+    branches :: Term -> (Bool, Term' (Bool, Term))
+    branches (Case cse_t ind_ty alts) =
+      (False, Case' (False, cse_t) (False, ind_ty) (map descendAlt alts))
+    branches (Lam (Bind lbl ty) t) = 
+      (False, Lam' (Bind' lbl (False, ty)) (True, t))
+    branches term = 
+      (True, fmap (\t -> (False, t)) (Fold.project term))
 
 collectM :: forall m . Env.Writable m => 
   (Term -> m Bool) -> Term -> m (Set Term)
@@ -347,6 +357,24 @@ buildCaseOfM cse_of ind_ty@(Typing.unfoldInd -> cons) mkAlt = do
 buildCaseOf :: Term -> Type -> (Nat -> Term) -> Term
 buildCaseOf cse_of ind_ty mkAlt = 
   runIdentity (buildCaseOfM cse_of ind_ty (Identity . mkAlt))
+  
+  
+strictVars :: Term -> Set Index
+strictVars (App (Fix _ _ fix_t) args) = id
+  . Set.intersection (Indices.free args)
+  . Env.trackIndices 0
+  . Fold.isoFoldM restricted matchedUpon
+  . Simp.run
+  $ App fix_t args
+  where
+  matchedUpon :: Term -> Env.TrackIndices Index (Set Index)
+  matchedUpon (Case (Var x) _ _) = do
+    offset <- Env.tracked
+    if x >= offset
+    then return (Set.singleton (x - offset))
+    else return mempty
+  matchedUpon _ = return mempty
+  
 
 -- | A function is "productive" if it will return something in HNF
 -- if unrolled once. We implement this by checking for a constructor

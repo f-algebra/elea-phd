@@ -3,28 +3,26 @@ module Elea.Term
   Type, Term (..), Alt (..), Bind (..), FixInfo (..),
   Term' (..), Alt' (..), Bind' (..), FixInfo' (..),
   ContainsTerms (..), mapTerms,
+  app,
   projectAlt, embedAlt, 
   projectBind, embedBind,   
-  projectFixInfo, embedFixInfo,
-  inner, varIndex, alts, argument, 
-  inductiveType, binding, constructors,
+  projectFixInfo, embedFixInfo, 
   altBindings, altInner,
   altBindings', altInner',
   boundLabel, boundType,
   boundLabel', boundType',
   fusedMatches, fusedMatches',
   normalForm, normalForm',
-  leftmost, returnType,
-  flattenApp, unflattenApp, 
+  returnType, altPattern, 
+  flattenApp, leftmost, arguments,
   flattenPi, unflattenPi,
   flattenLam, unflattenLam,
   isInj, isLam, isVar, isPi, isInd, 
   isFix, isAbsurd, isCase,
   fromVar, emptyFixInfo,
-  altPattern, argumentCount, 
   fusedMatch, addFusedMatch, 
   addFusedMatches, clearFusedMatches,
-  blockSimplification, allowSimplification, simplifiable
+  blockSimplification, allowSimplification, simplifiable,
 )
 where
 
@@ -54,32 +52,32 @@ type Type = Term
 -- | The de-Bruijn indexed Calculus of Inductive Constructions
 -- with general recursion and explicit absurdity.
 data Term
-  = Var     { _varIndex :: !Index }
+  = Var     { varIndex :: !Index }
 
-  | App     { _inner :: !Term
-            , _argument :: !Term }
+  | App     { _function :: !Term
+            , _arguments :: ![Term] }
 
-  | Lam     { _binding :: !Bind 
-            , _inner :: !Term }
+  | Lam     { binding :: !Bind 
+            , inner :: !Term }
             
-  | Pi      { _binding :: !Bind
-            , _inner :: !Term }
+  | Pi      { binding :: !Bind
+            , inner :: !Term }
 
-  | Fix     { _fixInfo :: !FixInfo
-            , _binding :: !Bind 
-            , _inner :: !Term }
+  | Fix     { fixInfo :: !FixInfo
+            , binding :: !Bind 
+            , inner :: !Term }
             
-  | Ind     { _binding :: !Bind
-            , _constructors :: ![Bind] }
+  | Ind     { binding :: !Bind
+            , constructors :: ![Bind] }
 
-  | Inj     { _constructorIndex :: !Nat 
-            , _inductiveType :: !Term }
+  | Inj     { constructorIndex :: !Nat 
+            , inductiveType :: !Term }
 
-  | Case    { _inner :: !Term
-            , _inductiveType :: !Term
-            , _alts :: ![Alt] }
+  | Case    { inner :: !Term
+            , inductiveType :: !Term
+            , alts :: ![Alt] }
 
-  | Absurd  { _inner :: !Type }
+  | Absurd  { inner :: !Type }
   | Set
   | Type
   deriving ( Eq, Ord )
@@ -109,7 +107,7 @@ type instance Fold.Base Term = Term'
 
 data Term' a 
   = Var' !Index
-  | App' a a
+  | App' a [a]
   | Lam' !(Bind' a) a
   | Fix' !(FixInfo' a) !(Bind' a) a
   | Pi' !(Bind' a) a
@@ -137,8 +135,8 @@ data FixInfo' a =
             , _canSimplify' :: !Bool }
   deriving ( Functor, Foldable, Traversable )
   
-mkLabels [ ''Term, ''Alt, ''Bind, ''FixInfo
-         , ''Term', ''Alt', ''Bind', ''FixInfo']
+mkLabels [ ''Alt, ''Bind, ''FixInfo
+         , ''Alt', ''Bind', ''FixInfo']
 
 projectAlt :: Alt -> Alt' Term
 projectAlt (Alt bs t) = Alt' (map projectBind bs) t
@@ -161,7 +159,7 @@ embedFixInfo (FixInfo' ms nf al) = FixInfo ms nf al
 instance Fold.Foldable Term where
   {-# INLINEABLE project #-}
   project (Var x) = Var' x
-  project (App t1 t2) = App' t1 t2
+  project (App f xs) = App' f xs
   project (Lam b t) = Lam' (projectBind b) t
   project (Fix i b t) = Fix' (projectFixInfo i) (projectBind b) t
   project (Pi b t) = Pi' (projectBind b) t
@@ -175,7 +173,7 @@ instance Fold.Foldable Term where
 instance Fold.Unfoldable Term where
   {-# INLINEABLE embed #-}
   embed (Var' x) = Var x
-  embed (App' t1 t2) = App t1 t2
+  embed (App' f xs) = App f xs
   embed (Lam' b t) = Lam (embedBind b) t
   embed (Fix' i b t) = Fix (embedFixInfo i) (embedBind b) t
   embed (Pi' b t) = Pi (embedBind b) t
@@ -193,6 +191,11 @@ mapTerms :: ContainsTerms t => (Term -> Term) -> t -> t
 mapTerms f = runIdentity . mapTermsM (return . f)
 
 -- * Some generally helpful functions
+
+app :: Term -> [Term] -> Term
+app f [] = f
+app (App f xs) ys = App f (xs ++ ys)
+app f xs = App f xs
 
 isInj :: Term -> Bool
 isInj (Inj {}) = True
@@ -228,13 +231,6 @@ isAbsurd _ = False
 
 fromVar :: Term -> Index
 fromVar (Var x) = x
-    
-flattenApp :: Term -> [Term]
-flattenApp (App t1 t2) = flattenApp t1 ++ [t2]
-flattenApp other = [other]
-
-unflattenApp :: [Term] -> Term
-unflattenApp = foldl1 App
 
 flattenLam :: Term -> ([Bind], Term)
 flattenLam (Lam b t) = first (b:) (flattenLam t)
@@ -250,24 +246,18 @@ unflattenLam = flip (foldr Lam)
 unflattenPi :: [Bind] -> Term -> Term
 unflattenPi = flip (foldr Pi) 
 
--- | Returns the leftmost 'Term' in term application,
--- e.g. @leftmost (App (App a b) c) == a@
-leftmost :: Term -> Term
-leftmost = head . flattenApp
-
 returnType :: Type -> Type
 returnType = snd . flattenPi
 
--- | If given a function type, returns the number of arguments it takes.
--- If given a function it does the same with its type.
-argumentCount :: Show Term => Term -> Int
-argumentCount (Fix _ fix_b _) = 
-  argumentCount (get boundType fix_b)
-argumentCount pi@(Pi _ _) = 
-  length (fst (flattenPi pi))
-argumentCount (Ind {}) = 0
-argumentCount other = 
-  error ("argumentCount called with: " ++ show other) 
+flattenApp :: Term -> [Term]
+flattenApp (App f xs) = f:xs
+flattenApp t = [t]
+
+leftmost :: Term -> Term
+leftmost = head . flattenApp
+
+arguments :: Term -> [Term]
+arguments = tail . flattenApp
   
 -- | If the provided 'Fix' term has already had a given 
 -- pattern match fused into it, this returns which constructor 
@@ -279,7 +269,7 @@ fusedMatch match (leftmost -> Fix inf _ _) =
 addFusedMatch :: (Term, Nat) -> Term -> Term
 addFusedMatch (m_t, m_n) (flattenApp -> Fix inf b t : args) = id
   . assert (fusedMatch m_t (Fix inf b t) == Nothing)
-  $ unflattenApp (Fix inf' b t : args)
+  $ app (Fix inf' b t) args
   where
   inf' = modify fusedMatches (\ms -> (m_t, m_n) : ms) inf
   b' = modify boundLabel (fmap ("INF@" ++)) b
@@ -299,23 +289,21 @@ blockSimplification (Fix inf b t) =
 blockSimplification other = other
 
 simplifiable :: Show Term => Term -> Bool
-simplifiable (flattenApp -> fix@(Fix inf _ _) : args) = 
-  length args == argumentCount fix && get canSimplify inf
+simplifiable (leftmost -> Fix inf _ _) = get canSimplify inf
 simplifiable _ = True
   
 clearFusedMatches :: Term -> Term
 clearFusedMatches (flattenApp -> Fix inf b t : args) = 
-  unflattenApp (Fix inf' b t : args)
+  app (Fix inf' b t) args
   where
   inf' = modify fusedMatches (const mempty) inf
-
+  
 -- | Given an inductive type and a constructor index this will return
 -- a fully instantiated constructor term.
 -- E.g. "altPattern [list] 1 == Cons _1 _0"
 altPattern :: Type -> Nat -> Term
 altPattern ty@(Ind _ cons) n = id
-  . unflattenApp 
-  . (Inj n ty :)
+  . app (Inj n ty)
   . reverse
   . map (Var . toEnum)
   $ [0..arg_count - 1]

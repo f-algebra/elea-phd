@@ -44,10 +44,13 @@ instance Show (Term' String) where
   show Set' = "*"
   show Type' = "TYPE"
   show (Absurd' ty) = "_|_ " ++ ty
-  show (App' f x) = f' ++ " " ++ x'
+  show (App' f xs) = f' ++ " " ++ xs'
     where 
-    x' | ' ' `elem` x = "(" ++ x ++ ")"
-       | otherwise = x
+    xs' = intercalate " " (map showArg xs)
+      where
+      showArg x 
+        | ' ' `elem` x = "(" ++ x ++ ")"
+        | otherwise = x
     f' | "->" `isInfixOf` f || "end" `isInfixOf` f = "(" ++ f ++ ")"
        | otherwise = f
   show (Ind' b cons) =
@@ -95,7 +98,7 @@ instance KleisliShow Term where
       . fromMaybe "_"
       . get boundLabel
       $ cons !! fromEnum n
-    fshow (Case' (t, _) (ty_s, arg_ty) alts) = do
+    fshow (Case' (t, _) (ty_s, ind_ty@(Ind {})) alts) = do
       alts_s <- zipWithM showAlt [0..] alts
       return
         . indent
@@ -104,8 +107,6 @@ instance KleisliShow Term where
         ++ " with" ++ concat alts_s 
         ++ "\nend"
       where
-      ind_ty@(Ind {}) = leftmost arg_ty
-      
       showAlt n (Alt' bs (t, _)) = do
         con <- showM (Inj n ind_ty)
         return $ "\n| " ++ con ++ bs_s ++ " -> " ++ t

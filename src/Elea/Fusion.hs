@@ -53,7 +53,7 @@ run term = do
   case mby_fused of 
     Nothing -> return (Term.normalised term')
     Just fused -> do
-      ts <- showM term
+      ts <- showM term 
       ts' <- showM term'
       ts'' <- showM fused
       run fused
@@ -149,7 +149,7 @@ floatConstructors term@(Fix _ fix_b fix_t)
     suggest (Absurd _) = 
       return (Set.singleton absurd_ctx)
       
-    suggest inj_t@(flattenApp -> (Inj inj_n ind_ty : args)) = do
+    suggest inj_t@(flattenApp -> Inj inj_n ind_ty : args) = do
       free_limit <- ask
       let idx_offset = fromEnum free_limit - length arg_bs
       if any (< free_limit) (Indices.free inj_t)
@@ -180,17 +180,15 @@ floatConstructors term@(Fix _ fix_b fix_t)
                 
         mkContext gap_f = id
           . unflattenLam arg_bs
-          . unflattenApp
+          . App inj'
           $ left' ++ [gap] ++ right'
           where
-          left' = id
-            . map (Indices.lowerMany idx_offset) 
-            $ [Inj inj_n ind_ty] ++ left
+          inj' = Indices.lowerMany idx_offset (Inj inj_n ind_ty)
+          left' = map (Indices.lowerMany idx_offset) left
           right' = map (Indices.lowerMany idx_offset) right
           
           gap = id
-            . unflattenApp 
-            . (gap_f :)
+            . app gap_f
             . map (Var . toEnum) 
             $ reverse [0..length arg_bs - 1]
     suggest _ = 
@@ -200,8 +198,7 @@ floatConstructors _ =
 
   
 fixfixFusion :: forall m . Env.Readable m => Term -> m (Maybe Term)
-fixfixFusion full_t@(flattenApp -> 
-      outer_f@(Fix outer_info outer_b _) : outer_args@(_:_)) 
+fixfixFusion full_t@(App outer_f@(Fix outer_info outer_b _) outer_args)
   | Term.simplifiable full_t = do
     full_ty <- Err.noneM (Typing.typeOf full_t)
     if not (isInd full_ty)
@@ -220,13 +217,12 @@ fixfixFusion full_t@(flattenApp ->
       inner_ty <- Err.noneM (Typing.typeOf inner_f)
       let outer_ctx = id
             . Context.make inner_ty full_ty
-            $ \t -> unflattenApp 
-              $ outer_f : unflattenApp (t : inner_args) : tail outer_args
+            $ \t -> app outer_f (app t inner_args : tail outer_args)
       runMaybeT
         . Env.alsoTrack outer_f
         $ runFusion outer_ctx
     where
-    inner_f@(Fix {}) : inner_args = flattenApp fix_arg
+    App inner_f@(Fix {}) inner_args = fix_arg
     
     runFusion :: Context -> Env.AlsoTrack Term (MaybeT m) Term 
     runFusion outer_ctx
@@ -246,8 +242,7 @@ fixfixFusion _ =
 
   
 repeatedArgFusion :: forall m . Env.Readable m => Term -> m (Maybe Term)
-repeatedArgFusion full_t@(flattenApp -> 
-      outer_f@(Fix outer_info outer_b _) : outer_args@(_:_))
+repeatedArgFusion full_t@(App outer_f@(Fix outer_info outer_b _) outer_args)
   | Term.simplifiable full_t = do
     full_ty <- Err.noneM (Typing.typeOf full_t)
     if not (isInd full_ty)
@@ -262,7 +257,7 @@ repeatedArgFusion full_t@(flattenApp ->
       outer_ty <- Err.noneM (Typing.typeOf outer_f)
       let ctx = id
             . Context.make outer_ty full_ty
-            $ \t -> unflattenApp (t : outer_args)
+            $ \t -> app t outer_args
       Fail.toMaybe (fuse run (\_ _ -> return) ctx outer_f)
   repeatedArg _ =
     return Nothing
@@ -272,8 +267,7 @@ repeatedArgFusion _ =
     
   
 fixfactFusion :: forall m . Env.Readable m => Term -> m (Maybe Term)
-fixfactFusion full_t@(flattenApp -> 
-      outer_f@(Fix outer_info outer_b _) : outer_args@(_:_)) 
+fixfactFusion full_t@(App outer_f@(Fix outer_info outer_b _) outer_args) 
   | Term.simplifiable full_t = do
     full_ty <- Err.noneM (Typing.typeOf full_t)
     if not (isInd full_ty)
@@ -304,35 +298,39 @@ fixfactFusion full_t@(flattenApp ->
         return Nothing
 
       | otherwise = do
-        outer_ty <- Err.noneM (Typing.typeOf outer_f)
-        let ctx = Context.make outer_ty full_ty buildContext
-        -- We add the new fused matches to the info of our existing 
-        -- fixpoint, since this will be carried over to the fixpoint
-        -- that fusion produces.
-        outer_f' <- id
-          . return
-         -- . Fold.isoRewriteM Term.restricted Float.caseOfRec
-          . addFusedMatches (get fusedMatches match_inf)
-          . addFusedMatch (match_t, inj_n)
-          $ outer_f
-        let full_t' = unflattenApp (outer_f' : outer_args)
-        mby_t <- Fail.toMaybe (fuse run floatInwards ctx outer_f')
-        match_s <- showM match_t
-        outer_s <- showM full_t
-        inj_s <- showM inj_t
-        let msg | isJust mby_t = id
-                | otherwise = 
-                    trace ("\n\nFailed to merge:\n" ++ match_s ++ "\n == " ++ inj_s ++ "\n\nwith:\n" ++ outer_s)
-        return
-          . msg
-          . Just
-          . Fold.transform Term.allowSimplification
-          $ fromMaybe full_t' mby_t
+        repeats <- willRepeat
+        if repeats 
+        then return Nothing
+        else do
+          outer_ty <- Err.noneM (Typing.typeOf outer_f)
+          let ctx = Context.make outer_ty full_ty buildContext
+          -- We add the new fused matches to the info of our existing 
+          -- fixpoint, since this will be carried over to the fixpoint
+          -- that fusion produces.
+          outer_f' <- id
+            . return
+           -- . Fold.isoRewriteM Term.restricted Float.caseOfRec
+            . addFusedMatches (get fusedMatches match_inf)
+            . addFusedMatch (match_t, inj_n)
+            $ outer_f
+          let full_t' = app outer_f' outer_args
+          mby_t <- Fail.toMaybe (fuse run floatInwards ctx outer_f')
+          match_s <- showM match_t
+          outer_s <- showM full_t
+          inj_s <- showM inj_t
+          let msg | isJust mby_t = id
+                  | otherwise = 
+                      trace ("\n\nFailed to merge:\n" ++ match_s ++ "\n == " ++ inj_s ++ "\n\nwith:\n" ++ outer_s)
+          return
+            . msg
+            . Just
+            . Fold.transform Term.allowSimplification
+            $ fromMaybe full_t' mby_t
       where
-      match_fix@(Fix match_inf _ match_fix_body) : match_args = 
-        flattenApp match_t
-      match_vars = Simp.strictVars match_t
-      strict_vars = Simp.strictVars full_t
+      match_fix@(Fix match_inf match_b match_fix_body)
+        `App` match_args = match_t
+      match_vars = Term.strictVars match_t
+      strict_vars = Term.strictVars full_t
       
       -- A fact is only relevant to this term if there is a shared variable,
       -- no variables that have been bound after the match was made,
@@ -350,6 +348,28 @@ fixfactFusion full_t@(flattenApp ->
           
         within_fusion = 
           any (< f_off) strict_vars
+          
+      willRepeat :: m Bool
+      willRepeat = id
+        . Env.bind match_b
+        . Env.alsoTrack 0 
+        . Fold.anyM repeats
+        $ match_fix_body
+        where
+        repeats :: Term -> Env.AlsoTrack Index m Bool
+        repeats term@(App (Fix {}) args)
+          | Just uni <- Unifier.find full_t term = do
+            ms <- Env.matches
+            f_var <- Env.tracked
+            return 
+              . any isJust
+              . map (Unifier.union uni . fromJust)
+              . filter isJust
+              . map (Unifier.find (app (Var f_var) match_args))
+              . filter ((== Var f_var) . leftmost) 
+              $ Map.keys ms
+        repeats _ = 
+          return False
       
       buildContext :: Term -> Term
       buildContext gap_t = 
@@ -360,7 +380,7 @@ fixfactFusion full_t@(flattenApp ->
         -- being scrambled by a pointless fusion step within 
         -- sorted-isort, blocking the replacement step.
         match_fix' = Term.blockSimplification match_fix
-        match_t' = unflattenApp (match_fix' : match_args)
+        match_t' = app match_fix' match_args
         ind_cons = Typing.unfoldInd ind_ty
         alt_ns = map toEnum [0..length ind_cons - 1]
         alts = zipWith buildAlt alt_ns ind_cons
@@ -379,7 +399,7 @@ fixfactFusion full_t@(flattenApp ->
             | otherwise = id
                 . concatEndos (zipWith replaceAt arg_idxs new_vars)
                 . liftHere
-                $ unflattenApp (gap_t : outer_args)
+                $ app gap_t outer_args
         
       -- The extraction function that is passed to the Core.fuse
       -- call for fixFact fusion. It floats the fact context
@@ -439,7 +459,7 @@ fixfactFusion full_t@(flattenApp ->
           
           pushInwards :: Term -> 
             Env.TrackIndices (Index, (Context, Context)) Term
-          pushInwards term@(flattenApp -> Var var_f : args)
+          pushInwards term@(App (Var var_f) args)
             | length args == length outer_args = do
               (fix_f, (match_ctx, outer_ctx)) <- Env.tracked
               let inner_match = Context.apply outer_ctx term
@@ -462,8 +482,7 @@ fixfactFusion _ =
   
   
 factfixFusion :: forall m . Env.Readable m => Term -> m (Maybe Term)
-factfixFusion full_t@(flattenApp -> 
-      inner_f@(Fix _ _ inner_f_body) : inner_args@(_:_)) 
+factfixFusion full_t@(App inner_f@(Fix _ _ inner_f_body) inner_args)
   | Term.simplifiable full_t = do
     full_ty <- Err.noneM (Typing.typeOf full_t)
     if not (isInd full_ty)
@@ -480,7 +499,7 @@ factfixFusion full_t@(flattenApp ->
     where
     fuseMatch :: (Term, (Term, Int)) -> m (Maybe Term)
     fuseMatch (match_t, (flattenApp -> Inj inj_n ind_ty : inj_args, _))
-      | isFix match_f
+      | isFix (leftmost match_t)
       , length shared_idxs == 1 
       -- Since caseRec in Floating favours fix-fact fusion, we need to do
       -- this clumsy check to prevent infinite loops.
@@ -496,8 +515,8 @@ factfixFusion full_t@(flattenApp ->
         
         msg $ return mby_res
       where
-      match_f : match_args = flattenApp match_t
-      strict_vars = Simp.strictVars full_t
+      App match_f match_args = match_t
+      strict_vars = Term.strictVars full_t
       shared_idxs@(~[shared_idx]) = 
         findIndices ((`Set.member` strict_vars) . fromVar) inj_args
       new_arg = toEnum (length inj_args - (shared_idx + 1))
@@ -515,7 +534,7 @@ factfixFusion full_t@(flattenApp ->
       buildContext gap_t = 
         Case cse_t ind_ty alts
         where
-        cse_t = unflattenApp (gap_t : match_args)
+        cse_t = app gap_t match_args
         ind_cons = Typing.unfoldInd ind_ty
         alt_ns = map toEnum [0..length ind_cons - 1]
         alts = zipWith buildAlt alt_ns ind_cons
@@ -595,8 +614,7 @@ factfixFusion full_t@(flattenApp ->
           
           pushInwards :: Term -> 
             Env.TrackIndices (Term, Index) Term
-          pushInwards term@(flattenApp -> fix@(Fix {}) : args)
-            | length args == Term.argumentCount inner_f = do
+          pushInwards term@(App fix@(Fix {}) args) = do
               (full_t, fromEnum -> offset) <- Env.tracked
               let inner_match = makeInnerMatch offset term
               if Unifier.exists full_t inner_match
@@ -655,25 +673,24 @@ refoldFusion cse_t@(Case (Var x) ind_ty alts)
   
   potentialRefold :: Type -> Term -> 
     MaybeT (Env.AlsoTrack Index m) (Context, Term) 
-  potentialRefold full_ty inner_t@(flattenApp -> inner_f@(Fix {}) : args)
-    | length args == Term.argumentCount inner_f = do
-      offset <- Env.tracked
-      guard (any (== Var (x + offset + 1)) args)
+  potentialRefold full_ty inner_t@(App inner_f@(Fix {}) args) = do
+    offset <- Env.tracked
+    guard (any (== Var (x + offset + 1)) args)
+    
+    inner_t' <- id
+      . MaybeT 
+      . return
+      . Indices.tryLowerMany (fromEnum offset)
+      $ inner_t
       
-      inner_t' <- id
-        . MaybeT 
-        . return
-        . Indices.tryLowerMany (fromEnum offset)
-        $ inner_t
-        
-      guard (Term.occurrences inner_t' reverted_t == 1)
-      inner_ty <- id
-        . liftM (Indices.lowerMany (fromEnum offset))
-        $ Err.noneM (Typing.typeOf inner_t)
-      let ctx = buildContext inner_ty inner_t' 
-      return (ctx, leftmost inner_t')
+    guard (Term.occurrences inner_t' reverted_t == 1)
+    inner_ty <- id
+      . liftM (Indices.lowerMany (fromEnum offset))
+      $ Err.noneM (Typing.typeOf inner_t)
+    let ctx = buildContext inner_ty inner_t' 
+    return (ctx, leftmost inner_t')
     where
-    buildContext inner_ty inner_t'@(flattenApp -> inner_f' : args') = 
+    buildContext inner_ty inner_t'@(App inner_f' args') = 
       Context.make inner_ty full_ty mkCtx
       where 
       -- We replace the matching variables with our new variable created
@@ -685,7 +702,7 @@ refoldFusion cse_t@(Case (Var x) ind_ty alts)
           map (Indices.replaceAt (x + 1) (Var 0)) args'
         
         Case (Var _) ind_ty alts = 
-          Term.replace inner_t' (unflattenApp (gap_t:args'')) reverted_t
+          Term.replace inner_t' (app gap_t args'') reverted_t
         
   potentialRefold _ _ = mzero
   
@@ -728,7 +745,7 @@ extract inner_f _ term = do
   doExtract :: Term -> Env.AlsoTrack (Term, Index) m Term
   doExtract (flattenApp -> inj@(Inj {}) : args) = do
     args' <- mapM doExtract args
-    return (unflattenApp (inj : args'))
+    return (app inj args')
   doExtract term = do
     (outer_f, inner_f) <- Env.tracked
     inner_calls <- id
@@ -741,7 +758,7 @@ extract inner_f _ term = do
       $ term
     where
     isInnerCall :: Term -> Env.AlsoTrack Index m Bool
-    isInnerCall term@(flattenApp -> Var f : args) = do
+    isInnerCall term@(App (Var f) args) = do
       inner_f <- Env.tracked
       if inner_f /= f 
       then return False
@@ -759,6 +776,6 @@ extract inner_f _ term = do
       extractContext :: Term -> Index -> Term -> m Term
       extractContext outer_f gen_var term = id
         . Fail.withDefault term
-        . invent run (App outer_f (Var gen_var))
+        . invent run (App outer_f [Var gen_var])
         $ term
 

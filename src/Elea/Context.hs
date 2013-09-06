@@ -14,6 +14,7 @@ import Elea.Index
 import Elea.Term
 import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
+import qualified Elea.Simplifier as Simp
 import qualified Elea.Foldable as Fold
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Index as Indices
@@ -43,7 +44,7 @@ make gap_ty ret_ty mk_t = id
     $ Indices.lift ret_ty
 
 apply :: Context -> Term -> Term
-apply (Context (Lam _ rhs)) t = subst t rhs
+apply (Context lam) t = Simp.run (App lam [t])
 
 fromLambda :: Term -> Context
 fromLambda = Context
@@ -77,15 +78,48 @@ dropLambdas (Context
     $ rhs_t
   
   merge :: Term -> Env.TrackIndices Index Term
-  merge orig@(App (Var x1) (Var x2)) 
+  merge orig@(App (Var x1) (Var x2 : xs)) 
     | x2 == Indices.omega = do
       idx <- Env.tracked
       if x1 == idx 
-      then return (Var idx)
+      then return (app (Var idx) xs)
       else return orig
   merge other = 
     return other
 dropLambdas other = other
+
+{-
+-- | Splits a context into two contexts, 
+-- equivalent to the original if composed. 
+-- The first is the application of any arguments to the gap,
+-- the second is the rest. Will fail if the context is multi-hole with 
+-- different arguments at each, if any arguments are contain non-free
+-- variables, or if no arguments have been applied.
+isolateArguments :: Context -> Maybe (Context, Context)
+isolateArguments ctx = do
+  args_set <- id
+    . Env.trackIndices 0
+    . runMaybeT
+    . Fold.foldM arguments
+    $ ctx_omega
+  guard (Set.singleton 
+  where
+  ctx_omega = Context.apply ctx (Var Indices.omega)
+  
+  isolate :: 
+    Term -> MaybeT (WriterT (Set [Term]) (Env.TrackIndices Index) Term
+  isolate (flattenApp -> Var f : args)
+    | f == Indices.omega = do
+      offset <- Env.tracked
+      args' <- id
+        . MaybeT 
+        . return
+        . mapM (Indices.tryLowerMany (fromEnum offset)) 
+        $ args
+      tell args'
+      return (Var Indices.omega)
+  arguments _ = return mempty
+-}
 
 
 -- | If the given term is within the given context, then return

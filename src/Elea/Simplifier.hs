@@ -3,7 +3,7 @@
 -- (reduction of pattern matches over a constructor term).
 module Elea.Simplifier 
 (
-  run, steps, stepsM, strictVars,
+  run, steps, stepsM, 
 )
 where
 
@@ -11,11 +11,9 @@ import Prelude ()
 import Elea.Prelude
 import Elea.Index
 import Elea.Term
-import Elea.Show
 import qualified Elea.Env as Env
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Index as Indices
-import qualified Elea.Terms as Term
 import qualified Elea.Env as Env
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
@@ -25,39 +23,31 @@ run = Fold.rewriteSteps steps
 
 steps :: [Term -> Maybe Term]
 steps = 
-  [ betaReduce
+  [ normaliseApp
+  , betaReduce
   , etaReduce
   , caseInjReduce
   ]
   
 stepsM :: Monad m => [Term -> m (Maybe Term)]
 stepsM = map (return .) steps
-  
-strictVars :: Term -> Set Index
-strictVars (flattenApp -> Fix _ _ fix_t : args) = id
-  . Set.intersection (Indices.free args)
-  . Env.trackIndices 0
-  . Fold.isoFoldM Term.restricted matchedUpon
-  . run
-  $ unflattenApp (fix_t : args)
-  where
-  matchedUpon :: Term -> Env.TrackIndices Index (Set Index)
-  matchedUpon (Case (Var x) _ _) = do
-    offset <- Env.tracked
-    if x >= offset
-    then return (Set.singleton (x - offset))
-    else return mempty
-  matchedUpon _ = return mempty
+
+normaliseApp :: Term -> Maybe Term
+normaliseApp (App f []) = return f
+normaliseApp (App (App f ts1) ts2) = return (App f (ts1 ++ ts2))
+normaliseApp _ = mzero
   
 betaReduce :: Term -> Maybe Term
-betaReduce (App (Lam _ rhs) arg) = 
-  return (subst arg rhs)
+betaReduce (App (Lam _ rhs) (arg:args)) = 
+  return (app (subst arg rhs) args)
 betaReduce _ = mzero
   
 etaReduce :: Term -> Maybe Term
-etaReduce (Lam _ (App f (Var 0)))
-  | not (0 `Set.member` Indices.free f) = 
-    return (Indices.lower f)
+etaReduce (Lam _ (App f xs@(last -> Var 0)))
+  | not (0 `Set.member` Indices.free new_t) = 
+    return (Indices.lower new_t)
+  where
+  new_t = app f (init xs)
 etaReduce _ = mzero
 
 caseInjReduce :: Term -> Maybe Term

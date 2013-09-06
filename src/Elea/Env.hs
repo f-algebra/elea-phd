@@ -408,8 +408,7 @@ instance Unifiable Term where
     possible_uni <- trackIndicesT 0 (t1 `uni` t2)
     -- Need to test out the unifier. It could be invalid if at some
     -- points a variable needs to be replaced, but at others it stays the same.
-    test_uni <- trackIndicesT 0 (Unifier.apply possible_uni t1 `uni` t2)
-    Fail.when (test_uni /= mempty)
+    Fail.when (Unifier.apply possible_uni t1 /= t2)
     return possible_uni
     where
     uniBind :: forall m . Fail.Monad m =>
@@ -418,9 +417,10 @@ instance Unifiable Term where
     
     uni :: forall m . Fail.Monad m => 
       Term -> Term -> TrackIndicesT Index m (Unifier Term)
-   --  uni (Absurd t1) (Absurd t2) = t1 `uni` t2
-    -- Experimental concept w.r.t. unification of absurdities 
-    uni _ (Absurd _) = return mempty
+    uni (Absurd t1) (Absurd t2) = t1 `uni` t2
+    -- TODO: Experimental concept w.r.t. unification of absurdities below.
+    -- Leads to interesting simplifications. Come back to this later.
+    -- uni _ (Absurd _) = return mempty
     uni Type Type = return mempty
     uni Set Set = return mempty
     uni (Var x1) (Var x2)
@@ -449,10 +449,10 @@ instance Unifiable Term where
       ub <- b1 `uniBind` b2
       ut <- liftTracked (t1 `uni` t2)
       Unifier.union ub ut
-    uni (App l1 r1) (App l2 r2) = do
-      uni1 <- uni l1 l2
-      uni2 <- uni r1 r2
-      Unifier.union uni1 uni2
+    uni (App f1 xs1) (App f2 xs2) = do
+      uni_f <- uni f1 f2
+      uni_xs <- zipWithM uni xs1 xs2
+      Unifier.unions (uni_f : uni_xs)
     uni (Inj n1 t1) (Inj n2 t2) = do
       Fail.when (n1 /= n2)
       uni t1 t2

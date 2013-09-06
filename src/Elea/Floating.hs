@@ -114,7 +114,7 @@ absurdity term
   isAbsurd (App (Absurd _) _) = True
   isAbsurd (Case (Absurd _) _ _) = True
   -- For now we assume fixpoints are strict in all their arguments.
-  isAbsurd (flattenApp -> fun : args)
+  isAbsurd (App fun args)
     | isFix fun || isInj fun
     , any Term.isAbsurd args = True
   isAbsurd _ = False
@@ -127,21 +127,20 @@ absurdity _ =
 -- subject to a load of random, half-baked conditions.
 -- This code desperately needs to be improved.
 unfoldFixInj :: Env.Readable m => Term -> m (Maybe Term)
-unfoldFixInj term@(flattenApp -> fix@(Fix _ _ rhs) : args)
-  | Term.argumentCount fix == length args
-  , any (isInj . leftmost) args = do
+unfoldFixInj term@(App fix@(Fix _ _ rhs) args)
+  | any (isInj . leftmost) args = do
     pat_terms <- liftM (map fst . Map.elems) Env.matches
     let is_pat = any unifiesWithPattern pat_terms
     
     from_s <- showM term
-    to_s <- showM (Simp.run (unflattenApp (subst fix rhs : args)))
+    to_s <- showM (Simp.run (App (subst fix rhs) args))
     return $ do
       guard (Term.isFinite arg || not is_pat || not_looping)
       
       let msg | Term.isFinite arg = id
-              | otherwise = id -- trace ("UNFIXINJ:\n" ++ from_s ++ "\nTO:\n" ++ to_s)
-      return (unflattenApp (subst fix rhs : args))
-        |> msg  
+              | otherwise = trace ("UNFIXINJ:\n" ++ from_s ++ "\nTO:\n" ++ to_s)
+      return (app (subst fix rhs) args)
+    --    |> msg  
   where
   Just arg = find (isInj . leftmost) args
   not_looping = Term.minimumInjDepth arg >= Term.recursionDepth fix
@@ -155,7 +154,7 @@ unfoldFixInj term@(flattenApp -> fix@(Fix _ _ rhs) : args)
     where
     strict_pat_vars = id
       . Set.intersection (Indices.free pat_term)
-      . Simp.strictVars
+      . Term.strictVars
       $ Term.replace arg pat_term term
   unifiesWithPattern _ = False
       
@@ -168,13 +167,12 @@ unfoldFixInj _ =
 -- TODO: Extend this to arbitrary depth of unrolling, currently
 -- it only works for depth 1.
 unfoldCaseFix :: Term -> Maybe Term
-unfoldCaseFix term@(Case cse_t@(leftmost -> fix@(Fix {})) ind_ty alts)
+unfoldCaseFix term@(Case (App fix@(Fix _ _ rhs) args) ind_ty alts)
   | Term.isProductive fix
   , Term.variablesFinitelyUsed ind_ty alts = 
     Just (Case cse_t' ind_ty alts)
   where
-  fix@(Fix _ _ rhs) : args = flattenApp cse_t
-  cse_t' = unflattenApp (subst fix rhs : args)
+  cse_t' = app (subst fix rhs) args
 unfoldCaseFix _ = Nothing
   
 
@@ -204,7 +202,7 @@ unsafeUnfoldCaseFix cse_t@(Case (leftmost -> Fix _ fix_b fix_t) _ _)
   -- We lift indices by one to allow for the recursive call of the 
   -- inner fix we will be unrolling to be at index 0.
   Case (flattenApp -> _:args) ind_ty alts = Indices.lift cse_t
-  term' = Case (unflattenApp (fix_t:args)) ind_ty alts
+  term' = Case (App fix_t args) ind_ty alts
   
   safeRun = id
     . Fold.isoRewriteStepsM Term.restricted 
@@ -226,31 +224,25 @@ unfoldWithinFix fix@(Fix fix_i fix_b fix_t) =
      -- trace ("UNFWITHFIX: " ++ show fix) $
       return (Just (Fix fix_i fix_b fix_t'))
   where
-  arg_count = argumentCount fix
-  
   unfoldable :: Term -> Env.TrackIndices (Index, Term) Bool
-  unfoldable (flattenApp -> Var f : args)
-    | length args == arg_count = do
-      (fix_f, _) <- Env.tracked
-      return (f == fix_f && all Term.isFinite args)
+  unfoldable (App (Var f) args) = do
+    (fix_f, _) <- Env.tracked
+    return (f == fix_f && all Term.isFinite args)
   unfoldable _ =
     return False
   
   unfold :: Term -> Env.TrackIndices (Index, Term) Term
-  unfold term@(flattenApp -> Var f : args) = do
+  unfold term@(App (Var f) args) = do
     can_unfold <- unfoldable term
     if not can_unfold
     then return term
     else do
       (_, fix_t) <- Env.tracked
-      return (unflattenApp (fix_t : args))
+      return (App fix_t args)
   unfold other = 
     return other
   
 unfoldWithinFix _ = Nothing
-
-
--- unnecessaryConstraints :: 
 
 
 -- | If a recursive function just returns the same value, regardless of its
@@ -282,7 +274,7 @@ constantFix (Fix _ fix_b fix_t)
     . map toList
     . Env.trackIndices 0
     . runMaybeT
-    . Term.foldBranchesM resultTerm
+    . Fold.isoFoldM Term.branchesOnly resultTerm
     where
     resultTerm :: Term -> MaybeT (Env.TrackIndices Index) (Set Term)
     resultTerm (Absurd _) = return mempty
@@ -334,7 +326,8 @@ caseFun cse@(Case lhs ind_ty alts)
   
   appAlt (Alt bs alt_t) = id
     . Alt (map Indices.lift bs)
-    $ App alt_t' arg
+    . Simp.run
+    $ App alt_t' [arg]
     where
     alt_t' = Indices.liftAt (toEnum (length bs)) alt_t
     arg = Var (toEnum (length bs))
@@ -345,12 +338,12 @@ caseFun _ = return Nothing
 -- | If we have a case statement on the left of term 'App'lication
 -- then float it out.
 caseApp :: Term -> Maybe Term
-caseApp (App (Case lhs ind_ty alts) arg) = id
+caseApp (App (Case lhs ind_ty alts) args) = id
   . return
   $ Case lhs ind_ty (map appArg alts)
   where
   appArg (Alt bs rhs) =
-    Alt bs (App rhs (Indices.liftMany (length bs) arg))
+    Alt bs (App rhs (Indices.liftMany (length bs) args))
     
 caseApp _ = Nothing
 
@@ -358,13 +351,9 @@ caseApp _ = Nothing
 -- | If we have a case statement on the right of term 'App'lication
 -- then float it out.
 appCase :: Term -> Maybe Term
-appCase (App fun (Case lhs ind_ty alts)) = id
-  . return 
-  $ Case lhs ind_ty (map appFun alts)
-  where
-  appFun (Alt bs rhs) =
-    Alt bs (App (Indices.liftMany (length bs) fun) rhs)
-    
+appCase term@(App _ args)
+  | Just cse_t <- find isCase args =
+    Just (applyCaseOf cse_t term)
 appCase _ = Nothing
 
 
@@ -447,13 +436,13 @@ constArg (Fix fix_info fix_b fix_rhs) = do
     -- like eta-equality which skipped the last binding.
     -- E.g. @stripLam [A,B,C] f == fun (_:A) (_:B) (_:C) -> f _2 _1@
     stripLam :: [Bind] -> Term -> Term
-    stripLam bs = 
-        unflattenLam bs 
+    stripLam bs = id
+      . unflattenLam bs 
       . applyArgs (length bs)
       where
-      applyArgs n t = 
-          unflattenApp 
-        $ t : [ Var (toEnum i) | i <- reverse [1..n-1] ]    
+      applyArgs n t = id
+        . app t
+        $ [ Var (toEnum i) | i <- reverse [1..n-1] ]    
       
 constArg _ = Nothing
 
@@ -542,9 +531,8 @@ caseOfRec (Fix fix_i fix_b fix_t) = id
         $ flattenApp outer_t
       
       floatable :: Term -> Env.TrackIndices Index (Maybe Term)
-      floatable term@(flattenApp -> fix@(Fix _ fix_b _) : args)
-        | length args == Term.argumentCount fix
-        , outer_vars `intersects` Simp.strictVars term = do
+      floatable term@(App fix@(Fix _ fix_b _) args)
+        | outer_vars `intersects` Term.strictVars term = do
           offset <- Env.trackeds fromEnum
           return (Indices.tryLowerMany offset term)
         where
@@ -569,7 +557,7 @@ freeFix outer_fix@(Fix _ _ outer_body)
     ind_ty <- Err.noneM (Typing.typeOf free_fix)
     -- While this step will work for recursive inductive types,
     -- it doesn't make much sense to me to ever do this.
-    if Term.isRecursiveInd ind_ty
+    if Term.isRecursiveInd (if not (isInd ind_ty) then error (show free_fix) else ind_ty)
     then return Nothing
     else return 
        . Just
@@ -581,8 +569,7 @@ freeFix outer_fix@(Fix _ _ outer_body)
     $ Fold.isoFindM Term.restricted freeFixes outer_body
   
   freeFixes :: Term -> Env.TrackIndices Index (Maybe Term)
-  freeFixes term@(flattenApp -> fix@(Fix {}) : args)
-    | length args == Term.argumentCount fix = do
+  freeFixes term@(App fix@(Fix {}) args) = do
       idx_offset <- Env.tracked
       return 
         . Indices.tryLowerMany (fromEnum idx_offset)
@@ -610,7 +597,7 @@ identityCase _ = Nothing
 uselessFix :: Term -> Maybe Term
 uselessFix (Fix _ _ fix_t)
   | not (0 `Set.member` Indices.free fix_t) = 
-      Just (Indices.lower fix_t)
+    Just (Indices.lower fix_t)
 uselessFix _ = Nothing
 
 
@@ -647,35 +634,7 @@ raiseVarCase = commuteMatchesWhen raiseVar
   raiseVar (Case cse_of _ _) (Case (Var _) _ _) =
     isFix (leftmost cse_of)
   raiseVar _ _ = False
-
-
-{-
--- | Pattern matches over variables should be above those over function
--- results.
-raiseVarCase :: Term -> Maybe Term
-raiseVarCase outer_cse@(Case (flattenApp -> Fix {} : args) ind_ty alts)
-  | Just (var, ind_ty) <- mby_inner = id
-    . Just 
-    . Term.buildCaseOf (Var var) ind_ty
-    $ const outer_cse
-  where
-  mby_inner = id
-    . Env.trackIndices 0
-    . Fold.isoFindM Term.restricted (runMaybeT . innerVarCase)
-    $ outer_cse
-    where
-    arg_vars = (Set.fromList . map fromVar . filter isVar) args
   
-    innerVarCase :: Term -> MaybeT (Env.TrackIndices Index) (Index, Type)
-    innerVarCase (Case (Var x) ind_ty _) = do
-      offset <- Env.tracked
-      guard (x >= offset)
-      let x' = x - offset
-      guard (x' `Set.member` arg_vars)
-      return (x', Indices.lowerMany (fromEnum offset) ind_ty)
-    innerVarCase _ = mzero
-raiseVarCase _ = Nothing
--}
 
 -- | If we are pattern matching on a pattern match then remove this 
 -- using distributivity.

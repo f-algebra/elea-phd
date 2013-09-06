@@ -214,7 +214,7 @@ parseRawTerm (TInj n rty) = do
 parseRawTerm (TApp rt1 rt2) = do
   t1 <- parseRawTerm rt1 
   t2 <- parseRawTerm rt2
-  return (Simp.run (App t1 t2))
+  return (Simp.run (App t1 [t2]))
 parseRawTerm (TFix rbs rt) = do
   bs <- parseRawBinds rbs
   t <- Env.bindMany bs (parseRawTerm rt)

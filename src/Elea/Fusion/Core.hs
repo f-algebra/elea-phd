@@ -61,14 +61,21 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
       new_fix_ty = unflattenPi arg_bs result_ty
       new_fix_b = Bind new_label new_fix_ty
       ctx_here = Indices.lift outer_ctx
+      {-
+  let applied_t = id
+        . Env.trackIndices ctx_here
+        . Fold.isoTransformM Term.branchesOnly
+            (\t -> Env.trackeds (\ctx -> Context.apply ctx t))
+        $ fix_t
+-}
+  let applied_t = Context.apply ctx_here fix_t
 
   simplified_t <- id
-   -- . trace s1
+    . trace s1
     . Env.bind fix_b
-    . Env.fixpointHere
+    . Env.fixpointHere 
     . simplify
-    . Context.apply ctx_here
-    $ fix_t
+    $ applied_t
     
   extracted_t <- id
     . Env.bind fix_b
@@ -89,7 +96,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   let replaced_t = id
         . Env.trackIndices 0
         . Fold.transformM (replace fix_idx arg_vars)
-      --  . trace s2
+        . trace s2
         $ reverted_t
         
   expanded_t <- id
@@ -105,19 +112,19 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   let s3 = "\nEXPANDED:\n" ++ rep_s
  
   let fix_body = id
-      --  . trace s3
-      --   . trace (s1 ++ s2 ++ s3)
+        . trace s3
+       --  . trace (s1 ++ s2 ++ s3)
         . unflattenLam arg_bs
         . substAt 0 inner_fix
         $ expanded_t
         
   let old_rc = id
         . Set.size
-        . functionCalls (Term.argumentCount inner_fix) (Var 0) 
+        . functionCalls (Var 0) 
         $ expanded_t
       new_rc = id
         . Set.size
-        . functionCalls (length arg_vars) (Var 0) 
+        . functionCalls (Var 0) 
         $ fix_body
       old_rc' = Term.occurrences (Var 0) fix_t
       new_rc' = Term.occurrences (Var 0) fix_body
@@ -126,9 +133,9 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   Fail.unless
   --  . trace s1
   --  . trace (s1 ++ s2 ++ s3)
-    $ rem_rc == 0 || new_rc' >= old_rc'
+    $ rem_rc == 0 || new_rc' >= 1 --   old_rc'
 
-  done <- unflattenApp (Fix fix_info' new_fix_b fix_body : arg_vars)
+  done <- App (Fix fix_info' new_fix_b fix_body) arg_vars
    -- You have to do this bit first, otherwise unfoldFixInj doesn't
    -- treat the patterns as matched patterns (since they now feature
    -- lambda bound variables).
@@ -137,7 +144,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     |> Float.run
     
   done_s <- showM done
-  let s4 = s1 ++ "\nDONE:\n" ++ done_s
+  let s4 = {- s1 ++ -} "\nDONE:\n" ++ done_s
   
   id 
     . trace s4 
@@ -149,27 +156,26 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   isInnerFixMatch :: Term -> Env.TrackIndices Index Bool
   isInnerFixMatch cse_t = Env.trackeds (`Set.member` Indices.free cse_t)
   
-  functionCalls :: Int -> Term -> Term -> Set Term
-  functionCalls arg_count func = id
+  functionCalls :: Term -> Term -> Set Term
+  functionCalls func = id
     . Env.trackIndices func
     . Fold.isoFoldM Term.restricted call
     where
     call :: Term -> Env.TrackIndices Term (Set Term)
-    call term@(flattenApp -> func' : args) 
-      | length args == arg_count = do
-        func <- Env.tracked
-        if func' /= func
-        then return mempty
-        else do
-          let min = minimum (Indices.free term)
-          return (Set.singleton (Indices.lowerMany (fromEnum min) term))
+    call term@(App func' _) = do
+      func <- Env.tracked
+      if func' /= func
+      then return mempty
+      else do
+        let min = minimum (Indices.free term)
+        return (Set.singleton (Indices.lowerMany (fromEnum min) term))
     call _ = return mempty
   
   expandFiniteCalls :: Term -> MaybeT (Env.AlsoTrack (Index, Term) m) Term
-  expandFiniteCalls from@(Case (flattenApp -> Var f : args) ind_ty alts) = do
+  expandFiniteCalls from@(Case (App (Var f) args) ind_ty alts) = do
     (fix_f, inner_fix) <- Env.tracked
     guard (f == fix_f)
-    let cse = Case (unflattenApp (inner_fix : args)) ind_ty alts
+    let cse = Case (App inner_fix args) ind_ty alts
         mby_cse' = Float.unfoldCaseFix cse
     if isJust mby_cse'
     then MaybeT (return mby_cse')
@@ -177,12 +183,11 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
        . lift 
        . Float.unsafeUnfoldCaseFix
        $ cse
-  expandFiniteCalls term@(flattenApp -> Var f : args)
-    | length args == Term.argumentCount inner_fix = do
-      (fix_f, inner_fix) <- Env.tracked
-      guard (f == fix_f)
-      guard (any Term.isFinite args)
-      return (unflattenApp (inner_fix : args))
+  expandFiniteCalls term@(App (Var f) args) = do
+    (fix_f, inner_fix) <- Env.tracked
+    guard (f == fix_f)
+    guard (any Term.isFinite args)
+    return (App inner_fix args)
   expandFiniteCalls _ = mzero
   
   replace :: Index -> [Term] -> Term -> Env.TrackIndices Index Term
@@ -203,8 +208,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
       return
         . Unifier.apply uni 
         . liftHere
-        . unflattenApp
-        . (Var fix_idx :)
+        . app (Var fix_idx)
         $ map Indices.lift arg_vars
       where
       liftHere :: Indexed t => t -> t
@@ -214,6 +218,8 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
         . liftHere
         . Context.apply (Indices.lift outer_ctx) 
         $ Var 0   
+        
+fuse _ _ _ other = error (show other)
 
 split :: forall m . (Fail.Monad m, Env.Readable m) => 
   (Term -> m Term) -> Term -> Context -> m Term

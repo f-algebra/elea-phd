@@ -23,7 +23,7 @@ tests = Test.label "Terms"
   list_ty <- Test.term "list nat"
   tree_ty <- Test.term "tree nat"
   
-  let node = unflattenApp [Inj 1 tree_ty, Var 2, Var 1, Var 0]
+  let node = App (Inj 1 tree_ty) [Var 2, Var 1, Var 0]
       test0 = altPattern tree_ty 1 `Test.assertEq` node
   
       test1 = Test.assert (isRecursiveInd tree_ty)
@@ -32,8 +32,8 @@ tests = Test.label "Terms"
       test4 = Test.assertNot (isBaseCase tree_ty 1)
       test5 = Set.fromList [1, 2] `Test.assertEq` recursiveInjArgs tree_ty 1
       test6 = Set.empty `Test.assertEq` recursiveInjArgs list_ty 0
-      test7 = Set.singleton 1 `Test.assertEq` recursiveInjArgs list_ty 1
-      
+      test7 = Set.singleton 1 `Test.assertEq` recursiveInjArgs list_ty 1      
+  
   Lam _ list1 <- Test.term "fun (x:nat) -> Cons nat x (Nil nat)"
   list2 <- Test.term "fun (xs:list nat) -> Cons nat 2 (Cons nat 1 xs)"
   let test8 = Test.assert (isFinite list1) 
