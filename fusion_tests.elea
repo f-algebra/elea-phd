@@ -109,7 +109,11 @@ let t51 = fun (n: nat) (as: list nat) (bs: list nat) ->
 let t51' = fun nat (list nat) (list nat) -> False
 
 let t52 = fun (n: nat) (as: list nat) (bs: list nat) -> 
-  sorted (app nat as (Cons nat n bs))
+  match and (sorted as) (sorted bs) with
+  | True ->
+    sorted (app nat as (Cons nat n bs))
+  | False -> _|_ bool
+  end
 let t52' = fun nat (list nat) (list nat) -> False
   
 let t53 = fun (t: tree nat) -> sorted (flatten nat t)
@@ -184,8 +188,8 @@ let first_gt3 =
         end
       end) t
   end
-  
-/*
+ 
+
 let sorted_tree = 
   fix (srtd: pi (tree nat) -> bool) (t: tree nat) ->
   match t with
@@ -194,7 +198,9 @@ let sorted_tree =
     and (and (last_leq x t1) (first_gt3 x t2))
         (and (srtd t1) (srtd t2)) 
   end
-*/
+
+
+/*
   
 let sorted_tree =  
   fix  (srtd: pi (tree nat) -> bool) (t: tree nat) ->
@@ -244,7 +250,7 @@ let sorted_tree =
     | False -> False
     end
   end
-  
+  */
   
 let t19 = fun (t: tree nat) ->
   match sorted_tree t with
@@ -277,10 +283,10 @@ let t21 = fun (n: nat) (k: nat) ->
   end
 let t21' = fun nat nat (list nat) -> True
 
-let t22 = fun (n: nat) (t: tree nat) -> sorted_tree t
+let t22 = fun (n: nat) (t: tree nat) -> flatten nat (ins_tree n t)
 let t22' = fun (n: nat) (tree nat) -> True
     
-let t23 = fun (n: nat) (t: tree nat) -> sorted_tree (ins_tree n t)
+let t23 = fun (n: nat) (t: tree nat) -> sorted (flatten nat (ins_tree n t))
 let t23' = _|_ bool
 
 let t55 = fun (xs: list nat) -> sorted_tree (build xs)

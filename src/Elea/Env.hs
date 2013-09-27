@@ -263,6 +263,10 @@ instance Tracker r m => Tracker r (MaybeT m) where
   tracked = Trans.lift tracked
   liftTrackedMany = mapMaybeT . liftTrackedMany
   
+instance (Monoid w, Tracker r m) => Tracker r (WriterT w m) where
+  tracked = Trans.lift tracked
+  liftTrackedMany = mapWriterT . liftTrackedMany
+  
 liftTracked :: Tracker r m => m a -> m a
 liftTracked = liftTrackedMany 1
   

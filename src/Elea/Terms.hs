@@ -8,10 +8,10 @@ module Elea.Terms
   recursiveInjArgs, recursivePatternArgs,
   replace, replaceRestricted, contains, containsUnifiable,
   nthArgument, collectM, occurrences,
-  generalise, generaliseMany, 
+  generalise, generaliseMany, loweredAltTerm,
   buildCaseOfM, buildCaseOf,
   revertMatchesWhenM, revertMatches, revertMatchesWhen,
-  descendWhileM, strictVars,
+  descendWhileM, strictVars, isolateArguments,
   isProductive, normalised, expressMatches,
   minimumInjDepth, maximumInjDepth, injDepth,
   restricted, branchesOnly,
@@ -24,13 +24,16 @@ import Elea.Prelude hiding ( replace )
 import Elea.Index
 import Elea.Term
 import Elea.Show
+import Elea.Context ( Context )
 import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
+import qualified Elea.Context as Context
 import qualified Elea.Typing as Typing
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Error as Err
+import qualified Elea.Monad.Failure as Fail
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
@@ -39,18 +42,18 @@ import qualified Control.Monad.Trans as Trans
 -- | For a given inductive type, return whether the constructor at that 
 -- index is a base case.
 isBaseCase :: Type -> Nat -> Bool
-isBaseCase (Ind _ cons) inj_n = fromEnum inj_n
-  |> (cons !!)
-  |> get boundType 
-  -- This flatten -> replace -> unflatten combo is to remove the return
-  -- type of the constructor, since this will always be an instance of
-  -- the inductive type.
-  |> flattenPi
-  |> second (const Set)
-  |> uncurry unflattenPi
-  |> Indices.free
-  |> Set.member 0
-  |> not
+isBaseCase (Ind _ cons) inj_n =  id
+  . not 
+  . Set.member 0
+  . Indices.free 
+  . ignoreResultType
+  . get boundType
+  $ cons !! fromEnum inj_n
+  where
+  ignoreResultType = id
+    . uncurry unflattenPi
+    . second (const Set)
+    . flattenPi
   
 -- | For a given inductive type and constructor number this returns the
 -- argument positions which are recursive.
@@ -81,6 +84,13 @@ isRecursiveInd :: Show Term => Type -> Bool
 isRecursiveInd ty@(Ind _ cons) = 
   not . all (isBaseCase ty) . map toEnum $ [0..length cons - 1]
 isRecursiveInd other = error (show other)
+
+-- | Returns the term in an 'Alt', lowered to be outside the bindings
+-- of the 'Alt'. Returns 'Nothing' if the term contains
+-- variables bound by the 'Alt'.
+loweredAltTerm :: Alt -> Maybe Term
+loweredAltTerm (Alt bs t) = 
+  Indices.tryLowerMany (length bs) t
   
 recursionDepth :: Term -> Int
 recursionDepth (Fix _ _ rhs) = id
@@ -395,6 +405,64 @@ isProductive (Fix _ _ fix_t) = fix_t
     fix_f <- Env.tracked
     guard (not (fix_f `Set.member` Indices.free term))
     return term
+    
+-- | Splits a context into two contexts, 
+-- equivalent to the original if composed. 
+-- The first is the application of any arguments to the gap,
+-- the second is the rest. Will fail if the context is multi-hole with 
+-- different arguments at each, if any arguments are contain non-free
+-- variables, or if no arguments have been applied.
+isolateArguments :: forall m . (Fail.Monad m, Env.Readable m) => 
+  Context -> m (Context, Context)
+isolateArguments ctx = do
+  (term', args_set) <- id
+    . Fail.fromMaybe
+    . Env.trackIndices 0
+    . runMaybeT
+    . runWriterT
+    . Fold.transformM isolate
+    $ ctx_omega
+  Fail.unless (Set.size args_set == 1)
+  let args = head (toList args_set)
+      inner_ctx = 
+        Context.make inner_gap_ty (\t -> App t args)
+  outer_gap_ty <- outerGapType args
+  let outer_ctx =
+        Context.make outer_gap_ty (\t -> substAt Indices.omega t term')
+  return (inner_ctx, outer_ctx)
+  where
+  ctx_omega = Context.apply ctx (Var Indices.omega)
+  inner_gap_ty = Context.gapType ctx
+  
+  -- The type of the gap in the outer context is just the type of the 
+  -- original gap once all the arguments have been applied. 
+  outerGapType :: [Term] -> m Type
+  outerGapType args = id
+    . liftM Indices.lower
+    . Env.bindAt 0 (Bind Nothing inner_gap_ty)
+    . Err.noneM
+    . Typing.typeOf
+    . App (Var 0)
+    $ map Indices.lift args
+  
+  -- Find any application of the function (which we've replaced with omega)
+  -- to a set of arguments, 'tell' these arguments to the writer,
+  -- and remove them.
+  isolate :: 
+    Term -> WriterT (Set [Term]) (MaybeT (Env.TrackIndices Index)) Term
+  isolate (App (Var f) args)
+    | f == Indices.omega = do
+      offset <- Env.tracked
+      args' <- id 
+        . Trans.lift
+        . MaybeT 
+        . return
+        . mapM (Indices.tryLowerMany (fromEnum offset)) 
+        $ args
+      tell (Set.singleton args')
+      return (Var Indices.omega)
+  isolate other =
+    return other
   
 -- | Sets all the internal normal form flags to true.
 normalised :: Term -> Term

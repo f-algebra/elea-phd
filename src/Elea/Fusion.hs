@@ -36,13 +36,13 @@ import qualified Data.Monoid as Monoid
 steps :: Env.Readable m => [Term -> m (Maybe Term)]
 steps = id
   . map Typing.checkStep
-  $ [ floatConstructors 
+  $ [ removeIdFix 
+    , floatConstructors 
  --   , refoldFusion
     , fixfixFusion
     , repeatedArgFusion
     , fixfactFusion
-    , factfixFusion
-    , removeIdFix 
+ --   , factfixFusion
     ]
 
 {-# INLINEABLE run #-}
@@ -72,6 +72,7 @@ run term = do
           Just t'
         --    |> trace ("\n\nTRANSFORMED:\n" ++ ts ++ "\n\nTO:\n" ++ ts')
             |> return
+      
 
 simpleAndFloat :: Env.Readable m => Term -> m Term
 simpleAndFloat term = do
@@ -87,7 +88,7 @@ removeIdFix :: Env.Readable m => Term -> m (Maybe Term)
 removeIdFix fix_t@(Fix _ (Bind _ fix_ty) _) 
   | ([arg_b@(Bind _ arg_ty)], res_ty) <- flattenPi fix_ty
   , Indices.lift arg_ty == res_ty = do
-    let ctx = Context.make fix_ty fix_ty
+    let ctx = Context.make fix_ty
           $ \_ -> Lam arg_b (Var 0)
     Fail.toMaybe (split Float.run fix_t ctx)
 removeIdFix _ = 
@@ -106,7 +107,7 @@ floatConstructors term@(Fix _ fix_b fix_t)
   (arg_bs, return_ty) = flattenPi fix_ty
   
   absurd_ctx = id
-    . Context.make fix_ty fix_ty
+    . Context.make fix_ty 
     . const
     . unflattenLam arg_bs
     $ Absurd return_ty
@@ -160,7 +161,7 @@ floatConstructors term@(Fix _ fix_b fix_t)
          $ map (gapContext idx_offset) [0..length args - 1]
       where
       constContext idx_offset = id
-        . Context.make fix_ty fix_ty
+        . Context.make fix_ty
         . const
         . unflattenLam arg_bs
         . Indices.lowerMany idx_offset
@@ -168,7 +169,7 @@ floatConstructors term@(Fix _ fix_b fix_t)
         
       gapContext idx_offset gap_n 
         | arg_ty /= ind_ty = mempty
-        | otherwise = Set.singleton (Context.make fix_ty fix_ty mkContext)
+        | otherwise = Set.singleton (Context.make fix_ty mkContext)
         where
         arg_ty = id
           . Term.nthArgument gap_n
@@ -196,7 +197,8 @@ floatConstructors term@(Fix _ fix_b fix_t)
 floatConstructors _ = 
   return mzero
 
-  
+-- TODO don't think I need to carry the 'full_ty' parameter through any more
+-- since I got rid of that argument to Context.make
 fixfixFusion :: forall m . Env.Readable m => Term -> m (Maybe Term)
 fixfixFusion full_t@(App outer_f@(Fix outer_info outer_b _) outer_args)
   | Term.simplifiable full_t = do
@@ -216,7 +218,7 @@ fixfixFusion full_t@(App outer_f@(Fix outer_info outer_b _) outer_args)
     | isFix (leftmost fix_arg) = do
       inner_ty <- Err.noneM (Typing.typeOf inner_f)
       let outer_ctx = id
-            . Context.make inner_ty full_ty
+            . Context.make inner_ty
             $ \t -> app outer_f (app t inner_args : tail outer_args)
       runMaybeT
         . Env.alsoTrack outer_f
@@ -256,7 +258,7 @@ repeatedArgFusion full_t@(App outer_f@(Fix outer_info outer_b _) outer_args)
       full_s <- showM full_t
       outer_ty <- Err.noneM (Typing.typeOf outer_f)
       let ctx = id
-            . Context.make outer_ty full_ty
+            . Context.make outer_ty
             $ \t -> app t outer_args
       Fail.toMaybe (fuse run (\_ _ -> return) ctx outer_f)
   repeatedArg _ =
@@ -303,13 +305,12 @@ fixfactFusion full_t@(App outer_f@(Fix outer_info outer_b _) outer_args)
         then return Nothing
         else do
           outer_ty <- Err.noneM (Typing.typeOf outer_f)
-          let ctx = Context.make outer_ty full_ty buildContext
+          let ctx = Context.make outer_ty buildContext
           -- We add the new fused matches to the info of our existing 
           -- fixpoint, since this will be carried over to the fixpoint
           -- that fusion produces.
           outer_f' <- id
             . return
-           -- . Fold.isoRewriteM Term.restricted Float.caseOfRec
             . addFusedMatches (get fusedMatches match_inf)
             . addFusedMatch (match_t, inj_n)
             $ outer_f
@@ -346,8 +347,8 @@ fixfactFusion full_t@(App outer_f@(Fix outer_info outer_b _) outer_args)
         locally_bound = True
        --   all (>= toEnum m_depth) strict_vars
           
-        within_fusion = 
-          any (< f_off) strict_vars
+        within_fusion = True
+          -- any (< f_off) strict_vars
           
       willRepeat :: m Bool
       willRepeat = id
@@ -442,7 +443,7 @@ fixfactFusion full_t@(App outer_f@(Fix outer_info outer_b _) outer_args)
             where
             Case match_t _ _ = Context.apply ctx (Absurd Set)
 
-          outer_ctx = Context.make full_ty full_ty mkCtx
+          outer_ctx = Context.make full_ty mkCtx
             where
             mkCtx gap_t = Case outer_t outer_ty outer_alts'
               where
@@ -505,7 +506,7 @@ factfixFusion full_t@(App inner_f@(Fix _ _ inner_f_body) inner_args)
       -- this clumsy check to prevent infinite loops.
       , not (inner_f_body `Term.containsUnifiable` match_f) = do
         match_ty <- Err.noneM (Typing.typeOf match_f)
-        let ctx = Context.make match_ty full_ty buildContext
+        let ctx = Context.make match_ty buildContext
         mby_res <- runMaybeT (runFusion ctx)
         full_s <- showM full_t
         res_s <- mapM showM mby_res
@@ -691,7 +692,7 @@ refoldFusion cse_t@(Case (Var x) ind_ty alts)
     return (ctx, leftmost inner_t')
     where
     buildContext inner_ty inner_t'@(App inner_f' args') = 
-      Context.make inner_ty full_ty mkCtx
+      Context.make inner_ty mkCtx
       where 
       -- We replace the matching variables with our new variable created
       -- at the index which will match "offset".

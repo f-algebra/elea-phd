@@ -19,6 +19,7 @@ import qualified Elea.Env as Env
 import qualified Elea.Terms as Term
 import qualified Elea.Context as Context
 import qualified Elea.Typing as Typing
+import qualified Elea.Simplifier as Simp
 import qualified Elea.Floating as Float
 import qualified Elea.Monad.Error as Err
 import qualified Elea.Monad.Failure as Fail
@@ -61,14 +62,21 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
       new_fix_ty = unflattenPi arg_bs result_ty
       new_fix_b = Bind new_label new_fix_ty
       ctx_here = Indices.lift outer_ctx
-      {-
+      
+  (args_ctx, main_ctx) <- id
+     . Env.bind fix_b
+     $ Term.isolateArguments ctx_here
+ 
   let applied_t = id
-        . Env.trackIndices ctx_here
+     --   . trace (show outer_ctx ++ " ==> " ++ show args_ctx ++ " with " ++ show main_ctx)
+        . Env.trackIndices main_ctx
         . Fold.isoTransformM Term.branchesOnly
             (\t -> Env.trackeds (\ctx -> Context.apply ctx t))
+        . Simp.run
+        . Context.apply args_ctx
         $ fix_t
--}
-  let applied_t = Context.apply ctx_here fix_t
+
+ -- let applied_t = Context.apply ctx_here fix_t
 
   simplified_t <- id
     . trace s1
@@ -133,13 +141,14 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   Fail.unless
   --  . trace s1
   --  . trace (s1 ++ s2 ++ s3)
-    $ rem_rc == 0 || new_rc' >= 1 --   old_rc'
+    $ rem_rc == 0 || new_rc >= old_rc
 
   done <- App (Fix fix_info' new_fix_b fix_body) arg_vars
    -- You have to do this bit first, otherwise unfoldFixInj doesn't
    -- treat the patterns as matched patterns (since they now feature
    -- lambda bound variables).
     |> Float.removeConstArgs
+    -- Running 'simplify' here is not in the spirit of the function
    -- |> simplify
     |> Float.run
     

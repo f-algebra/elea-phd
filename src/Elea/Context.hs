@@ -2,8 +2,8 @@ module Elea.Context
 (
   Context, 
   make, apply, strip,
-  isConstant,
-  toLambda, fromLambda, 
+  isConstant, gapType,
+  toLambda, fromLambda,
   dropLambdas,
 )
 where
@@ -30,39 +30,37 @@ newtype Context
   
 mkLabels [''Context]
 
-make :: Type -> Type -> (Term -> Term) -> Context
-make gap_ty ret_ty mk_t = id
+make :: Type -> (Term -> Term) -> Context
+make gap_ty mk_t = id
   . Context
-  . Lam lam_b
+  . Lam (Bind (Just "[_]") gap_ty)
   . substAt Indices.omega (Var 0)
   . Indices.lift
   $ mk_t (Var Indices.omega)
-  where
-  lam_b = id
-    . Bind (Just "[_]")
-    . Pi (Bind (Just "[_]") gap_ty)
-    $ Indices.lift ret_ty
 
 apply :: Context -> Term -> Term
 apply (Context lam) t = Simp.run (App lam [t])
 
+toLambda :: Context -> Term
+toLambda = get term
+
 fromLambda :: Term -> Context
 fromLambda = Context
 
-toLambda :: Context -> Term
-toLambda = get term
+gapType :: Context -> Type
+gapType (Context (Lam (Bind _ gap_ty) _)) = gap_ty
 
 -- | Returns whether there is any gap in the given context.
 isConstant :: Context -> Bool
 isConstant (Context (Lam _ t)) = 
-  0 `Set.member` Indices.free t
+  not (0 `Set.member` Indices.free t)
 
 -- | This is an odd function, it takes a context which has a lambda topmost
 -- and drops it if that abstracted variable is always applied to the gap.
 -- For example "\x -> f (_ x)" becomes just "f _".
 -- Used for context splitting.
 dropLambdas :: Context -> Context
-dropLambdas (Context 
+dropLambdas (Context
     (Lam ctx_b@(get boundType -> Pi _ rhs_ty) 
       (Lam rhs_b rhs_t)))
   | not (0 `Set.member` Indices.free rhs_ty)
@@ -87,40 +85,7 @@ dropLambdas (Context
   merge other = 
     return other
 dropLambdas other = other
-
-{-
--- | Splits a context into two contexts, 
--- equivalent to the original if composed. 
--- The first is the application of any arguments to the gap,
--- the second is the rest. Will fail if the context is multi-hole with 
--- different arguments at each, if any arguments are contain non-free
--- variables, or if no arguments have been applied.
-isolateArguments :: Context -> Maybe (Context, Context)
-isolateArguments ctx = do
-  args_set <- id
-    . Env.trackIndices 0
-    . runMaybeT
-    . Fold.foldM arguments
-    $ ctx_omega
-  guard (Set.singleton 
-  where
-  ctx_omega = Context.apply ctx (Var Indices.omega)
-  
-  isolate :: 
-    Term -> MaybeT (WriterT (Set [Term]) (Env.TrackIndices Index) Term
-  isolate (flattenApp -> Var f : args)
-    | f == Indices.omega = do
-      offset <- Env.tracked
-      args' <- id
-        . MaybeT 
-        . return
-        . mapM (Indices.tryLowerMany (fromEnum offset)) 
-        $ args
-      tell args'
-      return (Var Indices.omega)
-  arguments _ = return mempty
--}
-
+    
 
 -- | If the given term is within the given context, then return
 -- the value which has filled the context gap.

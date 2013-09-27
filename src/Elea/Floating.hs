@@ -61,7 +61,7 @@ safeSteps =
     , freeCaseFix
     , identityCase
     , caseCase
-    , raiseVarCase
+  --  , raiseVarCase
     , constantCase
     , uselessFix
     , constantFix
@@ -557,7 +557,7 @@ freeFix outer_fix@(Fix _ _ outer_body)
     ind_ty <- Err.noneM (Typing.typeOf free_fix)
     -- While this step will work for recursive inductive types,
     -- it doesn't make much sense to me to ever do this.
-    if Term.isRecursiveInd (if not (isInd ind_ty) then error (show free_fix) else ind_ty)
+    if Term.isRecursiveInd ind_ty
     then return Nothing
     else return 
        . Just

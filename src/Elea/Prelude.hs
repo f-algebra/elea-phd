@@ -77,7 +77,7 @@ import Control.Monad.State ( evalStateT, execState, runState, evalState,
 import Control.Monad.Reader ( 
   MonadReader (..), Reader (..), ReaderT (..), 
   asks, runReader, mapReaderT, withReaderT, withReader )
-import Control.Monad.Writer ( execWriter, runWriter, execWriterT,
+import Control.Monad.Writer ( execWriter, runWriter, execWriterT, mapWriterT,
   MonadWriter (..), Writer (..), WriterT (..), censor, listens )
 import Control.Monad.List ( ListT (..) )
 import Control.Monad.Trans.Maybe
