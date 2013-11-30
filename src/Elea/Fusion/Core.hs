@@ -141,7 +141,7 @@ fuse simplify extract outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   Fail.unless
   --  . trace s1
   --  . trace (s1 ++ s2 ++ s3)
-    $ rem_rc == 0 || new_rc >= old_rc
+    $ rem_rc == 0 || new_rc' >= old_rc'
 
   done <- App (Fix fix_info' new_fix_b fix_body) arg_vars
    -- You have to do this bit first, otherwise unfoldFixInj doesn't

@@ -30,11 +30,11 @@ class Indexed t where
   -- | Only modifies free indices.
   shift :: (Index -> Index) -> t -> t
 
-liftManyAt :: Indexed a => Int -> Index -> a -> a
+liftManyAt :: Indexed a => Nat -> Index -> a -> a
 liftManyAt n at = shift lift
   where
   lift x
-    | at <= x = toEnum n + x
+    | at <= x = enum n + x
     | otherwise = x
 
 liftAt :: Indexed a => Index -> a -> a
@@ -43,14 +43,14 @@ liftAt = liftManyAt 1
 lift :: Indexed a => a -> a
 lift = liftAt 0
 
-liftMany :: Indexed a => Int -> a -> a
+liftMany :: Indexed a => Nat -> a -> a
 liftMany = flip liftManyAt 0
 
-lowerManyAt :: Indexed a => Int -> Index -> a -> a
+lowerManyAt :: Indexed a => Nat -> Index -> a -> a
 lowerManyAt n at = shift lower
   where
   lower x
-    | at <= x = x - toEnum n
+    | at <= x = x - enum n
     | otherwise = x
     
 lowerAt :: Indexed a => Index -> a -> a
@@ -59,7 +59,7 @@ lowerAt = lowerManyAt 1
 lower :: Indexed a => a -> a
 lower = lowerAt 0
 
-lowerMany :: Indexed a => Int -> a -> a
+lowerMany :: Indexed a => Nat -> a -> a
 lowerMany = flip lowerManyAt 0
 
 instance Indexed () where
@@ -103,10 +103,10 @@ subst = substAt 0
 replaceAt :: Substitutable t => Index -> Inner t -> t -> t
 replaceAt at with = substAt at with . liftAt (succ at)
 
-lowerableBy :: Indexed t => Int -> t -> Bool
-lowerableBy n = all (>= (toEnum n)) . free
+lowerableBy :: Indexed t => Nat -> t -> Bool
+lowerableBy n = all (>= enum n) . free
 
-tryLowerMany :: Indexed t => Int -> t -> Maybe t
+tryLowerMany :: Indexed t => Nat -> t -> Maybe t
 tryLowerMany n t = do
   guard (lowerableBy n t)
   return (lowerMany n t)

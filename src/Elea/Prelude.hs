@@ -41,6 +41,8 @@ module Elea.Prelude
 --  module Data.Generics.Uniplate.Operations,
   module Data.Generics.Str,
   module Data.String.Utils,
+  module Data.Key,
+  module Data.Proxy,
   
   module Debug.Trace,
   module System.IO.Unsafe,
@@ -53,14 +55,15 @@ module Elea.Prelude
   fromRight, fromLeft, traceMe, setAt, firstM, 
   takeIndices, isNub, foldl1M, seqStr, strSeq,
   isLeft, isRight, modifyM', modifyM, removeAt,
-  insertAt, convertEnum, indent, indentBy, debugNth,
+  insertAt, enum, indent, indentBy, debugNth,
   arrowSum, supremum, (|>), ($>),
   Maximum (..), Minimum (..), sconcatMap,
-  intersects,
+  intersects, nlength,
 )
 where
 
-import Prelude hiding ( mapM, foldl, foldl1, mapM_, minimum, maximum, sequence_,
+import Prelude hiding ( mapM, foldl, foldl1, mapM_, minimum, 
+  maximum, sequence_, zip, zipWith,
   foldr, foldr1, sequence, Maybe (..), maybe, all, any, elem, product,
   and, concat, notElem, or, concatMap, sum, (++), map, (.), id )
 
@@ -117,6 +120,8 @@ import Data.String
 -- import Data.Generics.Uniplate.Operations
 import Data.Generics.Str
 import Data.String.Utils ( replace )
+import Data.Key ( Zip (..) )
+import Data.Proxy
 
 import Debug.Trace
 import System.IO.Unsafe
@@ -163,6 +168,10 @@ concatMapM f = liftM concat . mapM f . toList
 
 intercalate :: Monoid m => m -> [m] -> m
 intercalate x = concat . intersperse x
+
+-- | A more usefully typed 'length' function.
+nlength :: (Foldable f) => f a -> Nat
+nlength = toEnum . Pre.length . toList
 
 partitionM :: Monad m => (a -> m Bool) -> [a] -> m ([a], [a])
 partitionM f = foldrM f' ([], [])  
@@ -320,8 +329,8 @@ removeAt _ [] = error "Can't remove past the end of a list"
 removeAt 0 (x:xs) = xs
 removeAt n (x:xs) = x:(removeAt (n-1) xs)
   
-convertEnum :: (Enum a, Enum b) => a -> b
-convertEnum = toEnum . fromEnum
+enum :: (Enum a, Enum b) => a -> b
+enum = toEnum . fromEnum
 
 indentBy :: Int -> String -> String
 indentBy n = replace "\n" ("\n" ++ replicate n ' ')

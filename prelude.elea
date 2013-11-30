@@ -1,19 +1,14 @@
 
-let id = fun (a:*) (x:a) -> x
-
-
 /* Booleans */ 
 
-let bool =
-  ind bool: * with
-  | True: bool
-  | False: bool
-  end
-  
-let True = inj0 bool
-let False = inj1 bool
+ind bool = True | False
 
-let not = fun (x:bool) -> match x with | True -> False | False -> True end
+let not = 
+  fun (x:bool) -> 
+    match x with 
+    | True -> False 
+    | False -> True 
+    end
 
 let or = 
   fun (x: bool) (y: bool) -> 
@@ -42,19 +37,13 @@ let implies = fun (p:bool) (q:bool) -> or (not p) q
     
 /* Natural numbers */    
     
-let nat =
-  ind nat: * with 
-  | 0: nat 
-  | Suc: pi nat -> nat
-  end
-  
-let 0 = inj0 nat
-let Suc = inj1 nat
+ind nat = 0 | Suc nat
+
 let 1 = Suc 0
 let 2 = Suc 1
 
 let eq_nat = 
-  fix (eq_nat: pi nat nat -> bool) (x:nat) (y:nat) ->
+  fix (eq_nat: nat -> nat -> bool) (x:nat) (y:nat) ->
     match x with
     | 0 ->
       match y with
@@ -69,7 +58,7 @@ let eq_nat =
     end
     
 let leq_nat = 
-  fix (leq_nat: pi nat nat -> bool) (x: nat) (y: nat) -> 
+  fix (leq_nat: nat -> nat -> bool) (x: nat) (y: nat) -> 
     match x with
     | 0 -> True
     | Suc x' ->
@@ -87,21 +76,21 @@ let max =
     end
 
 let add = 
-  fix (add: pi nat nat -> nat) (x: nat) (y: nat) -> 
+  fix (add: nat -> nat -> nat) (x: nat) (y: nat) -> 
     match x with 
     | 0 -> y
     | Suc x' -> Suc (add x' y)
     end
    
 let mul = 
-  fix (mul: pi nat nat -> nat) (x: nat) (y: nat) -> 
+  fix (mul: nat -> nat -> nat) (x: nat) (y: nat) -> 
     match x with
     | 0 -> 0
     | Suc x' -> add y (mul x' y)
     end
     
 let leq = 
-  fix (leq: pi nat nat -> bool) (x:nat) (y:nat) ->
+  fix (leq: nat -> nat -> bool) (x:nat) (y:nat) ->
     match x with
     | 0 -> True
     | Suc x' ->
@@ -111,7 +100,7 @@ let leq =
       end
     end
 
-/* Lists */
+/*
     
 let list = fun (a: *) -> 
   ind list: * with 
@@ -172,8 +161,6 @@ let take =
     end
     
     
-/* Sorting lists */
-    
 let sorted =
   fix (srtd: pi (list nat) -> bool) (xs:list nat) ->
     match xs with
@@ -204,7 +191,6 @@ let isort =
     end
 
     
-/* Trees */
 
 let tree = fun (a:*) ->
   ind tree: * with
@@ -272,3 +258,5 @@ let build =
 let treesort =
   fun (xs: list nat) -> flatten nat (build xs)
 
+  */
+  

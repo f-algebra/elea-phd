@@ -2,12 +2,12 @@
 -- Like 'MonadPlus' without 'mplus', and with more readably named functions.
 -- Requires qualified import (usually as "Fail").
 module Elea.Monad.Failure (
-  Monad (..), when, unless, toMaybe, withDefault,
+  Monad (..), when, unless, toMaybe, withDefault, assert,
   success, successM, catchWith, fromEither, has, fromMaybe
 ) where
 
 import Prelude ()
-import Elea.Prelude hiding ( catch, Monad, when, unless, fromMaybe )
+import Elea.Prelude hiding ( catch, Monad, when, unless, fromMaybe, assert )
 import qualified Elea.Prelude as Prelude
 import qualified Data.Monoid as Monoid
 
@@ -27,6 +27,10 @@ unless = flip Prelude.unless here
 fromEither :: Monad m => Either a b -> m b
 fromEither (Left _) = here
 fromEither (Right x) = return x
+
+-- Force the assertion to be evaluated within the failure monad.
+assert :: Monad m => Bool -> m ()
+assert p = Prelude.assert p (unless p)
 
 has :: Maybe a -> Bool
 has = isNothing

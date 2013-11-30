@@ -18,7 +18,6 @@ import qualified Elea.Terms as Term
 import qualified Elea.Context as Context
 import qualified Elea.Typing as Typing
 import qualified Elea.Unifier as Unifier
-import qualified Elea.Floating as Float
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Monad.Error as Err
 import qualified Elea.Monad.Failure as Fail
@@ -46,12 +45,16 @@ steps = id
     ]
 
 {-# INLINEABLE run #-}
-run :: forall m . Env.Readable m => Term -> m Term
-run term = do
+run :: Env.Readable m => Term -> m Term
+run = runSteps steps
+    
+runSteps :: forall m . Env.Readable m => 
+  [Term -> m (Maybe Term)] -> Term -> m Term
+runSteps steps term = do
   term' <- Float.run term
   mby_fused <- firstM (map (applyStep term') steps)
   case mby_fused of 
-    Nothing -> return (Term.normalised term')
+    Nothing -> return term'
     Just fused -> do
       ts <- showM term 
       ts' <- showM term'
@@ -74,16 +77,6 @@ run term = do
             |> return
       
 
-simpleAndFloat :: Env.Readable m => Term -> m Term
-simpleAndFloat term = do
-  term' <- Float.run term
-  mby_t <- Fold.isoRewriteOnceM Term.restricted floatConstructors term'
-  maybe (return term') simpleAndFloat mby_t
-  
-varEqApply :: Env.Readable m => Term -> m (Maybe Term)
-varEqApply t@(Var {}) = Env.matchedWith t
-varEqApply _ = return Nothing
-
 removeIdFix :: Env.Readable m => Term -> m (Maybe Term)
 removeIdFix fix_t@(Fix _ (Bind _ fix_ty) _) 
   | ([arg_b@(Bind _ arg_ty)], res_ty) <- flattenPi fix_ty
@@ -100,7 +93,7 @@ floatConstructors term@(Fix _ fix_b fix_t)
   | not (floatable || Term.simplifiable term) = return Nothing
   | otherwise = id
       . firstM 
-      . map (Fail.toMaybe . split simpleAndFloat term)
+      . map (Fail.toMaybe . split (runSteps [floatConstructors]) term)
       $ Set.toList suggestions
   where
   fix_ty = get boundType fix_b
@@ -234,7 +227,7 @@ fixfixFusion full_t@(App outer_f@(Fix outer_info outer_b _) outer_args)
             (\_ ctx -> fuse run extract ctx (Indices.lift inner_f'))
           $ outer_ctx
       where
-      inner_f' = Term.clearFusedMatches inner_f
+      inner_f' = inner_f -- Term.clearFusedMatches inner_f
       rec_arg = head inner_args
   fixfix _ _ = 
     return Nothing
@@ -260,7 +253,7 @@ repeatedArgFusion full_t@(App outer_f@(Fix outer_info outer_b _) outer_args)
       let ctx = id
             . Context.make outer_ty
             $ \t -> app t outer_args
-      Fail.toMaybe (fuse run (\_ _ -> return) ctx outer_f)
+      Fail.toMaybe (fuse Float.run (\_ _ -> return) ctx outer_f)
   repeatedArg _ =
     return Nothing
     
@@ -315,7 +308,8 @@ fixfactFusion full_t@(App outer_f@(Fix outer_info outer_b _) outer_args)
             . addFusedMatch (match_t, inj_n)
             $ outer_f
           let full_t' = app outer_f' outer_args
-          mby_t <- Fail.toMaybe (fuse run floatInwards ctx outer_f')
+          mby_t <- Fail.toMaybe 
+            $ fuse Float.run floatInwards ctx outer_f'
           match_s <- showM match_t
           outer_s <- showM full_t
           inj_s <- showM inj_t

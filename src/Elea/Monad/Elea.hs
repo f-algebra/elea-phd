@@ -13,23 +13,12 @@ import Elea.Index
 import Elea.Term
 import Elea.Show ( showM )
 import qualified Elea.Foldable as Fold
-import qualified Elea.Term as Term
 import qualified Elea.Env as Env
-import qualified Elea.Typing as Typing
-import qualified Elea.Simplifier as Simp
-import qualified Elea.Floating as Float
-import qualified Elea.Fusion as Fusion
 import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Error as Err
 import qualified Elea.Monad.Failure as Fail
 import qualified Control.Monad.State as State
-import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
-
-{-# SPECIALISE 
-  Fusion.run :: Term -> Elea Term #-} 
-{-# SPECIALISE 
-  Float.run :: Term -> Elea Term #-}
 
 type Defs = Map String Term
 
@@ -40,9 +29,7 @@ data EleaValue a
   deriving ( Functor )
         
 data EleaRead
-  = ER  { _readBinds :: ![Bind]
-        , _readMatches :: !Env.Matches
-        , _readFixpointDepth :: !Int }
+  = ER  { _readBinds :: ![Bind] }
   
 newtype Elea a 
   = Elea { runElea :: EleaRead -> EleaValue a }
@@ -51,7 +38,7 @@ mkLabels [''EleaRead]
 
 run :: Elea a -> a
 run el =
-  case runElea el (ER mempty mempty 0) of
+  case runElea el (ER mempty) of
     Value x -> x
     Fail -> error "FAIL"
     Error e -> error e
@@ -72,38 +59,15 @@ instance MonadReader EleaRead Elea where
   local f el = Elea (runElea el . f)
 
 instance Env.Writable Elea where
-  bindAt at b = local mapAll
-    where
-    mapAll = id
-      . modify readMatches mapMatches
-      . modify readBinds mapBinds
-      
-    mapBinds = insertAt (convertEnum at) (liftAt at b) . map (liftAt at)
-    mapMatches = Map.mapKeysMonotonic (liftAt at) . fmap (liftAt at *** succ)
-    
-  equals t k = 
-    local (modify readMatches mapMatches)
-    where
-    mapMatches = Map.insert t (k, 0)
-    
-  filterMatches p = 
-    local (modify readMatches (Map.filterWithKey (\k (v, _) -> p k v)))
-    
-  fixpointHere m = do
-    d <- Env.bindingDepth
-    local (set readFixpointDepth d) m
+  bindAt at b = 
+    local (modify readBinds (insertAt (enum at) b))
     
 instance Env.Readable Elea where
-  bindings = asks (get readBinds)
-  matches = asks (get readMatches)
-  
   boundAt at = do
     bs <- Env.bindings
-    Err.when (fromEnum at >= length bs)
+    Err.when (enum at >= length bs)
       $ "Index " ++ show at ++ " not bound in " ++ show bs
     return (bs !! fromEnum at)
-    
-  fixpointDepth = asks (get readFixpointDepth)
 
 instance Err.Monad Elea where
   throw e = Elea $ \_ -> (Error e)

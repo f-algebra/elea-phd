@@ -1,10 +1,9 @@
 module Elea.Context 
 (
   Context, 
-  make, apply, strip,
+  make, apply,
   isConstant, gapType,
   toLambda, fromLambda,
-  dropLambdas,
 )
 where
 
@@ -12,9 +11,10 @@ import Prelude ()
 import Elea.Prelude
 import Elea.Index
 import Elea.Term
+import Elea.Type ( Type, Bind (..) )
 import qualified Elea.Index as Indices
+import qualified Elea.Type as Type
 import qualified Elea.Env as Env
-import qualified Elea.Simplifier as Simp
 import qualified Elea.Foldable as Fold
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Index as Indices
@@ -33,13 +33,13 @@ mkLabels [''Context]
 make :: Type -> (Term -> Term) -> Context
 make gap_ty mk_t = id
   . Context
-  . Lam (Bind (Just "[_]") gap_ty)
+  . Lam (Bind "[_]" gap_ty)
   . substAt Indices.omega (Var 0)
   . Indices.lift
   $ mk_t (Var Indices.omega)
 
 apply :: Context -> Term -> Term
-apply (Context lam) t = Simp.run (App lam [t])
+apply (Context (Lam _ rhs)) arg = subst arg rhs
 
 toLambda :: Context -> Term
 toLambda = get term
@@ -55,6 +55,7 @@ isConstant :: Context -> Bool
 isConstant (Context (Lam _ t)) = 
   not (0 `Set.member` Indices.free t)
 
+  {-
 -- | This is an odd function, it takes a context which has a lambda topmost
 -- and drops it if that abstracted variable is always applied to the gap.
 -- For example "\x -> f (_ x)" becomes just "f _".
@@ -103,6 +104,8 @@ strip (Context (Lam _ ctx_t)) term = do
     Fail.when (idx /= 0)
     return (Indices.lower hole_term)
 
+    -}
+    
 instance Indexed Context where
   free = Indices.free . get term
   shift f = modify term (Indices.shift f)

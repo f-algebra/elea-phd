@@ -8,9 +8,8 @@ module Elea.Testing (
 
 import Prelude ()
 import Elea.Prelude hiding ( assert )
-import Elea.Term ( Term )
+import Elea.Term
 import Elea.Monad.Elea ( Elea )
-
 import qualified Elea.Parser as Parse
 import qualified Elea.Typing as Typing
 import qualified Elea.Monad.Definitions as Defs
@@ -18,7 +17,7 @@ import qualified Elea.Monad.Error as Err
 import qualified Test.HUnit as HUnit
 
 type Test = HUnit.Test
-type M a = State (Map String Term) a
+type M a = State (Map String Term, Map String Type) a
 
 execute :: Test -> IO ()
 execute test = do

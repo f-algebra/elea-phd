@@ -1,6 +1,10 @@
+-- | Type checking for terms, along with functions to wrap around
+-- transformation steps (@Term -> m (Maybe Term)@ functions) 
+-- to dynamically check they preserve typing (the type of the argument
+-- matches the type of the resulting term).
 module Elea.Typing
 (
-  typeOf, check, empty, checkStep, unfoldInd,
+  typeOf, check, checkStep,
 )
 where
 
@@ -8,51 +12,35 @@ import Prelude ()
 import Elea.Prelude
 import Elea.Index hiding ( lift )
 import Elea.Term
-import Elea.Show ( KleisliShow (..) )
-import qualified Elea.Index as Indices
+import Elea.Show ( showM )
+import qualified Elea.Type as Type
 import qualified Elea.Foldable as Fold
 import qualified Elea.Env as Env
 import qualified Elea.Monad.Error as Err
-import qualified Data.Set as Set
 
 type TypingMonad m = (Err.Monad m, Env.Readable m)
 
--- | The constructorless inductive type, "ind (0:*) with end"
-empty :: Type 
-empty = Ind (Bind (Just "0") Set) []
-
-unfoldInd :: Term -> [Bind]
-unfoldInd ty@(Ind _ cons) = 
-  map (subst ty) cons
-unfoldInd other = 
-  error $ "Tried to unfold a non inductive type: " ++ show other
-
 -- | Throws an error if a term is not correctly typed.
 check :: TypingMonad m => Term -> m ()
--- 'Type' does not have a type in CoC, but is still correct
--- under type checking.
-check Type = return ()
--- Otherwise we just see if 'typeOf' throws an error.
-check other = liftM (const ()) (typeOf other)
+-- Call 'typeOf' and ignore the argument
+check = liftM (const ()) . typeOf
 
 -- | Wrap this around a term transformation step @Term -> m (Maybe Term)@
 -- to add a check that the step preserves the type of the term.
 checkStep :: forall m . Env.Readable m => 
-  (Term -> m (Maybe Term)) -> Term -> m (Maybe Term)
-checkStep step term = runMaybeT $ do
-  result <- MaybeT (step term)
+  (Term -> MaybeT m Term) -> Term -> MaybeT m Term
+checkStep step term = do
+  result <- step term
   lift . Err.noneM . Err.augmentM (stepErr result) $ do
     t_ty <- typeOf term
     r_ty <- typeOf result
     if t_ty == r_ty
     then return result
-    else do
-      ty_s <- showM t_ty
-      ty_s' <- showM r_ty
+    else 
       Err.throw 
         $ "Transformation does not preserve type."
-        ++ "\nBefore: [" ++ ty_s ++ "]"
-        ++ "\nAfter: [" ++ ty_s' ++ "]"
+        ++ "\nBefore: [" ++ show t_ty ++ "]"
+        ++ "\nAfter: [" ++ show r_ty ++ "]"
   where
   stepErr :: Term -> EitherT Err.Err m Err.Err
   stepErr result = do
@@ -66,10 +54,9 @@ checkStep step term = runMaybeT $ do
 -- | Returns the type of a given 'Term',
 -- within a readable type environment.
 -- Can throw type checking errors.
-typeOf :: TypingMonad m => Term -> m Term  
+typeOf :: TypingMonad m => Term -> m Type  
 typeOf term = id
   . Err.augmentM (termErr term)
-  . Err.check check
   . Fold.paraM doBoth
   $ term
   where
@@ -85,121 +72,88 @@ typeOf term = id
   doBoth ft = 
     Err.augmentM (termErr $ Fold.recover ft)
       $ fcheck ft >> ftype ft
-      
-  -- The type of an pattern match branch has to be lowered by any
-  -- indexes bound by the match
-  altType :: Alt' (Type, Term) -> Type
-  altType (Alt' bs (ty, t)) =
-    Indices.lowerMany (length bs) ty
     
   applyArg :: Term' (Type, Term) -> Term' (Type, Term)
-  applyArg (App' (Pi _ res_ty, f) ((_, t):ts)) =  
-    App' (subst t res_ty, app f [t]) ts
+  applyArg (App' (Type.Fun _ res_ty, f) ((_, t):ts)) =  
+    App' (res_ty, app f [t]) ts
     
   -- Checks the term for any type errors.
   -- Is combined with 'ftype' in 'doBoth'
   -- to get the full monadic Term'-algebra for typing.
   fcheck :: TypingMonad m => Term' (Type, Term) -> m ()
-  fcheck Type' = Err.throw "[Type] has no type"
+
+  -- Check that a variable has a type in the environment
   fcheck (Var' idx) = do
     depth <- Env.bindingDepth
     Err.when (fromEnum idx >= depth)
       $ "Found index: " ++ show idx ++ " in an environment which only "
       ++ "has type bindings up to index: " ++ show depth
-  fcheck app_t@(App' (fun_ty, fun_t) ((arg_ty, arg_t):_))
-    | Pi (Bind _ arg_ty') _ <- fun_ty
-    , arg_ty /= arg_ty' = do
-        ty_s <- showM arg_ty
-        ty_s' <- showM fun_ty
-        arg_s <- showM arg_t
-        fun_s <- showM fun_t
-        Err.throw 
-          $ "Applying [" ++ fun_s ++ "]: [" ++ ty_s'
-          ++ "]\nto [" ++ arg_s ++ "]: [" ++ ty_s 
-          ++ "]\nArgument types do not match."
-    | not (isPi fun_ty) = do
-        ty_s <- showM fun_ty
-        t_s <- showM fun_t
-        Err.throw 
-          $ "Found an applied term [" ++ t_s
-          ++ "] of non-function type [" ++ ty_s ++ "]."   
-    | otherwise = 
+      
+  -- Check that term application has the correct function type on the left
+  fcheck app_t@(App' (fun_ty, _) ((arg_ty, _) : args))
+    | not (Type.isFun fun_ty) = Err.throw
+      $ "Term application with non function type term leftmost."
+      
+    | Type.Fun arg_ty' _ <- fun_ty
+    , arg_ty /= arg_ty' = Err.throw
+      $ "Term application with incorrect argument type."
+      
+    | otherwise =
       fcheck (applyArg app_t)
-  fcheck fx@(Fix' _ (Bind' _ (_, b_ty)) (Indices.lower -> ty, _))
-    | b_ty /= ty = do
-        b_ty_s <- showM b_ty
-        ty_s <- showM ty
-        fx_s <- showM (Fold.recover fx)
-        Err.throw
-          $ "In the fixpoint [" ++ fx_s ++ "].\n"
-          ++ "The declared type [" ++ b_ty_s
-          ++ "] and the type of the body [" ++ ty_s
-          ++ "] do not match."
-  fcheck (Inj' n (_, ind_ty))
-    | not (isInd ind_ty) = do
-        ty_s <- showM ind_ty
-        Err.throw 
-          $ "The type argument of an inj [" ++ ty_s
-          ++ "] must be an inductive type."
-    | fromEnum n >= num_cons = do
-        ty_s <- showM ind_ty
-        Err.throw 
-          $ "Trying to inject into constructor " ++ show n
-          ++ " of [" ++ ty_s ++ "] which only has " 
-          ++ show num_cons ++ " constructors."
+      
+  -- Check that a fixpoint matches the type of its bound variable
+  fcheck (Fix' (Bind _ fix_ty) (fix_ty', _))
+    | fix_ty /= fix_ty' = Err.throw
+      $ "Fixpoint does not match its declared type."
+      
+  -- Check that an constructor is for an inductive type, and that the 
+  -- constructor index is not greater than the number of constructors.
+  fcheck (Con' ty n) 
+    | nlength (Type.unfold ty) <= n = Err.throw
+      $ "The given inductive type does not have that many constructors."
+      
+  -- Check that the pattern matched branches properly match the 
+  -- constructors of the inductive type
+  fcheck (Case' ind_ty (ind_ty', _) falts)
+    | Type.Base ind_ty /= ind_ty' = Err.throw
+      $ "Inductive type of pattern match [" ++ show ind_ty ++ "] does not"
+      ++ " match type of matched term [" ++ show ind_ty' ++ "]"
+      
+    | length falts /= length cons = Err.throw 
+      $ "Number of patterns does not match number of constructors."
+      
+    | not alts_correct = Err.throw 
+      $ "Patterns matched do not match the constructors of the inductive type."
     where
-    Ind _ (length -> num_cons) = ind_ty
-  fcheck fcse@(Case' (ty, _) (_, arg_ty) falts) 
-    | ty /= arg_ty = do
-        ty_s <- showM ty
-        arg_ty_s <- showM arg_ty
-        Err.augmentM in_the_cse
-          . Err.throw
-          $ "The stored argument type [" ++ arg_ty_s
-          ++ "] of a pattern match does not equal "
-          ++ "the actual argument type [" ++ ty_s ++ "]."
-    | Just fail_ty <- find (/= alt_ty) alt_tys = do
-        fail_s <- showM fail_ty
-        alt_s <- showM alt_ty
-        Err.augmentM in_the_cse
-          . Err.throw
-          $ "The return types of two branches "
-          ++ "are not equal: [" ++ alt_s ++ "] /= [" ++ fail_s ++ "]."
-    where
-    in_the_cse = do
-      cse_s <- showM (Fold.recover fcse)
-      return $ "In the pattern match {" ++ cse_s ++ "}.\n"
-    alt_ty:alt_tys = map altType falts
+    cons = Type.unfold ind_ty
+    alts_correct = and . zipWith checkAlt cons $ falts
+      where
+      checkAlt (Bind _ con_ty) (Alt' bs (res_ty, _)) =
+        con_ty == Type.unflatten (map boundType bs ++ [ind_ty'])
+        
   fcheck _ = 
     return ()
  
   
   -- | Returns the type of a term, given the type of its subterms.
   ftype :: TypingMonad m => Term' (Type, Term) -> m Type
-  ftype (Absurd' (_, ty)) = 
+  ftype (Absurd' ty) =
     return ty
-  ftype Set' = 
-    return Type
-  ftype (Pi' _ _) = 
-    return Set
   ftype (Var' idx) =
-    liftM (get boundType) (Env.boundAt idx)
-  ftype (Lam' (Bind' lbl (_, arg)) (res, _)) = 
-    return (Pi (Bind lbl arg) res)
+    liftM boundType (Env.boundAt idx)
+  ftype (Lam' (Bind _ ty) (res, _)) = 
+    return (Type.Fun ty res)
   ftype (App' (ty, _) []) = 
     return ty
   ftype t@(App' {}) = 
     ftype (applyArg t)
-  ftype (Fix' _ (Bind' _ (_, ty)) _) = 
+  ftype (Fix' (Bind _ ty) _) = 
     return ty
-  ftype (Ind' (Bind' _ (_, ty)) _) = 
-    return ty
-  ftype (Inj' n (_, ind_ty)) =
+  ftype (Con' ind_ty n) =
     return
-    . get boundType
+    . boundType
     . (!! fromEnum n)
-    . unfoldInd
-    $ ind_ty
-  ftype (Case' _ _ falts) =
-    return . altType . head $ falts
+    $ Type.unfold ind_ty
+  ftype (Case' _ _ (Alt' _ (ty, _) : _)) =
+    return ty
 

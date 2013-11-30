@@ -7,6 +7,8 @@ where
 import Prelude ()
 import Elea.Prelude
 import Elea.Term
+import Elea.Type
+import qualified Elea.Type as Type
 import qualified Elea.Testing as Test
 import qualified Elea.Parser as Parse
 import qualified Elea.Monad.Elea as Elea
@@ -15,28 +17,22 @@ import qualified Elea.Monad.Definitions as Defs
 tests = Test.label "Parser" 
     $ Test.run $ do
   Test.loadPrelude
-  t_nat <- Test.term "nat"
   t_suc <- Test.term "Suc"
   t_add <- Test.term "add"
   return
     $ Test.list 
-    [ Test.assertEq nat t_nat
-    , Test.assertEq suc t_suc 
+    [ Test.assertEq suc t_suc 
     , Test.assertEq add t_add ]
   where
-  bind = Bind Nothing
-  
-  nat = Ind (bind Set) 
-    [ bind (Var 0)
-    , bind (Pi (bind (Var 0)) (Var 1)) ]
-  
-  suc = Inj 1 nat
+  nat = Ind "nat" [("0", []), ("Suc", [IndVar])] 
+  nat_ty = Base nat
+  suc = Con nat 1
 
-  add_ty = Pi (bind nat) (Pi (bind nat) nat)
-  add = Fix emptyFixInfo (bind add_ty)
-    $ Lam (bind nat) 
-    $ Lam (bind nat)
-    $ Case (Var 1) nat
+  add_ty = Type.unflatten [nat_ty, nat_ty, nat_ty]
+  add = Fix (Bind "+" add_ty)
+    $ Lam (Bind "x" nat_ty)
+    $ Lam (Bind "y" nat_ty)
+    $ Case nat (Var 1)
     [ Alt [] (Var 0)
-    , Alt [bind nat] (App suc 
+    , Alt [Bind "x'" nat_ty] (App suc 
         [App (Var 3) [Var 0, Var 1]]) ]

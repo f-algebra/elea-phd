@@ -195,7 +195,7 @@ let sorted_tree =
   match t with
   | Leaf -> True
   | Node x t1 t2 ->
-    and (and (last_leq x t1) (first_gt3 x t2))
+    and (and (last_leq x t1) (first_gt2 x t2))
         (and (srtd t1) (srtd t2)) 
   end
 
@@ -325,8 +325,8 @@ let t541 = fun (n: nat) (k: nat) (t: tree nat) ->
 let t541' = fun nat nat (tree nat) -> True
 
 let t542 = fun (n: nat) (k: nat) (t: tree nat) -> 
-  match and (not (leq_nat n k)) (first_gt3 k t) with
-  | True -> first_gt3 k (ins_tree n t)
+  match and (not (leq_nat n k)) (first_gt2 k t) with
+  | True -> first_gt2 k (ins_tree n t)
   | False -> True
   end
 let t542' = fun nat nat (tree nat) -> True
