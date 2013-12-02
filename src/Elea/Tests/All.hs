@@ -21,7 +21,7 @@ tests = Test.list
  -- , Term.tests
   , Parser.tests
  {-
-  , Simplifier.tests
+  , Simplifier.tests 
   , Context.tests
   , Float.tests
   , Fusion.tests -}

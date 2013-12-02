@@ -4,7 +4,8 @@ module Elea.Env
 (
   Writable (..), Readable (..),
   AlsoTrack, alsoTrack, alsoWith,
-  liftTracked, trackeds, 
+  TrackIndices, TrackIndicesT,
+  liftTracked, tracked, trackeds, 
   trackIndices, trackIndicesT,
   bind, bindMany,
   isoFree, isoShift,
@@ -189,6 +190,8 @@ trackIndices r = runIdentity . trackIndicesT r
 
 -- Various instances for 'Writable' and 'Readable'
   
+instance Writable Identity where
+
 instance Monad m => Writable (IdentityT m) where
   -- The 'IdentityT' monad just ignores all the written type information
 

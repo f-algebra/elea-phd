@@ -58,7 +58,7 @@ module Elea.Prelude
   insertAt, enum, indent, indentBy, debugNth,
   arrowSum, supremum, (|>), ($>),
   Maximum (..), Minimum (..), sconcatMap,
-  intersects, nlength,
+  intersects, nlength, liftMaybe, maybeT
 )
 where
 
@@ -183,6 +183,17 @@ partitionM f = foldrM f' ([], [])
       
 fromJustT :: Monad m => MaybeT m a -> m a
 fromJustT = liftM fromJust . runMaybeT
+
+liftMaybe :: MonadPlus m => Maybe a -> m a
+liftMaybe Nothing = mzero
+liftMaybe (Just x) = return x
+
+maybeT :: Monad m => m b -> (a -> m b) -> MaybeT m a -> m b 
+maybeT x f m = do
+  mby_a <- runMaybeT m
+  if isNothing mby_a
+  then x
+  else f (fromJust mby_a)
 
 anyM :: (Monad f, Traversable t) => (a -> f Bool) -> t a -> f Bool
 anyM f = liftM or . mapM f

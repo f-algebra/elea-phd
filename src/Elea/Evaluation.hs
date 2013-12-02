@@ -3,7 +3,7 @@
 -- (reduction of pattern matches over a constructor term).
 module Elea.Evaluation 
 (
-  trySteps, run, steps, 
+  run, steps, 
 )
 where
 
@@ -18,18 +18,12 @@ import qualified Elea.Env as Env
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 
-trySteps :: forall a m . Monad m => [a -> MaybeT m a] -> a -> m a
-trySteps steps x = id   
-  . liftM (fromMaybe x)
-  . firstM
-  $ map (runMaybeT . ($ x)) steps
-
 run :: Term -> Term
-run = runIdentity . trySteps steps
+run = runIdentity . Fold.rewriteStepsM steps
 
 steps :: Monad m => [Term -> MaybeT m Term]
 steps = 
-  [ normaliseApp
+  [ normaliseApp  
   , beta
   , eta
   , caseOfCon

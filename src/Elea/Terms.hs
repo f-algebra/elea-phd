@@ -2,19 +2,7 @@
 -- 'Term's, but which also require other modules based on Elea.Term.
 module Elea.Terms
 (
-  isBaseCase, isRecursiveInd,
-  isFinite, variablesFinitelyUsed,
-  variablesUnused, recursionDepth,
-  recursiveInjArgs, recursivePatternArgs,
-  replace, replaceRestricted, contains, containsUnifiable,
-  nthArgument, collectM, occurrences,
-  generalise, generaliseMany, loweredAltTerm,
-  buildCaseOfM, buildCaseOf,
-  revertMatchesWhenM, revertMatches, revertMatchesWhen,
-  descendWhileM, strictVars, isolateArguments,
-  isProductive, normalised, expressMatches,
-  minimumInjDepth, maximumInjDepth, injDepth,
-  restricted, branchesOnly,
+  replace,
   module Elea.Term,
 )
 where
@@ -29,7 +17,7 @@ import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
 import qualified Elea.Context as Context
 import qualified Elea.Typing as Typing
-import qualified Elea.Simplifier as Simp
+import qualified Elea.Evaluation as Eval
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Error as Err
@@ -38,6 +26,31 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
 import qualified Control.Monad.Trans as Trans
+
+doReplace :: Term -> Env.TrackIndices (Term, Term) Term
+doReplace term = do
+  (me, with) <- Env.tracked
+  if term == me
+  then return with
+  else return term
+  
+-- | Replace all instances of one term with another within a term.
+replace :: Term -> Term -> Term -> Term
+replace me with = id
+  . Env.trackIndices (me, with)
+  . Fold.transformM doReplace
+  where
+  -- 'Env.TrackIndices' is needed to make sure indices
+  -- are properly updated as we move inside 
+  -- the term, e.g. if we pass inside a lambda.
+  doReplace :: Term -> Env.TrackIndices (Term, Term) Term
+  doReplace term = do
+    (me, with) <- Env.tracked
+    if term == me
+    then return with
+    else return term
+
+{-
 
 -- | For a given inductive type, return whether the constructor at that 
 -- index is a base case.
@@ -587,4 +600,4 @@ instance Fold.Transformable RestrictedTerm where
     select term =
       -- selectAll is monadic, so we use runIdentity to strip the monad off.
       runIdentity (Fold.selectAll term)
-
+-}

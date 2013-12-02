@@ -186,11 +186,14 @@ rewriteOnceM :: (Monad m, TransformableM (StateT Bool m) t) =>
 rewriteOnceM = isoRewriteOnceM id
 
 isoRewriteStepsM :: (Monad m, TransformableM m t) =>
-  Iso a t -> [a -> m (Maybe a)] -> a -> m a
-isoRewriteStepsM iso steps = isoRewriteM iso (\t -> firstM (map ($ t) steps))
+  Iso a t -> [a -> MaybeT m a] -> a -> m a
+isoRewriteStepsM iso steps = 
+  isoRewriteM iso rrwt
+  where
+  rrwt t = firstM (map (\f -> runMaybeT (f t)) steps)
    
 rewriteStepsM :: (Monad m, TransformableM m t) =>
-  [t -> m (Maybe t)] -> t -> m t
+  [t -> MaybeT m t] -> t -> m t
 rewriteStepsM = isoRewriteStepsM id
     
 isoTransform :: Bifoldable t => Iso a t -> (a -> a) -> a -> a
