@@ -65,6 +65,9 @@ instance Env.Readable m => ShowM m Term where
       then return (show idx)
       else do
         Bind lbl _ <- Env.boundAt idx
+        let lbl' | ' ' `elem` lbl = "\"" ++ lbl ++ "\""
+                 | otherwise = lbl
+                 
         -- Count the number of bindings before this one
         -- which have the same label
         let same_lbl_count = id
@@ -72,11 +75,12 @@ instance Env.Readable m => ShowM m Term where
               . filter (== lbl)
               . map Type.boundLabel
               $ take (fromEnum idx) bs
+              
         -- Append this count to the end of the variable label, so we know
         -- exactly which variable we are considering
         if same_lbl_count > 0
-        then return (lbl ++ "[" ++ show (same_lbl_count + 1) ++ "]")
-        else return lbl
+        then return (lbl' ++ "[" ++ show (same_lbl_count + 1) ++ "]")
+        else return lbl'
 
     fshow other = 
       return . show . fmap fst $ other

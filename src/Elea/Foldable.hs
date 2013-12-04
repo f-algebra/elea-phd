@@ -33,11 +33,11 @@ class (Monad m, Bifoldable t) => FoldableM m t where
   -- of this distributivity law. Sexy.
   -- Needs a 'Proxy' argument though otherwise it cannot work out
   -- the type 't'. 
-  distM :: proxy t -> Base t (m a) -> m (Base t a)
+  distM :: Base t (m a, t) -> m (Base t a)
    
   cataM :: forall a . (Base t a -> m a) -> t -> m a
   cataM f = 
-    join . liftM f . distM (Proxy :: Proxy t) . fmap (cataM f) . project
+    join . liftM f . distM . fmap (cataM f &&& id) . project
     
   paraM :: forall a . (Base t (a, t) -> m a) -> t -> m a
   paraM f = liftM fst . cataM g
@@ -69,34 +69,33 @@ isoTransformM iso f = id
   . Iso.embed iso
   
 isoRewriteM :: TransformableM m t =>
-  Iso a t -> (a -> m (Maybe a)) -> a -> m a
+  Iso a t -> (a -> MaybeT m a) -> a -> m a
 isoRewriteM iso f = id
   . liftM (Iso.project iso)
   . transformM rrwt 
   . Iso.embed iso
   where
-  f' = liftM (fmap (Iso.embed iso)) . f . Iso.project iso
-  rrwt t = join . liftM (maybe (return t) (rewriteM f')) . f' $ t
+  f' = liftM (Iso.embed iso) . f . Iso.project iso
+  rrwt t = maybeT (return t) (rewriteM f') (f' t)
   
 -- | A version of 'isoRewriteM' which checks whether any rewrites 
 -- were actually performed; returning 'Nothing' if none were.
 isoRewriteM' :: forall a t m . 
     (Monad m, TransformableM (WriterT Monoid.Any m) t) =>
-  Iso a t -> (a -> m (Maybe a)) -> a -> m (Maybe a)
+  Iso a t -> (a -> MaybeT m a) -> a -> MaybeT m a
 isoRewriteM' iso f x = do
-  (x', any) <- runWriterT (isoRewriteM iso f' x)
-  if Monoid.getAny any
-  then return (Just x')
-  else return Nothing
+  (x', any) <- lift (runWriterT (isoRewriteM iso f' x))
+  guard (Monoid.getAny any)
+  return x'
   where
-  f' :: a -> WriterT Monoid.Any m (Maybe a)
+  f' :: a -> MaybeT (WriterT Monoid.Any m) a
   f' x = do
-    mby_x' <- lift (f x)
-    when (isJust mby_x') (tell (Monoid.Any True))
-    return mby_x'
-  
+    x' <- MaybeT (lift (runMaybeT (f x)))
+    tell (Monoid.Any True)
+    return x'
+    
 rewriteM :: TransformableM m t =>
-  (t -> m (Maybe t)) -> t -> m t
+  (t -> MaybeT m t) -> t -> m t
 rewriteM = isoRewriteM id
 
 type WriterTransformableM w m t = 
@@ -123,12 +122,16 @@ all, any :: WriterTransformableM Monoid.All Identity t =>
 all p = runIdentity . allM (return . p)
 any p = not . all (not . p)
 
-isoFoldM :: WriterTransformableM w m t =>
+isoFoldM :: forall w m t a . WriterTransformableM w m t =>
   Iso a t -> (a -> m w) -> a -> m w
-isoFoldM iso f = execWriterT . isoRewriteM iso rrwt
+isoFoldM iso f = execWriterT . isoRewriteM iso tellAll
   where
-  rrwt = const (return Nothing) <=< tell <=< (lift . f)
-  
+  tellAll :: a -> MaybeT (WriterT w m) a 
+  tellAll t = do
+    w <- (lift . lift . f) t
+    tell w
+    mzero
+    
 isoFindM :: WriterTransformableM (Monoid.First b) m t =>
   Iso a t -> (a -> m (Maybe b)) -> a -> m (Maybe b)
 isoFindM iso f = id
@@ -190,7 +193,7 @@ isoRewriteStepsM :: (Monad m, TransformableM m t) =>
 isoRewriteStepsM iso steps = 
   isoRewriteM iso rrwt
   where
-  rrwt t = firstM (map (\f -> runMaybeT (f t)) steps)
+  rrwt t = MaybeT $ firstM (map (\f -> runMaybeT (f t)) steps)
    
 rewriteStepsM :: (Monad m, TransformableM m t) =>
   [t -> MaybeT m t] -> t -> m t
@@ -247,13 +250,13 @@ selectiveTransformM p f t = do
       desc' = zip desc (project t)
   t' <- id
     . liftM embed 
-    . distM (Proxy :: Proxy t)
+    . distM
     $ fmap descent desc'
   if here
   then f t'
   else return t'
   where
-  descent :: (Bool, t) -> m t
-  descent (True, t) = selectiveTransformM p f t
-  descent (False, t) = return t
+  descent :: (Bool, t) -> (m t, t)
+  descent (True, t) = (selectiveTransformM p f t, t)
+  descent (False, t) = (return t, t)
 

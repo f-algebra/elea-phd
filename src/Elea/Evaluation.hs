@@ -3,7 +3,7 @@
 -- (reduction of pattern matches over a constructor term).
 module Elea.Evaluation 
 (
-  run, steps, 
+  run, steps
 )
 where
 
@@ -18,10 +18,11 @@ import qualified Elea.Env as Env
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 
-run :: Term -> Term
-run = runIdentity . Fold.rewriteStepsM steps
 
-steps :: Monad m => [Term -> MaybeT m Term]
+run :: Term -> Term
+run = Fold.rewriteSteps steps
+
+steps :: [Term -> Maybe Term]
 steps = 
   [ normaliseApp  
   , beta
@@ -29,17 +30,17 @@ steps =
   , caseOfCon
   ]
 
-normaliseApp :: Monad m => Term -> MaybeT m Term
+normaliseApp :: Term -> Maybe Term
 normaliseApp (App f []) = return f
 normaliseApp (App (App f ts1) ts2) = return (App f (ts1 ++ ts2))
 normaliseApp _ = mzero
   
-beta :: Monad m => Term -> MaybeT m Term
+beta :: Term -> Maybe Term
 beta (App (Lam _ rhs) (arg:args)) = 
   return (app (subst arg rhs) args)
 beta _ = mzero
   
-eta :: Monad m => Term -> MaybeT m Term
+eta :: Term -> Maybe Term
 eta (Lam _ (App f xs@(last -> Var 0)))
   | not (0 `Set.member` Indices.free new_t) = 
     return (Indices.lower new_t)
@@ -47,7 +48,7 @@ eta (Lam _ (App f xs@(last -> Var 0)))
   new_t = app f (init xs)
 eta _ = mzero
 
-caseOfCon :: Monad m => Term -> MaybeT m Term
+caseOfCon :: Term -> Maybe Term
 caseOfCon (Case ind cse_t alts)
   | Con _ (fromEnum -> n) : args <- flattenApp cse_t
   , Alt bs alt_t <- alts !! n = id

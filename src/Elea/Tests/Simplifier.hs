@@ -6,20 +6,23 @@ where
 
 import Prelude ()
 import Elea.Prelude
-import Elea.Term ( Term )
-
+import Elea.Term
+import qualified Elea.Env as Env
 import qualified Elea.Testing as Test
-import qualified Elea.Simplifier as Simplifier
+import qualified Elea.Simplifier as Simp
 
-assertSimplifyEq :: Term -> Term -> Test.Test
-assertSimplifyEq = Test.assertEq `on` Simplifier.run
+checkEquation :: Equation -> Test.Test
+checkEquation (Equals name bs t1 t2) = id
+  . Test.label name
+  . Env.empty
+  . Env.bindMany bs $ do
+    t1' <- Simp.run t1
+    t2' <- Simp.run t2
+    return (Test.assertEq t1' t2')
   
 tests = Test.label "Simplifier"
     $ Test.run $ do
   Test.loadPrelude
-  
-  simple_t <- Test.term "fun (a:*) (x:a) -> (fun (y:a) (z:a) -> y) x"
-  simple_aim <- Test.term "fun (a:*) (x:a) (y:a) -> x"
-  return $ assertSimplifyEq simple_t simple_aim
-
+  eqs <- Test.loadFile "src/Elea/Tests/simplifier.elea"
+  return (map checkEquation eqs)
 

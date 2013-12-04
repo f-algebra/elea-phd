@@ -1,7 +1,7 @@
 {
 module Elea.Parser 
 (
-  program, term
+  program, term, _type
 )
 where
 
@@ -19,9 +19,19 @@ import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Error as Err
 import qualified Data.Map as Map
 
+-- Inductive data types
 type TypeDef = (String, [[String]])
+
+-- Let bindings of terms
 type TermDef = (String, RawTerm)
-type RawProgram = ([TypeDef], [TermDef])
+
+-- "show" declarations to decide equality between terms
+type PropDef = (String, [RawBind], (RawTerm, RawTerm))
+
+data RawProgram 
+  = RawProgram  { _programTypes :: [TypeDef]
+                , _programTerms :: [TermDef]
+                , _programProps :: [PropDef] }
 
 data RawType 
   = TBase String
@@ -48,11 +58,12 @@ data Scope
   = Scope { _bindMap :: Map String Term
           , _bindStack :: [Bind] }
   
-mkLabels [''Scope, ''RawBind]
+mkLabels [''Scope, ''RawBind, ''RawProgram]
 }
 
 %name happyProgram Program
 %name happyTerm Term
+%name happyType Type
 
 %tokentype { Token }
 
@@ -81,6 +92,8 @@ mkLabels [''Scope, ''RawBind]
   ind         { TokenInd }
   any         { TokenAny }
   pi          { TokenPi }
+  prop        { TokenProp }
+  all         { TokenAll }
   
 %right '->'
   
@@ -129,12 +142,24 @@ Term :: { RawTerm }
   
 TermDef :: { TermDef }
   : let name '=' Term                 { ($2, $4) }
+  
+Equation :: { (RawTerm, RawTerm) }
+  : Term                              { ($1, TVar "True") }
+  | Term '=' Term                     { ($1, $3) }
+  
+PropDef :: { PropDef }
+  : prop name ':' all Bindings '->' Equation   
+                                      { ($2, $5, $7) }
+  | prop name ':' Equation
+                                      { ($2, [], $4) }
 
 Program :: { RawProgram }
-  : TypeDef                           { ([$1], []) }
-  | TermDef                           { ([], [$1]) }
-  | Program TypeDef                   { first (++ [$2]) $1 }
-  | Program TermDef                   { second (++ [$2]) $1 }
+  : TypeDef                           { RawProgram [$1] [] [] }
+  | TermDef                           { RawProgram [] [$1] [] }
+  | PropDef                           { RawProgram [] [] [$1] }
+  | Program TypeDef                   { modify programTypes (++ [$2]) $1 }
+  | Program TermDef                   { modify programTerms (++ [$2]) $1 }
+  | Program PropDef                   { modify programProps (++ [$2]) $1 }
 
 {
 
@@ -149,7 +174,9 @@ instance Monad m => Env.Writable (ReaderT Scope m) where
     where
     addToStack = insertAt (enum at) b
     addToMap = Map.insert (boundLabel b) (Var at)
-
+    
+  matched _ _ = id
+  
 instance Err.Monad m => Env.Readable (ReaderT Scope m) where
   bindings = asks (get bindStack)
   
@@ -168,13 +195,28 @@ term = id
   . happyTerm 
   . lexer
   
-program :: forall m . (Err.Monad m, Defs.Monad m) => String -> m ()
+_type :: (Err.Monad m, Defs.Monad m) => String -> m Type
+_type = id
+  . withEmptyScope
+  . parseRawType
+  . happyType 
+  . lexer
+  
+program :: forall m . (Err.Monad m, Defs.Monad m) => String -> m [Equation]
 program text = 
   withEmptyScope $ do
     mapM_ defineType types
     mapM_ defineTerm terms
+    mapM parseProp props
   where
-  (types, terms) = happyProgram (lexer text)
+  RawProgram types terms props = happyProgram (lexer text)
+  
+  parseProp :: PropDef -> ParserMonad m Equation
+  parseProp (name, rbs, (rt1, rt2)) = do
+    bs <- mapM parseRawBind rbs
+    t1 <- Env.bindMany bs (parseAndCheckTerm rt1)
+    t2 <- Env.bindMany bs (parseAndCheckTerm rt2)
+    return (Equals name bs t1 t2)
   
   defineType :: TypeDef -> ParserMonad m ()
   defineType (ind_name, raw_cons) = do
@@ -316,6 +358,8 @@ data Token
   | TokenInj Nat
   | TokenAny
   | TokenPi
+  | TokenProp
+  | TokenAll
   
 happyError :: [Token] -> a
 happyError tokens = error $ "Parse error\n" ++ (show tokens)
@@ -339,6 +383,9 @@ lexer ('(':cs) = TokenOP : lexer cs
 lexer (')':cs) = TokenCP : lexer cs
 lexer ('|':cs) = TokenBar : lexer cs
 lexer ('=':cs) = TokenEq : lexer cs
+lexer ('\"':cs) = TokenName name : lexer rest
+  where
+  (name, '\"':rest) = span (not . (== '\"')) cs
 lexer ('{':cs) = TokenName ("{" ++ name ++ "}") : lexer rest
   where
   (name, '}':rest) = span (not . (== '}')) cs
@@ -357,6 +404,8 @@ lexer (c:cs)
       ("type", rest) -> TokenType : lexer rest
       ("ind", rest) -> TokenInd : lexer rest
       ("end", rest) -> TokenEnd : lexer rest
+      ("prop", rest) -> TokenProp : lexer rest
+      ("forall", rest) -> TokenAll : lexer rest
       (name, rest) -> TokenName name : lexer rest
 lexer cs = error $ "Unrecognized symbol " ++ take 1 cs
 
@@ -380,6 +429,8 @@ instance Show Token where
   show TokenInd = "ind"
   show TokenType = "type"
   show TokenEnd = "end"
+  show TokenProp = "prop"
+  show TokenAll = "forall"
   show (TokenInj n) = "inj" ++ show n
   
   showList = (++) . intercalate " " . map show

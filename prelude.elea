@@ -34,6 +34,8 @@ let and =
     
 let implies = fun (p:bool) (q:bool) -> or (not p) q
 
+prop add_comm : forall (x: nat) (y: nat) ->
+  add x y = add y x
     
 /* Natural numbers */    
     

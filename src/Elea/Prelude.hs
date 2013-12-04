@@ -76,7 +76,7 @@ import Control.Monad ( liftM, ap, replicateM, join, zipWithM_,
   (>=>), (<=<), (>>), MonadPlus (..) )
 import Control.Monad.Trans ( MonadTrans (..), lift, liftIO )
 import Control.Monad.State ( evalStateT, execState, runState, evalState,
-  MonadState, State (..), StateT (..) )
+  MonadState, State (..), StateT (..), mapStateT )
 import Control.Monad.Reader ( 
   MonadReader (..), Reader (..), ReaderT (..), 
   asks, runReader, mapReaderT, withReaderT, withReader )
@@ -87,7 +87,7 @@ import Control.Monad.Trans.Maybe
 import Control.Monad.RWS ( RWS (..), RWST (..), execRWS, evalRWS, runRWS )
 import Control.Monad.Identity ( Identity (..) )
 import Control.Monad.Trans.Identity ( IdentityT (..) )
-import Control.Monad.Trans.Either ( EitherT (..) )
+import Control.Monad.Trans.Either ( EitherT (..), mapEitherT )
 import Control.Monad.Fix
 import Control.Exception ( assert )
 

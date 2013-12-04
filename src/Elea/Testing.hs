@@ -3,7 +3,7 @@ module Elea.Testing (
   label, list, run, 
   assert, assertEq, assertNot,
   loadPrelude, loadFile,
-  term
+  term, _type,
 ) where
 
 import Prelude ()
@@ -46,12 +46,17 @@ prelude :: String
 prelude = unsafePerformIO
   $ readFile "prelude.elea"
   
-loadFile :: Defs.Monad m => String -> m ()
+loadFile :: Defs.Monad m => String -> m [Equation]
 loadFile = Err.noneM . Parse.program . unsafePerformIO . readFile
 
 loadPrelude :: Defs.Monad m => m ()
-loadPrelude = Err.noneM (Parse.program prelude)
+loadPrelude = do
+  eqs <- Err.noneM (Parse.program prelude)
+  return ()
 
 term :: Defs.Monad m => String -> m Term
 term = Err.noneM . Parse.term
+
+_type :: Defs.Monad m => String -> m Type
+_type = Err.noneM . Parse._type
 

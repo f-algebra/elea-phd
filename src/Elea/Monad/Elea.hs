@@ -62,6 +62,8 @@ instance Env.Writable Elea where
   bindAt at b = 
     local (modify readBinds (insertAt (enum at) b))
     
+  matched _ _ = id
+    
 instance Env.Readable Elea where
   boundAt at = do
     bs <- Env.bindings

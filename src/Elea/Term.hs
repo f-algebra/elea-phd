@@ -3,8 +3,8 @@ module Elea.Term
   Term (..), Alt (..),
   Term' (..), Alt' (..),
   Type, Bind (..),
-  ContainsTerms (..),
-  mapTerms,
+  ContainsTerms (..), mapTerms,
+  Equation (..), equationName, equationLHS, equationRHS,
   app,
   projectAlt, embedAlt,
   altBindings, altInner,
@@ -13,7 +13,8 @@ module Elea.Term
   flattenLam, unflattenLam,
   isCon, isLam, isVar,
   isFix, isAbsurd, isCase,
-  fromVar, altPattern, 
+  fromVar, 
+  altPattern, isFinite,
 )
 where
 
@@ -49,11 +50,17 @@ data Term
   deriving ( Eq, Ord )
 
 data Alt
-  = Alt   { _altBindings :: ![Bind]
-          , _altInner :: !Term }
+  = Alt     { _altBindings :: ![Bind]
+            , _altInner :: !Term }
   deriving ( Eq, Ord )
   
-  
+-- | Equations between terms
+data Equation
+  = Equals  { _equationName :: String
+            , _equationVars :: [Bind]
+            , _equationLHS :: Term
+            , _equationRHS :: Term }
+ 
 -- * Base types for generalised cata/para morphisms.
   
 type instance Fold.Base Term = Term'
@@ -73,7 +80,7 @@ data Alt' a
          , _altInner' :: a }
   deriving ( Functor, Foldable, Traversable )
   
-mkLabels [ ''Alt, ''Alt' ]
+mkLabels [ ''Alt, ''Alt', ''Equation ]
 
 projectAlt :: Alt -> Alt' Term
 projectAlt (Alt bs t) = Alt' bs t
@@ -99,11 +106,14 @@ instance Fold.Unfoldable Term where
   embed (Case' ind t alts) = Case ind t (map embedAlt alts)
   embed (Absurd' ty) = Absurd ty
   
-class (Substitutable t, Inner t ~ Term) => ContainsTerms t where
+class ContainsTerms t where
   mapTermsM :: Monad m => (Term -> m Term) -> t -> m t
   
 mapTerms :: ContainsTerms t => (Term -> Term) -> t -> t
 mapTerms f = runIdentity . mapTermsM (return . f)
+
+instance ContainsTerms Equation where
+  mapTermsM f = modifyM equationLHS f <=< modifyM equationRHS f
 
 -- * Some generally helpful functions
 
@@ -170,4 +180,15 @@ altPattern ty@(Type.Ind _ cons) n = id
     . length
     . snd
     $ cons !! fromEnum n
+    
+-- | Whether a term contains a finite amount of information, from a
+-- strictness point of view. So @[x]@ is finite, even though @x@ is a variable
+-- since it is not of the same type as the overall term.
+isFinite :: Term -> Bool
+isFinite (Con {}) = True
+isFinite (App (Con ind n) args) = id
+  . all isFinite 
+  . map (args !!)
+  $ Type.recursiveArgs ind n
+isFinite _ = False
 

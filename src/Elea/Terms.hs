@@ -2,8 +2,9 @@
 -- 'Term's, but which also require other modules based on Elea.Term.
 module Elea.Terms
 (
-  replace,
   module Elea.Term,
+  replace, unfoldFix,
+  decreasingArgs,
 )
 where
 
@@ -13,6 +14,7 @@ import Elea.Index
 import Elea.Term
 import Elea.Show
 import Elea.Context ( Context )
+import qualified Elea.Type as Type
 import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
 import qualified Elea.Context as Context
@@ -27,12 +29,8 @@ import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
 import qualified Control.Monad.Trans as Trans
 
-doReplace :: Term -> Env.TrackIndices (Term, Term) Term
-doReplace term = do
-  (me, with) <- Env.tracked
-  if term == me
-  then return with
-  else return term
+unfoldFix :: Term -> Term
+unfoldFix fix@(Fix _ fix_t) = subst fix fix_t
   
 -- | Replace all instances of one term with another within a term.
 replace :: Term -> Term -> Term -> Term
@@ -49,7 +47,41 @@ replace me with = id
     if term == me
     then return with
     else return term
-
+  
+  
+-- | Returns the indices of the strictly decreasing arguments for
+-- a given function. Undefined if not given a 'Fix'.
+decreasingArgs :: Term -> [Int]
+decreasingArgs (Fix fix_b fix_t) = 
+  filter isDecreasing [0..length arg_bs - 1]
+  where
+  (arg_bs, fix_body) = flattenLam fix_t
+  
+  isDecreasing :: Int -> Bool
+  isDecreasing arg_i = id
+    . Env.trackIndices fix_f
+    
+    -- We track all terms which are 
+    -- structurally smaller than our starting argument
+    . Env.trackSmallerThan (Var arg_idx)
+    $ Fold.allM decreasing fix_body
+    where
+    -- The deBrujin index of the lambda bound variable we are tracking
+    arg_idx = enum (length arg_bs - (arg_i + 1))
+    
+    -- The deBrujin index of the fix bound function variable
+    fix_f = enum (length arg_bs)
+    
+    decreasing :: 
+      Term -> Env.TrackSmallerTermsT (Env.TrackIndices Index) Bool
+    decreasing t@(App (Var f) args) = do
+      fix_f <- Trans.lift Env.tracked
+      if fix_f /= f
+      then return True
+      else Env.isSmaller (args !! arg_i)
+    decreasing _ = 
+      return True
+  
 {-
 
 -- | For a given inductive type, return whether the constructor at that 
@@ -67,24 +99,7 @@ isBaseCase (Ind _ cons) inj_n =  id
     . uncurry unflattenPi
     . second (const Set)
     . flattenPi
-  
--- | For a given inductive type and constructor number this returns the
--- argument positions which are recursive.
-recursiveInjArgs :: Type -> Nat -> Set Int
-recursiveInjArgs (Ind _ cons) inj_n = id
-  . mconcat
-  . zipWith isRec [0..]
-  . map (get boundType)
-  $ args
-  where
-  con = cons !! fromEnum inj_n
-  (args, _) = flattenPi (get boundType con)
-  
-  isRec :: Int -> Type -> Set Int
-  isRec x ty 
-    | toEnum x `Set.member` Indices.free ty = Set.singleton x
-    | otherwise = mempty
-    
+
 -- | This is just the arguments of 'altPattern' at
 -- the positions from 'recursiveInjArgs' 
 recursivePatternArgs :: Type -> Nat -> Set Index
@@ -131,16 +146,6 @@ recursionDepth (Fix _ _ rhs) = id
         $ recursivePatternArgs ind_ty alt_n
     caseDepth _ = 
       return mempty
-
--- | Whether a term contains a finite amount of information, from a
--- strictness point of view. So @[x]@ is finite, even though @x@ is a variable
--- since it is not of the same type as the overall term.
-isFinite :: Term -> Bool
-isFinite (flattenApp -> Inj n ind_ty : args) = 
-  all isFinite rec_args
-  where
-  rec_args = Set.map (args !!) (recursiveInjArgs ind_ty n)
-isFinite _ = False
 
 -- | Given a set of branches from a pattern match, this checks whether
 -- the recursive match variables are actually used. 

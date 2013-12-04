@@ -8,9 +8,9 @@ import Prelude ()
 import Elea.Prelude
 import Elea.Term
 import Elea.Terms
+import qualified Elea.Env as Env
 import qualified Elea.Testing as Test
 import qualified Elea.Simplifier as Simp
-import qualified Elea.Floating as Float
 import qualified Elea.Monad.Elea as Elea
 import qualified Data.Set as Set
 
@@ -18,6 +18,28 @@ tests = Test.label "Terms"
     $ Test.run $ do
   Test.loadPrelude
   
+  add <- Test.term "add"
+  leq <- Test.term "leq"
+  let (_, App add' _) = flattenLam (Env.empty (Simp.run add))
+  
+  one <- Test.term "1"
+  two <- Test.term "2"
+  Lam _ suc_x <- Test.term "fun (x: nat) -> Suc x"
+  
+  let dec1 = Test.assertEq [0] (decreasingArgs add)
+      dec2 = Test.assertEq [0, 1] (decreasingArgs leq)
+      dec3 = Test.assertEq [0] (decreasingArgs add')
+      
+      fin1 = Test.assert (isFinite one)
+      fin2 = Test.assert (isFinite two)
+      fin3 = Test.assertNot (isFinite suc_x)
+  
+  return $ Test.list $
+    [ dec1, dec2, dec3
+    , fin1, fin2, fin3 
+    ]
+  
+  {-
   nat_ty <- Test.term "nat"
   bool_ty <- Test.term "bool"
   list_ty <- Test.term "list nat"
@@ -77,4 +99,4 @@ tests = Test.label "Terms"
     , test10, test11, test12, test13, test14, test15, test16
     , test17, test18, test19, test20, test21, test22
     , test23, test24, test25 ]
-  
+  -}

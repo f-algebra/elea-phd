@@ -3,7 +3,7 @@ module Elea.Type
   Type (..), Ind (..), ConArg (..), Bind (..),
   isInd, isFun,
   unflatten, flatten, unfold,
-  empty, unit, nat, bool, natlist,
+  isRecursive, recursiveArgs, isBaseCase,
 )
 where
 
@@ -13,7 +13,7 @@ import Elea.Monad.Error as Error
 
 -- An argument to a constructor is either the inductive type we are defining
 -- or another type.
-data ConArg = IndVar | ConArg Type
+data ConArg = IndVar | ConArg !Type
   deriving ( Eq, Ord )
  
 -- | "Ind"uctive type
@@ -52,14 +52,7 @@ instance Ord Bind where
 instance Ord Ind where
   compare = compare `on` map snd . constructors
 
--- Some built in types
-
-empty = Ind "empty" []
-unit = Ind "unit" [("()", [])]
-bool = Ind "bool" [("True", []), ("False", [])]
-nat = Ind "nat" [("0", []), ("Suc", [IndVar])]
-natlist = Ind "nlist" [("Nil", []), ("Cons", [ConArg (Base nat), IndVar])]
-
+  
 -- Helpful functions
 
 isInd :: Type -> Bool
@@ -91,6 +84,26 @@ unfold ind@(Ind _ cons) =
     unfoldArg :: ConArg -> Type
     unfoldArg IndVar = Base ind
     unfoldArg (ConArg ty) = ty
+    
+-- | Return the indices of the recursive arguments of a given constructor
+recursiveArgs :: Ind -> Nat -> [Int]
+recursiveArgs (Ind _ cons) n =
+  findIndices (== IndVar) con_args
+  where
+  (_, con_args) = cons !! enum n
+  
+-- | For a given inductive type, return whether the constructor at that 
+-- index is a base case.
+isBaseCase :: Ind -> Nat -> Bool
+isBaseCase ind n = 
+  -- A base case is one that has no recursive arguments
+  recursiveArgs ind n == []
+  
+-- | Whether an inductive type has any recursive constructors.
+isRecursive :: Ind -> Bool
+isRecursive ind = id
+  . any (not . isBaseCase ind . enum)
+  $ [0..length (constructors ind) - 1]
   
 instance Show Ind where
   show = name

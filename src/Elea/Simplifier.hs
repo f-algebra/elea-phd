@@ -2,7 +2,7 @@
 -- not involve fixpoint fusion.
 module Elea.Simplifier
 (
-  
+  run, steps
 )
 where
 
@@ -23,16 +23,28 @@ import qualified Elea.Monad.Error as Err
 import qualified Data.Monoid as Monoid
 import qualified Data.Set as Set
 import qualified Data.Map as Map
+import qualified Control.Monad.Trans as Trans
 
+run :: Env.Readable m => Term -> m Term
+run = Fold.rewriteStepsM steps
 
 steps :: Env.Readable m => [Term -> MaybeT m Term]
-steps =
+steps = eval_steps ++
   [ const mzero
   , caseFun
   , caseApp
   , appCase
+  , caseCase
   , absurdity
+  , constArg
+  , identityCase
+  , uselessFix
+  , finiteArgFix
   ]
+  where
+  -- We include the evaluation steps in our simplification
+  -- which we lift from @Maybe@ to @MaybeT m@.
+  eval_steps = map ((MaybeT . return) .) Eval.steps
 
 
 -- | This isn't a step, but it's used in three steps below.
@@ -56,8 +68,8 @@ applyCase (Case ind cse_t alts) inner_t =
     alt_t = Term.replace (liftHere cse_t) pat (liftHere inner_t)
     
  
--- | We do not allow pattern matches to return function typed values.
--- We will add a new lambda above one if this is the case.
+-- | We do not want pattern matches to return function typed values,
+-- so we add a new lambda above one if this is the case.
 caseFun :: Env.Readable m => Term -> MaybeT m Term
 caseFun cse@(Case ind t alts) = do
   cse_ty <- Err.noneM (Typing.typeOf cse)
@@ -102,6 +114,14 @@ appCase term@(App _ args) = do
 appCase _ = mzero
 
 
+-- | If we are pattern matching on a pattern match then remove this 
+-- using distributivity.
+caseCase :: Monad m => Term -> MaybeT m Term
+caseCase outer_cse@(Case _ inner_cse@(Case {}) _) =
+  return (applyCase inner_cse outer_cse)
+caseCase _ = mzero
+
+
 -- | Finds terms that are absurd and sets them that way.
 -- So far it detects pattern matching over absurdity, 
 -- and applying arguments to an absurd function.
@@ -119,7 +139,6 @@ absurdity _ =
   mzero
   
   
- 
 -- | If an argument to a 'Fix' never changes in any recursive call
 -- then we should float that lambda abstraction outside the 'Fix'.
 constArg :: Monad m => Term -> MaybeT m Term
@@ -168,7 +187,7 @@ constArg (Fix (Bind fix_name fix_ty) fix_t) = do
     
     -- Remove the argument everywhere it appears
     . Env.trackIndices 0
-    . Fold.rewriteM removeArg
+    . Fold.transformM removeArg
     
     -- Remove the lambda, and replace all occurrences of that variable
     -- with index 1 (here index 0 will be the fix variable)
@@ -185,8 +204,7 @@ constArg (Fix (Bind fix_name fix_ty) fix_t) = do
     -- The arguments that will be applied outside the fix
     outer_args = id
       . map (Var . enum)
-      . reverse
-      $ [1..arg_i - 1]
+      $ reverse [1..arg_i]
     
     -- The new type binding for the fix, with the given argument removed
     fix_b' = Bind fix_name fix_ty'
@@ -196,12 +214,47 @@ constArg (Fix (Bind fix_name fix_ty) fix_t) = do
         . removeAt arg_i
         $ Type.flatten fix_ty
     
-    removeArg :: Term -> MaybeT (Env.TrackIndices Index) Term
-    removeArg t@(App (Var f) args) = do   
+    removeArg :: Term -> Env.TrackIndices Index Term
+    removeArg term@(App (Var f) args) = do   
       fix_f <- Env.tracked
-      guard (f == fix_f)
-      return (App (Var f) (removeAt arg_i args))
-    
+      if fix_f == f
+      then return (App (Var f) (removeAt arg_i args))
+      else return term
+    removeArg term = 
+      return term
+      
+constArg _ = mzero
+
+
+-- | If a fixpoint has a finite input to one of its decreasing arguments
+-- then you can safely unfold it.
+finiteArgFix :: Monad m => Term -> MaybeT m Term
+finiteArgFix (App fix@(Fix _ fix_t) args)
+  | any isFinite dec_args = 
+    return (App (Term.unfoldFix fix) args)
+  where
+  dec_args = map (args !!) (Term.decreasingArgs fix)
+finiteArgFix _ = mzero
+
+
+-- | Removes a pattern match which just returns the term it is matching upon.
+identityCase :: Monad m => Term -> MaybeT m Term
+identityCase (Case ind cse_t alts)
+  | and (zipWith isIdAlt [0..] alts) = return cse_t
+  where
+  isIdAlt :: Nat -> Alt -> Bool
+  isIdAlt n (Alt _ alt_t) = alt_t == altPattern ind n
+identityCase _ = mzero
+
+
+-- | Dunno if this ever comes up but if we have a fix without any occurrence
+-- of the fix variable in the body we can just drop it.
+uselessFix :: Monad m => Term -> MaybeT m Term
+uselessFix (Fix _ fix_t)
+  | not (0 `Set.member` Indices.free fix_t) = 
+    return (Indices.lower fix_t)
+uselessFix _ = mzero
+
 
 {-
   -- Find if any arguments never change in any recursive calls, 
@@ -570,95 +623,7 @@ constantFix (Fix _ fix_b fix_t)
 constantFix _ = 
   Nothing
 
- 
--- | If an argument to a 'Fix' never changes in any recursive call
--- then we should float that lambda abstraction outside the 'Fix'.
--- This function is mostly horrific de-Brujin index shifting.
--- I coded it almost entirely by trial and error.
-constArg :: Term -> Maybe Term
-constArg (Fix fix_info fix_b fix_rhs) = do
-  -- Find if any arguments never change in any recursive calls, 
-  -- a "constant" argument, pos is the position of such an argument
-  pos <- find isConstArg [0..length arg_binds - 1]
-  
-  -- Then we run the 'removeConstArg' function on that position, and
-  -- simplify the result
-  return . Simp.run . removeConstArg $ pos
-  where
-  (arg_binds, inner_rhs) = flattenLam fix_rhs
-  fix_index = toEnum (length arg_binds)
-  
-  argIndex :: Int -> Index
-  argIndex arg_pos = 
-    toEnum (length arg_binds - (arg_pos + 1))
-  
-  isConstArg :: Int -> Bool
-  isConstArg arg_pos = id
-    . Env.trackIndices (fix_index, argIndex arg_pos) 
-    $ Fold.isoAllM Term.restricted isConst inner_rhs
-    where
-    isConst :: Term -> Env.TrackIndices (Index, Index) Bool
-    isConst (flattenApp -> (Var fun_idx) : args) 
-      | length args > arg_pos = do
-          (fix_idx, arg_idx) <- Env.tracked
-          let arg = args !! arg_pos
-              Var var_idx = arg
-          return 
-            -- If we aren't dealing the right function, then just return true
-            $ fix_idx /= fun_idx
-            -- Otherwise, check to make sure the argument hasn't changed 
-            || (isVar arg && var_idx == arg_idx)
-    isConst _ = 
-      return True
 
-  -- Returns the original argument to constArg, with the argument
-  -- at the given index floated outside of the 'Fix'.
-  removeConstArg :: Int -> Term
-  removeConstArg arg_pos = id
-    . Indices.lower
-    . stripLam strip_bs
-    . liftManyAt (length strip_bs) 1
-    . Fix (Indices.lift fix_info) new_fix_b
-    . replaceAt 0 (stripLam strip_bs' (Var (toEnum $ length strip_bs)))
-    . substAt Indices.omega (Var 1)
-    . Indices.liftAt 1
-    . unflattenLam left_bs
-    . subst (Var Indices.omega)
-    . unflattenLam right_bs
-    $ inner_rhs
-    where
-    -- Split the lambda bindings up 
-    -- at the position where we are removing one.
-    (left_bs, dropped_b:right_bs) = splitAt arg_pos arg_binds
-    strip_bs = left_bs ++ [dropped_b]
-    strip_bs' = zipWith Indices.liftAt [1..] strip_bs
-    
-    -- Generate the type of our new fix binding from the old one
-    new_fix_b = id
-      . Bind lbl
-      . substAt Indices.omega (Var 0)
-      . Indices.lift
-      . unflattenPi start_bs
-      . subst (Var Indices.omega)
-      . unflattenPi end_bs
-      $ result_ty
-      where
-      Bind lbl (flattenPi -> (arg_tys, result_ty)) = fix_b
-      (start_bs, _:end_bs) = splitAt arg_pos arg_tys
-
-    -- Abstracts new_bs, and reapplies all but the last binding,
-    -- like eta-equality which skipped the last binding.
-    -- E.g. @stripLam [A,B,C] f == fun (_:A) (_:B) (_:C) -> f _2 _1@
-    stripLam :: [Bind] -> Term -> Term
-    stripLam bs = id
-      . unflattenLam bs 
-      . applyArgs (length bs)
-      where
-      applyArgs n t = id
-        . app t
-        $ [ Var (toEnum i) | i <- reverse [1..n-1] ]    
-      
-constArg _ = Nothing
 
 
       
@@ -773,27 +738,6 @@ freeFix outer_fix@(Fix _ _ outer_body)
     return Nothing
   
 freeFix _ = return Nothing
-
-
--- | This one is mostly to get rev-rev to go through. Removes a pattern
--- match which just returns the term it is matching upon.
-identityCase :: Term -> Maybe Term
-identityCase (Case cse_t ind_ty alts)
-  | and (zipWith isIdAlt [0..] alts) = return cse_t
-  where
-  isIdAlt :: Nat -> Alt -> Bool
-  isIdAlt n (Alt bs alt_t) = 
-    alt_t == altPattern (liftMany (length bs) ind_ty) n
-identityCase _ = Nothing
-
-
--- | Dunno if this ever comes up but if we have a fix without any occurrence
--- of the fix variable in the body we can just drop it.
-uselessFix :: Term -> Maybe Term
-uselessFix (Fix _ _ fix_t)
-  | not (0 `Set.member` Indices.free fix_t) = 
-    Just (Indices.lower fix_t)
-uselessFix _ = Nothing
 
 
 -- | Removes a pattern match if every branch returns the same value.
