@@ -1,6 +1,8 @@
 module Elea.Type
 (
   Type (..), Ind (..), ConArg (..), Bind (..),
+  name, constructors, boundLabel, boundType, 
+  empty,
   isInd, isFun,
   unflatten, flatten, unfold,
   isRecursive, recursiveArgs, isBaseCase,
@@ -18,8 +20,8 @@ data ConArg = IndVar | ConArg !Type
  
 -- | "Ind"uctive type
 data Ind 
-  = Ind   { name :: !String
-          , constructors :: ![(String, [ConArg])] }
+  = Ind   { _name :: !String
+          , _constructors :: ![(String, [ConArg])] }
   
 data Type 
   -- | Base types are inductive data types.
@@ -35,22 +37,28 @@ data Type
 -- Something that would be used in a lambda abstraction
 -- or pattern match variables.
 data Bind 
-  = Bind  { boundLabel :: !String
-          , boundType :: !Type }
+  = Bind  { _boundLabel :: !String
+          , _boundType :: !Type }
           
 -- Equality ignores labels.
 instance Eq Bind where
-  (==) = (==) `on` boundType
+  (==) = (==) `on` _boundType
   
 instance Eq Ind where
-  (==) = (==) `on` map snd . constructors
+  (==) = (==) `on` map snd . _constructors
   
 -- Inequality ignores labels.
 instance Ord Bind where
-  compare = compare `on` boundType
+  compare = compare `on` _boundType
   
 instance Ord Ind where
-  compare = compare `on` map snd . constructors
+  compare = compare `on` map snd . _constructors
+  
+mkLabels [ ''Bind, ''Ind ]
+
+-- | The 'empty' type. Made from the constructorless inductive type.
+empty :: Type
+empty = Base (Ind "empty" [])
 
   
 -- Helpful functions
@@ -103,10 +111,10 @@ isBaseCase ind n =
 isRecursive :: Ind -> Bool
 isRecursive ind = id
   . any (not . isBaseCase ind . enum)
-  $ [0..length (constructors ind) - 1]
+  $ [0..length (get constructors ind) - 1]
   
 instance Show Ind where
-  show = name
+  show = get name
   
 instance Show Type where
   show (Base ind) = show ind

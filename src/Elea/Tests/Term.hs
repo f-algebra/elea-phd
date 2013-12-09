@@ -9,6 +9,7 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Terms
 import qualified Elea.Env as Env
+import qualified Elea.Unifier as Unifier
 import qualified Elea.Testing as Test
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Monad.Elea as Elea

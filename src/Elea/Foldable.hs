@@ -31,8 +31,6 @@ class (Monad m, Bifoldable t) => FoldableM m t where
 
   -- We can implement all of these transformations purely in terms
   -- of this distributivity law. Sexy.
-  -- Needs a 'Proxy' argument though otherwise it cannot work out
-  -- the type 't'. 
   distM :: Base t (m a, t) -> m (Base t a)
    
   cataM :: forall a . (Base t a -> m a) -> t -> m a

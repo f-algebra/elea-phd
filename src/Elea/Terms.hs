@@ -5,6 +5,7 @@ module Elea.Terms
   module Elea.Term,
   replace, unfoldFix,
   decreasingArgs,
+  applyCase,
 )
 where
 
@@ -32,6 +33,7 @@ import qualified Control.Monad.Trans as Trans
 unfoldFix :: Term -> Term
 unfoldFix fix@(Fix _ fix_t) = subst fix fix_t
   
+
 -- | Replace all instances of one term with another within a term.
 replace :: Term -> Term -> Term -> Term
 replace me with = id
@@ -81,6 +83,26 @@ decreasingArgs (Fix fix_b fix_t) =
       else Env.isSmaller (args !! arg_i)
     decreasing _ = 
       return True
+      
+      
+-- | Take a case-of term and replace the result term down each branch
+-- with the second term argument.
+applyCase :: Term -> Term -> Term
+applyCase (Case ind cse_t alts) inner_t = 
+  Case ind cse_t (zipWith mkAlt [0..] alts)
+  where
+  mkAlt :: Int -> Alt -> Alt
+  mkAlt n (Alt bs _) = Alt bs alt_t
+    where
+    -- Takes a term from outside the pattern match and lifts the 
+    -- indices to what they should be within this branch
+    liftHere = Indices.liftMany (nlength bs)
+    
+    -- The new alt-term is the given inner_t, with all occurrences of
+    -- the pattern matched term replaced with the pattern it is matched
+    -- to down this branch.
+    pat = altPattern ind (enum n)
+    alt_t = replace (liftHere cse_t) pat (liftHere inner_t)
   
 {-
 

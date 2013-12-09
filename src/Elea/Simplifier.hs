@@ -46,28 +46,7 @@ steps = eval_steps ++
   -- which we lift from @Maybe@ to @MaybeT m@.
   eval_steps = map ((MaybeT . return) .) Eval.steps
 
-
--- | This isn't a step, but it's used in three steps below.
--- It takes a case-of term and replaces the result term down each branch
--- with the provided term.
-applyCase :: Term -> Term -> Term
-applyCase (Case ind cse_t alts) inner_t = 
-  Case ind cse_t (zipWith mkAlt [0..] alts)
-  where
-  mkAlt :: Int -> Alt -> Alt
-  mkAlt n (Alt bs _) = Alt bs alt_t
-    where
-    -- Takes a term from outside the pattern match and lifts the 
-    -- indices to what they should be within this branch
-    liftHere = Indices.liftMany (nlength bs)
-    
-    -- The new alt-term is the given inner_t, with all occurrences of
-    -- the pattern matched term replaced with the pattern it is matched
-    -- to down this branch.
-    pat = altPattern ind (enum n)
-    alt_t = Term.replace (liftHere cse_t) pat (liftHere inner_t)
-    
- 
+  
 -- | We do not want pattern matches to return function typed values,
 -- so we add a new lambda above one if this is the case.
 caseFun :: Env.Readable m => Term -> MaybeT m Term
@@ -109,7 +88,7 @@ caseApp _ = mzero
 appCase :: Monad m => Term -> MaybeT m Term
 appCase term@(App _ args) = do
   cse_t <- liftMaybe (find isCase args)
-  return (applyCase cse_t term)
+  return (Term.applyCase cse_t term)
   
 appCase _ = mzero
 
@@ -118,7 +97,7 @@ appCase _ = mzero
 -- using distributivity.
 caseCase :: Monad m => Term -> MaybeT m Term
 caseCase outer_cse@(Case _ inner_cse@(Case {}) _) =
-  return (applyCase inner_cse outer_cse)
+  return (Term.applyCase inner_cse outer_cse)
 caseCase _ = mzero
 
 
@@ -255,140 +234,8 @@ uselessFix (Fix _ fix_t)
     return (Indices.lower fix_t)
 uselessFix _ = mzero
 
-
-{-
-  -- Find if any arguments never change in any recursive calls, 
-  -- a "constant" argument, pos is the position of such an argument
-  pos <- find isConstArg [0..length arg_binds - 1]
-  
-  -- Then we run the 'removeConstArg' function on that position, and
-  -- simplify the result
-  return . Simp.run . removeConstArg $ pos
-  where
-  (arg_binds, inner_rhs) = flattenLam fix_rhs
-  fix_index = toEnum (length arg_binds)
-  
-  argIndex :: Int -> Index
-  argIndex arg_pos = 
-    toEnum (length arg_binds - (arg_pos + 1))
-  
-  isConstArg :: Int -> Bool
-  isConstArg arg_pos = id
-    . Env.trackIndices (fix_index, argIndex arg_pos) 
-    $ Fold.isoAllM Term.restricted isConst inner_rhs
-    where
-    isConst :: Term -> Env.TrackIndices (Index, Index) Bool
-    isConst (flattenApp -> (Var fun_idx) : args) 
-      | length args > arg_pos = do
-          (fix_idx, arg_idx) <- Env.tracked
-          let arg = args !! arg_pos
-              Var var_idx = arg
-          return 
-            -- If we aren't dealing the right function, then just return true
-            $ fix_idx /= fun_idx
-            -- Otherwise, check to make sure the argument hasn't changed 
-            || (isVar arg && var_idx == arg_idx)
-    isConst _ = 
-      return True
-
-  -- Returns the original argument to constArg, with the argument
-  -- at the given index floated outside of the 'Fix'.
-  removeConstArg :: Int -> Term
-  removeConstArg arg_pos = id
-    . Indices.lower
-    . stripLam strip_bs
-    . liftManyAt (length strip_bs) 1
-    . Fix (Indices.lift fix_info) new_fix_b
-    . replaceAt 0 (stripLam strip_bs' (Var (toEnum $ length strip_bs)))
-    . substAt Indices.omega (Var 1)
-    . Indices.liftAt 1
-    . unflattenLam left_bs
-    . subst (Var Indices.omega)
-    . unflattenLam right_bs
-    $ inner_rhs
-    where
-    -- Split the lambda bindings up 
-    -- at the position where we are removing one.
-    (left_bs, dropped_b:right_bs) = splitAt arg_pos arg_binds
-    strip_bs = left_bs ++ [dropped_b]
-    strip_bs' = zipWith Indices.liftAt [1..] strip_bs
-    
-    -- Generate the type of our new fix binding from the old one
-    new_fix_b = id
-      . Bind lbl
-      . substAt Indices.omega (Var 0)
-      . Indices.lift
-      . unflattenPi start_bs
-      . subst (Var Indices.omega)
-      . unflattenPi end_bs
-      $ result_ty
-      where
-      Bind lbl (flattenPi -> (arg_tys, result_ty)) = fix_b
-      (start_bs, _:end_bs) = splitAt arg_pos arg_tys
-
-    -- Abstracts new_bs, and reapplies all but the last binding,
-    -- like eta-equality which skipped the last binding.
-    -- E.g. @stripLam [A,B,C] f == fun (_:A) (_:B) (_:C) -> f _2 _1@
-    stripLam :: [Bind] -> Term -> Term
-    stripLam bs = id
-      . unflattenLam bs 
-      . applyArgs (length bs)
-      where
-      applyArgs n t = id
-        . app t
-        $ [ Var (toEnum i) | i <- reverse [1..n-1] ]    
-      
-constArg _ = Nothing
-
--}
 {-
 
-run :: Env.Readable m => Term -> m Term
-run = Fold.isoRewriteStepsM Term.restricted (Simp.stepsM ++ steps)
-
-removeConstArgs :: Term -> Term
-removeConstArgs = Simp.run . Fold.isoRewrite Term.restricted constArg
-
-steps :: Env.Readable m => [Term -> m (Maybe Term)]
-steps = id
-  . map Typing.checkStep
-  $ safeSteps ++ unsafe
-  where
-  unsafe =  
-    [ const (return Nothing)
-    , unfoldFixInj
-    , return . unfoldCaseFix
-    , return . unfoldWithinFix
-    , unsafeUnfoldCaseFix
-    ]
-
-safeSteps :: Env.Readable m => [Term -> m (Maybe Term)]
-safeSteps = 
-  Simp.stepsM ++ (map (return .) safe) ++ safeM
-  where
-  safe =  
-    [ const Nothing
-    , constArg
-    , caseApp
-    , appCase
-    , freeCaseFix
-    , identityCase
-    , caseCase
-  --  , raiseVarCase
-    , constantCase
-    , uselessFix
-    , constantFix
-    ]
-    
-  safeM = 
-    [ const (return Nothing)
-    , caseFun
-    , absurdity
-    , freeFix
-  --  , caseOfRec
-    , varEqApply 
-    ]
-    
 -- | Given a predicate P, if it finds a pattern match outside (outer)
 -- of another pattern match (inner), where the P(outer, inner) holds,
 -- then inner is floated outside outer.
@@ -410,31 +257,6 @@ commuteMatchesWhenM _ _ = return Nothing
 commuteMatchesWhen :: (Term -> Term -> Bool) -> Term -> Maybe Term
 commuteMatchesWhen when = 
   runIdentity . commuteMatchesWhenM ((return .) . when)
-  
-
-varEqApply :: Env.Readable m => Term -> m (Maybe Term)
-varEqApply t@(Var {}) = Env.matchedWith t
-varEqApply _ = return Nothing
-
-
-absurdity :: Env.Readable m => Term -> m (Maybe Term)
-absurdity (Absurd _) = return Nothing
-absurdity term
-  | isAbsurd term = do
-    ty <- Err.noneM (Typing.typeOf term)
-    return (Just (Absurd ty))
-  where
-  isAbsurd (App (Absurd _) _) = True
-  isAbsurd (Case (Absurd _) _ _) = True
-  -- For now we assume fixpoints are strict in all their arguments.
-  isAbsurd (App fun args)
-    | isFix fun || isInj fun
-    , any Term.isAbsurd args = True
-  isAbsurd _ = False
-    
-absurdity _ =
-  return Nothing
- 
 
 -- | Unfolds a 'Fix' if one of its arguments is a constructor term,
 -- subject to a load of random, half-baked conditions.
@@ -622,9 +444,6 @@ constantFix (Fix _ fix_b fix_t)
         
 constantFix _ = 
   Nothing
-
-
-
 
       
 -- | If we pattern match inside a 'Fix', but only using variables that exist

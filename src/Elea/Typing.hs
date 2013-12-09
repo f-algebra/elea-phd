@@ -11,6 +11,7 @@ where
 import Prelude ()
 import Elea.Prelude
 import Elea.Index hiding ( lift )
+import Elea.Type
 import Elea.Term
 import Elea.Show ( showM )
 import qualified Elea.Type as Type
@@ -129,7 +130,7 @@ typeOf term = id
     alts_correct = and . zipWith checkAlt cons $ falts
       where
       checkAlt (Bind _ con_ty) (Alt' bs (res_ty, _)) =
-        con_ty == Type.unflatten (map boundType bs ++ [ind_ty'])
+        con_ty == Type.unflatten (map (get boundType) bs ++ [ind_ty'])
         
   fcheck _ = 
     return ()
@@ -140,7 +141,7 @@ typeOf term = id
   ftype (Absurd' ty) =
     return ty
   ftype (Var' idx) =
-    liftM boundType (Env.boundAt idx)
+    liftM (get boundType) (Env.boundAt idx)
   ftype (Lam' (Bind _ ty) (res, _)) = 
     return (Type.Fun ty res)
   ftype (App' (ty, _) []) = 
@@ -151,7 +152,7 @@ typeOf term = id
     return ty
   ftype (Con' ind_ty n) =
     return
-    . boundType
+    . get boundType
     . (!! fromEnum n)
     $ Type.unfold ind_ty
   ftype (Case' _ _ (Alt' _ (ty, _) : _)) =

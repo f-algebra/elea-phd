@@ -35,7 +35,7 @@ tests = Test.label "Contexts"
     ++ "| 0 -> fun (y:nat) -> mul (add 2 2) y "
     ++ "| Suc x' -> fun (y:nat) -> mul x' (add 2 2) end"
     
-  ctx3 = "fun (gap:pi nat->nat) (x:nat) (y:nat) -> add y (gap x)"
+  ctx3 = "fun (gap:nat->nat) (x:nat) (y:nat) -> add y (gap x)"
   aim3 = "fun (gap:nat) (y:nat) -> add y gap"
                                     
   

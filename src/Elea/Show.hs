@@ -73,7 +73,7 @@ instance Env.Readable m => ShowM m Term where
         let same_lbl_count = id
               . length
               . filter (== lbl)
-              . map Type.boundLabel
+              . map (get Type.boundLabel)
               $ take (fromEnum idx) bs
               
         -- Append this count to the end of the variable label, so we know

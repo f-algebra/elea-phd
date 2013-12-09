@@ -7,6 +7,7 @@ where
 
 import Prelude ()
 import Elea.Prelude
+import Elea.Type
 import Elea.Term
 import Elea.Index
 import Elea.Show ( showM )
@@ -998,7 +999,7 @@ instance Monad m => Env.Writable (ReaderT Scope m) where
     . modify bindStack addToStack
     where
     addToStack = insertAt (enum at) b
-    addToMap = Map.insert (boundLabel b) (Var at)
+    addToMap = Map.insert (get boundLabel b) (Var at)
     
   matched _ _ = id
   
@@ -1065,7 +1066,7 @@ program text =
       Defs.defineTerm name (Con ind_ty (enum n))
       where
       cons = Type.unfold ind_ty
-      name = Type.boundLabel (cons !! n)
+      name = get Type.boundLabel (cons !! n)
   
   defineTerm (name, raw_term) = do
     term <- parseAndCheckTerm raw_term
@@ -1151,11 +1152,11 @@ parseRawTerm (TCase rt ralts) = do
 
     -- Find the type of this particular constructor from looking it up
     -- by name in the description of the inductive type.
-    mby_this_con = find ((== con_lbl) . boundLabel) cons
+    mby_this_con = find ((== con_lbl) . get boundLabel) cons
     Just this_con = mby_this_con
     
     -- The bindings for this constructor are the arguments for the type
-    con_tys = (init . Type.flatten . boundType) this_con
+    con_tys = (init . Type.flatten . get boundType) this_con
     var_bs = zipWith Bind var_lbls con_tys
 
 data Token

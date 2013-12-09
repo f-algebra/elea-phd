@@ -1,5 +1,6 @@
 -- | Type environments, but also a lot of class instances for 'Term',
 -- since they require type environments.
+{-# LANGUAGE UndecidableInstances #-}
 module Elea.Env 
 (
   Writable (..), Readable (..),
@@ -351,7 +352,7 @@ instance Unifiable Term where
       -- Since we are inside a binding the indices go up by one, 
       -- so we call 'liftTracked'.
       liftTracked (t1 `uni` t2)
-    uni (Fix b1 t1) (Fix b2 t2) =
+    uni (Fix b1 t1) (Fix b2 t2) = 
       liftTracked (t1 `uni` t2)
     uni (App f1 xs1) (App f2 xs2) = do
       uni_f <- uni f1 f2
@@ -363,7 +364,7 @@ instance Unifiable Term where
       return mempty
     uni (Case ind1 t1 alts1) (Case ind2 t2 alts2) = do
       Fail.when (ind1 /= ind2) 
-      Fail.assert (length alts1 /= length alts2)
+      Fail.assert (length alts1 == length alts2)
       ut <- uni t1 t2
       ualts <- zipWithM uniAlt alts1 alts2
       Unifier.unions (ut:ualts) 
