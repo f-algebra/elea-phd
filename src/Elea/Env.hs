@@ -8,6 +8,11 @@ module Elea.Env
   TrackIndices, TrackIndicesT,
   liftTracked, tracked, trackeds, 
   trackIndices, trackIndicesT,
+  
+  TrackOffset, TrackOffsetT,
+  trackOffset, trackOffsetT,
+  offset, liftHere,
+  
   bind, bindMany,
   isoFree, isoShift,
   
@@ -208,6 +213,23 @@ trackIndicesT r = runIdentityT . flip runReaderT r . runAlsoTrack
 
 trackIndices :: r -> TrackIndices r a -> a
 trackIndices r = runIdentity . trackIndicesT r
+
+
+-- | For just tracking how many variables have been bound.
+type TrackOffsetT m = TrackIndicesT Index m
+type TrackOffset = TrackOffsetT Identity
+
+trackOffsetT :: Monad m => TrackOffsetT m a -> m a
+trackOffsetT = trackIndicesT 0
+
+trackOffset :: TrackOffset a -> a
+trackOffset = runIdentity . trackOffsetT
+
+offset :: Monad m => TrackOffsetT m Nat
+offset = trackeds enum
+
+liftHere :: (Monad m, Indexed a) => a -> TrackOffsetT m a
+liftHere = liftM Indices.liftMany offset
 
 
 -- Various instances for 'Writable' and 'Readable'

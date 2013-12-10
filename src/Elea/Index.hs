@@ -4,7 +4,8 @@ module Elea.Index
   Index, Indexed (..), Substitutable (..),
   lift, liftAt, liftManyAt, liftMany, subst, 
   lowerAt, lower, lowerMany, lowerableBy,
-  replaceAt, omega, tryLowerMany,
+  replaceAt, tryLowerMany,
+  omega, containsOmega,
 )
 where
 
@@ -29,6 +30,10 @@ class Indexed t where
   
   -- | Only modifies free indices.
   shift :: (Index -> Index) -> t -> t
+  
+  freeWithin :: Index -> t -> Bool
+  freeWithin x = Set.member x . free
+  
 
 liftManyAt :: Indexed a => Nat -> Index -> a -> a
 liftManyAt n at = shift lift
@@ -115,4 +120,8 @@ tryLowerMany n t = do
 -- and unchanged by lifting or lowering.
 omega :: Index
 omega = Index Nat.omega
+
+-- | Check whether 'omega' is free within a term
+containsOmega :: Indexed t => t -> Bool
+containsOmega = freeWithin omega
 

@@ -2,7 +2,7 @@
 -- not involve fixpoint fusion.
 module Elea.Simplifier
 (
-  run, steps
+  run, steps, removeConstArgs
 )
 where
 
@@ -45,6 +45,12 @@ steps = eval_steps ++
   -- We include the evaluation steps in our simplification
   -- which we lift from @Maybe@ to @MaybeT m@.
   eval_steps = map ((MaybeT . return) .) Eval.steps
+  
+  
+-- | Remove arguments to a fixpoint if they never change in 
+-- any recursive calls.
+removeConstArgs :: Term -> m Term
+removeConstArgs = Fold.rewriteM constArg
 
   
 -- | We do not want pattern matches to return function typed values,
