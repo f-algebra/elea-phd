@@ -10,8 +10,8 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
 import Elea.Show ( showM )
-import Elea.Index hiding ( lift )
-import Elea.Fusion.Core
+import Elea.Index
+import qualified Elea.Fixpoint as Fix
 import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
 import qualified Elea.Terms as Term
@@ -26,6 +26,34 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
 
+run :: Env.Readable m => Term -> m Term
+run = Fold.rewriteStepsM steps
+
+steps :: (Env.Readable m, Fail.Can m) => [Term -> m Term]
+steps = Simp.steps ++ 
+  [ const Fail.here
+  , fixfix 
+  ]
+
+
+-- | Uses fixpoint fusion on a fix with a fix as a decreasing argument.
+fixfix :: forall m . (Env.Readable m, Fail.Can m) => Term -> m Term
+
+-- ofix means "outer fixpoint"
+fixfix (App ofix@(Fix ofix_b ofix_t) args) = id
+  . Fail.choose
+  -- Run fixfixArg on every decreasing fixpoint argument position
+  . map fixfixArg
+  . filter (Term.isFix . Term.leftmost . (args !!))
+  $ decreasingArgs ofix
+  where
+  fixfixArg :: Int -> m Term
+  fixfixArg arg_i = do
+    
+  
+fixfix _ = Fail.here
+
+{-
 
 -- TODO: Write a more general / more obviously sound push-case-inwards 
 -- function to subsume the two floatCtxInwards functions from 
@@ -44,7 +72,6 @@ steps = id
  --   , factfixFusion
     ]
 
-{-# INLINEABLE run #-}
 run :: Env.Readable m => Term -> m Term
 run = runSteps steps
     
@@ -60,7 +87,7 @@ runSteps steps term = do
       ts' <- showM term'
       ts'' <- showM fused
       run fused
-     --   |> trace ({- "\n\nUNFUSED:\n\n" ++ ts' ++  -} "\nFINISHED\n\n" ++ ts'') 
+     --   |> trace ("\nFINISHED\n\n" ++ ts'') 
   where
   applyStep :: Term -> (Term -> m (Maybe Term)) -> m (Maybe Term)
   applyStep t f = Fold.isoRewriteOnceM Term.restricted withTrace t
@@ -773,4 +800,4 @@ extract inner_f _ term = do
         . Fail.withDefault term
         . invent run (App outer_f [Var gen_var])
         $ term
-
+-}

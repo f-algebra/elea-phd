@@ -16,13 +16,14 @@ import qualified Elea.Unifier as Unifier
 import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
 import qualified Elea.Foldable as Fold
+import qualified Elea.Monad.Failure as Fail
 import qualified Data.Set as Set
 
 
 run :: Term -> Term
 run = Fold.rewriteSteps steps
 
-steps :: [Term -> Maybe Term]
+steps :: Fail.Can m => [Term -> m Term]
 steps = 
   [ normaliseApp  
   , beta
@@ -30,25 +31,25 @@ steps =
   , caseOfCon
   ]
 
-normaliseApp :: Term -> Maybe Term
+normaliseApp :: Fail.Can m => Term -> m Term
 normaliseApp (App f []) = return f
 normaliseApp (App (App f ts1) ts2) = return (App f (ts1 ++ ts2))
-normaliseApp _ = mzero
+normaliseApp _ = Fail.here
   
-beta :: Term -> Maybe Term
+beta :: Fail.Can m => Term -> m Term
 beta (App (Lam _ rhs) (arg:args)) = 
   return (app (subst arg rhs) args)
-beta _ = mzero
+beta _ = Fail.here
   
-eta :: Term -> Maybe Term
+eta :: Fail.Can m => Term -> m Term
 eta (Lam _ (App f xs@(last -> Var 0)))
   | not (0 `Set.member` Indices.free new_t) = 
     return (Indices.lower new_t)
   where
   new_t = app f (init xs)
-eta _ = mzero
+eta _ = Fail.here
 
-caseOfCon :: Term -> Maybe Term
+caseOfCon :: Fail.Can m => Term -> m Term
 caseOfCon (Case ind cse_t alts)
   | Con _ (fromEnum -> n) : args <- flattenApp cse_t
   , Alt bs alt_t <- alts !! n = id
@@ -63,5 +64,5 @@ caseOfCon (Case ind cse_t alts)
     -- depending on their position in the order of substitution, 
     -- viz. those substituted first are lifted the most.
     $ zipWith liftMany [0..] args
-caseOfCon _ = mzero
+caseOfCon _ = Fail.here
 

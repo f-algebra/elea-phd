@@ -43,6 +43,10 @@ run el =
     Fail -> error "FAIL"
     Error e -> error e
 
+isFail :: EleaValue a -> Bool
+isFail Fail = True
+isFail _ = False
+    
 instance Functor Elea where
   fmap f (Elea g) = Elea (fmap f . g)
   
@@ -78,6 +82,11 @@ instance Err.Monad Elea where
       Error e -> runElea (handle e) r
       other -> other 
 
-instance Fail.Monad Elea where
+instance Fail.Can Elea where
   here = Elea $ \_ -> Fail
+  choose (toList -> xs) = 
+    Elea $ \r -> id
+      . fromMaybe Fail
+      . find isFail
+      $ map (flip runElea r) xs
 

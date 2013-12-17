@@ -196,11 +196,13 @@ instance (Readable m, Indexed r) => Readable (AlsoTrack r m) where
   boundAt = Trans.lift . boundAt
   bindingDepth = Trans.lift bindingDepth
     
-instance Fail.Monad m => Fail.Monad (AlsoTrack r m) where
+instance Fail.Can m => Fail.Can (AlsoTrack r m) where
   here = Trans.lift Fail.here
+  choose = AlsoTrack . Fail.choose . map runAlsoTrack . toList
   
-instance Fail.Monad m => Fail.Monad (IdentityT m) where
+instance Fail.Can m => Fail.Can (IdentityT m) where
   here = Trans.lift Fail.here
+  choose = IdentityT . Fail.choose . map runIdentityT . toList
 
 
 -- | To stop effects reaching the inner monad we
@@ -229,7 +231,7 @@ offset :: Monad m => TrackOffsetT m Nat
 offset = trackeds enum
 
 liftHere :: (Monad m, Indexed a) => a -> TrackOffsetT m a
-liftHere = liftM Indices.liftMany offset
+liftHere x = liftM (flip Indices.liftMany x) offset
 
 
 -- Various instances for 'Writable' and 'Readable'
@@ -348,7 +350,7 @@ instance Unifiable Term where
     Fail.when (Unifier.apply possible_uni t1 /= t2)
     return possible_uni
     where
-    uni :: forall m . Fail.Monad m => 
+    uni :: forall m . Fail.Can m => 
       Term -> Term -> TrackIndicesT Index m (Unifier Term)
     uni (Absurd ty1) (Absurd ty2) = do
       Fail.assert (ty1 == ty2)

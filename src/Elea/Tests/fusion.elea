@@ -1,0 +1,10 @@
+
+let revapp = 
+  fix (rap: nat -> nlist -> nlist) (n: nat) (xs: nlist) ->
+    match xs with
+    | Nil -> Cons n Nil
+    | Cons y ys -> append (rap n ys) (Cons y Nil)
+    end
+
+prop "revapp": forall (n: nat) (xs: nlist) ->
+  reverse (append xs (Cons n Nil) = revapp n xs

@@ -100,6 +100,30 @@ let leq =
       end
     end
 
+
+ind nlist = Nil | Cons nat nlist
+
+let length = 
+  fix (len: nlist -> nat) (xs: nlist) ->
+    match xs with
+    | Nil -> 0
+    | Cons y ys -> Suc (len ys)
+    end
+    
+let append =
+  fix (app: nlist -> nlist -> nat) (xs: nlist) (zs: nlist) ->
+    match xs with
+    | Nil -> zs
+    | Cons y ys -> Cons y (app ys zs)
+    end
+    
+let reverse = 
+  fix (rev: nlist -> nlist) (xs: nlist) ->
+    match xs with
+    | Nil -> Nil
+    | Cons y ys -> append (rev ys) (Cons y Nil)
+    end
+    
 /*
     
 let list = fun (a: *) -> 
@@ -110,15 +134,6 @@ let list = fun (a: *) ->
 
 let Nil = fun (a: *) -> inj0 (list a)
 let Cons = fun (a: *) -> inj1 (list a)
-
-let length =
-  fun (a: *) ->
-    fix (len: pi (list a) -> nat) ->
-      fun (xs: list a) ->
-        match xs with
-        | Nil -> 0
-        | Cons x xs' -> Suc (len xs')
-        end
 
 let app = 
   fun (a: *) ->

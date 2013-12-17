@@ -106,21 +106,6 @@ applyCase (Case ind cse_t alts) inner_t =
   
 {-
 
--- | For a given inductive type, return whether the constructor at that 
--- index is a base case.
-isBaseCase :: Type -> Nat -> Bool
-isBaseCase (Ind _ cons) inj_n =  id
-  . not 
-  . Set.member 0
-  . Indices.free 
-  . ignoreResultType
-  . get boundType
-  $ cons !! fromEnum inj_n
-  where
-  ignoreResultType = id
-    . uncurry unflattenPi
-    . second (const Set)
-    . flattenPi
 
 -- | This is just the arguments of 'altPattern' at
 -- the positions from 'recursiveInjArgs' 
@@ -130,11 +115,6 @@ recursivePatternArgs ty n =
   where
   args = tail (flattenApp (altPattern ty n))
   
-isRecursiveInd :: Show Term => Type -> Bool
-isRecursiveInd ty@(Ind _ cons) = 
-  not . all (isBaseCase ty) . map toEnum $ [0..length cons - 1]
-isRecursiveInd other = error (show other)
-
 -- | Returns the term in an 'Alt', lowered to be outside the bindings
 -- of the 'Alt'. Returns 'Nothing' if the term contains
 -- variables bound by the 'Alt'.

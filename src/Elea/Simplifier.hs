@@ -20,6 +20,7 @@ import qualified Elea.Typing as Typing
 import qualified Elea.Evaluation as Eval
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Error as Err
+import qualified Elea.Monad.Failure as Fail
 import qualified Data.Monoid as Monoid
 import qualified Data.Set as Set
 import qualified Data.Map as Map
@@ -28,9 +29,9 @@ import qualified Control.Monad.Trans as Trans
 run :: Env.Readable m => Term -> m Term
 run = Fold.rewriteStepsM steps
 
-steps :: Env.Readable m => [Term -> MaybeT m Term]
+steps :: (Fail.Can m, Env.Readable m) => [Term -> m Term]
 steps = eval_steps ++
-  [ const mzero
+  [ const Fail.here
   , caseFun
   , caseApp
   , appCase
@@ -42,24 +43,22 @@ steps = eval_steps ++
   , finiteArgFix
   ]
   where
-  -- We include the evaluation steps in our simplification
-  -- which we lift from @Maybe@ to @MaybeT m@.
-  eval_steps = map ((MaybeT . return) .) Eval.steps
+  eval_steps = map (Fail.fromMaybe .) Eval.steps
   
   
 -- | Remove arguments to a fixpoint if they never change in 
 -- any recursive calls.
-removeConstArgs :: Term -> m Term
+removeConstArgs :: Env.Writable m => Term -> m Term
 removeConstArgs = Fold.rewriteM constArg
 
   
 -- | We do not want pattern matches to return function typed values,
 -- so we add a new lambda above one if this is the case.
-caseFun :: Env.Readable m => Term -> MaybeT m Term
+caseFun :: (Fail.Can m, Env.Readable m) => Term -> m Term
 caseFun cse@(Case ind t alts) = do
   cse_ty <- Err.noneM (Typing.typeOf cse)
   -- We only apply this step if the pattern match is of function type.
-  guard (Type.isFun cse_ty)
+  Fail.unless (Type.isFun cse_ty)
   let Type.Fun arg_ty _ = cse_ty
   return
     . Lam (Bind "X" arg_ty)
@@ -74,43 +73,43 @@ caseFun cse@(Case ind t alts) = do
     alt_t' = Indices.liftAt (toEnum (length bs)) alt_t
     arg = Var (toEnum (length bs))
     
-caseFun _ = mzero
+caseFun _ = Fail.here
 
 
 -- | If we have a case statement on the left of term 'App'lication
 -- then float it out.
-caseApp :: Monad m => Term -> MaybeT m Term
+caseApp :: Fail.Can m => Term -> m Term
 caseApp (App (Case ind t alts) args) =
   return (Case ind t (map appArg alts))
   where
   appArg (Alt bs alt_t) =
     Alt bs (app alt_t (Indices.liftMany (nlength bs) args))
     
-caseApp _ = mzero
+caseApp _ = Fail.here
 
 
 -- | If we have a case statement on the right of term 'App'lication
 -- then float it out.
-appCase :: Monad m => Term -> MaybeT m Term
+appCase :: Fail.Can m => Term -> m Term
 appCase term@(App _ args) = do
-  cse_t <- liftMaybe (find isCase args)
+  cse_t <- Fail.fromMaybe (find isCase args)
   return (Term.applyCase cse_t term)
   
-appCase _ = mzero
+appCase _ = Fail.here
 
 
 -- | If we are pattern matching on a pattern match then remove this 
 -- using distributivity.
-caseCase :: Monad m => Term -> MaybeT m Term
+caseCase :: Fail.Can m => Term -> m Term
 caseCase outer_cse@(Case _ inner_cse@(Case {}) _) =
   return (Term.applyCase inner_cse outer_cse)
-caseCase _ = mzero
+caseCase _ = Fail.here
 
 
 -- | Finds terms that are absurd and sets them that way.
 -- So far it detects pattern matching over absurdity, 
 -- and applying arguments to an absurd function.
-absurdity :: Env.Readable m => Term -> MaybeT m Term
+absurdity :: (Fail.Can m, Env.Readable m) => Term -> m Term
 absurdity term
   | isAbsurd term = do
     ty <- Err.noneM (Typing.typeOf term)
@@ -121,15 +120,15 @@ absurdity term
   isAbsurd _ = False
     
 absurdity _ =
-  mzero
+  Fail.here
   
   
 -- | If an argument to a 'Fix' never changes in any recursive call
 -- then we should float that lambda abstraction outside the 'Fix'.
-constArg :: Monad m => Term -> MaybeT m Term
+constArg :: Fail.Can m => Term -> m Term
 constArg (Fix (Bind fix_name fix_ty) fix_t) = do
   -- Find if any arguments never change in any recursive calls
-  pos <- liftMaybe (find isConstArg [0..length arg_bs - 1])
+  pos <- Fail.fromMaybe (find isConstArg [0..length arg_bs - 1])
   
   -- Then we run the 'removeConstArg' function on that position
   return (Eval.run (removeConstArg pos))
@@ -208,44 +207,44 @@ constArg (Fix (Bind fix_name fix_ty) fix_t) = do
     removeArg term = 
       return term
       
-constArg _ = mzero
+constArg _ = Fail.here
 
 
 -- | If a fixpoint has a finite input to one of its decreasing arguments
 -- then you can safely unfold it.
-finiteArgFix :: Monad m => Term -> MaybeT m Term
+finiteArgFix :: Fail.Can m => Term -> m Term
 finiteArgFix (App fix@(Fix _ fix_t) args)
   | any isFinite dec_args = 
     return (App (Term.unfoldFix fix) args)
   where
   dec_args = map (args !!) (Term.decreasingArgs fix)
-finiteArgFix _ = mzero
+finiteArgFix _ = Fail.here
 
 
 -- | Removes a pattern match which just returns the term it is matching upon.
-identityCase :: Monad m => Term -> MaybeT m Term
+identityCase :: Fail.Can m => Term -> m Term
 identityCase (Case ind cse_t alts)
   | and (zipWith isIdAlt [0..] alts) = return cse_t
   where
   isIdAlt :: Nat -> Alt -> Bool
   isIdAlt n (Alt _ alt_t) = alt_t == altPattern ind n
-identityCase _ = mzero
+identityCase _ = Fail.here
 
 
 -- | Dunno if this ever comes up but if we have a fix without any occurrence
 -- of the fix variable in the body we can just drop it.
-uselessFix :: Monad m => Term -> MaybeT m Term
+uselessFix :: Fail.Can m => Term -> m Term
 uselessFix (Fix _ fix_t)
   | not (0 `Set.member` Indices.free fix_t) = 
     return (Indices.lower fix_t)
-uselessFix _ = mzero
+uselessFix _ = Fail.here
 
 {-
 
 -- | Given a predicate P, if it finds a pattern match outside (outer)
 -- of another pattern match (inner), where the P(outer, inner) holds,
 -- then inner is floated outside outer.
-commuteMatchesWhenM :: Monad m => 
+commuteMatchesWhenM :: Fail.Can m => 
   (Term -> Term -> m Bool) -> Term -> m (Maybe Term)
 commuteMatchesWhenM when outer_cse@(Case _ _ alts) 
   | Just inner_cse <- (msum . map innerMatch) alts = do
@@ -267,7 +266,7 @@ commuteMatchesWhen when =
 -- | Unfolds a 'Fix' if one of its arguments is a constructor term,
 -- subject to a load of random, half-baked conditions.
 -- This code desperately needs to be improved.
-unfoldFixInj :: Env.Readable m => Term -> m (Maybe Term)
+unfoldFixInj :: (Fail.Can m, Env.Readable m) => Term -> m (Maybe Term)
 unfoldFixInj term@(App fix@(Fix _ _ rhs) args)
   | any (isInj . leftmost) args = do
     pat_terms <- liftM (map fst . Map.elems) Env.matches
@@ -325,7 +324,7 @@ unfoldCaseFix _ = Nothing
 -- one of which will probably contain flatten again, and so it repeats.
 -- I am only using this inside a very particular step, very ad hoc I know
 -- but I'll figure out a way around it at some point.
-unsafeUnfoldCaseFix :: Env.Readable m => Term -> m (Maybe Term)
+unsafeUnfoldCaseFix :: (Fail.Can m, Env.Readable m) => Term -> m (Maybe Term)
 unsafeUnfoldCaseFix cse_t@(Case (leftmost -> Fix _ fix_b fix_t) _ _)
   | Term.isRecursiveInd ind_ty && Term.variablesUnused cse_t = do
     expanded <- id
@@ -482,7 +481,7 @@ freeCaseFix _ = Nothing
 -- fixpoints). Otherwise, if you unroll the function you could perform
 -- fix-fact fusion using the recursive call, which would unroll the function
 -- again, and so on.
-caseOfRec :: forall m . Env.Readable m => Term -> m (Maybe Term)
+caseOfRec :: forall m . (Fail.Can m, Env.Readable m) => Term -> m (Maybe Term)
 caseOfRec (Fix fix_i fix_b fix_t) = id
   . liftM (fmap (Fix fix_i fix_b))
   . Env.alsoTrack 0
@@ -536,7 +535,7 @@ caseOfRec _ =
   return Nothing
 
   
-freeFix :: Env.Readable m => Term -> m (Maybe Term)
+freeFix :: (Fail.Can m, Env.Readable m) => Term -> m (Maybe Term)
 freeFix outer_fix@(Fix _ _ outer_body)
   | Just free_fix <- mby_free_fix = do
     ind_ty <- Err.noneM (Typing.typeOf free_fix)
@@ -599,12 +598,5 @@ raiseVarCase = commuteMatchesWhen raiseVar
     isFix (leftmost cse_of)
   raiseVar _ _ = False
   
-
--- | If we are pattern matching on a pattern match then remove this 
--- using distributivity.
-caseCase :: Term -> Maybe Term
-caseCase outer_cse@(Case inner_cse@(Case {}) _ _) =
-  Just (applyCaseOf inner_cse outer_cse)
-caseCase _ = Nothing
 
 -}

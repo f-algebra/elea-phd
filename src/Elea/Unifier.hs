@@ -20,7 +20,7 @@ singleton :: Index -> a -> Unifier a
 singleton = Map.singleton
 
 -- | Fails if the two unifiers have conflicting substitutions.
-union :: (Eq t, Fail.Monad m) => Unifier t -> Unifier t -> m (Unifier t)
+union :: (Eq t, Fail.Can m) => Unifier t -> Unifier t -> m (Unifier t)
 union uni1 uni2 = do
   Fail.unless all_eq
   return (uni1 `Map.union` uni2)
@@ -32,13 +32,13 @@ union uni1 uni2 = do
     . Map.elems
     $ Map.intersectionWith (==) uni1 uni2
     
-unions :: (Eq t, Fail.Monad m) => [Unifier t] -> m (Unifier t)
+unions :: (Eq t, Fail.Can m) => [Unifier t] -> m (Unifier t)
 unions = foldrM union mempty 
 
 class Substitutable t => Unifiable t where
   -- | Returns the unifier that should be applied to the first argument
   -- to produce the second, fails if no such unifier exists. 
-  find :: Fail.Monad m => t -> t -> m (Unifier (Inner t))
+  find :: Fail.Can m => t -> t -> m (Unifier (Inner t))
 
 exists :: Unifiable t => t -> t -> Bool
 exists t = isJust . find t

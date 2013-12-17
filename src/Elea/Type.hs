@@ -113,6 +113,7 @@ isRecursive ind = id
   . any (not . isBaseCase ind . enum)
   $ [0..length (get constructors ind) - 1]
   
+  
 instance Show Ind where
   show = get name
   
