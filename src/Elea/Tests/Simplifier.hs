@@ -18,7 +18,7 @@ checkEquation (Equals name bs t1 t2) = id
   . Env.bindMany bs $ do
     t1' <- Simp.run t1
     t2' <- Simp.run t2
-    return (Test.assertEq t1' t2')
+    return (Test.assertEq t2' t1')
   
 tests = Test.label "Simplifier"
     $ Test.run $ do

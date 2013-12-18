@@ -4,10 +4,10 @@
 module Elea.Env 
 (
   Writable (..), Readable (..),
+  Tracks (..), trackeds,
   AlsoTrack, alsoTrack, alsoWith,
   TrackIndices, TrackIndicesT,
-  liftTracked, tracked, trackeds, 
-  trackIndices, trackIndicesT,
+  liftTracked, trackIndices, trackIndicesT,
   
   TrackOffset, TrackOffsetT,
   trackOffset, trackOffsetT,
@@ -146,7 +146,19 @@ instance Substitutable Term where
 -- monad off, by starting with an empty stack.
 empty :: Reader [Bind] a -> a
 empty = flip runReader mempty
-   
+
+-- | Anything that tracks indices as we move within something that binds
+-- indices.
+class (Monad m, Indexed r) => Tracks r m where
+  tracked :: m r
+  
+trackeds :: Tracks r m => (r -> a) -> m a 
+trackeds f = liftM f tracked
+
+
+instance Tracks r m => Tracks r (MaybeT m) where
+  tracked = Trans.lift tracked
+
 -- Place 'AlsoTrack' over the top of a 'Writable' environment monad.
 -- 'AlsoTrack' will capture all changes to the environment and pass them
 -- along to the inner monad. 
@@ -156,11 +168,8 @@ newtype AlsoTrack r m a
   = AlsoTrack { runAlsoTrack :: ReaderT r m a }
   deriving ( Monad, MonadTrans )
   
-tracked :: Monad m => AlsoTrack r m r
-tracked = AlsoTrack ask
-
-trackeds :: Monad m => (a -> b) -> AlsoTrack a m b
-trackeds f = liftM f tracked
+instance (Indexed r, Monad m) => Tracks r (AlsoTrack r m) where
+  tracked = AlsoTrack ask
 
 liftTrackedMany :: (Monad m, Indexed r) => 
   Nat -> AlsoTrack r m a -> AlsoTrack r m a
@@ -169,8 +178,8 @@ liftTrackedMany n = AlsoTrack . local (Indices.liftMany n) . runAlsoTrack
 liftTracked :: (Monad m, Indexed r) => AlsoTrack r m a -> AlsoTrack r m a
 liftTracked = liftTrackedMany 1
 
-mapAlsoTrack :: Monad m => (m a -> m a) -> 
-  (AlsoTrack r m a -> AlsoTrack r m a)
+mapAlsoTrack :: Monad m => (m a -> n b) -> 
+  (AlsoTrack r m a -> AlsoTrack r n b)
 mapAlsoTrack f = AlsoTrack . mapReaderT f . runAlsoTrack
 
 alsoTrack :: r -> AlsoTrack r m a -> m a
@@ -198,11 +207,11 @@ instance (Readable m, Indexed r) => Readable (AlsoTrack r m) where
     
 instance Fail.Can m => Fail.Can (AlsoTrack r m) where
   here = Trans.lift Fail.here
-  choose = AlsoTrack . Fail.choose . map runAlsoTrack . toList
+  catch = mapAlsoTrack Fail.catch
   
 instance Fail.Can m => Fail.Can (IdentityT m) where
   here = Trans.lift Fail.here
-  choose = IdentityT . Fail.choose . map runIdentityT . toList
+  catch = mapIdentityT Fail.catch
 
 
 -- | To stop effects reaching the inner monad we
@@ -227,10 +236,10 @@ trackOffsetT = trackIndicesT 0
 trackOffset :: TrackOffset a -> a
 trackOffset = runIdentity . trackOffsetT
 
-offset :: Monad m => TrackOffsetT m Nat
-offset = trackeds enum
+offset :: Tracks Index m => m Nat
+offset = trackeds (enum :: Index -> Nat)
 
-liftHere :: (Monad m, Indexed a) => a -> TrackOffsetT m a
+liftHere :: (Tracks Index m, Indexed a) => a -> m a
 liftHere x = liftM (flip Indices.liftMany x) offset
 
 

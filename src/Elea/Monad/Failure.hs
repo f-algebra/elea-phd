@@ -1,8 +1,7 @@
 -- | Constructing and using computations which can fail.
--- Like 'MonadPlus' without 'mplus', and with more readably named functions.
 -- Requires qualified import (usually as "Fail").
 module Elea.Monad.Failure (
-  Can (..), when, unless, toMaybe, withDefault, assert,
+  Can (..), when, unless, toMaybe, withDefault, assert, choose,
   success, successM, catchWith, fromEither, has, fromMaybe
 ) where
 
@@ -15,9 +14,9 @@ class Monad m => Can m where
   -- | The computation fails if this point is reached, like 'mzero'.
   here :: m a
   
-  -- | Pick a non failing instance. If none exists then fail.
-  -- Can you implement this from just 'here'? I couldn't find a way.
-  choose :: Foldable f => f (m a) -> m a
+  -- | If the given computation has failed, return 'Nothing' (and succeed),
+  -- otherwise return the value of the original computation.
+  catch :: m a -> m (Maybe a)
   
 
 -- | The computation fails if the argument is 'True'.
@@ -76,25 +75,38 @@ fromMaybe :: Can m => Maybe a -> m a
 fromMaybe Nothing = here
 fromMaybe (Just x) = return x
 
+-- | Pick a non failing instance. If none exists then fail..
+choose :: (Can m, Foldable f) => f (m a) -> m a
+choose = join . liftM fromMaybe . firstM . map catch . toList
+
 
 -- * Instance declarations
 
 instance Monad m => Can (MaybeT m) where
   here = mzero
-  choose = MaybeT . firstM . map runMaybeT . toList
+  catch = lift . runMaybeT
 
 instance Can Maybe where
   here = mzero
-  choose = join . find isJust
+  catch = Just
   
 instance (Monoid w, Can m) => Can (WriterT w m) where
   here = lift here
-  choose = WriterT . choose . map runWriterT . toList
+  
+  -- Interesting case. If the computation fails where do we get the
+  -- written value of type 'w' from? I chose 'mempty' but is this correct?
+  catch = mapWriterT catchW
+    where
+    catchW :: m (a, w) -> m (Maybe a, w)
+    catchW m = do
+      mby_aw <- catch m
+      case mby_aw of
+        Nothing -> return (Nothing, mempty)
+        Just (a, w) -> return (Just a, w)
   
 instance Can m => Can (ReaderT r m) where
   here = lift here
-  choose (toList -> xs) = 
-    ReaderT $ \r -> choose (map (flip runReaderT r) xs)
+  catch = mapReaderT catch
   
 instance Monad Monoid.First where
   return = Monoid.First . return
@@ -102,5 +114,5 @@ instance Monad Monoid.First where
   
 instance Can Monoid.First where
   here = Monoid.First mzero
-  choose = Monoid.First . choose . map Monoid.getFirst . toList
+  catch = Monoid.First . catch . Monoid.getFirst
 

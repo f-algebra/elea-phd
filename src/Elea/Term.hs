@@ -1,5 +1,6 @@
 module Elea.Term
 (
+  module Elea.Index,
   Term (..), Alt (..),
   Term' (..), Alt' (..),
   Type, Bind (..),
@@ -20,7 +21,7 @@ where
 
 import Prelude ()
 import Elea.Prelude
-import Elea.Index
+import Elea.Index ( Index, Indexed )
 import Elea.Type ( Type, Bind (..) )
 import qualified Elea.Type as Type
 import qualified Elea.Index as Indices

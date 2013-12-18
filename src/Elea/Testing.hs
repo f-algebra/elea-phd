@@ -1,17 +1,19 @@
-module Elea.Testing (
+module Elea.Testing 
+(
   Test, M, execute,
   label, list, run, 
   assert, assertEq, assertNot,
   loadPrelude, loadFile,
   term, _type,
-) where
+) 
+where
 
 import Prelude ()
 import Elea.Prelude hiding ( assert )
 import Elea.Term
 import Elea.Monad.Elea ( Elea )
+import qualified Elea.Env as Env
 import qualified Elea.Parser as Parse
-import qualified Elea.Typing as Typing
 import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Error as Err
 import qualified Test.HUnit as HUnit

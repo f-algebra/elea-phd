@@ -9,7 +9,6 @@ where
 
 import Prelude ()
 import Elea.Prelude
-import Elea.Index
 import Elea.Term
 import Elea.Type ( Type, Bind (..) )
 import qualified Elea.Index as Indices
@@ -40,11 +39,11 @@ make mk_t = id
 -- | This is the 'make' function backwards
 apply :: Context -> (Term -> Term)
 apply (Context ctx_t) arg_t = 
-  substAt Indices.omega arg_t ctx_t
+  Indices.substAt Indices.omega arg_t ctx_t
 
 fromLambda :: Term -> Context
 fromLambda = 
-  Context . substAt 0 (Var Indices.omega) . inner
+  Context . Indices.substAt 0 (Var Indices.omega) . inner
   
 -- | Returns whether there is any gap in the given context.
 isConstant :: Context -> Bool
@@ -117,9 +116,9 @@ instance Indexed Context where
   free = Indices.free . get term
   shift f = modify term (Indices.shift f)
 
-instance Substitutable Context where
+instance Indices.Substitutable Context where
   type Inner Context = Term
-  substAt at with = modify term (substAt at with)
+  substAt at with = modify term (Indices.substAt at with)
   
 instance ContainsTerms Context where
   mapTermsM f = modifyM term f

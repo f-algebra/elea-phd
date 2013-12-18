@@ -5,8 +5,7 @@ module Elea.Tests.Context
 where
 
 import Prelude ()
-import Elea.Prelude             
-import Elea.Index
+import Elea.Prelude
 import qualified Elea.Context as Context
 import qualified Elea.Testing as Test
 

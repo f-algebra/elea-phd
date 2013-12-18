@@ -11,9 +11,7 @@ import qualified Elea.Tests.Type as Type
 import qualified Elea.Tests.Term as Term
 import qualified Elea.Tests.Simplifier as Simplifier 
 import qualified Elea.Tests.Context as Context
-{-
 import qualified Elea.Tests.Fusion as Fusion
--}
 
 tests = Test.list
   [ Prelude.tests
@@ -22,7 +20,7 @@ tests = Test.list
   , Term.tests
   , Simplifier.tests
   , Context.tests
-  -- , Fusion.tests 
+  , Fusion.tests 
   ]
   
 runTests :: IO ()

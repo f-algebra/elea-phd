@@ -10,13 +10,12 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
 import Elea.Show ( showM )
-import Elea.Index
 import qualified Elea.Fixpoint as Fix
 import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
 import qualified Elea.Terms as Term
+import qualified Elea.Types as Type
 import qualified Elea.Context as Context
-import qualified Elea.Typing as Typing
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Monad.Error as Err
@@ -27,7 +26,7 @@ import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
 
 run :: Env.Readable m => Term -> m Term
-run = Fold.rewriteStepsM steps
+run = Fold.rewriteStepsM (map Type.checkStep steps)
 
 steps :: (Env.Readable m, Fail.Can m) => [Term -> m Term]
 steps = Simp.steps ++ 
@@ -46,27 +45,26 @@ fixfix (App ofix@(Fix {}) oargs) = id
   -- Run fixfixArg on every decreasing fixpoint argument position
   . map fixfixArg
   . filter (Term.isFix . Term.leftmost . (oargs !!))
-  $ decreasingArgs ofix
+  $ Term.decreasingArgs ofix
   where
   -- Run fixfix fusion on the argument at the given position
   fixfixArg :: Int -> m Term
-  fixfixArg arg_i = do                      
-    ifix_ty <- Typing.typeOf ifix
-    
+  fixfixArg arg_i =
+    Fix.fusion simplify context ifix
     where
     -- Extract the argument at the given position
     (left_oargs, (App ifix iargs):right_oargs) = splitAt arg_i oargs
     
     -- The context is the original outer term with the inner fixpoint
     -- replaced by the gap
-    makeCtx :: Term -> Term
-    makeCtx gap = 
-      App ofix (left_oargs ++ (App gap iargs):right_args)
-      
+    context = Context.make makeCtx
+      where
+      makeCtx gap = 
+        App ofix (left_oargs ++ (App gap iargs:right_oargs))
     
   -- The internal simplification used in fixfix fusion
   simplify :: Index -> Context -> Term -> m Term
-  simplify _ _ = return
+  simplify _ _ = Simp.run
   
   
 fixfix _ = Fail.here
@@ -240,7 +238,7 @@ floatConstructors _ =
 fixfixFusion :: forall m . Env.Readable m => Term -> m (Maybe Term)
 fixfixFusion full_t@(App outer_f@(Fix outer_info outer_b _) outer_args)
   | Term.simplifiable full_t = do
-    full_ty <- Err.noneM (Typing.typeOf full_t)
+    full_ty <- Err.noneM (Type.get full_t)
     if not (isInd full_ty)
     then return Nothing
     else fixfix (head outer_args) full_ty
@@ -254,7 +252,7 @@ fixfixFusion full_t@(App outer_f@(Fix outer_info outer_b _) outer_args)
       else fixfix (fromJust mby_t) full_ty
       
     | isFix (leftmost fix_arg) = do
-      inner_ty <- Err.noneM (Typing.typeOf inner_f)
+      inner_ty <- Err.noneM (Type.get inner_f)
       let outer_ctx = id
             . Context.make inner_ty
             $ \t -> app outer_f (app t inner_args : tail outer_args)
@@ -284,7 +282,7 @@ fixfixFusion _ =
 repeatedArgFusion :: forall m . Env.Readable m => Term -> m (Maybe Term)
 repeatedArgFusion full_t@(App outer_f@(Fix outer_info outer_b _) outer_args)
   | Term.simplifiable full_t = do
-    full_ty <- Err.noneM (Typing.typeOf full_t)
+    full_ty <- Err.noneM (Type.get full_t)
     if not (isInd full_ty)
     then return Nothing
     else repeatedArg full_ty
@@ -294,7 +292,7 @@ repeatedArgFusion full_t@(App outer_f@(Fix outer_info outer_b _) outer_args)
     | x@(Var {}) <- head outer_args
     , any (== x) (tail outer_args) = do
       full_s <- showM full_t
-      outer_ty <- Err.noneM (Typing.typeOf outer_f)
+      outer_ty <- Err.noneM (Type.get outer_f)
       let ctx = id
             . Context.make outer_ty
             $ \t -> app t outer_args
@@ -309,7 +307,7 @@ repeatedArgFusion _ =
 fixfactFusion :: forall m . Env.Readable m => Term -> m (Maybe Term)
 fixfactFusion full_t@(App outer_f@(Fix outer_info outer_b _) outer_args) 
   | Term.simplifiable full_t = do
-    full_ty <- Err.noneM (Typing.typeOf full_t)
+    full_ty <- Err.noneM (Type.get full_t)
     if not (isInd full_ty)
     then return Nothing
     else fixFact full_ty
@@ -342,7 +340,7 @@ fixfactFusion full_t@(App outer_f@(Fix outer_info outer_b _) outer_args)
         if repeats 
         then return Nothing
         else do
-          outer_ty <- Err.noneM (Typing.typeOf outer_f)
+          outer_ty <- Err.noneM (Type.get outer_f)
           let ctx = Context.make outer_ty buildContext
           -- We add the new fused matches to the info of our existing 
           -- fixpoint, since this will be carried over to the fixpoint
@@ -524,7 +522,7 @@ fixfactFusion _ =
 factfixFusion :: forall m . Env.Readable m => Term -> m (Maybe Term)
 factfixFusion full_t@(App inner_f@(Fix _ _ inner_f_body) inner_args)
   | Term.simplifiable full_t = do
-    full_ty <- Err.noneM (Typing.typeOf full_t)
+    full_ty <- Err.noneM (Type.get full_t)
     if not (isInd full_ty)
     then return Nothing
     else factFix full_ty
@@ -544,7 +542,7 @@ factfixFusion full_t@(App inner_f@(Fix _ _ inner_f_body) inner_args)
       -- Since caseRec in Floating favours fix-fact fusion, we need to do
       -- this clumsy check to prevent infinite loops.
       , not (inner_f_body `Term.containsUnifiable` match_f) = do
-        match_ty <- Err.noneM (Typing.typeOf match_f)
+        match_ty <- Err.noneM (Type.get match_f)
         let ctx = Context.make match_ty buildContext
         mby_res <- runMaybeT (runFusion ctx)
         full_s <- showM full_t
@@ -676,11 +674,11 @@ factfixFusion _ =
 refoldFusion :: forall m . Env.Readable m => Term -> m (Maybe Term)
 refoldFusion cse_t@(Case (Var x) ind_ty alts)
   | Term.variablesUnused cse_t = do
-    var_ty <- Err.noneM (Typing.typeOf (Var x))
+    var_ty <- Err.noneM (Type.get (Var x))
     var_name <- showM (Var x)
     let new_b = Bind (Just ("_" ++ var_name)) var_ty
     Env.bindAt 0 new_b $ do
-      full_ty <- Err.noneM (Typing.typeOf reverted_t)
+      full_ty <- Err.noneM (Type.get reverted_t)
       potentials <- id
         . liftM toList
         . Env.alsoTrack 0
@@ -726,7 +724,7 @@ refoldFusion cse_t@(Case (Var x) ind_ty alts)
     guard (Term.occurrences inner_t' reverted_t == 1)
     inner_ty <- id
       . liftM (Indices.lowerMany (fromEnum offset))
-      $ Err.noneM (Typing.typeOf inner_t)
+      $ Err.noneM (Type.get inner_t)
     let ctx = buildContext inner_ty inner_t' 
     return (ctx, leftmost inner_t')
     where
@@ -775,7 +773,7 @@ extract inner_f _ term = do
   extractable :: Env.AlsoTrack Term m Bool
   extractable = do
     outer_f <- Env.tracked
-    ty <- Err.noneM (Typing.typeOf outer_f)
+    ty <- Err.noneM (Type.get outer_f)
     let (args, ret) = flattenPi ty
     return 
       $ length args == 1
@@ -803,7 +801,7 @@ extract inner_f _ term = do
       if inner_f /= f 
       then return False
       else do
-        ty <- Err.noneM (Typing.typeOf term)
+        ty <- Err.noneM (Type.get term)
         return (not (isPi ty))
     isInnerCall _ = 
       return False

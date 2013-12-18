@@ -8,15 +8,13 @@ where
 
 import Prelude ()
 import Elea.Prelude
-import Elea.Index
 import Elea.Term
 import Elea.Show ( showM )
 import qualified Elea.Terms as Term
-import qualified Elea.Type as Type
+import qualified Elea.Types as Type
 import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
 import qualified Elea.Unifier as Unifier
-import qualified Elea.Typing as Typing
 import qualified Elea.Evaluation as Eval
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Error as Err
@@ -27,7 +25,7 @@ import qualified Data.Map as Map
 import qualified Control.Monad.Trans as Trans
 
 run :: Env.Readable m => Term -> m Term
-run = Fold.rewriteStepsM steps
+run = Fold.rewriteStepsM (map Type.checkStep steps)
 
 steps :: (Fail.Can m, Env.Readable m) => [Term -> m Term]
 steps = eval_steps ++
@@ -56,7 +54,7 @@ removeConstArgs = Fold.rewriteM constArg
 -- so we add a new lambda above one if this is the case.
 caseFun :: (Fail.Can m, Env.Readable m) => Term -> m Term
 caseFun cse@(Case ind t alts) = do
-  cse_ty <- Err.noneM (Typing.typeOf cse)
+  cse_ty <- Type.get cse
   -- We only apply this step if the pattern match is of function type.
   Fail.unless (Type.isFun cse_ty)
   let Type.Fun arg_ty _ = cse_ty
@@ -112,7 +110,7 @@ caseCase _ = Fail.here
 absurdity :: (Fail.Can m, Env.Readable m) => Term -> m Term
 absurdity term
   | isAbsurd term = do
-    ty <- Err.noneM (Typing.typeOf term)
+    ty <- Type.get term
     return (Absurd ty)
   where
   isAbsurd (App (Absurd _) _) = True
@@ -175,10 +173,10 @@ constArg (Fix (Bind fix_name fix_ty) fix_t) = do
     
     -- Remove the lambda, and replace all occurrences of that variable
     -- with index 1 (here index 0 will be the fix variable)
-    . substAt Indices.omega (Var 1)
+    . Indices.substAt Indices.omega (Var 1)
     . Indices.liftAt 1
     . unflattenLam left_bs
-    . substAt 0 (Var Indices.omega)
+    . Indices.substAt 0 (Var Indices.omega)
     . unflattenLam right_bs
     $ fix_body
     where
@@ -497,7 +495,7 @@ caseOfRec (Fix fix_i fix_b fix_t) = id
     then return Nothing
     else do
       let Just inner_t = mby_inner 
-      inner_ty <- Err.noneM (Typing.typeOf inner_t)
+      inner_ty <- Type.get inner_t
       return 
         . Just
         . Term.buildCaseOf inner_t inner_ty 
@@ -538,7 +536,7 @@ caseOfRec _ =
 freeFix :: (Fail.Can m, Env.Readable m) => Term -> m (Maybe Term)
 freeFix outer_fix@(Fix _ _ outer_body)
   | Just free_fix <- mby_free_fix = do
-    ind_ty <- Err.noneM (Typing.typeOf free_fix)
+    ind_ty <- Type.get free_fix
     -- While this step will work for recursive inductive types,
     -- it doesn't make much sense to me to ever do this.
     if Term.isRecursiveInd ind_ty

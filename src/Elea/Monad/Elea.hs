@@ -84,9 +84,7 @@ instance Err.Can Elea where
 
 instance Fail.Can Elea where
   here = Elea $ \_ -> Fail
-  choose (toList -> xs) = 
-    Elea $ \r -> id
-      . fromMaybe Fail
-      . find isFail
-      $ map (flip runElea r) xs
-
+  catch (Elea el) = Elea $ \r -> 
+    case el r of
+      Fail -> Value Nothing
+      other -> fmap Just other

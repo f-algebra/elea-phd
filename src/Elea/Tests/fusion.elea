@@ -7,4 +7,4 @@ let revapp =
     end
 
 prop "revapp": forall (n: nat) (xs: nlist) ->
-  reverse (append xs (Cons n Nil) = revapp n xs
+  reverse (append xs (Cons n Nil)) = revapp n xs

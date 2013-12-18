@@ -19,7 +19,6 @@ import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Failure as Fail
 import qualified Data.Set as Set
 
-
 run :: Term -> Term
 run = Fold.rewriteSteps steps
 

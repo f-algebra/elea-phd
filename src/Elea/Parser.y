@@ -9,10 +9,9 @@ import Prelude ()
 import Elea.Prelude
 import Elea.Type
 import Elea.Term
-import Elea.Index
 import Elea.Show ( showM )
-import qualified Elea.Type as Type
-import qualified Elea.Typing as Typing
+import qualified Elea.Index as Indices
+import qualified Elea.Types as Type
 import qualified Elea.Evaluation as Eval
 import qualified Elea.Env as Env
 import qualified Elea.Foldable as Fold
@@ -170,7 +169,7 @@ withEmptyScope = flip runReaderT (Scope mempty mempty)
 instance Monad m => Env.Writable (ReaderT Scope m) where
   bindAt at b = 
       local
-    $ modify bindMap (addToMap . map (liftAt at))
+    $ modify bindMap (addToMap . map (Indices.liftAt at))
     . modify bindStack addToStack
     where
     addToStack = insertAt (enum at) b
@@ -267,7 +266,7 @@ lookupType name = do
     
 parseAndCheckTerm :: RawTerm -> ParserMonad m Term
 parseAndCheckTerm = 
-  Err.check Typing.check . parseRawTerm
+  Err.check Type.check . parseRawTerm
   
 parseRawType :: RawType -> ParserMonad m Type
 parseRawType (TBase name) = 
@@ -305,7 +304,7 @@ parseRawTerm (TLet name rt1 rt2) = do
   localDef name t1 (parseRawTerm rt2)
 parseRawTerm (TCase rt ralts) = do
   t <- parseRawTerm rt
-  ind_ty <- Typing.typeOf t
+  ind_ty <- Type.get t
   alts <- mapM (parseRawAlt ind_ty) ralts
   return (Case (Type.inductiveType ind_ty) t alts)
   where

@@ -1,19 +1,21 @@
--- | Type checking for terms, along with functions to wrap around
--- transformation steps (@Term -> m (Maybe Term)@ functions) 
--- to dynamically check they preserve typing (the type of the argument
--- matches the type of the resulting term).
-module Elea.Typing
+-- | Functions about types which require type environments and so cannot
+-- be in Elea.Type. Notably the 'get' function which returns
+-- the type of a term, and the 'check' function which checks a term
+-- is correctly typed.
+module Elea.Types
 (
-  typeOf, check, checkStep,
+  module Elea.Type,
+  get, check, checkStep,
 )
 where
 
 import Prelude ()
-import Elea.Prelude
+import Elea.Prelude hiding ( get )
 import Elea.Index hiding ( lift )
 import Elea.Type
 import Elea.Term
 import Elea.Show ( showM )
+import qualified Elea.Prelude as Prelude
 import qualified Elea.Index as Indices
 import qualified Elea.Type as Type
 import qualified Elea.Foldable as Fold
@@ -21,6 +23,9 @@ import qualified Elea.Env as Env
 import qualified Elea.Monad.Error as Err
 
 type TypingMonad m = (Err.Can m, Env.Readable m)
+
+get :: Env.Readable m => Term -> m Type
+get = Err.noneM . typeOf
 
 -- | Throws an error if a term is not correctly typed.
 check :: TypingMonad m => Term -> m ()
@@ -135,7 +140,9 @@ typeOf term = id
     alts_correct = and . zipWith checkAlt cons $ falts
       where
       checkAlt (Bind _ con_ty) (Alt' bs (res_ty, _)) =
-        con_ty == Type.unflatten (map (get boundType) bs ++ [ind_ty'])
+        con_ty == Type.unflatten (bs_tys ++ [ind_ty'])
+        where
+        bs_tys = map (Prelude.get boundType) bs
         
   fcheck _ = 
     return ()
@@ -146,7 +153,7 @@ typeOf term = id
   ftype (Absurd' ty) =
     return ty
   ftype (Var' idx) =
-    liftM (get boundType) (Env.boundAt idx)
+    liftM (Prelude.get boundType) (Env.boundAt idx)
   ftype (Lam' (Bind _ ty) (res, _)) = 
     return (Type.Fun ty res)
   ftype (App' (ty, _) []) = 
@@ -157,7 +164,7 @@ typeOf term = id
     return ty
   ftype (Con' ind_ty n) =
     return
-    . get boundType
+    . Prelude.get boundType
     . (!! fromEnum n)
     $ Type.unfold ind_ty
   ftype (Case' _ _ (Alt' _ (ty, _) : _)) =

@@ -86,7 +86,7 @@ import Control.Monad.List ( ListT (..) )
 import Control.Monad.Trans.Maybe
 import Control.Monad.RWS ( RWS (..), RWST (..), execRWS, evalRWS, runRWS )
 import Control.Monad.Identity ( Identity (..) )
-import Control.Monad.Trans.Identity ( IdentityT (..) )
+import Control.Monad.Trans.Identity ( IdentityT (..), mapIdentityT )
 import Control.Monad.Trans.Either ( EitherT (..), mapEitherT )
 import Control.Monad.Fix
 import Control.Exception ( assert )

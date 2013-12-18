@@ -11,15 +11,13 @@ where
 
 import Prelude ()
 import Elea.Prelude hiding ( replace )
-import Elea.Index
 import Elea.Term
 import Elea.Show
 import Elea.Context ( Context )
-import qualified Elea.Type as Type
+import qualified Elea.Types as Type
 import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
 import qualified Elea.Context as Context
-import qualified Elea.Typing as Typing
 import qualified Elea.Evaluation as Eval
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Foldable as Fold
@@ -31,7 +29,8 @@ import qualified Data.Monoid as Monoid
 import qualified Control.Monad.Trans as Trans
 
 unfoldFix :: Term -> Term
-unfoldFix fix@(Fix _ fix_t) = subst fix fix_t
+unfoldFix fix@(Fix _ fix_t) = 
+  Indices.subst fix fix_t
   
 
 -- | Replace all instances of one term with another within a term.
@@ -223,7 +222,7 @@ generalise :: (Env.Readable m, ContainsTerms t1, ContainsTerms t2,
 generalise gen_t transform term = do
   -- First we create a binding for the new variable by finding its type
   -- and creating a descriptive label.
-  gen_ty <- Err.noneM (Typing.typeOf gen_t)
+  gen_ty <- Err.noneM (Type.get gen_t)
   lbl <- liftM (\t -> "{" ++ t ++ "}") (showM gen_t)
   let gen_b = Bind (Just lbl) gen_ty
   
@@ -461,7 +460,7 @@ isolateArguments ctx = do
     . liftM Indices.lower
     . Env.bindAt 0 (Bind Nothing inner_gap_ty)
     . Err.noneM
-    . Typing.typeOf
+    . Type.get
     . App (Var 0)
     $ map Indices.lift args
   
@@ -517,7 +516,7 @@ expressMatches when =
   express :: Term -> m Term
   express term = do
     ms <- liftM (map (second fst) . Map.toList) Env.matches
-    term_ty <- Err.noneM (Typing.typeOf term)
+    term_ty <- Err.noneM (Type.get term)
     liftM (fromMaybe term)
       $ firstM (map (expressMatch term_ty) ms) 
     where
