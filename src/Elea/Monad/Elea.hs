@@ -75,7 +75,7 @@ instance Env.Readable Elea where
       $ "Index " ++ show at ++ " not bound in " ++ show bs
     return (bs !! fromEnum at)
 
-instance Err.Monad Elea where
+instance Err.Can Elea where
   throw e = Elea $ \_ -> (Error e)
   catch (Elea el) handle = Elea $ \r ->
     case el r of

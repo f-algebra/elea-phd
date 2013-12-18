@@ -118,6 +118,7 @@ tryLowerMany n t = do
 
 -- | The magic index. Equal only to itself, greater than every other index,
 -- and unchanged by lifting or lowering.
+-- Used in Elea.Context as the gap variable.
 omega :: Index
 omega = Index Nat.omega
 

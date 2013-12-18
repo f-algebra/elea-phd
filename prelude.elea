@@ -111,7 +111,7 @@ let length =
     end
     
 let append =
-  fix (app: nlist -> nlist -> nat) (xs: nlist) (zs: nlist) ->
+  fix (app: nlist -> nlist -> nlist) (xs: nlist) (zs: nlist) ->
     match xs with
     | Nil -> zs
     | Cons y ys -> Cons y (app ys zs)

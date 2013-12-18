@@ -8,7 +8,7 @@ where
 newtype Nat = Nat Int
   deriving ( Eq, Ord )
 
--- | Co-inductive natural numbers with decidable equality (magic).
+-- | Co-inductive natural numbers with decidable equality.
 data CoNat = Omega | CoNat Nat
   deriving ( Eq )
   
@@ -34,9 +34,11 @@ instance Num Nat where
     | otherwise = Nat 0
   Nat x * Nat y = Nat (x * y)
   abs = id
-  negate = undefined
-  signum = undefined
-  fromInteger n | n >= 0 = Nat (fromInteger n)
+  negate = error "Cannot negate a natural number"
+  signum (Nat x) = Nat (signum x)
+  fromInteger n 
+    | n >= 0 = Nat (fromInteger n)
+    | otherwise = error (show n ++ " is not a natural number.")
   
 instance Show CoNat where
   show Omega = "inf"
@@ -57,17 +59,23 @@ instance Num CoNat where
   _ + Omega = Omega
   CoNat x + CoNat y = CoNat (x + y)
   
-  CoNat _ - Omega = undefined
-  Omega - CoNat _ = Omega
   CoNat x - CoNat y = CoNat (x - y)
+  Omega - CoNat _ = Omega
+  CoNat _ - Omega = CoNat 0
   
-  Omega * _ = Omega
-  _ * Omega = Omega
+  Omega * Omega = Omega
+  Omega * CoNat x 
+    | x == 0 = CoNat 0
+    | otherwise = Omega
+  x * Omega = Omega * x
   CoNat x * CoNat y = CoNat (x * y)
+  
+  signum (CoNat x) = CoNat (signum x)
+  signum Omega = CoNat 1
+  
   abs = id
-  negate = undefined
-  signum = undefined
-  fromInteger n = CoNat (fromInteger n)
+  negate = error "Cannot negate a co-natural number"
+  fromInteger = CoNat . fromInteger
 
 omega :: CoNat
 omega = Omega

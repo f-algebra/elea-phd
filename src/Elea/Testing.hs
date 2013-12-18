@@ -46,17 +46,17 @@ prelude :: String
 prelude = unsafePerformIO
   $ readFile "prelude.elea"
   
-loadFile :: Defs.Monad m => String -> m [Equation]
+loadFile :: Defs.Has m => String -> m [Equation]
 loadFile = Err.noneM . Parse.program . unsafePerformIO . readFile
 
-loadPrelude :: Defs.Monad m => m ()
+loadPrelude :: Defs.Has m => m ()
 loadPrelude = do
   eqs <- Err.noneM (Parse.program prelude)
   return ()
 
-term :: Defs.Monad m => String -> m Term
+term :: Defs.Has m => String -> m Term
 term = Err.noneM . Parse.term
 
-_type :: Defs.Monad m => String -> m Type
+_type :: Defs.Has m => String -> m Type
 _type = Err.noneM . Parse._type
 

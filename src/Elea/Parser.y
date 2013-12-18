@@ -16,7 +16,7 @@ import qualified Elea.Typing as Typing
 import qualified Elea.Evaluation as Eval
 import qualified Elea.Env as Env
 import qualified Elea.Foldable as Fold
-import qualified Elea.Monad.Definitions as Defs
+import qualified Elea.Monad.Definitions as Defs      
 import qualified Elea.Monad.Error as Err
 import qualified Data.Map as Map
 
@@ -178,10 +178,10 @@ instance Monad m => Env.Writable (ReaderT Scope m) where
     
   matched _ _ = id
   
-instance Err.Monad m => Env.Readable (ReaderT Scope m) where
+instance Err.Can m => Env.Readable (ReaderT Scope m) where
   bindings = asks (get bindStack)
   
-type ParserMonad m a = (Err.Monad m, Defs.Monad m) => ReaderT Scope m a
+type ParserMonad m a = (Err.Can m, Defs.Has m) => ReaderT Scope m a
     
 localDef :: MonadReader Scope m => String -> Term -> m a -> m a
 localDef name term = id
@@ -189,21 +189,21 @@ localDef name term = id
   $ modify bindMap 
   $ Map.insert name term
   
-term :: (Err.Monad m, Defs.Monad m) => String -> m Term
+term :: (Err.Can m, Defs.Has m) => String -> m Term
 term = id
   . withEmptyScope 
   . parseAndCheckTerm 
   . happyTerm 
   . lexer
   
-_type :: (Err.Monad m, Defs.Monad m) => String -> m Type
+_type :: (Err.Can m, Defs.Has m) => String -> m Type
 _type = id
   . withEmptyScope
   . parseRawType
   . happyType 
   . lexer
   
-program :: forall m . (Err.Monad m, Defs.Monad m) => String -> m [Equation]
+program :: forall m . (Err.Can m, Defs.Has m) => String -> m [Equation]
 program text = 
   withEmptyScope $ do
     mapM_ defineType types

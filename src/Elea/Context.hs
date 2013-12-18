@@ -1,9 +1,8 @@
 module Elea.Context 
 (
-  Context, 
+  Context, term,
   make, apply,
-  isConstant, gapType,
-  toLambda, fromLambda,
+  isConstant, fromLambda,
   strip, dropLambdas,
 )
 where
@@ -20,71 +19,76 @@ import qualified Elea.Foldable as Fold
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Index as Indices
 import qualified Elea.Monad.Failure as Fail
+import qualified Control.Monad.Trans as Trans
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
--- | A single hole term context
-newtype Context 
-  -- | We store contexts as lambda abstractions
+-- | A single hole term context 
+newtype Context
   = Context { _term :: Term }
   deriving ( Eq, Ord )
   
 mkLabels [''Context]
 
-make :: Type -> (Term -> Term) -> Context
-make gap_ty mk_t = id
+-- | Should be fairly obvious how contexts are equivalent to @Term -> Term@
+-- but I can't think of a nice explanation to put here.
+make :: (Term -> Term) -> Context
+make mk_t = id
   . Context
-  . Lam (Bind "[_]" gap_ty)
-  . substAt Indices.omega (Var 0)
-  . Indices.lift
   $ mk_t (Var Indices.omega)
 
-apply :: Context -> Term -> Term
-apply (Context (Lam _ rhs)) arg = subst arg rhs
-
-toLambda :: Context -> Term
-toLambda = get term
+-- | This is the 'make' function backwards
+apply :: Context -> (Term -> Term)
+apply (Context ctx_t) arg_t = 
+  substAt Indices.omega arg_t ctx_t
 
 fromLambda :: Term -> Context
-fromLambda = Context
-
-gapType :: Context -> Type
-gapType (Context (Lam (Bind _ gap_ty) _)) = gap_ty
-
+fromLambda = 
+  Context . substAt 0 (Var Indices.omega) . inner
+  
 -- | Returns whether there is any gap in the given context.
 isConstant :: Context -> Bool
-isConstant (Context (Lam _ t)) = 
-  not (0 `Set.member` Indices.free t)
+isConstant =
+  not . Indices.containsOmega . get term
   
   
 -- | Takes a context which has a lambda topmost
 -- and drops it if that abstracted variable is always applied to the gap.
 -- For example "\x -> f (_ x)" becomes just "f _".
--- Used for fixpoint fission.
+-- If this transformation is not applicable then this function just returns
+-- the original context.
 dropLambdas :: Context -> Context
-dropLambdas (Context
-    (Lam ctx_b@(get Type.boundType -> Type.Fun _ ret_ty) 
-      (Lam rhs_b rhs_t)))
-  | not (Indices.omega `Set.member` Indices.free rhs_t') = 
-    dropLambdas (Context (Lam ctx_b' rhs_t'))
+dropLambdas (Context (Lam lam_b lam_t))
+  -- If this is 'Nothing' then there existed an instance of the gap
+  -- which did not have the abstracted variable applied as its first argument.
+  | Just lam_t' <- mby_lam_t'
+  
+  -- If the 0th index is not present then we have removed
+  -- all instances of the lambda abstracted variable, so we can
+  -- safely drop the lambda.
+  , not (0 `Set.member` Indices.free lam_t') = 
+      dropLambdas (Context (Indices.lower lam_t'))
   where
-  ctx_b' = set Type.boundType ret_ty ctx_b
-  
-  rhs_t' = id
+  mby_lam_t' = id
     . Env.trackIndices 0
+    . runMaybeT
     . Fold.transformM merge
-    . substAt 0 (Var Indices.omega)
-    $ rhs_t
+    $ lam_t
   
-  merge :: Term -> Env.TrackIndices Index Term
-  merge orig@(App (Var x1) (Var x2 : xs)) 
-    | x2 == Indices.omega = do
-      idx <- Env.tracked
-      if x1 == idx 
-      then return (app (Var idx) xs)
-      else return orig
+  -- Performs the transformation which removes instances of the variable
+  -- applied to the gap term.
+  merge :: Term -> MaybeT (Env.TrackIndices Index) Term
+  merge term@(App (Var x1) (Var x2 : xs)) 
+    | x1 == Indices.omega = do
+      idx <- Trans.lift Env.tracked
+      if x2 == idx 
+      then return (app (Var Indices.omega) xs)
+      -- Fail if we have an instance of the gap which does not
+      -- have the lambda abstracted variable applied to it.
+      else mzero
   merge other = 
     return other
+    
 dropLambdas other = other
 
     
@@ -94,15 +98,19 @@ dropLambdas other = other
 -- If this is a constant context then it returns 'Absurd' if it matches,
 -- because obviously there is no gap to return when the context is stripped.
 strip :: forall m . Fail.Can m => Context -> Term -> m Term
-strip (Context (Lam _ ctx_t)) term = do
-  uni <- Unifier.find ctx_t (Indices.lift term)
+strip (Context ctx_t) term = do
+  uni <- Unifier.find ctx_t term
   Fail.when (Map.size uni > 1)
+  -- If the terms are equal then there is no gap,
+  -- viz. we have unified with a constant context.
   if Map.size uni == 0
   then return (Absurd Type.empty)
   else do
     let [(idx, hole_term)] = Map.toList uni
-    Fail.when (idx /= 0)
-    return (Indices.lower hole_term)
+    -- The only variable we should be replacing is the gap variable, 
+    -- viz. omega
+    Fail.when (idx /= Indices.omega)
+    return hole_term
     
     
 instance Indexed Context where

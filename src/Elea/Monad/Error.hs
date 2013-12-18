@@ -1,6 +1,8 @@
+-- | This is just a renaming of 'MonadError', and with some useful
+-- new functions.
 module Elea.Monad.Error
 (
-  Monad (..), Err, ErrorT,
+  Can (..), Err, ErrorT,
   fromEither, augment, augmentM,
   none, noneM, wasThrown,
   when, unless, check,
@@ -8,17 +10,17 @@ module Elea.Monad.Error
 where
 
 import Prelude ()
-import Elea.Prelude hiding ( Monad, catch, when, unless )
+import Elea.Prelude hiding ( catch, when, unless )
 import qualified Elea.Prelude as Prelude
 
 type Err = String
 type ErrorT = EitherT Err
 
-class Prelude.Monad m => Monad m where
+class Monad m => Can m where
   throw :: Err -> m a
   catch :: m a -> (Err -> m a) -> m a
   
-augmentM :: forall m a . Monad m => m Err -> m a -> m a
+augmentM :: forall m a . Can m => m Err -> m a -> m a
 augmentM err_m = flip catch rethrow
   where
   rethrow :: Err -> m a
@@ -26,16 +28,16 @@ augmentM err_m = flip catch rethrow
     new_err <- err_m
     throw (new_err ++ "\n" ++ old_err)
     
-augment :: Monad m => Err -> m a -> m a
+augment :: Can m => Err -> m a -> m a
 augment = augmentM . return
     
-check :: Prelude.Monad m => (a -> m ()) -> m a -> m a
+check :: Monad m => (a -> m ()) -> m a -> m a
 check chk ma = do
   a <- ma
   chk a
   return a
 
-fromEither :: (Monad m, Show a) => Either a b -> m b
+fromEither :: (Can m, Show a) => Either a b -> m b
 fromEither (Left err) = throw (show err)
 fromEither (Right val) = return val
 
@@ -43,7 +45,7 @@ none :: Either Err b -> b
 none (Right x) = x
 none (Left err) = error err
 
-noneM :: Prelude.Monad m => EitherT Err m b -> m b
+noneM :: Monad m => EitherT Err m b -> m b
 noneM et = do
   e <- runEitherT et
   case e of
@@ -53,14 +55,14 @@ noneM et = do
 wasThrown :: Either Err b -> Bool
 wasThrown = isLeft
 
-when :: Monad m => Bool -> Err -> m ()
+when :: Can m => Bool -> Err -> m ()
 when True = throw
 when False = const (return ())
 
-unless :: Monad m => Bool -> Err -> m ()
+unless :: Can m => Bool -> Err -> m ()
 unless = when . not
 
-mapLeftT :: Monad m => (a -> b) -> EitherT a m c -> EitherT b m c
+mapLeftT :: Can m => (a -> b) -> EitherT a m c -> EitherT b m c
 mapLeftT f eth_t = EitherT $ do
   eth <- runEitherT eth_t
   return $ 
@@ -68,13 +70,13 @@ mapLeftT f eth_t = EitherT $ do
     Left l -> Left (f l)
     Right r -> Right r
 
-instance Monad (Either Err) where
+instance Can (Either Err) where
   throw = Left
   
   catch (Left err) handle = handle err
   catch right _ = right
   
-instance Prelude.Monad m => Monad (EitherT Err m) where
+instance Monad m => Can (EitherT Err m) where
   throw = EitherT . return . Left
   
   catch et handle = do
@@ -83,7 +85,7 @@ instance Prelude.Monad m => Monad (EitherT Err m) where
       Left err -> handle err
       right -> EitherT (return right)
   
-instance Monad m => Monad (ReaderT r m) where
+instance Can m => Can (ReaderT r m) where
   throw = lift . throw
   
   catch rdr handle = 

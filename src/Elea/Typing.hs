@@ -14,12 +14,13 @@ import Elea.Index hiding ( lift )
 import Elea.Type
 import Elea.Term
 import Elea.Show ( showM )
+import qualified Elea.Index as Indices
 import qualified Elea.Type as Type
 import qualified Elea.Foldable as Fold
 import qualified Elea.Env as Env
 import qualified Elea.Monad.Error as Err
 
-type TypingMonad m = (Err.Monad m, Env.Readable m)
+type TypingMonad m = (Err.Can m, Env.Readable m)
 
 -- | Throws an error if a term is not correctly typed.
 check :: TypingMonad m => Term -> m ()
@@ -84,6 +85,10 @@ typeOf term = id
   fcheck :: TypingMonad m => Term' (Type, Term) -> m ()
 
   -- Check that a variable has a type in the environment
+  fcheck (Var' idx)
+    | idx == Indices.omega = 
+      Err.throw "The omega variable index cannot be typed."
+  
   fcheck (Var' idx) = do
     depth <- Env.bindingDepth
     Err.when (fromEnum idx >= depth)

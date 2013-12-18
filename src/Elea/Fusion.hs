@@ -39,17 +39,35 @@ steps = Simp.steps ++
 -- | Uses fixpoint fusion on a fix with a fix as a decreasing argument.
 fixfix :: forall m . (Env.Readable m, Fail.Can m) => Term -> m Term
 
--- ofix means "outer fixpoint"
-fixfix (App ofix@(Fix ofix_b ofix_t) args) = id
+-- ofix means "outer fixpoint", oargs is "outer arguments"
+fixfix (App ofix@(Fix {}) oargs) = id
+  -- Pick the first one which does not fail
   . Fail.choose
   -- Run fixfixArg on every decreasing fixpoint argument position
   . map fixfixArg
-  . filter (Term.isFix . Term.leftmost . (args !!))
+  . filter (Term.isFix . Term.leftmost . (oargs !!))
   $ decreasingArgs ofix
   where
+  -- Run fixfix fusion on the argument at the given position
   fixfixArg :: Int -> m Term
-  fixfixArg arg_i = do
+  fixfixArg arg_i = do                      
+    ifix_ty <- Typing.typeOf ifix
     
+    where
+    -- Extract the argument at the given position
+    (left_oargs, (App ifix iargs):right_oargs) = splitAt arg_i oargs
+    
+    -- The context is the original outer term with the inner fixpoint
+    -- replaced by the gap
+    makeCtx :: Term -> Term
+    makeCtx gap = 
+      App ofix (left_oargs ++ (App gap iargs):right_args)
+      
+    
+  -- The internal simplification used in fixfix fusion
+  simplify :: Index -> Context -> Term -> m Term
+  simplify _ _ = return
+  
   
 fixfix _ = Fail.here
 

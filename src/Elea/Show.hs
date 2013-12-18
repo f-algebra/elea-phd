@@ -86,10 +86,10 @@ instance Env.Readable m => ShowM m Term where
       return . show . fmap fst $ other
       
 instance Env.Readable m => ShowM m Context where
-  showM = showM . Context.toLambda
+  showM = showM . get Context.term
   
 instance Show Context where
-  show = show . Context.toLambda
+  show = show . get Context.term
   
 instance ShowM m a => ShowM m (a, a) where
   showM (x, y) = do
