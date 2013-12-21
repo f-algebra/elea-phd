@@ -21,7 +21,7 @@ where
 
 import Prelude ()
 import Elea.Prelude
-import Elea.Index ( Index, Indexed )
+import Elea.Index ( Index, Indexed, Substitutable, Inner )
 import Elea.Type ( Type, Bind (..) )
 import qualified Elea.Type as Type
 import qualified Elea.Index as Indices

@@ -18,6 +18,7 @@ import qualified Elea.Types as Type
 import qualified Elea.Context as Context
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Simplifier as Simp
+import qualified Elea.Fission as Fission
 import qualified Elea.Monad.Error as Err
 import qualified Elea.Monad.Failure as Fail
 import qualified Elea.Foldable as Fold
@@ -29,10 +30,10 @@ run :: Env.Readable m => Term -> m Term
 run = Fold.rewriteStepsM (map Type.checkStep steps)
 
 steps :: (Env.Readable m, Fail.Can m) => [Term -> m Term]
-steps = Simp.steps ++ 
+steps = Fission.steps ++ 
   [ const Fail.here
-  , fixfix 
-  ]
+  , fixfix
+  ]                   
 
 
 -- | Uses fixpoint fusion on a fix with a fix as a decreasing argument.
@@ -66,8 +67,10 @@ fixfix (App ofix@(Fix {}) oargs) = id
   simplify :: Index -> Context -> Term -> m Term
   simplify _ _ = Simp.run
   
-  
 fixfix _ = Fail.here
+
+
+
 
 {-
 

@@ -1,10 +1,18 @@
 
+prop "add 0": forall (n: nat) -> add n 0 = n
+
+prop "append associative": 
+  forall (xs: nlist) (ys: nlist) (zs: nlist) ->
+    append (append xs ys) zs = append xs (append ys zs)
+    
+    
 let revapp = 
   fix (rap: nat -> nlist -> nlist) (n: nat) (xs: nlist) ->
     match xs with
     | Nil -> Cons n Nil
     | Cons y ys -> append (rap n ys) (Cons y Nil)
     end
+    
+prop "revapp-def": forall (n: nat) (xs: nlist) ->
+  revapp n xs = reverse (append xs (Cons n Nil))
 
-prop "revapp": forall (n: nat) (xs: nlist) ->
-  reverse (append xs (Cons n Nil)) = revapp n xs

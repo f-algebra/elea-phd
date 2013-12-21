@@ -53,6 +53,6 @@ dropLambdasTest :: String -> String -> Test.M Test.Test
 dropLambdasTest ctx_s aim_s = do
   ctx <- context ctx_s
   aim <- context aim_s
-  let dropped = Context.dropLambdas ctx
+  let (_, dropped) = Context.dropLambdas ctx
   return (Test.assertEq aim dropped)
   

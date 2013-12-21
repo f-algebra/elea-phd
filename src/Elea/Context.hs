@@ -3,7 +3,7 @@ module Elea.Context
   Context, term,
   make, apply,
   isConstant, fromLambda,
-  strip, dropLambdas,
+  strip, dropLambda, dropLambdas
 )
 where
 
@@ -54,43 +54,48 @@ isConstant =
 -- | Takes a context which has a lambda topmost
 -- and drops it if that abstracted variable is always applied to the gap.
 -- For example "\x -> f (_ x)" becomes just "f _".
--- If this transformation is not applicable then this function just returns
--- the original context.
-dropLambdas :: Context -> Context
-dropLambdas (Context (Lam lam_b lam_t))
+-- If successful it returns the binding of the lambda which was dropped.
+dropLambda :: forall m . Fail.Can m => Context -> m (Bind, Context)
+dropLambda (Context (Lam lam_b lam_t)) = do
   -- If this is 'Nothing' then there existed an instance of the gap
   -- which did not have the abstracted variable applied as its first argument.
-  | Just lam_t' <- mby_lam_t'
-  
-  -- If the 0th index is not present then we have removed
-  -- all instances of the lambda abstracted variable, so we can
-  -- safely drop the lambda.
-  , not (0 `Set.member` Indices.free lam_t') = 
-      dropLambdas (Context (Indices.lower lam_t'))
-  where
-  mby_lam_t' = id
-    . Env.trackIndices 0
-    . runMaybeT
+  lam_t' <- id
+    . Env.trackIndicesT 0
     . Fold.transformM merge
     $ lam_t
   
+  -- If the 0th index is present then we have not removed
+  -- all instances of the lambda abstracted variable.
+  -- so we cannot fdrop the lambda.
+  Fail.when (0 `Set.member` Indices.free lam_t')
+  return (lam_b, Context (Indices.lower lam_t'))
+  where
   -- Performs the transformation which removes instances of the variable
   -- applied to the gap term.
-  merge :: Term -> MaybeT (Env.TrackIndices Index) Term
+  merge :: Term -> Env.TrackIndicesT Index m Term
   merge term@(App (Var x1) (Var x2 : xs)) 
     | x1 == Indices.omega = do
-      idx <- Trans.lift Env.tracked
-      if x2 == idx 
-      then return (app (Var Indices.omega) xs)
       -- Fail if we have an instance of the gap which does not
       -- have the lambda abstracted variable applied to it.
-      else mzero
+      idx <- Env.tracked
+      Fail.unless (x2 == idx)
+      return (app (Var Indices.omega) xs)
   merge other = 
     return other
     
-dropLambdas other = other
+dropLambda _ = Fail.here
 
-    
+
+-- | Drops all possible lambdas, just an iteration of 'dropLambda' which
+-- collects the bindings and returns the eventual context.
+dropLambdas :: Context -> ([Bind], Context)
+dropLambdas ctx
+  | Just (b, ctx') <- dropLambda ctx = 
+    first (b:) (dropLambdas ctx')
+dropLambdas ctx = 
+  ([], ctx)
+      
+      
 -- | If the given term is within the given context, then return
 -- the value which has filled the context gap.
 -- E.g. "remove (f [_] y) (f x y) == Just x" 
@@ -116,7 +121,7 @@ instance Indexed Context where
   free = Indices.free . get term
   shift f = modify term (Indices.shift f)
 
-instance Indices.Substitutable Context where
+instance Substitutable Context where
   type Inner Context = Term
   substAt at with = modify term (Indices.substAt at with)
   

@@ -11,4 +11,30 @@ prop "1<=2":
 prop "not-not": forall (p: bool) ->
   not (not p) = p
   
+prop "expand-rev": forall (xs: nlist) (x: nat) ->
+  reverse (Cons x xs) = append (reverse xs) (Cons x Nil)
+  
+  
+let append3 =
+  fix (app3: nlist -> nlist -> nlist -> nlist) ->
+    fun (xs: nlist) (ys: nlist) (zs: nlist) ->
+    match xs with
+    | Nil -> append ys zs
+    | Cons x xs' -> Cons x (app3 xs' ys zs)
+    end
+    
+prop "append3-simp": forall (xs: nlist) (ys: nlist) (zs: nlist) ->
+  append3 xs ys zs = append xs (append ys zs) 
+    
+  
+let dneppa = 
+  fix (ppa: nlist -> nlist -> nlist) (zs: nlist) (xs: nlist) ->
+    match xs with
+    | Nil -> zs
+    | Cons y ys -> Cons y (ppa zs ys)
+    end
+   
+prop "non-rec first arg": forall (xs: nlist) (ys: nlist) ->
+  dneppa ys xs = append xs ys
+    
 

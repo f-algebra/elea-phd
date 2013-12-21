@@ -24,5 +24,9 @@ tests = Test.label "Fusion"
     $ Test.run $ do
   Test.loadPrelude
   eqs <- Test.loadFile "src/Elea/Tests/fusion.elea"
-  return (map checkEquation eqs)
+  return
+    . map checkEquation
+    . filter ((== "add 0") . get equationName)
+    $ eqs
+
 

@@ -39,6 +39,7 @@ steps = eval_steps ++
   , identityCase
   , uselessFix
   , finiteArgFix
+  , unfoldFixInj
   ]
   where
   eval_steps = map (Fail.fromMaybe .) Eval.steps
@@ -124,7 +125,7 @@ absurdity _ =
 -- | If an argument to a 'Fix' never changes in any recursive call
 -- then we should float that lambda abstraction outside the 'Fix'.
 constArg :: Fail.Can m => Term -> m Term
-constArg (Fix (Bind fix_name fix_ty) fix_t) = do
+constArg term@(Fix (Bind fix_name fix_ty) fix_t) = do
   -- Find if any arguments never change in any recursive calls
   pos <- Fail.fromMaybe (find isConstArg [0..length arg_bs - 1])
   
@@ -157,14 +158,17 @@ constArg (Fix (Bind fix_name fix_ty) fix_t) = do
         && arg_t /= (args !! arg_i)
     isntConst _ = 
       return False
+     
       
-      
-  -- Remove an argument to the function at the given position
+  -- Remove an argument to the function at the given position.
   removeConstArg :: Int -> Term
   removeConstArg arg_i = id
-    -- Add the top level lambda to keep the type of the term the same
+    -- Add new outer lambdas to keep the type of the term the same
     . unflattenLam (left_bs ++ [dropped_b])
     . flip app outer_args
+    
+    -- Need to make sure no variables are captured by these new outer lambdas
+    . Indices.liftManyAt (elength left_bs) 1 
     . Fix fix_b'
     
     -- Remove the argument everywhere it appears
@@ -211,7 +215,7 @@ constArg _ = Fail.here
 -- | If a fixpoint has a finite input to one of its decreasing arguments
 -- then you can safely unfold it.
 finiteArgFix :: Fail.Can m => Term -> m Term
-finiteArgFix (App fix@(Fix _ fix_t) args)
+finiteArgFix (App fix@(Fix {}) args)
   | any isFinite dec_args = 
     return (App (Term.unfoldFix fix) args)
   where
@@ -236,6 +240,20 @@ uselessFix (Fix _ fix_t)
   | not (0 `Set.member` Indices.free fix_t) = 
     return (Indices.lower fix_t)
 uselessFix _ = Fail.here
+
+
+-- | Unfolds a 'Fix' if one of its arguments is a constructor term.
+unfoldFixInj :: (Fail.Can m, Env.Readable m) => Term -> m Term
+unfoldFixInj term@(App fix@(Fix {}) args)
+  | any isConArg (Term.decreasingArgs fix) = 
+    return (App (Term.unfoldFix fix) args)
+  where
+  -- Check whether an argument is a constructor, and does not unify
+  -- with any recursive calls the function itself makes (TODO).
+  isConArg :: Int -> Bool
+  isConArg arg_i = isCon . leftmost $ args !! arg_i
+    
+unfoldFixInj _ = Fail.here
 
 {-
 

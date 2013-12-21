@@ -58,7 +58,7 @@ module Elea.Prelude
   insertAt, enum, indent, indentBy, debugNth,
   arrowSum, supremum, (|>), ($>),
   Maximum (..), Minimum (..), sconcatMap,
-  intersects, nlength, liftMaybe, maybeT
+  intersects, nlength, elength, liftMaybe, maybeT
 )
 where
 
@@ -170,8 +170,11 @@ intercalate :: Monoid m => m -> [m] -> m
 intercalate x = concat . intersperse x
 
 -- | A more usefully typed 'length' function.
-nlength :: (Foldable f) => f a -> Nat
-nlength = toEnum . Pre.length . toList
+elength :: (Foldable f, Enum n) => f a -> n
+elength = enum . Pre.length . toList
+
+nlength :: Foldable f => f a -> Nat
+nlength = elength
 
 partitionM :: Monad m => (a -> m Bool) -> [a] -> m ([a], [a])
 partitionM f = foldrM f' ([], [])  

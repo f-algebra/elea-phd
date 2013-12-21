@@ -41,7 +41,7 @@ instance Show (Term' String) where
     fst (cons !! fromEnum idx)
   show (Case' (Type.unfold -> cons) cse_t f_alts) = id 
      . indent
-     $ "match " ++ cse_t ++ " with"
+     $ "\nmatch " ++ cse_t ++ " with"
     ++ concat alts_s
     ++ "\nend"
     where
