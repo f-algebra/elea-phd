@@ -182,8 +182,8 @@ fission simplify fix@(Fix fix_b fix_t) outer_ctx = do
         
   -- DEBUG
   new_term_s <- showM new_term
-  let s2 = "\nDONE:\n" ++ new_term_s
-  trace s2 (return new_term)
+  let s3 = "\nDONE:\n" ++ new_term_s
+  trace s3 (return new_term)
   
   where
   outer_ctx' = Indices.lift outer_ctx
@@ -192,11 +192,11 @@ fission simplify fix@(Fix fix_b fix_t) outer_ctx = do
   -- Will first try to float this context to the top so it can be stripped.
   stripContext :: Term -> m Term
   stripContext orig_t = do
-      stripped_t <- Context.strip ctx_inside_lam floated_t
+      stripped_t <- Context.strip ctx_inside_lam inner_t'
       
-      unless (dropped_bs == lam_bs)
+      unless (dropped_bs == lam_bs_dropped)
         $ error "Found a case of context stripping being unsound"
-        
+         
       return 
         . Term.unflattenLam lam_bs 
         $ stripped_t
@@ -208,6 +208,8 @@ fission simplify fix@(Fix fix_b fix_t) outer_ctx = do
     
     (dropped_bs, dropped_ctx) = Context.dropLambdas outer_ctx'
     (lam_bs, inner_t) = Term.flattenLam floated_t
+    (lam_bs_dropped, lam_bs_rest) = splitAt (length dropped_bs) lam_bs
+    inner_t' = Term.unflattenLam lam_bs_rest inner_t
     
     ctx_inside_lam = Indices.liftMany (elength lam_bs) dropped_ctx
     

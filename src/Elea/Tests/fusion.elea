@@ -13,6 +13,24 @@ let revapp =
     | Cons y ys -> append (rap n ys) (Cons y Nil)
     end
     
-prop "revapp-def": forall (n: nat) (xs: nlist) ->
-  revapp n xs = reverse (append xs (Cons n Nil))
+prop "revapp def": forall (n: nat) (xs: nlist) ->
+  reverse (append xs (Cons n Nil)) = revapp n xs
 
+prop "revapp cons": forall (n: nat) (xs: nlist) ->
+  revapp n xs = Cons n (reverse xs)
+  
+
+let always_true = 
+  fix (true: nat -> nat -> bool) (x: nat) (y: nat) ->
+    match x with
+    | 0 -> True
+    | Suc x' ->
+      match y with
+      | 0 -> True
+      | Suc y' -> true x' y'
+      end
+    end
+
+prop "always true": forall (n: nat) (m: nat) ->
+  always_true n m = True
+  

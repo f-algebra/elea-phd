@@ -2,10 +2,11 @@ module Elea.Type
 (
   Type (..), Ind (..), ConArg (..), Bind (..),
   name, constructors, boundLabel, boundType, 
-  empty,
+  empty, returnType,
   isInd, isFun,
   unflatten, flatten, unfold,
-  isRecursive, recursiveArgs, isBaseCase,
+  isRecursive, recursiveArgs, nonRecursiveArgs, 
+  isBaseCase,
 )
 where
 
@@ -78,6 +79,9 @@ flatten ty = [ty]
 unflatten :: [Type] -> Type
 unflatten = foldr1 Fun
 
+returnType :: Type -> Type
+returnType = last . flatten
+
 unfold :: Ind -> [Bind]
 unfold ind@(Ind _ cons) =
   map unfoldCon cons
@@ -97,6 +101,13 @@ unfold ind@(Ind _ cons) =
 recursiveArgs :: Ind -> Nat -> [Int]
 recursiveArgs (Ind _ cons) n =
   findIndices (== IndVar) con_args
+  where
+  (_, con_args) = cons !! enum n
+  
+-- | Returns the opposite indices to 'recursiveArgs'
+nonRecursiveArgs :: Ind -> Nat -> [Int]
+nonRecursiveArgs (Ind _ cons) n =
+  findIndices (/= IndVar) con_args
   where
   (_, con_args) = cons !! enum n
   

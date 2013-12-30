@@ -7,7 +7,8 @@ module Elea.Env
   Tracks (..), trackeds,
   AlsoTrack, alsoTrack, alsoWith,
   TrackIndices, TrackIndicesT,
-  liftTracked, trackIndices, trackIndicesT,
+  trackIndices, trackIndicesT,
+  liftTracked, 
   
   TrackOffset, TrackOffsetT,
   trackOffset, trackOffsetT,
@@ -149,16 +150,21 @@ empty = flip runReader mempty
 
 -- | Anything that tracks indices as we move within something that binds
 -- indices.
-class (Monad m, Indexed r) => Tracks r m where
+class (Monad m, Indexed r) => Tracks r m | m -> r where
   tracked :: m r
+  liftTrackedMany :: Nat -> m a -> m a
   
 trackeds :: Tracks r m => (r -> a) -> m a 
 trackeds f = liftM f tracked
 
+liftTracked :: Tracks r m => m a -> m a 
+liftTracked = liftTrackedMany 1
 
 instance Tracks r m => Tracks r (MaybeT m) where
   tracked = Trans.lift tracked
+  liftTrackedMany n = mapMaybeT (liftTrackedMany n)
 
+  
 -- Place 'AlsoTrack' over the top of a 'Writable' environment monad.
 -- 'AlsoTrack' will capture all changes to the environment and pass them
 -- along to the inner monad. 
@@ -170,13 +176,8 @@ newtype AlsoTrack r m a
   
 instance (Indexed r, Monad m) => Tracks r (AlsoTrack r m) where
   tracked = AlsoTrack ask
-
-liftTrackedMany :: (Monad m, Indexed r) => 
-  Nat -> AlsoTrack r m a -> AlsoTrack r m a
-liftTrackedMany n = AlsoTrack . local (Indices.liftMany n) . runAlsoTrack
-  
-liftTracked :: (Monad m, Indexed r) => AlsoTrack r m a -> AlsoTrack r m a
-liftTracked = liftTrackedMany 1
+  liftTrackedMany n =
+    AlsoTrack . local (Indices.liftMany n) . runAlsoTrack
 
 mapAlsoTrack :: Monad m => (m a -> n b) -> 
   (AlsoTrack r m a -> AlsoTrack r n b)
