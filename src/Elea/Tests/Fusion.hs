@@ -26,7 +26,6 @@ tests = Test.label "Fusion"
   eqs <- Test.loadFile "src/Elea/Tests/fusion.elea"
   return
     . map checkEquation
- --   . filter ((== "none") . get equationName)
+    . filter ((== "count reverse") . get equationName)
     $ eqs
-
 

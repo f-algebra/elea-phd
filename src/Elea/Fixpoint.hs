@@ -56,7 +56,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_b fix_t) = do
     . Env.bindMany (reverse (fix_b:free_var_bs))
     . simplify 0 outer_ctx'
     
-    -- Apply the context to the unwrap  ped function body
+    -- Apply the context to the unwrapped function body
     $ Context.apply outer_ctx' fix_t'
     
   -- DEBUG
@@ -117,7 +117,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_b fix_t) = do
   
   -- Replace all free variables with fresh new variables
   fix_t' = rebindVars fix_t
-  outer_ctx' = Indices.lift (rebindVars outer_ctx)
+  outer_ctx' = rebindVars (Indices.lift outer_ctx)
   
   rebindVars :: (Substitutable a, Inner a ~ Term) => a -> a
   rebindVars = id
@@ -161,7 +161,7 @@ fission simplify fix@(Fix fix_b fix_t) outer_ctx = do
   
   simplified_t <- id
     -- DEBUG
-    . trace s1
+ --   . trace s1
   
     -- Simplify the result
     . Env.bind fix_b
@@ -183,7 +183,9 @@ fission simplify fix@(Fix fix_b fix_t) outer_ctx = do
   -- DEBUG
   new_term_s <- showM new_term
   let s3 = "\nDONE:\n" ++ new_term_s
-  trace s3 (return new_term)
+  id 
+--    . trace s3 
+    $ return new_term
   
   where
   outer_ctx' = Indices.lift outer_ctx

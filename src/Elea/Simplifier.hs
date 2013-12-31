@@ -40,6 +40,7 @@ steps = eval_steps ++
   , uselessFix
   , finiteArgFix
   , unfoldFixInj
+  , freeCaseFix
   ]
   where
   eval_steps = map (Fail.fromMaybe .) Eval.steps
@@ -252,8 +253,32 @@ unfoldFixInj term@(App fix@(Fix {}) args)
   -- with any recursive calls the function itself makes (TODO).
   isConArg :: Int -> Bool
   isConArg arg_i = isCon . leftmost $ args !! arg_i
-    
 unfoldFixInj _ = Fail.here
+
+-- | If we pattern match inside a 'Fix', but only using variables that exist
+-- outside of the 'Fix', then we can float this pattern match outside
+-- of the 'Fix'.
+freeCaseFix :: Fail.Can m => Term -> m Term
+freeCaseFix fix@(Fix _ fix_t) = do
+  free_case <- id
+    . Fail.fromMaybe
+    . Env.trackOffset
+    . Env.liftTracked
+    $ Fold.findM freeCases fix_t
+  return (Term.applyCase free_case fix)
+  where
+  freeCases :: Term -> Env.TrackOffset (Maybe Term)
+  freeCases cse@(Case _ cse_t _) = do
+    idx_offset <- Env.tracked
+    if any (< idx_offset) (Indices.free cse_t) 
+    then return Nothing
+    else return 
+       . Just
+       . Indices.lowerMany (enum idx_offset) 
+       $ cse
+  freeCases _ = 
+    return Nothing
+freeCaseFix _ = Fail.here
 
 {-
 
@@ -466,30 +491,6 @@ constantFix (Fix _ fix_b fix_t)
 constantFix _ = 
   Nothing
 
-      
--- | If we pattern match inside a 'Fix', but only using variables that exist
--- outside of the 'Fix', then we can float this pattern match outside
--- of the 'Fix'.
-freeCaseFix :: Term -> Maybe Term
-freeCaseFix fix_t@(Fix _ _ fix_body) = do
-  free_case <- id
-    . Env.trackIndices 1
-    $ Fold.isoFindM Term.restricted freeCases fix_body
-  return (applyCaseOf free_case fix_t)
-  where
-  freeCases :: Term -> Env.TrackIndices Index (Maybe Term)
-  freeCases cse@(Case cse_of _ _) = do
-    idx_offset <- Env.tracked
-    if any (< idx_offset) (Indices.free cse_of) 
-    then return Nothing
-    else return 
-       . Just
-       . Indices.lowerMany (fromEnum idx_offset) 
-       $ cse
-  freeCases _ = 
-    return Nothing
-  
-freeCaseFix _ = Nothing
 
 
 -- | This one is important to stop infinite loops. It pushes pattern matches

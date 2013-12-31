@@ -124,6 +124,17 @@ let reverse =
     | Cons y ys -> append (rev ys) (Cons y Nil)
     end
     
+let count = 
+  fix (c: nat -> nlist -> nat) (n: nat) (xs: nlist) ->
+    match xs with
+    | Nil -> 0
+    | Cons y ys ->
+      match eq_nat n y with
+      | True -> Suc (c n ys)
+      | False -> c n ys
+      end
+    end
+    
 /*
     
 let list = fun (a: *) -> 

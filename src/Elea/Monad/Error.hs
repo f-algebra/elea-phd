@@ -12,6 +12,8 @@ where
 import Prelude ()
 import Elea.Prelude hiding ( catch, when, unless )
 import qualified Elea.Prelude as Prelude
+import qualified Control.Monad.Trans.Maybe as Maybe
+import qualified Control.Monad.Trans.Reader as Reader
 
 type Err = String
 type ErrorT = EitherT Err
@@ -87,9 +89,10 @@ instance Monad m => Can (EitherT Err m) where
   
 instance Can m => Can (ReaderT r m) where
   throw = lift . throw
-  
-  catch rdr handle = 
-    ReaderT $ \r -> catch (runReaderT rdr r) 
-            $ \e -> runReaderT (handle e) r
+  catch = Reader.liftCatch catch
+            
+instance Can m => Can (MaybeT m) where
+  throw = lift . throw
+  catch =  Maybe.liftCatch catch
 
   

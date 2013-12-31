@@ -5,7 +5,7 @@
 module Elea.Types
 (
   module Elea.Type,
-  get, check, checkStep,
+  get, check, checkStep, checkTrace,
 )
 where
 
@@ -31,6 +31,9 @@ get = Err.noneM . typeOf
 check :: TypingMonad m => Term -> m ()
 -- Call 'typeOf' and ignore the argument
 check = liftM (const ()) . typeOf
+
+checkTrace :: Env.Readable m => Term -> m a -> m a
+checkTrace term m = Err.noneM (check term) >> m
 
 -- | Wrap this around a term transformation step @Term -> m (Maybe Term)@
 -- to add a check that the step preserves the type of the term.

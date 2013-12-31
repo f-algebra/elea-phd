@@ -33,4 +33,8 @@ let always_true =
 
 prop "always true": forall (n: nat) (m: nat) ->
   always_true n m = True
+ 
+  
+prop "count reverse": forall (n: nat) (xs: nlist) ->
+  count n (reverse xs) = count n xs
   

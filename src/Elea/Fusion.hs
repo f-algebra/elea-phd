@@ -36,6 +36,8 @@ steps = Fission.steps ++
   ]                   
 
 
+-- TODO proper generalisation of all terms which are not the two fixpoints
+  
 -- | Uses fixpoint fusion on a fix with a fix as a decreasing argument.
 fixfix :: forall m . (Env.Readable m, Fail.Can m) => Term -> m Term
 
@@ -50,27 +52,59 @@ fixfix (App ofix@(Fix {}) oargs) = id
   where
   -- Run fixfix fusion on the argument at the given position
   fixfixArg :: Int -> m Term
-  fixfixArg arg_i =
-    Fix.fusion simplify context ifix
+  fixfixArg arg_i = do
+    -- We need to generalise every argument which is not the fixpoint,
+    -- so we first lookup their types
+    arg_tys <- mapM Type.get all_args
+    
+    -- We bind them in the reverse order to their index when generalised
+    let gen_bs = id
+          . zipWith (\n -> Bind ("X" ++ show n)) [0..]
+          $ reverse arg_tys
+
+    -- Reverse the argument generalisation
+    liftM (\t -> foldr Indices.subst t all_args)
+      -- Run fixpoint fusion
+      . Env.bindMany gen_bs
+      $ Fix.fusion simplify context ifix'
     where
     -- Extract the argument at the given position
     (left_oargs, (App ifix iargs):right_oargs) = splitAt arg_i oargs
+    all_args = left_oargs ++ iargs ++ right_oargs
     
-    -- The context is the original outer term with the inner fixpoint
-    -- replaced by the gap
-    context = Context.make makeCtx
+    -- Make sure we don't capture any variables of the fixpoints 
+    -- when we generalise
+    ifix' = Indices.liftMany (elength all_args) ifix
+    ofix' = Indices.liftMany (elength all_args) ofix
+    
+    -- The context is the inner fixpoint replaced by the gap
+    -- and all the other arguments generalised to new variables.
+    context = Context.make makeContext
       where
-      makeCtx gap = 
-        App ofix (left_oargs ++ (App gap iargs:right_oargs))
+      makeContext gap = 
+        app ofix' (left_vars ++ [app gap ivars] ++ right_vars)
+        where
+        -- Generalise every argument to a new variable
+        vars = map Var [0..]
+        (left_vars, vars') = splitAt (length left_oargs) vars
+        (ivars, vars'') = splitAt (length iargs) vars'
+        right_vars = take (length right_oargs) vars''
     
   -- The internal simplification used in fixfix fusion
   simplify :: Index -> Context -> Term -> m Term
-  simplify _ _ = Simp.run
+  simplify _ _ = run
   
 fixfix _ = Fail.here
 
+{-
+repeatedArg :: forall m . (Env.Readable m, Fail.Can m) => Term -> m Term
+repeatedArg (App fix@(Fix {}) args) = do
+  
+  where
+  dec_arg_is = Term.decreasingArgs fix
 
-
+repeatedArg _ = Fail.here
+-}
 
 {-
 
