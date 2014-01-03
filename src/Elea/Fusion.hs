@@ -96,15 +96,29 @@ fixfix (App ofix@(Fix {}) oargs) = id
   
 fixfix _ = Fail.here
 
-{-
+
 repeatedArg :: forall m . (Env.Readable m, Fail.Can m) => Term -> m Term
-repeatedArg (App fix@(Fix {}) args) = do
-  
+repeatedArg (App fix@(Fix {}) args) = id
+  -- Pick the first success
+  . Fail.choose
+  . map fuseRepeated 
+  -- We only care about ones with at least a single repetition
+  . filter ((> 1) . length)
+  -- Group up all decreasing arguments which are equal
+  . groupBy ((==) `on` (args !!))
+  -- We only care about variable arguments
+  . filter (Term.isVar . (args !!))
+  $ Term.decreasingArgs fix
   where
-  dec_arg_is = Term.decreasingArgs fix
+  fuseRepeated :: [Int] -> m Term
+  fuseRepeated arg_is = do
+    arg_tys <- mapM Type.get args
+    where
+    makeContext gap_f = 
+      
 
 repeatedArg _ = Fail.here
--}
+
 
 {-
 

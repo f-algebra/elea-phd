@@ -108,7 +108,7 @@ import Data.Traversable
 import Data.Foldable hiding ( concat, concatMap )
 import Data.List ( intersperse, unfoldr, partition,
   isPrefixOf, isSuffixOf, isInfixOf, sort, sortBy, findIndex,
-  delete, elemIndices, intersect, union, transpose,
+  delete, elemIndices, intersect, union, transpose, groupBy,
   (\\), subsequences, isSuffixOf, deleteBy, findIndices, elemIndex )
 import Data.IORef
 import Data.Char ( isAlpha, isDigit, isAlphaNum, isSpace, chr, ord )
