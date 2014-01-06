@@ -38,3 +38,7 @@ prop "always true": forall (n: nat) (m: nat) ->
 prop "count reverse": forall (n: nat) (xs: nlist) ->
   count n (reverse xs) = count n xs
   
+prop "eq_nat reflexive": forall (n: nat) -> 
+  eq_nat n n = True
+  
+

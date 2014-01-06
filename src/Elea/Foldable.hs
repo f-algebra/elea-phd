@@ -162,12 +162,11 @@ countM p = liftM Monoid.getSum . foldM (liftM (Monoid.Sum . found) . p)
 -- then this returns 'Nothing'.
 isoRewriteOnceM :: forall a m t .
     (Monad m, TransformableM (StateT Bool m) t) =>
-  Iso a t -> (a -> m (Maybe a)) -> a -> m (Maybe a)
+  Iso a t -> (a -> MaybeT m a) -> a -> MaybeT m a
 isoRewriteOnceM iso f t = do
-  (t', done) <- runStateT (isoTransformM iso once t) False
-  if done
-  then return (Just t')
-  else return Nothing
+  (t', done) <- lift (runStateT (isoTransformM iso once t) False)
+  guard done
+  return t'
   where
   once :: a -> StateT Bool m a
   once t = do
@@ -175,7 +174,7 @@ isoRewriteOnceM iso f t = do
     if already 
     then return t
     else do
-      mby_t <- lift (f t)
+      mby_t <- lift (runMaybeT (f t))
       case mby_t of
         Nothing -> return t
         Just t' -> do
@@ -183,7 +182,7 @@ isoRewriteOnceM iso f t = do
           return t'
           
 rewriteOnceM :: (Monad m, TransformableM (StateT Bool m) t) =>
-  (t -> m (Maybe t)) -> t -> m (Maybe t)
+  (t -> MaybeT m t) -> t -> MaybeT m t
 rewriteOnceM = isoRewriteOnceM id
 
 isoRewriteStepsM :: (Monad m, TransformableM m t) =>

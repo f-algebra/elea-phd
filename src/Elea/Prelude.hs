@@ -56,7 +56,7 @@ module Elea.Prelude
   takeIndices, isNub, foldl1M, seqStr, strSeq,
   isLeft, isRight, modifyM', modifyM, removeAt,
   insertAt, enum, indent, indentBy, debugNth,
-  arrowSum, supremum, (|>), ($>),
+  arrowSum, supremum, (|>), ($>), replaceAt,
   Maximum (..), Minimum (..), sconcatMap,
   intersects, nlength, elength, liftMaybe, maybeT
 )
@@ -332,7 +332,7 @@ modifyM r g f = do
   x <- g (get r f)
   return (set r x f)
    
-insertAt :: Nat -> a -> [a] -> [a]
+insertAt :: Int -> a -> [a] -> [a]
 insertAt 0 x ys = x:ys
 insertAt n x (y:ys) = y:(insertAt (n-1) x ys)
 insertAt _ _ [] = 
@@ -342,6 +342,12 @@ removeAt :: Int -> [a] -> [a]
 removeAt _ [] = error "Can't remove past the end of a list"
 removeAt 0 (x:xs) = xs
 removeAt n (x:xs) = x:(removeAt (n-1) xs)
+
+replaceAt :: Int -> a -> [a] -> [a]
+replaceAt 0 x (y:ys) = x:ys
+replaceAt n x (y:ys) = y:(replaceAt (n-1) x ys)
+replaceAt _ _ [] = 
+  error "Can't replace past the end of a list"
   
 enum :: (Enum a, Enum b) => a -> b
 enum = toEnum . fromEnum

@@ -10,7 +10,7 @@ module Elea.Index
 where
 
 import Prelude ()
-import Elea.Prelude hiding ( lift )
+import Elea.Prelude hiding ( lift, replaceAt )
 import qualified Data.Nat as Nat
 import qualified Data.Map as Map
 import qualified Elea.Monad.Failure as Fail

@@ -8,13 +8,14 @@ where
 import Prelude ()
 import Elea.Prelude hiding ( union, find )
 import Elea.Index
+import qualified Elea.Index as Indices
 import qualified Elea.Monad.Failure as Fail
 import qualified Data.Map as Map
 
 type Unifier a = Map Index a
 
 apply :: Substitutable t => Unifier (Inner t) -> t -> t
-apply = flip (foldr (uncurry replaceAt)) . Map.toAscList
+apply = flip (foldr (uncurry Indices.replaceAt)) . Map.toAscList
 
 singleton :: Index -> a -> Unifier a
 singleton = Map.singleton

@@ -8,6 +8,7 @@ import Prelude ()
 import Elea.Prelude
 import Elea.Term
 import qualified Elea.Env as Env
+import qualified Elea.Simplifier as Simp
 import qualified Elea.Testing as Test
 import qualified Elea.Fusion as Fusion
 
@@ -26,6 +27,6 @@ tests = Test.label "Fusion"
   eqs <- Test.loadFile "src/Elea/Tests/fusion.elea"
   return
     . map checkEquation
-    . filter ((== "count reverse") . get equationName)
+ --   . filter ((== "count reverse") . get equationName)
     $ eqs
 

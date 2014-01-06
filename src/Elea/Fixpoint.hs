@@ -34,7 +34,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_b fix_t) = do
   -- such as types or new variables is the same, for simplicity.
   -- Lambdas will bind variables in descending order, so we
   -- end up reversing these lists all over the place.
-
+  
   -- DEBUG
   ctx_s <- showM outer_ctx
   t_s <- showM inner_fix
@@ -50,7 +50,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_b fix_t) = do
   
   simplified_t <- id
     -- DEBUG
-    . trace s1
+-- . trace s1
   
     -- Finally, run the given simplification function on it.
     . Env.bindMany (reverse (fix_b:free_var_bs))
@@ -67,7 +67,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_b fix_t) = do
   -- with the old fix variable replaced with the new fix variable
   let replaced_t = id 
         -- DEBUG
-        . trace s2
+     --   . trace s2
   
         -- Now replace all occurrences of the outer context 
         -- composed with omega (the old fix variable)
@@ -93,7 +93,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_b fix_t) = do
     . Indices.containsOmega
     
     -- DEBUG
-    . trace s3
+    . trace (s1 ++ s2 ++ s3)
     $ replaced_t
     
   new_term <- id
@@ -122,6 +122,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_b fix_t) = do
   rebindVars :: (Substitutable a, Inner a ~ Term) => a -> a
   rebindVars = id
     . concatEndos 
+    . reverse
     . zipWith Indices.replaceAt (map Indices.lift free_vars)
     $ map Indices.lift new_vars
   

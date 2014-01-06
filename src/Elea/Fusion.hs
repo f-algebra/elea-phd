@@ -27,8 +27,26 @@ import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
 
 run :: Env.Readable m => Term -> m Term
-run = Fold.rewriteStepsM (map Type.checkStep steps)
+run term = do
+  -- Make sure the term has had all non-fixpoint based simplifications run
+  -- before we try the more advanced fixpoint based one, some of which rely
+  -- on the term being in some normal form 
+  -- because of these earlier simplifications
+  term' <- Simp.run term
+  
+  -- Fixpoint steps are heavyweight. It is faster to make sure they are
+  -- only applied one at a time.
+  mby_term'' <- id
+    . runMaybeT 
+    . Fail.choose 
+    $ map ($ term') fixpoint_steps
+  
+  maybe (return term') run mby_term''
+  where
+  fixpoint_steps =
+    map Fold.rewriteOnceM (Fission.steps ++ steps)
 
+  
 steps :: (Env.Readable m, Fail.Can m) => [Term -> m Term]
 steps = Fission.steps ++ 
   [ const Fail.here
@@ -42,7 +60,7 @@ steps = Fission.steps ++
 fixfix :: forall m . (Env.Readable m, Fail.Can m) => Term -> m Term
 
 -- ofix means "outer fixpoint", oargs is "outer arguments"
-fixfix (App ofix@(Fix {}) oargs) = id
+fixfix oterm@(App ofix@(Fix {}) oargs) = id
   -- Pick the first one which does not fail
   . Fail.choose
   -- Run fixfixArg on every decreasing fixpoint argument position
@@ -52,51 +70,36 @@ fixfix (App ofix@(Fix {}) oargs) = id
   where
   -- Run fixfix fusion on the argument at the given position
   fixfixArg :: Int -> m Term
-  fixfixArg arg_i = do
-    -- We need to generalise every argument which is not the fixpoint,
-    -- so we first lookup their types
-    arg_tys <- mapM Type.get all_args
-    
-    -- We bind them in the reverse order to their index when generalised
-    let gen_bs = id
-          . zipWith (\n -> Bind ("X" ++ show n)) [0..]
-          $ reverse arg_tys
-
-    -- Reverse the argument generalisation
-    liftM (\t -> foldr Indices.subst t all_args)
-      -- Run fixpoint fusion
-      . Env.bindMany gen_bs
-      $ Fix.fusion simplify context ifix'
+  fixfixArg arg_i =
+    -- Generalise the arguments of the outer fixpoint
+    Term.generaliseArgs oterm outerGeneralised
     where
-    -- Extract the argument at the given position
-    (left_oargs, (App ifix iargs):right_oargs) = splitAt arg_i oargs
-    all_args = left_oargs ++ iargs ++ right_oargs
-    
-    -- Make sure we don't capture any variables of the fixpoints 
-    -- when we generalise
-    ifix' = Indices.liftMany (elength all_args) ifix
-    ofix' = Indices.liftMany (elength all_args) ofix
-    
-    -- The context is the inner fixpoint replaced by the gap
-    -- and all the other arguments generalised to new variables.
-    context = Context.make makeContext
+    outerGeneralised :: (Term -> Term) -> Term -> m Term
+    outerGeneralised liftOuter (App ofix' oargs') =
+      -- Generalise the arguments of the inner fixpoint
+      Term.generaliseArgs ifix_t innerGeneralised 
       where
-      makeContext gap = 
-        app ofix' (left_vars ++ [app gap ivars] ++ right_vars)
+      ifix_t = liftOuter (oargs !! arg_i)
+      
+      innerGeneralised :: (Term -> Term) -> Term -> m Term
+      innerGeneralised liftInner (App ifix iargs) = do 
+        Fix.fusion simplify (Context.make mkCtx) ifix
         where
-        -- Generalise every argument to a new variable
-        vars = map Var [0..]
-        (left_vars, vars') = splitAt (length left_oargs) vars
-        (ivars, vars'') = splitAt (length iargs) vars'
-        right_vars = take (length right_oargs) vars''
-    
+        -- The context is the outer term, with all variables generalised
+        -- except the position of the inner fixpoint, and with this inner 
+        -- fixpoint replaced by the gap.
+        mkCtx gap_f = id
+          . App (liftInner ofix')
+          . replaceAt arg_i (App gap_f iargs) 
+          $ map liftInner oargs' 
+
   -- The internal simplification used in fixfix fusion
   simplify :: Index -> Context -> Term -> m Term
   simplify _ _ = run
   
 fixfix _ = Fail.here
 
-
+{-
 repeatedArg :: forall m . (Env.Readable m, Fail.Can m) => Term -> m Term
 repeatedArg (App fix@(Fix {}) args) = id
   -- Pick the first success
@@ -113,13 +116,30 @@ repeatedArg (App fix@(Fix {}) args) = id
   fuseRepeated :: [Int] -> m Term
   fuseRepeated arg_is = do
     arg_tys <- mapM Type.get args
+    let non_repeated_tys = map (arg_tys !!) non_repeated_is
+        repeated_ty = arg_tys !! head arg_is
+        
+    
     where
+    -- The argument indices we are generalising
+    non_repeated_is = filter (not . `elem` arg_is) [0..length args - 1]
+    
+    -- The new variables we will generalise the arguments to
+    repeated_var = Var 0
+    non_repeated_vars = map Var [1..length non_repeated_is]
+    
+    new_args = non_repeated_vars 
+      . foldr (\
+      $ sort arg_is
+    
+    
     makeContext gap_f = 
+      
       
 
 repeatedArg _ = Fail.here
 
-
+-}
 {-
 
 -- TODO: Write a more general / more obviously sound push-case-inwards 

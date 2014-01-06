@@ -6,6 +6,7 @@ module Elea.Terms
   replace, unfoldFix,
   decreasingArgs,
   applyCase,
+  generaliseArgs,
 )
 where
 
@@ -102,6 +103,33 @@ applyCase (Case ind cse_t alts) inner_t =
     -- to down this branch.
     pat = altPattern ind (enum n)
     alt_t = replace (liftHere cse_t) pat (liftHere inner_t)
+
+ 
+-- | Generalise all the arguments of a term to fresh variables.
+-- The first argument of the inner computation to run will lift 
+-- indices by the number of new variables.
+generaliseArgs :: (Indexed a, Substitutable t, Inner t ~ Term, Env.Readable m) =>
+  Term -> ((a -> a) -> Term -> m t) -> m t
+generaliseArgs (App func args) run = do
+  -- Use the type of every arguments to generate bindings for our new 
+  -- generalised variables.
+  arg_tys <- mapM Type.get args
+  let gen_bs = zipWith (\n -> Bind ("X" ++ show n)) [0..] arg_tys
+        
+  -- Run the inner computation
+  done_t <- id
+    . Env.bindMany (reverse gen_bs)
+    $ run liftHere (App (liftHere func) new_vars)
+    
+  -- Reverse the generalisation
+  return
+    . foldr Indices.subst done_t
+    $ reverse args
+  where
+  new_vars = map Var [0..elength args - 1]
+  
+  liftHere :: Indexed b => b -> b
+  liftHere = Indices.liftMany (elength args)
   
 {-
 
