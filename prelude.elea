@@ -135,7 +135,14 @@ let count =
       end
     end
     
+    
+    
+    
+    
 /*
+
+Code from the original version of Elea, which accepted the calculus of 
+inductive constructions as an input language
     
 let list = fun (a: *) -> 
   ind list: * with 

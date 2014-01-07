@@ -122,7 +122,29 @@ isoShift iso f = id
 instance Indexed Term where
   free = isoFree id
   shift = isoShift id
-       
+  
+instance Indexed Alt where
+  free (Alt bs alt_t) = id
+    -- Drop the remaining variables to their value outside of the alt bindings
+    . Set.map (Indices.lowerMany (elength bs))
+    -- Take the free variables of the term, minus those bound by the alt
+    $ Indices.free alt_t `Set.difference` not_free
+    where
+    not_free :: Set Index
+    not_free = Set.fromList [0..elength bs - 1]
+    
+  shift f (Alt bs alt_t) = 
+    Alt bs (Indices.shift f' alt_t)
+    where
+    -- The first index not bound by the alt
+    min_idx :: Index
+    min_idx = elength bs
+    
+    -- The shifting function, altered to be within the alt bindings
+    f' idx 
+      | idx < min_idx = idx
+      | otherwise = f (idx - min_idx) + min_idx
+
 instance Substitutable Term where
   type Inner Term = Term
 

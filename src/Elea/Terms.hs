@@ -108,7 +108,7 @@ applyCase (Case ind cse_t alts) inner_t =
 -- | Generalise all the arguments of a term to fresh variables.
 -- The first argument of the inner computation to run will lift 
 -- indices by the number of new variables.
-generaliseArgs :: (Indexed a, Substitutable t, Inner t ~ Term, Env.Readable m) =>
+generaliseArgs :: (Indexed a, Substitutable t, Show t, Inner t ~ Term, Env.Readable m) =>
   Term -> ((a -> a) -> Term -> m t) -> m t
 generaliseArgs (App func args) run = do
   -- Use the type of every arguments to generate bindings for our new 
@@ -124,6 +124,7 @@ generaliseArgs (App func args) run = do
   -- Reverse the generalisation
   return
     . foldr Indices.subst done_t
+    . zipWith Indices.liftMany [0..]
     $ reverse args
   where
   new_vars = map Var [0..elength args - 1]

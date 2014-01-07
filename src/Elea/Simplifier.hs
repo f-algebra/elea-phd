@@ -41,6 +41,7 @@ steps = eval_steps ++
   , finiteArgFix
   , unfoldFixInj
   , freeCaseFix
+  , propagateVarMatch
   ]
   where
   eval_steps = map (Fail.fromMaybe .) Eval.steps
@@ -279,6 +280,23 @@ freeCaseFix fix@(Fix _ fix_t) = do
   freeCases _ = 
     return Nothing
 freeCaseFix _ = Fail.here
+
+
+-- | If we pattern match over a variable, we replace all instances of 
+-- that variable with the matched pattern down each branch.
+propagateVarMatch :: Fail.Can m => Term -> m Term
+propagateVarMatch (Case ind var@(Var idx) alts) 
+  | idx `Set.member` concatMap Indices.free alts =
+    return (Case ind var (zipWith propagateAlt [0..] alts))
+  where
+  propagateAlt :: Nat -> Alt -> Alt
+  propagateAlt n (Alt bs alt_t) =
+    Alt bs (Indices.replaceAt idx' alt_p alt_t)
+    where
+    alt_p = Term.altPattern ind n
+    idx' = Indices.liftMany (elength bs) idx
+    
+propagateVarMatch _ = Fail.here
 
 {-
 

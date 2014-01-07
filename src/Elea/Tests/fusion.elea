@@ -38,7 +38,16 @@ prop "always true": forall (n: nat) (m: nat) ->
 prop "count reverse": forall (n: nat) (xs: nlist) ->
   count n (reverse xs) = count n xs
   
+prop "count append": forall (n: nat) (xs: nlist) (ys: nlist) ->
+  count n (append xs ys) = add (count n xs) (count n ys)
+
+prop "count snoc": forall (n: nat) (xs: nlist) ->
+  count n (append xs (Cons n Nil)) = Suc (count n xs)
+  
+  
 prop "eq_nat reflexive": forall (n: nat) -> 
   eq_nat n n = True
   
+prop "leq_nat reflexive": forall (n: nat) ->
+  leq_nat n n = True
 

@@ -50,12 +50,11 @@ run term = do
 steps :: (Env.Readable m, Fail.Can m) => [Term -> m Term]
 steps = Fission.steps ++ 
   [ const Fail.here
+  , repeatedArg
   , fixfix
   ]                   
 
 
--- TODO proper generalisation of all terms which are not the two fixpoints
-  
 -- | Uses fixpoint fusion on a fix with a fix as a decreasing argument.
 fixfix :: forall m . (Env.Readable m, Fail.Can m) => Term -> m Term
 
@@ -99,9 +98,11 @@ fixfix oterm@(App ofix@(Fix {}) oargs) = id
   
 fixfix _ = Fail.here
 
-{-
+
+-- | If two or more decreasing arguments to a fixpoint are the same 
+-- variable, we can sometimes fuse these arguments into one.
 repeatedArg :: forall m . (Env.Readable m, Fail.Can m) => Term -> m Term
-repeatedArg (App fix@(Fix {}) args) = id
+repeatedArg fix_t@(App fix@(Fix {}) args) = id
   -- Pick the first success
   . Fail.choose
   . map fuseRepeated 
@@ -114,32 +115,33 @@ repeatedArg (App fix@(Fix {}) args) = id
   $ Term.decreasingArgs fix
   where
   fuseRepeated :: [Int] -> m Term
-  fuseRepeated arg_is = do
-    arg_tys <- mapM Type.get args
-    let non_repeated_tys = map (arg_tys !!) non_repeated_is
-        repeated_ty = arg_tys !! head arg_is
-        
-    
+  fuseRepeated arg_is = 
+    Term.generaliseArgs fix_t generalised
     where
-    -- The argument indices we are generalising
-    non_repeated_is = filter (not . `elem` arg_is) [0..length args - 1]
-    
-    -- The new variables we will generalise the arguments to
-    repeated_var = Var 0
-    non_repeated_vars = map Var [1..length non_repeated_is]
-    
-    new_args = non_repeated_vars 
-      . foldr (\
-      $ sort arg_is
-    
-    
-    makeContext gap_f = 
-      
-      
+    generalised :: (Term -> Term) -> Term -> m Term
+    generalised _ (App fix' args') =
+      Fix.fusion simplify (Context.make mkCtx) fix'
+      where
+      -- The context is the original term, with every argument generalised,
+      -- and the repeated arguments in the correct places, and the gap
+      -- in the place of the fixpoint (as always).
+      mkCtx gap_f = App gap_f args''  
+        where
+        -- Take the argument we are repeating from the newly generalised ones.
+        rep_arg = args' !! head arg_is
+        
+        -- Replace every argument position from the list 
+        -- of repeated args 'arg_is' with the same variable.
+        args'' = foldr (\i -> replaceAt i rep_arg) args' (tail arg_is) 
+        
+  -- No need for fixpoint simplifications within repeated argument fusion
+  -- (at least, not that I've ever observed)
+  simplify :: Index -> Context -> Term -> m Term
+  simplify _ _ = Simp.run
 
 repeatedArg _ = Fail.here
 
--}
+
 {-
 
 -- TODO: Write a more general / more obviously sound push-case-inwards 

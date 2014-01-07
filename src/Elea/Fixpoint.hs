@@ -90,11 +90,10 @@ fusion simplify outer_ctx inner_fix@(Fix fix_b fix_t) = do
   
   -- Fusion has failed if any occurrences of the old fix variable remain
   Fail.when  
-    . Indices.containsOmega
-    
     -- DEBUG
     . trace (s1 ++ s2 ++ s3)
-    $ replaced_t
+    
+    $ Indices.containsOmega replaced_t
     
   new_term <- id
     . Simp.run

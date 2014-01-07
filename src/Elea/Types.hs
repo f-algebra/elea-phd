@@ -75,8 +75,14 @@ typeOf term = id
   termErr :: TypingMonad m => Term -> m Err.Err
   termErr t = do
     t_s <- showM t
-    return $ "When type checking: [" ++ t_s ++ "]."
-  
+    bs <- Env.bindings
+    let bs_s = id
+          . intercalate " "
+          $ map show bs
+    return  
+      $ "When type checking: [" ++ t_s 
+      ++ "] \n\nWithin environment \n[" ++ bs_s ++ "]\n"
+      
   -- Check the term for type errors, then return the type.
   doBoth :: TypingMonad m => Term' (Type, Term) -> m Type
   doBoth ft = 
@@ -105,12 +111,17 @@ typeOf term = id
       
   -- Check that term application has the correct function type on the left
   fcheck app_t@(App' (fun_ty, _) ((arg_ty, _) : args))
-    | not (Type.isFun fun_ty) = Err.throw
-      $ "Term application with non function type term leftmost."
+    | not (Type.isFun fun_ty) =
+      Err.throw
+        $ "Term application with non function typed [" 
+        ++ show fun_ty ++ "] term leftmost."
       
     | Type.Fun arg_ty' _ <- fun_ty
-    , arg_ty /= arg_ty' = Err.throw
-      $ "Term application with incorrect argument type."
+    , arg_ty /= arg_ty' =
+      Err.throw
+        $ "Term application with incorrect argument type.\n"
+        ++ "Expected [" ++ show arg_ty' ++ "]\n"
+        ++ "Found [" ++ show arg_ty ++ "]" 
       
     | otherwise =
       fcheck (applyArg app_t)
