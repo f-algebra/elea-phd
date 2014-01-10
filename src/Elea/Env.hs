@@ -67,8 +67,8 @@ instance Writable m => Fold.FoldableM m Term where
   -- we move into the syntax tree of the term.
   distM (Lam' b (mt, _)) =
     return (Lam' b) `ap` bind b mt
-  distM (Fix' b (mt, _)) =
-    return (Fix' b) `ap` bind b mt
+  distM (Fix' i b (mt, _)) =
+    return (Fix' i b) `ap` bind b mt
   distM (Case' ind (mt, cse_t) malts) = do
     t <- mt
     alts <- zipWithM distAltM malts [0..]
@@ -116,6 +116,18 @@ isoShift iso f = id
     let x' | x >= at = f (x - at) + at
            | otherwise = x
     return (Var x')
+    
+  -- Need to make sure the variables within 'FixInfo's get shifted manually.
+  -- As the terms stored within them are not exposed by the Term' type, they
+  -- will not be reached by 'isoTransformM.
+  shiftVar (Fix info b t) = do
+    info' <- modifyM fusedMatches (mapM shiftMatch) info
+    return (Fix info' b t)
+    where
+    shiftMatch (term, n) = do
+      term' <- Fold.isoTransformM iso shiftVar term
+      return (term', n)
+  
   shiftVar other = 
     return other
   
@@ -144,6 +156,10 @@ instance Indexed Alt where
     f' idx 
       | idx < min_idx = idx
       | otherwise = f (idx - min_idx) + min_idx
+      
+instance Indexed FixInfo where
+  free = concatMap (Indices.free . fst) . get fusedMatches
+  shift f = modify fusedMatches (map (first (Indices.shift f)))
 
 instance Substitutable Term where
   type Inner Term = Term
@@ -408,7 +424,7 @@ instance Unifiable Term where
       -- Since we are inside a binding the indices go up by one, 
       -- so we call 'liftTracked'.
       liftTracked (t1 `uni` t2)
-    uni (Fix b1 t1) (Fix b2 t2) = 
+    uni (Fix _ b1 t1) (Fix _ b2 t2) = 
       liftTracked (t1 `uni` t2)
     uni (App f1 xs1) (App f2 xs2) = do
       uni_f <- uni f1 f2

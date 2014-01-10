@@ -3,13 +3,14 @@ module Elea.Term
   module Elea.Index,
   Term (..), Alt (..),
   Term' (..), Alt' (..),
-  Type, Bind (..),
+  Type, Bind (..), FixInfo (..),
   ContainsTerms (..), mapTerms,
   Equation (..), equationName, equationLHS, equationRHS,
   app,
   projectAlt, embedAlt,
   altBindings, altInner,
   altBindings', altInner',
+  fusedMatches,
   flattenApp, leftmost, arguments,
   flattenLam, unflattenLam,
   isCon, isLam, isVar,
@@ -27,6 +28,7 @@ import qualified Elea.Type as Type
 import qualified Elea.Index as Indices
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
+import qualified Data.Map as Map
 
 -- | The simply typed lambda calculus
 data Term
@@ -37,7 +39,8 @@ data Term
   | Lam     { binding :: !Bind 
             , inner :: !Term }
 
-  | Fix     { binding :: !Bind 
+  | Fix     { fixInfo :: !FixInfo
+            , binding :: !Bind 
             , inner :: !Term }
 
   | Con     { inductiveType :: !Type.Ind
@@ -55,6 +58,30 @@ data Alt
             , _altInner :: !Term }
   deriving ( Eq, Ord )
   
+-- | Information stored about fixpoints, to add efficiency.
+data FixInfo
+  = FixInfo { -- | The pattern matches that have been fused into this fixpoint.
+              -- We only store the constructor index of the matched pattern
+              -- since the type can be inferred from the term, and the matched
+              -- variables are always fresh.
+              _fusedMatches :: ![(Term, Nat)] }
+              
+-- Fixpoint information does not change the meaning of a fixpoint, so
+-- it does not effect equality between terms.
+instance Eq FixInfo where
+  _ == _ = True
+instance Ord FixInfo where
+  _ `compare` _ = EQ
+  
+instance Monoid FixInfo where
+  mempty = FixInfo []
+  
+  -- Map union is what we are going for here.
+  -- We only store these as lists rather than map
+  -- to allow easier definitions later.
+  FixInfo i1 `mappend` FixInfo i2 = 
+    FixInfo (Map.toList (Map.fromList i1 ++ Map.fromList i2))
+  
 -- | Equations between terms
 data Equation
   = Equals  { _equationName :: String
@@ -70,7 +97,7 @@ data Term' a
   = Var' !Index
   | App' a [a]
   | Lam' !Bind a
-  | Fix' !Bind a
+  | Fix' !FixInfo !Bind a
   | Con' !Type.Ind !Nat
   | Case' !Type.Ind a ![Alt' a]
   | Absurd' !Type
@@ -81,7 +108,7 @@ data Alt' a
          , _altInner' :: a }
   deriving ( Functor, Foldable, Traversable )
   
-mkLabels [ ''Alt, ''Alt', ''Equation ]
+mkLabels [ ''Alt, ''Alt', ''FixInfo, ''Equation ]
 
 projectAlt :: Alt -> Alt' Term
 projectAlt (Alt bs t) = Alt' bs t
@@ -93,7 +120,7 @@ instance Fold.Foldable Term where
   project (Var x) = Var' x
   project (App f xs) = App' f xs
   project (Lam b t) = Lam' b t
-  project (Fix b t) = Fix' b t
+  project (Fix i b t) = Fix' i b t
   project (Con ind n) = Con' ind n
   project (Case ind t alts) = Case' ind t (map projectAlt alts)
   project (Absurd ty) = Absurd' ty
@@ -102,7 +129,7 @@ instance Fold.Unfoldable Term where
   embed (Var' x) = Var x
   embed (App' f xs) = App f xs
   embed (Lam' b t) = Lam b t
-  embed (Fix' b t) = Fix b t
+  embed (Fix' i b t) = Fix i b t
   embed (Con' ind n) = Con ind n
   embed (Case' ind t alts) = Case ind t (map embedAlt alts)
   embed (Absurd' ty) = Absurd ty

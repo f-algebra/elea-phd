@@ -127,7 +127,7 @@ typeOf term = id
       fcheck (applyArg app_t)
       
   -- Check that a fixpoint matches the type of its bound variable
-  fcheck (Fix' (Bind _ fix_ty) (fix_ty', _))
+  fcheck (Fix' _ (Bind _ fix_ty) (fix_ty', _))
     | fix_ty /= fix_ty' = Err.throw
       $ "Fixpoint does not match its declared type."
       
@@ -174,7 +174,7 @@ typeOf term = id
     return ty
   ftype t@(App' {}) = 
     ftype (applyArg t)
-  ftype (Fix' (Bind _ ty) _) = 
+  ftype (Fix' _ (Bind _ ty) _) = 
     return ty
   ftype (Con' ind_ty n) =
     return

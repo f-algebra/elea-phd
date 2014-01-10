@@ -36,7 +36,7 @@ steps = Simp.steps ++
 
 -- | Remove a fixpoint which recursively returns the original argument
 identityFix :: (Env.Readable m, Fail.Can m) => Term -> m Term
-identityFix fix@(Fix (Bind _ (Type.Fun arg_ty res_ty)) _)
+identityFix fix@(Fix _ (Bind _ (Type.Fun arg_ty res_ty)) _)
   -- We can quickly identify potential functions as 
   -- they will have type @A -> A@ where @A@ is inductive. 
   | Type.isInd arg_ty
@@ -55,7 +55,7 @@ identityFix _ = Fail.here
 -- | Attempts to simplify fixpoints to head normal form. Floats a constructor
 -- which the fixpoint will always return outside the fixpoint.
 constructorFission :: forall m . (Env.Readable m, Fail.Can m) => Term -> m Term
-constructorFission fix@(Fix fix_b fix_t) = do
+constructorFission fix@(Fix _ fix_b fix_t) = do
   Fail.when (Set.null suggestions)
   Fail.unless floatable
   

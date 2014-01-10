@@ -127,7 +127,7 @@ absurdity _ =
 -- | If an argument to a 'Fix' never changes in any recursive call
 -- then we should float that lambda abstraction outside the 'Fix'.
 constArg :: Fail.Can m => Term -> m Term
-constArg term@(Fix (Bind fix_name fix_ty) fix_t) = do
+constArg term@(Fix fix_info (Bind fix_name fix_ty) fix_t) = do
   -- Find if any arguments never change in any recursive calls
   pos <- Fail.fromMaybe (find isConstArg [0..length arg_bs - 1])
   
@@ -171,7 +171,10 @@ constArg term@(Fix (Bind fix_name fix_ty) fix_t) = do
     
     -- Need to make sure no variables are captured by these new outer lambdas
     . Indices.liftManyAt (elength left_bs) 1 
-    . Fix fix_b'
+    
+    -- The fixpoint information is lifted by one to take into account the 
+    -- removed argument index (which is 0 at this point).
+    . Fix (Indices.lift fix_info) fix_b'
     
     -- Remove the argument everywhere it appears
     . Env.trackIndices 0
@@ -238,7 +241,7 @@ identityCase _ = Fail.here
 -- | Dunno if this ever comes up but if we have a fix without any occurrence
 -- of the fix variable in the body we can just drop it.
 uselessFix :: Fail.Can m => Term -> m Term
-uselessFix (Fix _ fix_t)
+uselessFix (Fix _ _ fix_t)
   | not (0 `Set.member` Indices.free fix_t) = 
     return (Indices.lower fix_t)
 uselessFix _ = Fail.here
@@ -260,7 +263,7 @@ unfoldFixInj _ = Fail.here
 -- outside of the 'Fix', then we can float this pattern match outside
 -- of the 'Fix'.
 freeCaseFix :: Fail.Can m => Term -> m Term
-freeCaseFix fix@(Fix _ fix_t) = do
+freeCaseFix fix@(Fix _ _ fix_t) = do
   free_case <- id
     . Fail.fromMaybe
     . Env.trackOffset

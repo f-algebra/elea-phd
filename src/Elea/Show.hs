@@ -33,7 +33,7 @@ instance Show (Term' String) where
         | otherwise = x
     f' | "->" `isInfixOf` f || "end" `isInfixOf` f = "(" ++ f ++ ")"
        | otherwise = f
-  show (Fix' (show -> b) t) =
+  show (Fix' _ (show -> b) t) =
     indent $ "\nfix " ++ b ++ " -> " ++ t
   show (Lam' (show -> b) t) =
     indent $ "\nfun " ++ b ++ " -> " ++ t

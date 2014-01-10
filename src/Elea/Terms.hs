@@ -30,7 +30,7 @@ import qualified Data.Monoid as Monoid
 import qualified Control.Monad.Trans as Trans
 
 unfoldFix :: Term -> Term
-unfoldFix fix@(Fix _ fix_t) = 
+unfoldFix fix@(Fix _ _ fix_t) = 
   Indices.subst fix fix_t
   
 
@@ -54,7 +54,7 @@ replace me with = id
 -- | Returns the indices of the strictly decreasing arguments for
 -- a given function. Undefined if not given a 'Fix'.
 decreasingArgs :: Term -> [Int]
-decreasingArgs (Fix fix_b fix_t) = 
+decreasingArgs (Fix _ fix_b fix_t) = 
   filter isDecreasing [0..length arg_bs - 1]
   where
   (arg_bs, fix_body) = flattenLam fix_t
@@ -108,7 +108,7 @@ applyCase (Case ind cse_t alts) inner_t =
 -- | Generalise all the arguments of a term to fresh variables.
 -- The first argument of the inner computation to run will lift 
 -- indices by the number of new variables.
-generaliseArgs :: (Indexed a, Substitutable t, Show t, Inner t ~ Term, Env.Readable m) =>
+generaliseArgs :: (Indexed a, Substitutable t, Inner t ~ Term, Env.Readable m) =>
   Term -> ((a -> a) -> Term -> m t) -> m t
 generaliseArgs (App func args) run = do
   -- Use the type of every arguments to generate bindings for our new 

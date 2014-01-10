@@ -29,7 +29,7 @@ tests = Test.label "Parser"
   suc = Con nat 1
 
   add_ty = Type.unflatten [nat_ty, nat_ty, nat_ty]
-  add = Fix (Bind "+" add_ty)
+  add = Fix mempty (Bind "+" add_ty)
     $ Lam (Bind "x" nat_ty)
     $ Lam (Bind "y" nat_ty)
     $ Case nat (Var 1)

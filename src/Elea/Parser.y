@@ -293,7 +293,7 @@ parseRawTerm (TFix rbs rt) = do
   bs <- mapM parseRawBind rbs
   t <- Env.bindMany bs (parseRawTerm rt)
   return 
-    $ Fix (head bs) 
+    $ Fix mempty (head bs) 
     $ unflattenLam (tail bs) t 
 parseRawTerm (TLam rbs rt) = do
   bs <- mapM parseRawBind rbs

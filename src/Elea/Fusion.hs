@@ -142,6 +142,20 @@ repeatedArg fix_t@(App fix@(Fix {}) args) = id
 repeatedArg _ = Fail.here
 
 
+matchFix :: forall m . (Env.Readable m, Fail.Can m) => Term -> m Term
+matchFix (Case _ fix_t alts) = do
+  Fail.unless (isFix (leftmost fix_t))
+  alts' <-
+    . Env.alsoTrack fix_t
+    . runWriterT
+    $ mapM fuseAlt alts
+  where
+  fuseAlt :: Alt -> WriterT Monoid.Any (Env.TrackOffset m) Alt
+  fuseAlt (Alt bs alt_t) = do
+    
+    where
+    fuseFix :: Term -> WriterT Monoid.Any (Env.TrackOffset m) Alt
+  
 {-
 
 -- TODO: Write a more general / more obviously sound push-case-inwards 

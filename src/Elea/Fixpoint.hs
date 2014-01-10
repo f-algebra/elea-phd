@@ -27,7 +27,7 @@ import qualified Data.Map as Map
 fusion :: forall m . (Fail.Can m, Env.Readable m) =>
   (Index -> Context -> Term -> m Term) ->
   Context -> Term -> m Term
-fusion simplify outer_ctx inner_fix@(Fix fix_b fix_t) = do
+fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
 
   -- Note, the original list of free variables 'free_vars' is in
   -- ascending order of index, and every list generated from that
@@ -80,7 +80,10 @@ fusion simplify outer_ctx inner_fix@(Fix fix_b fix_t) = do
         
   -- Our shiny new function
   let new_fix = id
-        . Fix new_fix_b
+        -- We keep the fixpoint information of the inner fixpoint.
+        -- So far it only stored fused matches, and these will continue to
+        -- be applicable after a fusion step (I'm pretty sure...).
+        . Fix fix_info new_fix_b
         . Term.unflattenLam (reverse free_var_bs)
         $ replaced_t
         
@@ -152,7 +155,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_b fix_t) = do
 fission :: forall m . (Env.Readable m, Fail.Can m) =>
   (Index -> Context -> Term -> m Term)
   -> Term -> Context -> m Term
-fission simplify fix@(Fix fix_b fix_t) outer_ctx = do
+fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
 
   -- DEBUG
   ctx_s <- showM outer_ctx
@@ -177,7 +180,9 @@ fission simplify fix@(Fix fix_b fix_t) outer_ctx = do
   
   let new_term = id
         . Context.apply outer_ctx
-        . Fix fix_b
+        -- We keep the fix info of the original fixpoint, since it will
+        -- remain applicable after fission (I think...).
+        . Fix fix_info fix_b
         $ stripped_t
         
   -- DEBUG
