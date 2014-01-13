@@ -62,19 +62,6 @@ instance MonadReader EleaRead Elea where
   ask = Elea Value
   local f el = Elea (runElea el . f)
 
-instance Env.Writable Elea where
-  bindAt at b = 
-    local (modify readBinds (insertAt (enum at) b))
-    
-  matched _ _ = id
-    
-instance Env.Readable Elea where
-  boundAt at = do
-    bs <- Env.bindings
-    Err.when (enum at >= length bs)
-      $ "Index " ++ show at ++ " not bound in " ++ show bs
-    return (bs !! fromEnum at)
-
 instance Err.Can Elea where
   throw e = Elea $ \_ -> (Error e)
   catch (Elea el) handle = Elea $ \r ->

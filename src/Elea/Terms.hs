@@ -3,7 +3,8 @@
 module Elea.Terms
 (
   module Elea.Term,
-  replace, unfoldFix,
+  replace, 
+  unfoldFix,
   decreasingArgs,
   applyCase,
   generaliseArgs,

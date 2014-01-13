@@ -16,6 +16,7 @@ module Elea.Term
   isCon, isLam, isVar,
   isFix, isAbsurd, isCase,
   fromVar, 
+  matchedTo,
   altPattern, isFinite,
 )
 where
@@ -193,6 +194,10 @@ leftmost = head . flattenApp
 
 arguments :: Term -> [Term]
 arguments = tail . flattenApp
+
+matchedTo :: FixInfo -> Term -> Maybe Nat
+matchedTo (FixInfo fused) term = 
+  lookup term fused
   
 -- | Given an inductive type and a constructor index this will return
 -- a fully instantiated constructor term.

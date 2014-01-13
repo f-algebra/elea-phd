@@ -1,7 +1,7 @@
 -- | Some term transformation steps that rely on fixpoint fusion.
 module Elea.Fusion
 (
-  steps, run
+  run
 )
 where
 
@@ -39,20 +39,19 @@ run term = do
   mby_term'' <- id
     . runMaybeT 
     . Fail.choose 
-    $ map ($ term') fixpoint_steps
+    $ map ($ term') (fission_steps ++ fusion_steps)
   
   maybe (return term') run mby_term''
   where
-  fixpoint_steps =
-    map Fold.rewriteOnceM (Fission.steps ++ steps)
-
-  
-steps :: (Env.Readable m, Fail.Can m) => [Term -> m Term]
-steps = Fission.steps ++ 
-  [ const Fail.here
-  , repeatedArg
-  , fixfix
-  ]                   
+  fusion_steps =
+    [ const Fail.here
+    , Fold.rewriteOnceM repeatedArg
+    , Fold.rewriteOnceM fixfix
+    , mapMaybeT Env.trackMatches . Fold.rewriteOnceM matchFix
+    ]
+   
+  fission_steps = 
+    map Fold.rewriteOnceM Fission.steps
 
 
 -- | Uses fixpoint fusion on a fix with a fix as a decreasing argument.
@@ -142,25 +141,91 @@ repeatedArg fix_t@(App fix@(Fix {}) args) = id
 repeatedArg _ = Fail.here
 
 
-matchFix :: forall m . (Env.Readable m, Fail.Can m) => Term -> m Term
-matchFix (Case _ fix_t alts) = do
-  Fail.unless (isFix (leftmost fix_t))
-  alts' <-
-    . Env.alsoTrack fix_t
-    . runWriterT
-    $ mapM fuseAlt alts
-  where
-  fuseAlt :: Alt -> WriterT Monoid.Any (Env.TrackOffset m) Alt
-  fuseAlt (Alt bs alt_t) = do
-    
-    where
-    fuseFix :: Term -> WriterT Monoid.Any (Env.TrackOffset m) Alt
+-- | Match-Fix fusion. Makes use of an environment which you can read pattern 
+-- matches from.
+matchFix :: forall m . (Env.MatchReadable m, Fail.Can m) => Term -> m Term
+matchFix outer_t@(App fix@(Fix fix_info fix_b fix_t) args) = do
+  -- We don't try to fuse matches into a term which is not just a fixpoint
+  -- with variable arguments. I haven't investigated the behaviour of this
+  -- thoroughly enough.
+  Fail.unless (all isVar args)
   
+  matches <- Env.findMatches usefulMatch
+  result_ty <- Type.get outer_t
+  Fail.choose (map (fuseMatch result_ty) matches)
+  where
+  dec_args = id
+    . Set.fromList
+    . map (args !!) 
+    $ Term.decreasingArgs fix
+    
+  -- Whether a pattern match should be fused into the current fixpoint.
+  -- We check that one of the decreasing arguments matches a decreasing
+  -- argument of the fixpoint.
+  usefulMatch (App m_fix@(Fix {}) m_args) 
+    | all isVar m_args = id
+      . not 
+      . Set.null
+      . Set.intersection dec_args
+      . Set.fromList
+      . map (m_args !!)
+      $ Term.decreasingArgs m_fix
+  usefulMatch _ = False
+  
+  -- The inner simplification used in match fix fusion
+  simplify :: Index -> Context -> Term -> m Term
+  simplify _ _ = Simp.run
+  
+  -- Fuse a pattern match into the outer fixpoint
+  fuseMatch :: Type -> (Term, Term) -> m Term
+  fuseMatch result_ty (match_t, leftmost -> Con ind con_n) 
+    | Just con_n' <- Term.matchedTo fix_info match_t = do
+      -- If we have already matched this term to this constructor in this 
+      -- fixpoint then we would repeating ourself if we do fusion, so we fail.
+      Fail.when (con_n == con_n')
+      
+      -- Otherwise we are down an absurd branch, since we have matched
+      -- a term to two different constructors
+      return (Absurd result_ty)
+      
+    | otherwise = do
+      -- If we haven't matched this term to anything yet within the fixpoint
+      -- then we can apply fusion
+      Fix.fusion simplify context fix'
+    where
+    cons = Type.unfold ind
+    context = Context.make makeContext
+    match_fix_info = fixInfo (leftmost match_t)
+    
+    -- The new fused matches are all fused matches of the original fix,
+    -- those of the match we are fusing in, and the match itself.
+    -- 'FixInfo' is a monoid, so we can use append here.
+    fix_info' = fix_info ++ match_fix_info ++ (FixInfo [(match_t, con_n)])
+    fix' = Fix fix_info' fix_b fix_t
+    
+    -- The context which represents the pattern match, 
+    -- viz. return absurd down every branch which is not
+    -- the one that was matched, and return the gap down the one that was.
+    makeContext gap_f = 
+      Case ind match_t alts
+      where
+      alts = map buildAlt [0..length cons - 1]
+      
+      buildAlt :: Int -> Alt
+      buildAlt alt_n = 
+        Alt bs alt_t
+        where
+        Bind _ con_ty = cons !! alt_n
+        bs = map (Bind "X") (init (Type.flatten con_ty))
+        
+        -- If we are not down the matched branch we return absurd
+        alt_t | enum alt_n /= con_n = Absurd result_ty
+              | otherwise = Indices.liftMany (elength bs) (App gap_f args)
+        
+matchFix _ = Fail.here
+
 {-
 
--- TODO: Write a more general / more obviously sound push-case-inwards 
--- function to subsume the two floatCtxInwards functions from 
--- fix-fact and fact-fix fusion
   
 
 steps :: Env.Readable m => [Term -> m (Maybe Term)]

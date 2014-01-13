@@ -3,7 +3,14 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Elea.Env 
 (
-  Writable (..), Readable (..),
+  Writable (..), Readable (..), 
+  boundAt, bindingDepth,
+  
+  MatchReadable (..), 
+  findMatches,
+  
+  TrackMatches, trackMatches,
+  
   Tracks (..), trackeds,
   AlsoTrack, alsoTrack, alsoWith,
   TrackIndices, TrackIndicesT,
@@ -50,17 +57,29 @@ bind = bindAt 0
 bindMany :: Writable m => [Bind] -> m a -> m a
 bindMany = concatEndos . map bind
 
+-- | Whether you can read variable bindings from the environment. 
+-- Since variables are indices, it's really a lookup function 'Nat -> Bind',
+-- but this is just a list.
 class Writable m => Readable m where
   bindings :: m [Bind]
-  bindings = error "No bindings stored."
   
-  boundAt :: Index -> m Bind
-  boundAt at = liftM (!! fromEnum at) bindings
+-- | Lookup the type of a variable. 
+boundAt :: Readable m => Index -> m Bind
+boundAt at = liftM (!! fromEnum at) bindings
+
+-- | Returns the number of indices that have been bound.
+bindingDepth :: Readable m => m Int
+bindingDepth = liftM length bindings
   
-  -- | Returns the number of indices that have been bound.
-  bindingDepth :: m Int
-  bindingDepth = liftM length bindings
+-- | Whether you can read locally bound pattern matches from
+-- an environment monad
+class Readable m => MatchReadable m where
+  matches :: m [(Term, Term)]
   
+findMatches :: MatchReadable m => (Term -> Bool) -> m [(Term, Term)]
+findMatches p = liftM (filter (p . fst)) matches
+  
+
 instance Writable m => Fold.FoldableM m Term where
   -- To fold over a 'Term' we require that our monad implement a 'Writable'
   -- environment. This environment can then be correctly updated as 
@@ -241,8 +260,6 @@ instance (Writable m, Indexed r) => Writable (AlsoTrack r m) where
     
 instance (Readable m, Indexed r) => Readable (AlsoTrack r m) where
   bindings = Trans.lift bindings
-  boundAt = Trans.lift . boundAt
-  bindingDepth = Trans.lift bindingDepth
     
 instance Fail.Can m => Fail.Can (AlsoTrack r m) where
   here = Trans.lift Fail.here
@@ -282,6 +299,36 @@ liftHere :: (Tracks Index m, Indexed a) => a -> m a
 liftHere x = liftM (flip Indices.liftMany x) offset
 
 
+newtype TrackMatches m a
+  = TrackMatches { runTrackMatches :: ReaderT [(Term, Term)] m a }
+  deriving ( Monad, MonadTrans )
+  
+mapTrackMatches :: Monad m => (m a -> n b) -> 
+  (TrackMatches m a -> TrackMatches n b)
+mapTrackMatches f = TrackMatches . mapReaderT f . runTrackMatches
+
+trackMatches :: TrackMatches m a -> m a
+trackMatches = flip runReaderT mempty . runTrackMatches
+ 
+instance Writable m => Writable (TrackMatches m) where
+  bindAt at b = mapTrackMatches (bindAt at b)
+  
+  matched t con_t = id
+    . TrackMatches 
+    . local (++ [(t, con_t)])
+    . runTrackMatches
+    . mapTrackMatches (matched t con_t)
+    
+instance Readable m => Readable (TrackMatches m) where
+  bindings = Trans.lift bindings
+  
+instance Readable m => MatchReadable (TrackMatches m) where
+  matches = TrackMatches ask
+  
+instance Fail.Can m => Fail.Can (TrackMatches m) where
+  here = Trans.lift Fail.here
+  catch = mapTrackMatches Fail.catch
+
 -- Various instances for 'Writable' and 'Readable'
   
 instance Writable Identity where
@@ -299,8 +346,6 @@ instance (Monoid w, Writable m) => Writable (WriterT w m) where
   
 instance (Monoid w, Readable m) => Readable (WriterT w m) where
   bindings = Trans.lift bindings
-  boundAt = Trans.lift . boundAt
-  bindingDepth = Trans.lift bindingDepth
   
 instance Monad m => Writable (ReaderT [Bind] m) where
   bindAt at b = local (insertAt (enum at) b)
@@ -315,8 +360,9 @@ instance Writable m => Writable (MaybeT m) where
   
 instance Readable m => Readable (MaybeT m) where
   bindings = Trans.lift bindings
-  boundAt = Trans.lift . boundAt
-  bindingDepth = Trans.lift bindingDepth
+  
+instance MatchReadable m => MatchReadable (MaybeT m) where
+  matches = Trans.lift matches
   
 instance Writable m => Writable (EitherT e m) where
   bindAt at b = mapEitherT (bindAt at b)
@@ -324,8 +370,6 @@ instance Writable m => Writable (EitherT e m) where
   
 instance Readable m => Readable (EitherT e m) where
   bindings = Trans.lift bindings
-  boundAt = Trans.lift . boundAt
-  bindingDepth = Trans.lift bindingDepth
 
 instance Writable m => Writable (StateT s m) where
   bindAt at b = mapStateT (bindAt at b)
@@ -333,8 +377,6 @@ instance Writable m => Writable (StateT s m) where
   
 instance Readable m => Readable (StateT s m) where
   bindings = Trans.lift bindings
-  boundAt = Trans.lift . boundAt
-  bindingDepth = Trans.lift bindingDepth
   
   
 -- Tracking pattern matches
