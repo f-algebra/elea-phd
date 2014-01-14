@@ -110,9 +110,9 @@ replaceAt at with = substAt at with . liftAt (succ at)
 lowerableBy :: Indexed t => Nat -> t -> Bool
 lowerableBy n = all (>= enum n) . free
 
-tryLowerMany :: Indexed t => Nat -> t -> Maybe t
+tryLowerMany :: (Fail.Can m, Indexed t) => Nat -> t -> m t
 tryLowerMany n t = do
-  guard (lowerableBy n t)
+  Fail.unless (lowerableBy n t)
   return (lowerMany n t)
 
 -- | The magic index. Equal only to itself, greater than every other index,

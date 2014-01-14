@@ -42,6 +42,7 @@ steps = eval_steps ++
   , unfoldFixInj
   , freeCaseFix
   , propagateVarMatch
+  , raiseVarCase
   ]
   where
   eval_steps = map (Fail.fromMaybe .) Eval.steps
@@ -300,6 +301,26 @@ propagateVarMatch (Case ind var@(Var idx) alts)
     idx' = Indices.liftMany (elength bs) idx
     
 propagateVarMatch _ = Fail.here
+
+
+-- | Pattern matches over variables should be above those over function
+-- results.
+raiseVarCase :: forall m . Fail.Can m => Term -> m Term
+raiseVarCase outer_t@(Case _ (leftmost -> Fix {}) alts) = do
+  inner_case <- Fail.choose (map caseOfVarAlt alts)
+  return (Term.applyCase inner_case outer_t)
+  where
+  caseOfVarAlt :: Alt -> m Term
+  -- We return the inner alt case-of if it is over a variable
+  -- which is not from the pattern match, viz. it can be lowered
+  -- to outside the match.
+  caseOfVarAlt (Alt bs alt_t@(Case ind (Var x) i_alts)) = do
+    x' <- Indices.tryLowerMany (elength bs) x
+    return (Case ind (Var x') i_alts)
+  caseOfVarAlt _ = 
+    Fail.here
+    
+raiseVarCase _ = Fail.here
 
 {-
 
@@ -626,15 +647,6 @@ constantCase cse_t@(Case _ _ alts) = do
     return (Indices.lowerMany (length bs) alt_t)
 constantCase _ = Nothing
 
-
--- | Pattern matches over variables should be above those over function
--- results.
-raiseVarCase :: Term -> Maybe Term
-raiseVarCase = commuteMatchesWhen raiseVar
-  where
-  raiseVar (Case cse_of _ _) (Case (Var _) _ _) =
-    isFix (leftmost cse_of)
-  raiseVar _ _ = False
   
 
 -}
