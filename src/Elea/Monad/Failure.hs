@@ -2,13 +2,15 @@
 -- Requires qualified import (usually as "Fail").
 module Elea.Monad.Failure (
   Can (..), when, unless, toMaybe, withDefault, assert, choose,
-  success, successM, catchWith, fromEither, has, fromMaybe
+  success, successM, catchWith, fromEither, has, fromMaybe, mapLookup
 ) where
 
 import Prelude ()
 import Elea.Prelude hiding ( catch, when, unless, fromMaybe, assert )
+import Control.Monad.State hiding ( unless, when )
 import qualified Elea.Prelude as Prelude
 import qualified Data.Monoid as Monoid
+import qualified Data.Map as Map
 
 class Monad m => Can m where
   -- | The computation fails if this point is reached, like 'mzero'.
@@ -75,10 +77,14 @@ fromMaybe :: Can m => Maybe a -> m a
 fromMaybe Nothing = here
 fromMaybe (Just x) = return x
 
--- | Pick a non failing instance. If none exists then fail..
+-- | Pick a non failing instance. If none exists then fail.
 choose :: (Can m, Foldable f) => f (m a) -> m a
 choose = join . liftM fromMaybe . firstM . map catch . toList
 
+-- | Useful function since I cast the 'Maybe' of the Data.Map.lookup
+-- all the time.
+mapLookup :: (Ord k, Can m) => k -> Map k v -> m v
+mapLookup k = fromMaybe . Map.lookup k
 
 -- * Instance declarations
 
@@ -92,9 +98,6 @@ instance Can Maybe where
   
 instance (Monoid w, Can m) => Can (WriterT w m) where
   here = lift here
-  
-  -- Interesting case. If the computation fails where do we get the
-  -- written value of type 'w' from? I chose 'mempty' but is this correct?
   catch = mapWriterT catchW
     where
     catchW :: m (a, w) -> m (Maybe a, w)
@@ -107,6 +110,26 @@ instance (Monoid w, Can m) => Can (WriterT w m) where
 instance Can m => Can (ReaderT r m) where
   here = lift here
   catch = mapReaderT catch
+  
+instance Can m => Can (StateT s m) where
+  here = lift here
+  catch (runStateT -> f) = StateT $ \s -> do
+    mby_as <- catch (f s)
+    case mby_as of
+      Nothing -> return (Nothing, s)
+      Just (a, s') -> return (Just a, s')
+  
+instance Can m => Can (EitherT e m) where
+  here = lift here
+  catch = mapEitherT catchE
+    where
+    catchE :: m (Either e a) -> m (Either e (Maybe a))
+    catchE m = do
+      mby_either_a <- catch m
+      case mby_either_a of
+        Nothing -> return (Right Nothing)
+        Just (Left e) -> return (Left e)
+        Just (Right x) -> return (Right (Just x))
   
 instance Monad Monoid.First where
   return = Monoid.First . return

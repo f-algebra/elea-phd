@@ -13,6 +13,7 @@ import qualified Elea.Env as Env
 import qualified Elea.Type as Type
 import qualified Elea.Context as Context
 import qualified Elea.Foldable as Fold
+import qualified Elea.Monad.Definitions as Defs
 import qualified Data.Map as Map
 
 -- | A monadic variant of 'show'.
@@ -20,7 +21,10 @@ class Monad m => ShowM m a where
   showM :: a -> m String
     
 instance Show Term where
-  show = flip runReader ([] :: [Bind]) . showM
+  show = emptyEnv . showM
+    where
+    emptyEnv :: ReaderT [Bind] Defs.DBReader a -> a
+    emptyEnv = Defs.readEmpty . flip runReaderT [] 
 
 instance Show (Term' String) where
   show (Absurd' ty) = "_|_ " ++ show ty
@@ -53,7 +57,7 @@ instance Show (Term' String) where
       where
       pat_s = intercalate " " ([con_name] ++ map show alt_bs)
     
-instance Env.Readable m => ShowM m Term where
+instance (Env.Read m, Defs.Read m) => ShowM m Term where
   showM = Fold.paraM fshow
     where
     fshow :: Term' (String, Term) -> m String
@@ -85,7 +89,7 @@ instance Env.Readable m => ShowM m Term where
     fshow other = 
       return . show . fmap fst $ other
       
-instance Env.Readable m => ShowM m Context where
+instance (Env.Read m, Defs.Read m) => ShowM m Context where
   showM = showM . get Context.term
   
 instance Show Context where

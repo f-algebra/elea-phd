@@ -21,12 +21,13 @@ import qualified Elea.Simplifier as Simp
 import qualified Elea.Fission as Fission
 import qualified Elea.Monad.Error as Err
 import qualified Elea.Monad.Failure as Fail
+import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
 
-run :: Env.Readable m => Term -> m Term
+run :: (Defs.Read m, Env.Read m) => Term -> m Term
 run term = do
   -- Make sure the term has had all non-fixpoint based simplifications run
   -- before we try the more advanced fixpoint based one, some of which rely
@@ -47,7 +48,7 @@ run term = do
     [ const Fail.here
     , Fold.rewriteOnceM repeatedArg
     , Fold.rewriteOnceM fixfix
-    , mapMaybeT Env.trackMatches . Fold.rewriteOnceM matchFix
+   -- , mapMaybeT Env.trackMatches . Fold.rewriteOnceM matchFix
     ]
    
   fission_steps = 
@@ -55,7 +56,8 @@ run term = do
 
 
 -- | Uses fixpoint fusion on a fix with a fix as a decreasing argument.
-fixfix :: forall m . (Env.Readable m, Fail.Can m) => Term -> m Term
+fixfix :: forall m . (Env.Read m, Fail.Can m, Defs.Read m) => 
+  Term -> m Term
 
 -- ofix means "outer fixpoint", oargs is "outer arguments"
 fixfix oterm@(App ofix@(Fix {}) oargs) = id
@@ -100,7 +102,9 @@ fixfix _ = Fail.here
 
 -- | If two or more decreasing arguments to a fixpoint are the same 
 -- variable, we can sometimes fuse these arguments into one.
-repeatedArg :: forall m . (Env.Readable m, Fail.Can m) => Term -> m Term
+repeatedArg :: forall m . (Env.Read m, Fail.Can m, Defs.Read m) => 
+  Term -> m Term
+  
 repeatedArg fix_t@(App fix@(Fix {}) args) = id
   -- Pick the first success
   . Fail.choose
@@ -143,7 +147,9 @@ repeatedArg _ = Fail.here
 
 -- | Match-Fix fusion. Makes use of an environment which you can read pattern 
 -- matches from.
-matchFix :: forall m . (Env.MatchReadable m, Fail.Can m) => Term -> m Term
+matchFix :: forall m . (Env.MatchRead m, Fail.Can m, Defs.Read m) => 
+  Term -> m Term
+  
 matchFix outer_t@(App fix@(Fix fix_info fix_b fix_t) args) = do
   -- We don't try to fuse matches into a term which is not just a fixpoint
   -- with variable arguments. I haven't investigated the behaviour of this
@@ -228,7 +234,7 @@ matchFix _ = Fail.here
 
   
 
-steps :: Env.Readable m => [Term -> m (Maybe Term)]
+steps :: Env.Read m => [Term -> m (Maybe Term)]
 steps = id
   . map Typing.checkStep
   $ [ removeIdFix 
@@ -240,10 +246,10 @@ steps = id
  --   , factfixFusion
     ]
 
-run :: Env.Readable m => Term -> m Term
+run :: Env.Read m => Term -> m Term
 run = runSteps steps
     
-runSteps :: forall m . Env.Readable m => 
+runSteps :: forall m . Env.Read m => 
   [Term -> m (Maybe Term)] -> Term -> m Term
 runSteps steps term = do
   term' <- Float.run term
@@ -272,7 +278,7 @@ runSteps steps term = do
             |> return
       
 
-removeIdFix :: Env.Readable m => Term -> m (Maybe Term)
+removeIdFix :: Env.Read m => Term -> m (Maybe Term)
 removeIdFix fix_t@(Fix _ (Bind _ fix_ty) _) 
   | ([arg_b@(Bind _ arg_ty)], res_ty) <- flattenPi fix_ty
   , Indices.lift arg_ty == res_ty = do
@@ -282,7 +288,7 @@ removeIdFix fix_t@(Fix _ (Bind _ fix_ty) _)
 removeIdFix _ = 
   return Nothing
 
-floatConstructors :: forall m . Env.Readable m => Term -> m (Maybe Term)
+floatConstructors :: forall m . Env.Read m => Term -> m (Maybe Term)
 floatConstructors term@(Fix _ fix_b fix_t) 
   | Set.size suggestions == 0 = return Nothing
   | not (floatable || Term.simplifiable term) = return Nothing
@@ -387,7 +393,7 @@ floatConstructors _ =
 
 -- TODO don't think I need to carry the 'full_ty' parameter through any more
 -- since I got rid of that argument to Context.make
-fixfixFusion :: forall m . Env.Readable m => Term -> m (Maybe Term)
+fixfixFusion :: forall m . Env.Read m => Term -> m (Maybe Term)
 fixfixFusion full_t@(App outer_f@(Fix outer_info outer_b _) outer_args)
   | Term.simplifiable full_t = do
     full_ty <- Err.noneM (Type.get full_t)
@@ -431,7 +437,7 @@ fixfixFusion _ =
   return Nothing
 
   
-repeatedArgFusion :: forall m . Env.Readable m => Term -> m (Maybe Term)
+repeatedArgFusion :: forall m . Env.Read m => Term -> m (Maybe Term)
 repeatedArgFusion full_t@(App outer_f@(Fix outer_info outer_b _) outer_args)
   | Term.simplifiable full_t = do
     full_ty <- Err.noneM (Type.get full_t)
@@ -456,7 +462,7 @@ repeatedArgFusion _ =
   return Nothing
     
   
-fixfactFusion :: forall m . Env.Readable m => Term -> m (Maybe Term)
+fixfactFusion :: forall m . Env.Read m => Term -> m (Maybe Term)
 fixfactFusion full_t@(App outer_f@(Fix outer_info outer_b _) outer_args) 
   | Term.simplifiable full_t = do
     full_ty <- Err.noneM (Type.get full_t)
@@ -594,7 +600,7 @@ fixfactFusion full_t@(App outer_f@(Fix outer_info outer_b _) outer_args)
       -- The extraction function that is passed to the Core.fuse
       -- call for fixFact fusion. It floats the fact context
       -- into the correct place in the term for fusion to be applied.
-      floatInwards :: forall m . (Env.Readable m, Fail.Monad m) => 
+      floatInwards :: forall m . (Env.Read m, Fail.Monad m) => 
         Index -> Context -> Term -> m Term
       floatInwards fix_f match_ctx = id
         . return
@@ -671,7 +677,7 @@ fixfactFusion _ =
   return Nothing
   
   
-factfixFusion :: forall m . Env.Readable m => Term -> m (Maybe Term)
+factfixFusion :: forall m . Env.Read m => Term -> m (Maybe Term)
 factfixFusion full_t@(App inner_f@(Fix _ _ inner_f_body) inner_args)
   | Term.simplifiable full_t = do
     full_ty <- Err.noneM (Type.get full_t)
@@ -747,7 +753,7 @@ factfixFusion full_t@(App inner_f@(Fix _ _ inner_f_body) inner_args)
       -- into the correct place in the term for fusion to be applied.
       -- This is just copy-pasta from fix-fact-fusion, with only a few
       -- things changed.
-      floatInwards :: forall m . (Env.Readable m, Fail.Monad m) => 
+      floatInwards :: forall m . (Env.Read m, Fail.Monad m) => 
         Index -> Context -> Term -> m Term
       floatInwards fix_f match_ctx = id
         . return
@@ -823,7 +829,7 @@ factfixFusion _ =
   return Nothing
   
 
-refoldFusion :: forall m . Env.Readable m => Term -> m (Maybe Term)
+refoldFusion :: forall m . Env.Read m => Term -> m (Maybe Term)
 refoldFusion cse_t@(Case (Var x) ind_ty alts)
   | Term.variablesUnused cse_t = do
     var_ty <- Err.noneM (Type.get (Var x))
@@ -900,7 +906,7 @@ refoldFusion _ =
   return Nothing
 
 
-extract :: forall m . Env.Readable m =>  
+extract :: forall m . Env.Read m =>  
   Index -> Context -> Term -> Env.AlsoTrack Term m Term
 extract inner_f _ term = do
   can_extract <- extractable

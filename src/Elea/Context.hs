@@ -116,7 +116,6 @@ strip (Context ctx_t) term = do
     Fail.when (idx /= Indices.omega)
     return hole_term
     
-    
 instance Indexed Context where
   free = Indices.free . get term
   shift f = modify term (Indices.shift f)

@@ -3,10 +3,10 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Elea.Env 
 (
-  Writable (..), Readable (..), 
+  Write (..), Read (..), 
   boundAt, bindingDepth,
   
-  MatchReadable (..), 
+  MatchRead (..), 
   findMatches,
   
   TrackMatches, trackMatches,
@@ -24,7 +24,7 @@ module Elea.Env
   bind, bindMany,
   isoFree, isoShift,
   
-  empty,
+  empty, emptyT,
   
   TrackSmallerTermsT, TrackSmallerTerms, 
   trackSmallerThan, isSmaller,
@@ -44,44 +44,44 @@ import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 import qualified Control.Monad.Trans as Trans
 
-class Monad m => Writable m where
+class Monad m => Write m where
   -- | Bind a variable index to a type within the environment
   bindAt :: Index -> Bind -> m a -> m a
   
   -- | Declare that the first term has been pattern matched to the second
   matched :: Term -> Term -> m a -> m a
   
-bind :: Writable m => Bind -> m a -> m a
+bind :: Write m => Bind -> m a -> m a
 bind = bindAt 0
 
-bindMany :: Writable m => [Bind] -> m a -> m a
+bindMany :: Write m => [Bind] -> m a -> m a
 bindMany = concatEndos . map bind
 
 -- | Whether you can read variable bindings from the environment. 
 -- Since variables are indices, it's really a lookup function 'Nat -> Bind',
 -- but this is just a list.
-class Writable m => Readable m where
+class Write m => Read m where
   bindings :: m [Bind]
   
 -- | Lookup the type of a variable. 
-boundAt :: Readable m => Index -> m Bind
+boundAt :: Read m => Index -> m Bind
 boundAt at = liftM (!! fromEnum at) bindings
 
 -- | Returns the number of indices that have been bound.
-bindingDepth :: Readable m => m Int
+bindingDepth :: Read m => m Int
 bindingDepth = liftM length bindings
   
 -- | Whether you can read locally bound pattern matches from
 -- an environment monad
-class Readable m => MatchReadable m where
+class Read m => MatchRead m where
   matches :: m [(Term, Term)]
   
-findMatches :: MatchReadable m => (Term -> Bool) -> m [(Term, Term)]
+findMatches :: MatchRead m => (Term -> Bool) -> m [(Term, Term)]
 findMatches p = liftM (filter (p . fst)) matches
   
 
-instance Writable m => Fold.FoldableM m Term where
-  -- To fold over a 'Term' we require that our monad implement a 'Writable'
+instance Write m => Fold.FoldableM m Term where
+  -- To fold over a 'Term' we require that our monad implement a 'Write'
   -- environment. This environment can then be correctly updated as 
   -- we move into the syntax tree of the term.
   distM (Lam' b (mt, _)) =
@@ -104,7 +104,7 @@ instance Writable m => Fold.FoldableM m Term where
   distM other = 
     sequence (fmap fst other)
     
-instance Writable m => Fold.TransformableM m Term where
+instance Write m => Fold.TransformableM m Term where
   -- Use the default instance for transformM
     
 isoFree :: 
@@ -203,7 +203,10 @@ instance Substitutable Term where
 -- monad over a stack of type bindings. This function will strip this
 -- monad off, by starting with an empty stack.
 empty :: Reader [Bind] a -> a
-empty = flip runReader mempty
+empty = runIdentity . emptyT
+
+emptyT :: Monad m => ReaderT [Bind] m a -> m a
+emptyT = flip runReaderT mempty
 
 -- | Anything that tracks indices as we move within something that binds
 -- indices.
@@ -222,11 +225,11 @@ instance Tracks r m => Tracks r (MaybeT m) where
   liftTrackedMany n = mapMaybeT (liftTrackedMany n)
 
   
--- Place 'AlsoTrack' over the top of a 'Writable' environment monad.
+-- Place 'AlsoTrack' over the top of a 'Write' environment monad.
 -- 'AlsoTrack' will capture all changes to the environment and pass them
 -- along to the inner monad. 
 -- If you don't want your inner monad to not receive the changes 
--- (or it is just not 'Writable'), then use 'TrackIndicesT'.
+-- (or it is just not 'Write'), then use 'TrackIndicesT'.
 newtype AlsoTrack r m a
   = AlsoTrack { runAlsoTrack :: ReaderT r m a }
   deriving ( Monad, MonadTrans )
@@ -248,7 +251,7 @@ alsoWith f = AlsoTrack . withReaderT f . runAlsoTrack
 
 
 -- Instances for 'AlsoTrack'
-instance (Writable m, Indexed r) => Writable (AlsoTrack r m) where
+instance (Write m, Indexed r) => Write (AlsoTrack r m) where
   bindAt at b = id
     . AlsoTrack 
     . local (liftAt at)
@@ -258,7 +261,7 @@ instance (Writable m, Indexed r) => Writable (AlsoTrack r m) where
   matched t w = 
     mapAlsoTrack (matched t w)
     
-instance (Readable m, Indexed r) => Readable (AlsoTrack r m) where
+instance (Read m, Indexed r) => Read (AlsoTrack r m) where
   bindings = Trans.lift bindings
     
 instance Fail.Can m => Fail.Can (AlsoTrack r m) where
@@ -310,7 +313,7 @@ mapTrackMatches f = TrackMatches . mapReaderT f . runTrackMatches
 trackMatches :: TrackMatches m a -> m a
 trackMatches = flip runReaderT mempty . runTrackMatches
  
-instance Writable m => Writable (TrackMatches m) where
+instance Write m => Write (TrackMatches m) where
   bindAt at b = mapTrackMatches (bindAt at b)
   
   matched t con_t = id
@@ -319,63 +322,63 @@ instance Writable m => Writable (TrackMatches m) where
     . runTrackMatches
     . mapTrackMatches (matched t con_t)
     
-instance Readable m => Readable (TrackMatches m) where
+instance Read m => Read (TrackMatches m) where
   bindings = Trans.lift bindings
   
-instance Readable m => MatchReadable (TrackMatches m) where
+instance Read m => MatchRead (TrackMatches m) where
   matches = TrackMatches ask
   
 instance Fail.Can m => Fail.Can (TrackMatches m) where
   here = Trans.lift Fail.here
   catch = mapTrackMatches Fail.catch
 
--- Various instances for 'Writable' and 'Readable'
+-- Various instances for 'Write' and 'Read'
   
-instance Writable Identity where
+instance Write Identity where
   bindAt _ _ = id
   matched _ _ = id
 
-instance Monad m => Writable (IdentityT m) where
+instance Monad m => Write (IdentityT m) where
   -- The 'IdentityT' monad just ignores all the written type information
   bindAt _ _ = id
   matched _ _ = id
 
-instance (Monoid w, Writable m) => Writable (WriterT w m) where
+instance (Monoid w, Write m) => Write (WriterT w m) where
   bindAt at b = mapWriterT (bindAt at b)
   matched t w = mapWriterT (matched t w)
   
-instance (Monoid w, Readable m) => Readable (WriterT w m) where
+instance (Monoid w, Read m) => Read (WriterT w m) where
   bindings = Trans.lift bindings
   
-instance Monad m => Writable (ReaderT [Bind] m) where
+instance Monad m => Write (ReaderT [Bind] m) where
   bindAt at b = local (insertAt (enum at) b)
   matched _ _ = id
   
-instance Monad m => Readable (ReaderT [Bind] m) where 
+instance Monad m => Read (ReaderT [Bind] m) where 
   bindings = ask
   
-instance Writable m => Writable (MaybeT m) where
+instance Write m => Write (MaybeT m) where
   bindAt at b = mapMaybeT (bindAt at b)
   matched t w = mapMaybeT (matched t w)
   
-instance Readable m => Readable (MaybeT m) where
+instance Read m => Read (MaybeT m) where
   bindings = Trans.lift bindings
   
-instance MatchReadable m => MatchReadable (MaybeT m) where
+instance MatchRead m => MatchRead (MaybeT m) where
   matches = Trans.lift matches
   
-instance Writable m => Writable (EitherT e m) where
+instance Write m => Write (EitherT e m) where
   bindAt at b = mapEitherT (bindAt at b)
   matched t w = mapEitherT (matched t w)
   
-instance Readable m => Readable (EitherT e m) where
+instance Read m => Read (EitherT e m) where
   bindings = Trans.lift bindings
 
-instance Writable m => Writable (StateT s m) where
+instance Write m => Write (StateT s m) where
   bindAt at b = mapStateT (bindAt at b)
   matched t w = mapStateT (matched t w)
   
-instance Readable m => Readable (StateT s m) where
+instance Read m => Read (StateT s m) where
   bindings = Trans.lift bindings
   
   
@@ -405,7 +408,7 @@ isSmaller term = do
   set <- asks smaller
   return (isFinite term || term `Set.member` set)
     
-instance (Show Term, Writable m) => Writable (TrackSmallerTermsT m) where
+instance (Show Term, Write m) => Write (TrackSmallerTermsT m) where
   bindAt idx t = id
     . mapReaderT (bindAt idx t)
     . local (liftAt idx)

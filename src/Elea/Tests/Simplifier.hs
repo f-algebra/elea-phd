@@ -9,12 +9,14 @@ import Elea.Prelude
 import Elea.Term
 import qualified Elea.Env as Env
 import qualified Elea.Testing as Test
+import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Simplifier as Simp
 
 checkEquation :: Equation -> Test.Test
 checkEquation (Equals name bs t1 t2) = id
   . Test.label name
-  . Env.empty
+  . Defs.readEmpty
+  . Env.emptyT
   . Env.bindMany bs $ do
     t1' <- Simp.run t1
     t2' <- Simp.run t2

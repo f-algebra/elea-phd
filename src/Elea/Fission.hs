@@ -20,13 +20,14 @@ import qualified Elea.Unifier as Unifier
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Monad.Error as Err
 import qualified Elea.Monad.Failure as Fail
+import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 
-run :: Env.Readable m => Term -> m Term
+run :: (Defs.Read m, Env.Read m) => Term -> m Term
 run = Fold.rewriteStepsM (map Type.checkStep steps)
 
-steps :: (Env.Readable m, Fail.Can m) => [Term -> m Term]
+steps :: (Env.Read m, Fail.Can m, Defs.Read m) => [Term -> m Term]
 steps = Simp.steps ++ 
   [ const Fail.here
   , identityFix
@@ -35,7 +36,7 @@ steps = Simp.steps ++
 
 
 -- | Remove a fixpoint which recursively returns the original argument
-identityFix :: (Env.Readable m, Fail.Can m) => Term -> m Term
+identityFix :: (Env.Read m, Fail.Can m, Defs.Read m) => Term -> m Term
 identityFix fix@(Fix _ (Bind _ (Type.Fun arg_ty res_ty)) _)
   -- We can quickly identify potential functions as 
   -- they will have type @A -> A@ where @A@ is inductive. 
@@ -54,7 +55,9 @@ identityFix _ = Fail.here
 
 -- | Attempts to simplify fixpoints to head normal form. Floats a constructor
 -- which the fixpoint will always return outside the fixpoint.
-constructorFission :: forall m . (Env.Readable m, Fail.Can m) => Term -> m Term
+constructorFission :: forall m . (Env.Read m, Fail.Can m, Defs.Read m) =>
+  Term -> m Term
+  
 constructorFission fix@(Fix _ fix_b fix_t) = do
   Fail.when (Set.null suggestions)
   Fail.unless floatable

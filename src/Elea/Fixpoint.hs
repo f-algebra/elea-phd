@@ -21,10 +21,11 @@ import qualified Elea.Simplifier as Simp
 import qualified Elea.Context as Context
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Failure as Fail
+import qualified Elea.Monad.Definitions as Defs
 import qualified Data.Map as Map
 
 
-fusion :: forall m . (Fail.Can m, Env.Readable m) =>
+fusion :: forall m . (Fail.Can m, Env.Read m, Defs.Read m) =>
   (Index -> Context -> Term -> m Term) ->
   Context -> Term -> m Term
 fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
@@ -152,7 +153,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   replace _ = mzero    
     
   
-fission :: forall m . (Env.Readable m, Fail.Can m) =>
+fission :: forall m . (Env.Read m, Fail.Can m, Defs.Read m) =>
   (Index -> Context -> Term -> m Term)
   -> Term -> Context -> m Term
 fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do

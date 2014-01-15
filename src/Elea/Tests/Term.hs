@@ -12,7 +12,7 @@ import qualified Elea.Env as Env
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Testing as Test
 import qualified Elea.Simplifier as Simp
-import qualified Elea.Monad.Elea as Elea
+import qualified Elea.Monad.Definitions as Defs
 import qualified Data.Set as Set
 
 tests = Test.label "Terms"
@@ -21,12 +21,12 @@ tests = Test.label "Terms"
   
   add <- Test.term "add"
   leq <- Test.term "leq"
-  let (_, App add' _) = flattenLam (Env.empty (Simp.run add))
+  let (_, App add' _) = flattenLam (Defs.readEmpty (Env.emptyT (Simp.run add)))
   
   one <- Test.term "1"
   two <- Test.term "2"
   Lam _ suc_x <- Test.term "fun (x: nat) -> Suc x"
-  
+   
   let dec1 = Test.assertEq [0] (decreasingArgs add)
       dec2 = Test.assertEq [0, 1] (decreasingArgs leq)
       dec3 = Test.assertEq [0] (decreasingArgs add')

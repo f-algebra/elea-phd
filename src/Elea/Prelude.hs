@@ -63,7 +63,7 @@ module Elea.Prelude
 where
 
 import Prelude hiding ( mapM, foldl, foldl1, mapM_, minimum, 
-  maximum, sequence_, zip, zipWith,
+  maximum, sequence_, zip, zipWith, Read (..),
   foldr, foldr1, sequence, Maybe (..), maybe, all, any, elem, product,
   and, concat, notElem, or, concatMap, sum, (++), map, (.), id )
 

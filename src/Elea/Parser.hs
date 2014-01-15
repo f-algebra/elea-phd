@@ -991,7 +991,7 @@ happySeq = happyDontSeq
 withEmptyScope :: ReaderT Scope m a -> m a
 withEmptyScope = flip runReaderT (Scope mempty mempty)
 
-instance Monad m => Env.Writable (ReaderT Scope m) where
+instance Monad m => Env.Write (ReaderT Scope m) where
   bindAt at b = 
       local
     $ modify bindMap (addToMap . map (Indices.liftAt at))
@@ -1002,7 +1002,7 @@ instance Monad m => Env.Writable (ReaderT Scope m) where
     
   matched _ _ = id
   
-instance Err.Can m => Env.Readable (ReaderT Scope m) where
+instance Err.Can m => Env.Read (ReaderT Scope m) where
   bindings = asks (get bindStack)
   
 type ParserMonad m a = (Err.Can m, Defs.Has m) => ReaderT Scope m a

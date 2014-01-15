@@ -19,15 +19,16 @@ import qualified Elea.Evaluation as Eval
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Error as Err
 import qualified Elea.Monad.Failure as Fail
+import qualified Elea.Monad.Definitions as Defs
 import qualified Data.Monoid as Monoid
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Control.Monad.Trans as Trans
 
-run :: Env.Readable m => Term -> m Term
+run :: (Env.Read m, Defs.Read m) => Term -> m Term
 run = Fold.rewriteStepsM (map Type.checkStep steps)
 
-steps :: (Fail.Can m, Env.Readable m) => [Term -> m Term]
+steps :: (Fail.Can m, Env.Read m, Defs.Read m) => [Term -> m Term]
 steps = eval_steps ++
   [ const Fail.here
   , caseFun
@@ -50,13 +51,13 @@ steps = eval_steps ++
   
 -- | Remove arguments to a fixpoint if they never change in 
 -- any recursive calls.
-removeConstArgs :: Env.Writable m => Term -> m Term
+removeConstArgs :: Env.Write m => Term -> m Term
 removeConstArgs = Fold.rewriteM constArg
 
   
 -- | We do not want pattern matches to return function typed values,
 -- so we add a new lambda above one if this is the case.
-caseFun :: (Fail.Can m, Env.Readable m) => Term -> m Term
+caseFun :: (Fail.Can m, Env.Read m, Defs.Read m) => Term -> m Term
 caseFun cse@(Case ind t alts) = do
   cse_ty <- Type.get cse
   -- We only apply this step if the pattern match is of function type.
@@ -111,7 +112,7 @@ caseCase _ = Fail.here
 -- | Finds terms that are absurd and sets them that way.
 -- So far it detects pattern matching over absurdity, 
 -- and applying arguments to an absurd function.
-absurdity :: (Fail.Can m, Env.Readable m) => Term -> m Term
+absurdity :: (Fail.Can m, Env.Read m, Defs.Read m) => Term -> m Term
 absurdity term
   | isAbsurd term = do
     ty <- Type.get term
@@ -249,7 +250,7 @@ uselessFix _ = Fail.here
 
 
 -- | Unfolds a 'Fix' if one of its arguments is a constructor term.
-unfoldFixInj :: (Fail.Can m, Env.Readable m) => Term -> m Term
+unfoldFixInj :: Fail.Can m => Term -> m Term
 unfoldFixInj term@(App fix@(Fix {}) args)
   | any isConArg (Term.decreasingArgs fix) = 
     return (App (Term.unfoldFix fix) args)
@@ -349,7 +350,7 @@ commuteMatchesWhen when =
 -- | Unfolds a 'Fix' if one of its arguments is a constructor term,
 -- subject to a load of random, half-baked conditions.
 -- This code desperately needs to be improved.
-unfoldFixInj :: (Fail.Can m, Env.Readable m) => Term -> m (Maybe Term)
+unfoldFixInj :: (Fail.Can m, Env.Read m) => Term -> m (Maybe Term)
 unfoldFixInj term@(App fix@(Fix _ _ rhs) args)
   | any (isInj . leftmost) args = do
     pat_terms <- liftM (map fst . Map.elems) Env.matches
@@ -407,7 +408,7 @@ unfoldCaseFix _ = Nothing
 -- one of which will probably contain flatten again, and so it repeats.
 -- I am only using this inside a very particular step, very ad hoc I know
 -- but I'll figure out a way around it at some point.
-unsafeUnfoldCaseFix :: (Fail.Can m, Env.Readable m) => Term -> m (Maybe Term)
+unsafeUnfoldCaseFix :: (Fail.Can m, Env.Read m) => Term -> m (Maybe Term)
 unsafeUnfoldCaseFix cse_t@(Case (leftmost -> Fix _ fix_b fix_t) _ _)
   | Term.isRecursiveInd ind_ty && Term.variablesUnused cse_t = do
     expanded <- id
@@ -540,7 +541,7 @@ constantFix _ =
 -- fixpoints). Otherwise, if you unroll the function you could perform
 -- fix-fact fusion using the recursive call, which would unroll the function
 -- again, and so on.
-caseOfRec :: forall m . (Fail.Can m, Env.Readable m) => Term -> m (Maybe Term)
+caseOfRec :: forall m . (Fail.Can m, Env.Read m) => Term -> m (Maybe Term)
 caseOfRec (Fix fix_i fix_b fix_t) = id
   . liftM (fmap (Fix fix_i fix_b))
   . Env.alsoTrack 0
@@ -594,7 +595,7 @@ caseOfRec _ =
   return Nothing
 
   
-freeFix :: (Fail.Can m, Env.Readable m) => Term -> m (Maybe Term)
+freeFix :: (Fail.Can m, Env.Read m) => Term -> m (Maybe Term)
 freeFix outer_fix@(Fix _ _ outer_body)
   | Just free_fix <- mby_free_fix = do
     ind_ty <- Type.get free_fix

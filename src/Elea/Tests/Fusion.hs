@@ -11,11 +11,13 @@ import qualified Elea.Env as Env
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Testing as Test
 import qualified Elea.Fusion as Fusion
+import qualified Elea.Monad.Definitions as Defs
 
 checkEquation :: Equation -> Test.Test
 checkEquation (Equals name bs t1 t2) = id
   . Test.label name
-  . Env.empty
+  . Defs.readEmpty
+  . Env.emptyT
   . Env.bindMany bs $ do
     t1' <- Fusion.run t1
     t2' <- Fusion.run t2
@@ -42,6 +44,6 @@ tests = Test.label "Fusion"
   eqs <- Test.loadFile "src/Elea/Tests/fusion.elea"
   return
     . map checkEquation
-    . filter ((== "count reverse") . get equationName)
+ --   . filter ((== "count reverse") . get equationName)
     $ eqs
 

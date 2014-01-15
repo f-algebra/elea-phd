@@ -21,10 +21,11 @@ import qualified Elea.Type as Type
 import qualified Elea.Foldable as Fold
 import qualified Elea.Env as Env
 import qualified Elea.Monad.Error as Err
+import qualified Elea.Monad.Definitions as Defs
 
-type TypingMonad m = (Err.Can m, Env.Readable m)
+type TypingMonad m = (Err.Can m, Env.Read m, Defs.Read m)
 
-get :: Env.Readable m => Term -> m Type
+get :: (Defs.Read m, Env.Read m) => Term -> m Type
 get = Err.noneM . typeOf
 
 -- | Throws an error if a term is not correctly typed.
@@ -32,12 +33,12 @@ check :: TypingMonad m => Term -> m ()
 -- Call 'typeOf' and ignore the argument
 check = liftM (const ()) . typeOf
 
-checkTrace :: Env.Readable m => Term -> m a -> m a
+checkTrace :: (Defs.Read m, Env.Read m) => Term -> m a -> m a
 checkTrace term m = Err.noneM (check term) >> m
 
 -- | Wrap this around a term transformation step @Term -> m (Maybe Term)@
 -- to add a check that the step preserves the type of the term.
-checkStep :: forall m . Env.Readable m => 
+checkStep :: forall m . (Defs.Read m, Env.Read m) => 
   (Term -> MaybeT m Term) -> Term -> MaybeT m Term
 checkStep step term = do
   result <- step term

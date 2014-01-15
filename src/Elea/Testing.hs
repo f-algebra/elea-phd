@@ -19,7 +19,7 @@ import qualified Elea.Monad.Error as Err
 import qualified Test.HUnit as HUnit
 
 type Test = HUnit.Test
-type M a = State (Map String Term, Map String Type) a
+type M = Defs.DBState
 
 execute :: Test -> IO ()
 execute test = do
@@ -33,7 +33,7 @@ label :: String -> Test -> Test
 label = HUnit.TestLabel
 
 run :: HUnit.Testable t => M t -> Test
-run = HUnit.test . flip evalState mempty 
+run = HUnit.test . Defs.evalEmpty 
 
 assert :: HUnit.Assertable t => t -> Test
 assert = HUnit.TestCase . HUnit.assert

@@ -30,13 +30,13 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 
 {-# INLINEABLE run #-}
-run :: Env.Readable m => Term -> m Term
+run :: Env.Read m => Term -> m Term
 run = Fold.isoRewriteStepsM Term.restricted (Simp.stepsM ++ steps)
 
 removeConstArgs :: Term -> Term
 removeConstArgs = Simp.run . Fold.isoRewrite Term.restricted constArg
 
-steps :: Env.Readable m => [Term -> m (Maybe Term)]
+steps :: Env.Read m => [Term -> m (Maybe Term)]
 steps = id
   . map Typing.checkStep
   $ safeSteps ++ unsafe
@@ -49,7 +49,7 @@ steps = id
     , unsafeUnfoldCaseFix
     ]
 
-safeSteps :: Env.Readable m => [Term -> m (Maybe Term)]
+safeSteps :: Env.Read m => [Term -> m (Maybe Term)]
 safeSteps = 
   Simp.stepsM ++ (map (return .) safe) ++ safeM
   where
@@ -99,12 +99,12 @@ commuteMatchesWhen when =
   runIdentity . commuteMatchesWhenM ((return .) . when)
   
 
-varEqApply :: Env.Readable m => Term -> m (Maybe Term)
+varEqApply :: Env.Read m => Term -> m (Maybe Term)
 varEqApply t@(Var {}) = Env.matchedWith t
 varEqApply _ = return Nothing
 
 
-absurdity :: Env.Readable m => Term -> m (Maybe Term)
+absurdity :: Env.Read m => Term -> m (Maybe Term)
 absurdity (Absurd _) = return Nothing
 absurdity term
   | isAbsurd term = do
@@ -126,7 +126,7 @@ absurdity _ =
 -- | Unfolds a 'Fix' if one of its arguments is a constructor term,
 -- subject to a load of random, half-baked conditions.
 -- This code desperately needs to be improved.
-unfoldFixInj :: Env.Readable m => Term -> m (Maybe Term)
+unfoldFixInj :: Env.Read m => Term -> m (Maybe Term)
 unfoldFixInj term@(App fix@(Fix _ _ rhs) args)
   | any (isInj . leftmost) args = do
     pat_terms <- liftM (map fst . Map.elems) Env.matches
@@ -184,7 +184,7 @@ unfoldCaseFix _ = Nothing
 -- one of which will probably contain flatten again, and so it repeats.
 -- I am only using this inside a very particular step, very ad hoc I know
 -- but I'll figure out a way around it at some point.
-unsafeUnfoldCaseFix :: Env.Readable m => Term -> m (Maybe Term)
+unsafeUnfoldCaseFix :: Env.Read m => Term -> m (Maybe Term)
 unsafeUnfoldCaseFix cse_t@(Case (leftmost -> Fix _ fix_b fix_t) _ _)
   | Term.isRecursiveInd ind_ty && Term.variablesUnused cse_t = do
     expanded <- id
@@ -312,7 +312,7 @@ constantFix _ =
 
  
 -- | Float lambdas out of the branches of a pattern match
-caseFun :: Env.Readable m => Term -> m (Maybe Term)
+caseFun :: Env.Read m => Term -> m (Maybe Term)
 caseFun cse@(Case lhs ind_ty alts) 
   | any (\t -> isFix t || isLam t) alt_ts = do
     Pi arg_b _ <- Err.noneM (Typing.typeOf cse)
@@ -497,7 +497,7 @@ freeCaseFix _ = Nothing
 -- fixpoints). Otherwise, if you unroll the function you could perform
 -- fix-fact fusion using the recursive call, which would unroll the function
 -- again, and so on.
-caseOfRec :: forall m . Env.Readable m => Term -> m (Maybe Term)
+caseOfRec :: forall m . Env.Read m => Term -> m (Maybe Term)
 caseOfRec (Fix fix_i fix_b fix_t) = id
   . liftM (fmap (Fix fix_i fix_b))
   . Env.alsoTrack 0
@@ -551,7 +551,7 @@ caseOfRec _ =
   return Nothing
 
   
-freeFix :: Env.Readable m => Term -> m (Maybe Term)
+freeFix :: Env.Read m => Term -> m (Maybe Term)
 freeFix outer_fix@(Fix _ _ outer_body)
   | Just free_fix <- mby_free_fix = do
     ind_ty <- Err.noneM (Typing.typeOf free_fix)

@@ -14,7 +14,6 @@ where
 import Prelude ()
 import Elea.Prelude hiding ( replace )
 import Elea.Term
-import Elea.Show
 import Elea.Context ( Context )
 import qualified Elea.Types as Type
 import qualified Elea.Index as Indices
@@ -25,6 +24,7 @@ import qualified Elea.Unifier as Unifier
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Error as Err
 import qualified Elea.Monad.Failure as Fail
+import qualified Elea.Monad.Definitions as Defs
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
@@ -109,7 +109,8 @@ applyCase (Case ind cse_t alts) inner_t =
 -- | Generalise all the arguments of a term to fresh variables.
 -- The first argument of the inner computation to run will lift 
 -- indices by the number of new variables.
-generaliseArgs :: (Indexed a, Substitutable t, Inner t ~ Term, Env.Readable m) =>
+generaliseArgs :: (Indexed a, Substitutable t, 
+                   Inner t ~ Term, Env.Read m, Defs.Read m) =>
   Term -> ((a -> a) -> Term -> m t) -> m t
 generaliseArgs (App func args) run = do
   -- Use the type of every arguments to generate bindings for our new 
@@ -132,9 +133,9 @@ generaliseArgs (App func args) run = do
   
   liftHere :: Indexed b => b -> b
   liftHere = Indices.liftMany (elength args)
+        
   
 {-
-
 
 -- | This is just the arguments of 'altPattern' at
 -- the positions from 'recursiveInjArgs' 
@@ -246,7 +247,7 @@ containsUnifiable =
 -- such that the supplied term is generalised going in,
 -- and ungeneralised coming out. Just treat t1 and t2 as Term, 
 -- I had to generalise it to t1 and t2 for annoying reasons.
-generalise :: (Env.Readable m, ContainsTerms t1, ContainsTerms t2,
+generalise :: (Env.Read m, ContainsTerms t1, ContainsTerms t2,
     KleisliShow t1, ShowM t1 m) => 
   Term -> (Index -> t1 -> m t2) -> (t1 -> m t2)
 generalise gen_t transform term = do
@@ -272,7 +273,7 @@ generalise gen_t transform term = do
     $ term''
     
 generaliseMany :: forall m t1 t2 . 
-  (Env.Readable m, ContainsTerms t1, ContainsTerms t2,
+  (Env.Read m, ContainsTerms t1, ContainsTerms t2,
     KleisliShow t1, ShowM t1 m) => 
   [Term] -> ([Index] -> t1 -> m t2) -> (t1 -> m t2)
 generaliseMany ts f = foldr gen f lifted_ts []
@@ -286,7 +287,7 @@ generaliseMany ts f = foldr gen f lifted_ts []
 -- | Pattern matches are automatically applied as replacements down
 -- every branch. This will revert any such replacements of any term
 -- that fulfils the given predicate.
-revertMatchesWhenM :: forall m . Env.Writable m => 
+revertMatchesWhenM :: forall m . Env.Write m => 
   (Term -> m Bool) -> Term -> m Term
 revertMatchesWhenM when = Fold.isoTransformM restricted revert
   where 
@@ -359,7 +360,7 @@ instance Fold.Unfoldable BranchesOnly where
   embed = BranchesOnly . Fold.embed . fmap notBranchesOnly
   
 instance Fold.FoldableM BranchesOnly where
-  type FoldM BranchesOnly m = Env.Writable m
+  type FoldM BranchesOnly m = Env.Write m
   distM = Fold.distM . fmap (second notBranchesOnly)
 
 instance Fold.Transformable BranchesOnly where
@@ -378,7 +379,7 @@ instance Fold.Transformable BranchesOnly where
     branches term = 
       (True, fmap (\t -> (False, t)) (Fold.project term))
 
-collectM :: forall m . Env.Writable m => 
+collectM :: forall m . Env.Write m => 
   (Term -> m Bool) -> Term -> m (Set Term)
 collectM p = Env.alsoTrack 0 . Fold.collectM collect
   where
@@ -461,7 +462,7 @@ isProductive (Fix _ _ fix_t) = fix_t
 -- the second is the rest. Will fail if the context is multi-hole with 
 -- different arguments at each, if any arguments are contain non-free
 -- variables, or if no arguments have been applied.
-isolateArguments :: forall m . (Fail.Monad m, Env.Readable m) => 
+isolateArguments :: forall m . (Fail.Monad m, Env.Read m) => 
   Context -> m (Context, Context)
 isolateArguments ctx = do
   (term', args_set) <- id
@@ -538,7 +539,7 @@ minimumInjDepth = getMinimum . injDepth
 maximumInjDepth :: Term -> Int
 maximumInjDepth = getMaximum . injDepth
 
-expressMatches :: forall m . Env.Readable m => 
+expressMatches :: forall m . Env.Read m => 
   ((Term, Term) -> Term -> Term -> m Bool) -> Term -> m Term
 expressMatches when = 
   Fold.isoTransformM restricted express
@@ -595,7 +596,7 @@ instance Fold.Unfoldable RestrictedTerm where
   embed = Restrict . Fold.embed . fmap derestrict
   
 instance Fold.FoldableM RestrictedTerm where
-  type FoldM RestrictedTerm m = Env.Writable m
+  type FoldM RestrictedTerm m = Env.Write m
   distM = Fold.distM . fmap (second derestrict)
 
 instance Fold.Transformable RestrictedTerm where
