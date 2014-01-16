@@ -13,7 +13,7 @@ import qualified Elea.Env as Env
 import qualified Elea.Type as Type
 import qualified Elea.Context as Context
 import qualified Elea.Foldable as Fold
-import qualified Elea.Monad.Definitions as Defs
+import qualified Elea.Definitions as Defs
 import qualified Data.Map as Map
 
 -- | A monadic variant of 'show'.
@@ -25,16 +25,17 @@ instance Show Term where
     where
     emptyEnv :: ReaderT [Bind] Defs.DBReader a -> a
     emptyEnv = Defs.readEmpty . flip runReaderT [] 
+    
+bracketIfNeeded :: String -> String
+bracketIfNeeded s 
+  | ' ' `elem` s = "(" ++ s ++ ")"
+  | otherwise = s
 
 instance Show (Term' String) where
   show (Absurd' ty) = "_|_ " ++ show ty
   show (App' f xs) = f' ++ " " ++ xs'
     where 
-    xs' = intercalate " " (map showArg xs)
-      where
-      showArg x 
-        | ' ' `elem` x = "(" ++ x ++ ")"
-        | otherwise = x
+    xs' = intercalate " " (map bracketIfNeeded xs)
     f' | "->" `isInfixOf` f || "end" `isInfixOf` f = "(" ++ f ++ ")"
        | otherwise = f
   show (Fix' _ (show -> b) t) =
@@ -86,8 +87,22 @@ instance (Env.Read m, Defs.Read m) => ShowM m Term where
         then return (lbl' ++ "[" ++ show (same_lbl_count + 1) ++ "]")
         else return lbl'
 
-    fshow other = 
-      return . show . fmap fst $ other
+    fshow term' = do
+      -- Attempt to find an alias for this function in our definition database
+      mby_name <- Defs.lookupName (Fold.recover term')
+      case mby_name of
+        Just (name, args) -> do
+          args' <- mapM showM args
+          let args_s = concatMap ((" " ++) . bracketIfNeeded) args'
+          return (name ++ args_s) 
+          
+        Nothing -> 
+          -- If we can't find an alias, then default to the 
+          -- @Show (Term' String)@ instance
+          (return . show . fmap fst) term'
+      
+      
+
       
 instance (Env.Read m, Defs.Read m) => ShowM m Context where
   showM = showM . get Context.term

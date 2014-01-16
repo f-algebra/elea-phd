@@ -25,7 +25,7 @@ module Elea.Prelude
   module Data.Either,
   module Data.Monoid,
   module Data.Semigroup,
-  module Data.Map,
+  module Data.Map.Strict,
   module Data.Sequence,
   module Data.Set,
   module Data.Traversable,
@@ -99,7 +99,7 @@ import Data.Maybe
 import Data.Either ( lefts, rights, partitionEithers )
 import Data.Monoid hiding ( Sum, All, (<>) )
 import Data.Semigroup ( Semigroup (..) )
-import Data.Map ( Map )
+import Data.Map.Strict ( Map )
 import Data.Sequence ( Seq )
 import Data.Set ( Set )
 import qualified Data.Set as Set

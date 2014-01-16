@@ -44,6 +44,7 @@ steps = eval_steps ++
   , freeCaseFix
   , propagateVarMatch
   , raiseVarCase
+  , constantCase
   ]
   where
   eval_steps = map (Fail.fromMaybe .) Eval.steps
@@ -322,6 +323,19 @@ raiseVarCase outer_t@(Case _ (leftmost -> Fix {}) alts) = do
     Fail.here
     
 raiseVarCase _ = Fail.here
+
+
+-- | Removes a pattern match if every branch returns the same value.
+constantCase :: forall m . Fail.Can m => Term -> m Term
+constantCase (Case _ _ alts) = do
+  (alt_t:alt_ts) <- mapM loweredAltTerm alts
+  Fail.unless (all (== alt_t) alt_ts)
+  return alt_t
+  where
+  loweredAltTerm :: Alt -> m Term
+  loweredAltTerm (Alt bs alt_t) = 
+    Indices.tryLowerMany (elength bs) alt_t
+constantCase _ = Fail.here
 
 {-
 
@@ -622,31 +636,6 @@ freeFix outer_fix@(Fix _ _ outer_body)
     return Nothing
   
 freeFix _ = return Nothing
-
-
--- | Removes a pattern match if every branch returns the same value.
-constantCase :: Term -> Maybe Term
-constantCase cse_t@(Case _ _ alts) = do
-  lowered <- mapM loweredAltTerm alts
-  let filtered = lowered -- filter (not . isAbsurd) lowered
-  case filtered of
-    [] -> return (head lowered)
-    alt_t:alt_ts -> do
-      guard (all (== alt_t) alt_ts)
-   --   guard (not (containsFunctionCall alt_t))
-      return alt_t
-  where
-  containsFunctionCall :: Term -> Bool
-  containsFunctionCall = Fold.isoAny Term.restricted isFunctionCall
-    where
-    isFunctionCall (App (Fix {}) _) = True -- not (isInj fun)
-    isFunctionCall _ = False
-
-  loweredAltTerm :: Alt -> Maybe Term
-  loweredAltTerm (Alt bs alt_t) = do
-    guard (Indices.lowerableBy (length bs) alt_t)
-    return (Indices.lowerMany (length bs) alt_t)
-constantCase _ = Nothing
 
   
 

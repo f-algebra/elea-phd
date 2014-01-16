@@ -140,5 +140,5 @@ instance Show Type where
     
 instance Show Bind where
   show (Bind name ty) =
-    "(" ++ name ++ " : " ++ show ty ++ ")" 
+    "(" ++ name ++ ": " ++ show ty ++ ")" 
 

@@ -12,7 +12,7 @@ import qualified Elea.Env as Env
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Testing as Test
 import qualified Elea.Simplifier as Simp
-import qualified Elea.Monad.Definitions as Defs
+import qualified Elea.Definitions as Defs
 import qualified Data.Set as Set
 
 tests = Test.label "Terms"
@@ -20,23 +20,23 @@ tests = Test.label "Terms"
   Test.loadPrelude
   
   add <- Test.term "add"
+  let (_, App add_fix@(Fix {}) _) = flattenLam add
+  
   leq <- Test.term "leq"
-  let (_, App add' _) = flattenLam (Defs.readEmpty (Env.emptyT (Simp.run add)))
   
   one <- Test.term "1"
-  two <- Test.term "2"
-  Lam _ suc_x <- Test.term "fun (x: nat) -> Suc x"
+  Lam _ x_list <- Test.term "fun (x: nat) -> Cons x Nil"
+  xs_list <- liftM (\t -> app t [Var 0]) (Test.term "Cons 1")
    
-  let dec1 = Test.assertEq [0] (decreasingArgs add)
+  let dec1 = Test.assertEq [0] (decreasingArgs add_fix)
       dec2 = Test.assertEq [0, 1] (decreasingArgs leq)
-      dec3 = Test.assertEq [0] (decreasingArgs add')
       
       fin1 = Test.assert (isFinite one)
-      fin2 = Test.assert (isFinite two)
-      fin3 = Test.assertNot (isFinite suc_x)
+      fin2 = Test.assert (isFinite x_list)
+      fin3 = Test.assertNot (isFinite xs_list)
   
   return $ Test.list $
-    [ dec1, dec2, dec3
+    [ dec1, dec2
     , fin1, fin2, fin3 
     ]
   

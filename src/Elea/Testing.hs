@@ -14,7 +14,7 @@ import Elea.Term
 import Elea.Monad.Elea ( Elea )
 import qualified Elea.Env as Env
 import qualified Elea.Parser as Parse
-import qualified Elea.Monad.Definitions as Defs
+import qualified Elea.Definitions as Defs
 import qualified Elea.Monad.Error as Err
 import qualified Test.HUnit as HUnit
 
