@@ -1,6 +1,10 @@
 
 prop "add 0": forall (n: nat) -> add n 0 = n
 
+prop "add associative": 
+  forall (x: nat) (y: nat) (z: nat) -> 
+    add (add x y) z = add x (add y z)
+
 prop "append associative": 
   forall (xs: nlist) (ys: nlist) (zs: nlist) ->
     append (append xs ys) zs = append xs (append ys zs)

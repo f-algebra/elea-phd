@@ -1,7 +1,7 @@
 module Elea.Unifier 
 (
   Unifier, Unifiable (..), 
-  apply, union, unions, singleton, exists
+  union, unions, singleton, exists
 )
 where
 
@@ -14,8 +14,13 @@ import qualified Data.Map as Map
 
 type Unifier a = Map Index a
 
-apply :: Substitutable t => Unifier (Inner t) -> t -> t
-apply = flip (foldr (uncurry Indices.replaceAt)) . Map.toAscList
+class Substitutable t => Unifiable t where
+  -- | Returns the unifier that should be applied to the first argument
+  -- to produce the second, fails if no such unifier exists. 
+  find :: Fail.Can m => t -> t -> m (Unifier (Inner t))
+  
+  -- | Apply a unifier, so @apply (find t1 t2) t1 == t2@.
+  apply :: Unifier (Inner t) -> t -> t
 
 singleton :: Index -> a -> Unifier a
 singleton = Map.singleton
@@ -35,11 +40,6 @@ union uni1 uni2 = do
     
 unions :: (Eq t, Fail.Can m) => [Unifier t] -> m (Unifier t)
 unions = foldrM union mempty 
-
-class Substitutable t => Unifiable t where
-  -- | Returns the unifier that should be applied to the first argument
-  -- to produce the second, fails if no such unifier exists. 
-  find :: Fail.Can m => t -> t -> m (Unifier (Inner t))
 
 exists :: Unifiable t => t -> t -> Bool
 exists t = isJust . find t

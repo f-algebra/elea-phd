@@ -30,6 +30,24 @@ bracketIfNeeded :: String -> String
 bracketIfNeeded s 
   | ' ' `elem` s = "(" ++ s ++ ")"
   | otherwise = s
+  
+instance Show (Term' (String, Term)) where
+  -- Special case for displaying constraints
+  show (Case' (Type.unfold -> cons) (cse_t, _) f_alts)
+    -- A constraint is a match with only one non-absurd branch
+    | [(Bind con_name _, Alt' bs (alt_t, _))] <- non_absurd_alts =
+      let pat_s = intercalate " " ([con_name] ++ map show bs) in
+      "\nassert " ++ pat_s ++ " <- " ++ cse_t ++ " in\n" ++ alt_t
+    where                              
+    non_absurd_alts :: [(Bind, Alt' (String, Term))]
+    non_absurd_alts = id
+      . filter (not . isAbsurd . snd . get altInner' . snd) 
+      $ zip cons f_alts
+      
+  -- If these don't work then try the @Show (Term' String)@ instance.
+  show term' =
+    show (fmap fst term')
+
 
 instance Show (Term' String) where
   show (Absurd' ty) = "_|_ " ++ show ty
@@ -97,11 +115,8 @@ instance (Env.Read m, Defs.Read m) => ShowM m Term where
           return (name ++ args_s) 
           
         Nothing -> 
-          -- If we can't find an alias, then default to the 
-          -- @Show (Term' String)@ instance
-          (return . show . fmap fst) term'
-      
-      
+          -- If we can't find an alias, then default to the normal show instance
+          return (show term')
 
       
 instance (Env.Read m, Defs.Read m) => ShowM m Context where

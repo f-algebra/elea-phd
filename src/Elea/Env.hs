@@ -38,11 +38,13 @@ import Elea.Term
 import Elea.Unifier ( Unifiable, Unifier )
 import qualified Elea.Type as Type
 import qualified Elea.Monad.Failure as Fail
+import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Index as Indices
 import qualified Elea.Unifier as Unifier 
 import qualified Elea.Foldable as Fold
-import qualified Data.Set as Set
 import qualified Control.Monad.Trans as Trans
+import qualified Data.Set as Set
+import qualified Data.Map as Map
 
 class Monad m => Write m where
   -- | Bind a variable index to a type within the environment
@@ -268,6 +270,11 @@ instance Fail.Can m => Fail.Can (AlsoTrack r m) where
   here = Trans.lift Fail.here
   catch = mapAlsoTrack Fail.catch
   
+instance Defs.Read m => Defs.Read (AlsoTrack r m) where
+  lookupTerm = Trans.lift . Defs.lookupTerm
+  lookupType = Trans.lift . Defs.lookupType
+  lookupName = Trans.lift . Defs.lookupName
+  
 instance Fail.Can m => Fail.Can (IdentityT m) where
   here = Trans.lift Fail.here
   catch = mapIdentityT Fail.catch
@@ -331,6 +338,11 @@ instance Read m => MatchRead (TrackMatches m) where
 instance Fail.Can m => Fail.Can (TrackMatches m) where
   here = Trans.lift Fail.here
   catch = mapTrackMatches Fail.catch
+  
+instance Defs.Read m => Defs.Read (TrackMatches m) where
+  lookupTerm = Trans.lift . Defs.lookupTerm
+  lookupType = Trans.lift . Defs.lookupType
+  lookupName = Trans.lift . Defs.lookupName
 
 -- Various instances for 'Write' and 'Read'
   
@@ -349,7 +361,7 @@ instance (Monoid w, Write m) => Write (WriterT w m) where
   
 instance (Monoid w, Read m) => Read (WriterT w m) where
   bindings = Trans.lift bindings
-  
+             
 instance Monad m => Write (ReaderT [Bind] m) where
   bindAt at b = local (insertAt (enum at) b)
   matched _ _ = id
@@ -490,4 +502,20 @@ instance Unifiable Term where
       uniAlt (Alt bs1 t1) (Alt bs2 t2) =
         liftTrackedMany (nlength bs1) (uni t1 t2)
     uni _ _ = Fail.here 
+    
+  apply uni = id
+    . trackOffset
+    . Fold.transformM replace
+    where
+    replace :: Term -> TrackOffset Term
+    replace (Var x) = do
+      n <- offset
+      if x < enum n
+      then return (Var x)
+      else do
+        case Map.lookup (x - enum n) uni of 
+          Nothing -> return (Var x)
+          Just t -> return (Indices.liftMany n t)
+    replace other = 
+      return other
 

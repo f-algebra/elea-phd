@@ -48,7 +48,7 @@ run term = do
     [ const Fail.here
     , Fold.rewriteOnceM repeatedArg
     , Fold.rewriteOnceM fixfix
-   -- , mapMaybeT Env.trackMatches . Fold.rewriteOnceM matchFix
+    , mapMaybeT Env.trackMatches . Fold.rewriteOnceM matchFix
     ]
    
   fission_steps = 

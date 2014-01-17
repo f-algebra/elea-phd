@@ -15,6 +15,7 @@ module Elea.Term
   flattenLam, unflattenLam,
   isCon, isLam, isVar,
   isFix, isAbsurd, isCase,
+  isAbsurd',
   fromVar, 
   matchedTo,
   altPattern, isFinite,
@@ -174,6 +175,10 @@ isCase _ = False
 isAbsurd :: Term -> Bool
 isAbsurd (Absurd {}) = True
 isAbsurd _ = False
+
+isAbsurd' :: Term' a -> Bool
+isAbsurd' (Absurd' {}) = True
+isAbsurd' _ = False
 
 fromVar :: Term -> Index
 fromVar (Var x) = x
