@@ -21,20 +21,6 @@ checkEquation (Equals name bs t1 t2) = id
     t1' <- Fusion.run t1
     t2' <- Fusion.run t2
     return (Test.assertEq t2' t1')
-    
-{- IDEA, could display constraints with the syntax:
-
-match x with
-| 0 -> _|_
-| Suc (x': nat) -> E
-end
-
-==>
-
-let Suc x' = x in
-E
-
--}
 
   
 tests = Test.label "Fusion"
@@ -42,6 +28,6 @@ tests = Test.label "Fusion"
   Test.loadPrelude
   eqs <- Test.loadFile "src/Elea/Tests/fusion.elea"
   mapM checkEquation
-   . filter ((== "count snoc") . get equationName)
+    . filter ((== "count snoc") . get equationName)
     $ eqs
 

@@ -319,14 +319,18 @@ mapTrackMatches f = TrackMatches . mapReaderT f . runTrackMatches
 
 trackMatches :: TrackMatches m a -> m a
 trackMatches = flip runReaderT mempty . runTrackMatches
- 
+
+localMatches :: Monad m =>
+  ([(Term, Term)] -> [(Term, Term)]) -> TrackMatches m a -> TrackMatches m a
+localMatches f = TrackMatches . local f . runTrackMatches
+
 instance Write m => Write (TrackMatches m) where
-  bindAt at b = mapTrackMatches (bindAt at b)
+  bindAt at b = id
+    . localMatches (map (liftAt at *** liftAt at))
+    . mapTrackMatches (bindAt at b)
   
   matched t con_t = id
-    . TrackMatches 
-    . local (++ [(t, con_t)])
-    . runTrackMatches
+    . localMatches (++ [(t, con_t)])
     . mapTrackMatches (matched t con_t)
     
 instance Read m => Read (TrackMatches m) where

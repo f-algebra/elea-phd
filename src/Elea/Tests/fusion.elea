@@ -2,13 +2,12 @@
 prop "add 0": forall (n: nat) -> add n 0 = n
 
 prop "add associative": 
-  forall (x: nat) (y: nat) (z: nat) -> 
+  forall (x y z: nat) -> 
     add (add x y) z = add x (add y z)
 
 prop "append associative": 
-  forall (xs: nlist) (ys: nlist) (zs: nlist) ->
+  forall (xs ys zs: nlist) ->
     append (append xs ys) zs = append xs (append ys zs)
-    
     
 let revapp = 
   fix (rap: nat -> nlist -> nlist) (n: nat) (xs: nlist) ->
@@ -25,7 +24,7 @@ prop "revapp cons": forall (n: nat) (xs: nlist) ->
   
 
 let always_true = 
-  fix (true: nat -> nat -> bool) (x: nat) (y: nat) ->
+  fix (true: nat -> nat -> bool) (x y: nat) ->
     match x with
     | 0 -> True
     | Suc x' ->
@@ -35,14 +34,14 @@ let always_true =
       end
     end
 
-prop "always true": forall (n: nat) (m: nat) ->
-  always_true n m = True
+prop "always true": forall (n m: nat) ->
+  always_true n m
  
   
 prop "count reverse": forall (n: nat) (xs: nlist) ->
   count n (reverse xs) = count n xs
   
-prop "count append": forall (n: nat) (xs: nlist) (ys: nlist) ->
+prop "count append": forall (n: nat) (xs ys: nlist) ->
   count n (append xs ys) = add (count n xs) (count n ys)
 
 prop "count snoc": forall (n: nat) (xs: nlist) ->
@@ -50,8 +49,20 @@ prop "count snoc": forall (n: nat) (xs: nlist) ->
   
   
 prop "eq_nat reflexive": forall (n: nat) -> 
-  eq_nat n n = True
+  eq_nat n n
   
 prop "leq_nat reflexive": forall (n: nat) ->
-  leq_nat n n = True
+  leq_nat n n
+  
+prop "eq_nat symmetric": forall (n m: nat) ->
+  implies (eq_nat n m) (eq_nat m n)
+  
+prop "eq_nat transitive": forall (i j k: nat) ->
+  implies (and (eq_nat i j) (eq_nat j k)) (eq_nat i k)
+  
+prop "leq_nat transitive": forall (i j k: nat) ->
+  implies (and (leq_nat i j) (leq_nat j k)) (leq_nat i k)
 
+
+prop "insertsort sorted": forall (xs: nlist) ->
+  is_sorted (insertsort xs)

@@ -90,10 +90,11 @@ mkLabels [''Scope, ''RawBind, ''RawProgram]
   end         { TokenEnd }
   inj         { TokenInj $$ }
   ind         { TokenInd }
-  any         { TokenAny }
-  pi          { TokenPi }
   prop        { TokenProp }
   all         { TokenAll }
+  if          { TokenIf }
+  then        { TokenThen }
+  else        { TokenElse }
   
 %right '->'
   
@@ -122,12 +123,12 @@ Matches :: { [RawAlt] }
 Match :: { RawAlt }
   : Pattern '->' Term                 { TAlt $1 $3 }
 
-Bind :: { RawBind }
-  : '(' name ':' Type ')'             { TBind $2 $4 }
+Bind :: { [RawBind] }
+  : '(' Pattern ':' Type ')'          { map (\n -> TBind n $4) $2 }
   
 Bindings :: { [RawBind] }
-  : Bind                              { [$1] }
-  | Bindings Bind                     { $1 ++ [$2] }
+  : Bind                              { $1 }
+  | Bindings Bind                     { $1 ++ $2 }
   
 Term :: { RawTerm }
   : name                              { TVar $1 }
@@ -139,6 +140,8 @@ Term :: { RawTerm }
   | fix Bindings '->' Term            { TFix $2 $4 }
   | let name '=' Term in Term         { TLet $2 $4 $6 }
   | match Term with Matches end       { TCase $2 $4 }
+  | if Term then Term else Term       { TCase $2 [ TAlt ["True"] $4
+                                                 , TAlt ["False"] $6] }
   
 TermDef :: { TermDef }
   : let name '=' Term                 { ($2, $4) }
@@ -361,10 +364,11 @@ data Token
   | TokenType
   | TokenEnd
   | TokenInj Nat
-  | TokenAny
-  | TokenPi
   | TokenProp
   | TokenAll
+  | TokenIf
+  | TokenThen
+  | TokenElse
   
 happyError :: [Token] -> a
 happyError tokens = error $ "Parse error\n" ++ (show tokens)
@@ -406,6 +410,9 @@ lexer (c:cs)
       ("let", rest) -> TokenLet : lexer rest
       ("fix", rest) -> TokenFix : lexer rest
       ("in", rest) -> TokenIn : lexer rest
+      ("if", rest) -> TokenIf : lexer rest
+      ("then", rest) -> TokenThen : lexer rest
+      ("else", rest) -> TokenElse : lexer rest
       ("type", rest) -> TokenType : lexer rest
       ("ind", rest) -> TokenInd : lexer rest
       ("end", rest) -> TokenEnd : lexer rest
@@ -436,6 +443,9 @@ instance Show Token where
   show TokenEnd = "end"
   show TokenProp = "prop"
   show TokenAll = "forall"
+  show TokenIf = "if"
+  show TokenThen = "then"
+  show TokenElse = "else"
   show (TokenInj n) = "inj" ++ show n
   
   showList = (++) . intercalate " " . map show

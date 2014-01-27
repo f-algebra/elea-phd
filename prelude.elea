@@ -4,35 +4,16 @@
 ind bool = True | False
 
 let not = 
-  fun (x:bool) -> 
-    match x with 
-    | True -> False 
-    | False -> True 
-    end
+  fun (p: bool) -> if p then False else True
 
 let or = 
-  fun (x: bool) (y: bool) -> 
-    match x with
-    | True -> True
-    | False -> 
-      match y with
-      | True -> True
-      | False -> False
-      end
-    end
+  fun (p q: bool) -> if p then True else q
 
 let and =
-  fun (x:bool) (y:bool) ->
-    match x with
-    | True -> 
-      match y with
-      | True -> True
-      | False -> False
-      end
-    | False -> False
-    end
+  fun (p q:bool) -> if p then q else False
     
-let implies = fun (p:bool) (q:bool) -> or (not p) q
+let implies =
+  fun (p q:bool) -> if p then q else True
 
     
 /* Natural numbers */    
@@ -43,7 +24,7 @@ let 1 = Suc 0
 let 2 = Suc 1
 
 let eq_nat = 
-  fix (eq_nat: nat -> nat -> bool) (x:nat) (y:nat) ->
+  fix (eq_nat: nat -> nat -> bool) (x y:nat) ->
     match x with
     | 0 ->
       match y with
@@ -58,7 +39,7 @@ let eq_nat =
     end
     
 let leq_nat = 
-  fix (leq_nat: nat -> nat -> bool) (x: nat) (y: nat) -> 
+  fix (leq_nat: nat -> nat -> bool) (x y: nat) -> 
     match x with
     | 0 -> True
     | Suc x' ->
@@ -76,21 +57,21 @@ let max =
     end
 
 let add = 
-  fix (add: nat -> nat -> nat) (x: nat) (y: nat) -> 
+  fix (add: nat -> nat -> nat) (x y: nat) -> 
     match x with 
     | 0 -> y
     | Suc x' -> Suc (add x' y)
     end
    
 let mul = 
-  fix (mul: nat -> nat -> nat) (x: nat) (y: nat) -> 
+  fix (mul: nat -> nat -> nat) (x y: nat) -> 
     match x with
     | 0 -> 0
     | Suc x' -> add y (mul x' y)
     end
     
 let leq = 
-  fix (leq: nat -> nat -> bool) (x:nat) (y:nat) ->
+  fix (leq: nat -> nat -> bool) (x y:nat) ->
     match x with
     | 0 -> True
     | Suc x' ->
@@ -111,7 +92,7 @@ let length =
     end
     
 let append =
-  fix (app: nlist -> nlist -> nlist) (xs: nlist) (zs: nlist) ->
+  fix (app: nlist -> nlist -> nlist) (xs zs: nlist) ->
     match xs with
     | Nil -> zs
     | Cons y ys -> Cons y (app ys zs)
@@ -129,9 +110,37 @@ let count =
     match xs with
     | Nil -> 0
     | Cons y ys ->
-      match eq_nat n y with
-      | True -> Suc (c n ys)
-      | False -> c n ys
-      end
+      if eq_nat n y 
+      then Suc (c n ys)
+      else c n ys
     end
 
+let insert = 
+  fix (ins: nat -> nlist -> nlist) (n: nat) (xs: nlist) ->
+    match xs with
+    | Nil -> Cons n Nil
+    | Cons y ys -> 
+      if leq_nat n y
+      then Cons n xs
+      else Cons y (ins n ys)
+    end
+    
+let insertsort = 
+  fix (isort: nlist -> nlist) (xs: nlist) ->
+    match xs with
+    | Nil -> Nil
+    | Cons y ys -> insert y (isort ys)
+    end
+    
+let is_sorted = 
+  fix (srtd: nlist -> bool) (xs: nlist) ->
+    match xs with
+    | Nil -> True
+    | Cons y ys ->
+      match ys with
+      | Nil -> True
+      | Cons z zs -> 
+        and (leq_nat y z) (srtd ys)
+      end
+    end
+    

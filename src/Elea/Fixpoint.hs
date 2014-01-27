@@ -51,7 +51,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   
   simplified_t <- id
     -- DEBUG
--- . trace s1
+    . trace s1
   
     -- Finally, run the given simplification function on it.
     . Env.bindMany (reverse (fix_b:free_var_bs))
@@ -68,7 +68,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   -- with the old fix variable replaced with the new fix variable
   let replaced_t = id 
         -- DEBUG
-     --   . trace s2
+        . trace s2
   
         -- Now replace all occurrences of the outer context 
         -- composed with omega (the old fix variable)
@@ -95,7 +95,8 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   -- Fusion has failed if any occurrences of the old fix variable remain
   Fail.when  
     -- DEBUG
-    . trace (s1 ++ s2 ++ s3)
+   -- . trace (s1 ++ s2 ++ s3)
+     . trace s3
     
     $ Indices.containsOmega replaced_t
     

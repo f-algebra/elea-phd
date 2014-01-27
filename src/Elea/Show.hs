@@ -37,7 +37,7 @@ instance Show (Term' (String, Term)) where
     -- A constraint is a match with only one non-absurd branch
     | [(Bind con_name _, Alt' bs (alt_t, _))] <- non_absurd_alts =
       let pat_s = intercalate " " ([con_name] ++ map show bs) in
-      "\nassert " ++ pat_s ++ " <- " ++ cse_t ++ " in\n" ++ alt_t
+      "\nassert " ++ pat_s ++ " <- " ++ cse_t ++ " in " ++ alt_t
     where                              
     non_absurd_alts :: [(Bind, Alt' (String, Term))]
     non_absurd_alts = id
@@ -57,14 +57,13 @@ instance Show (Term' String) where
     f' | "->" `isInfixOf` f || "end" `isInfixOf` f = "(" ++ f ++ ")"
        | otherwise = f
   show (Fix' _ (show -> b) t) =
-    indent $ "\nfix " ++ b ++ " -> " ++ t
+    "\nfix " ++ b ++ " -> " ++ indent t
   show (Lam' (show -> b) t) =
-    indent $ "\nfun " ++ b ++ " -> " ++ t
+    "\nfun " ++ b ++ " -> " ++ t
   show (Con' (Type.Ind _ cons) idx) =
     fst (cons !! fromEnum idx)
-  show (Case' (Type.unfold -> cons) cse_t f_alts) = id 
-     . indent
-     $ "\nmatch " ++ cse_t ++ " with"
+  show (Case' (Type.unfold -> cons) cse_t f_alts) =
+      "\nmatch " ++ cse_t ++ " with"
     ++ concat alts_s
     ++ "\nend"
     where
@@ -72,7 +71,7 @@ instance Show (Term' String) where
     
     showAlt :: Bind -> Alt' String -> String
     showAlt (Bind con_name _) (Alt' alt_bs alt_t) =
-      "\n| " ++ pat_s ++ " -> " ++ alt_t
+      "\n| " ++ pat_s ++ " -> " ++ indent alt_t
       where
       pat_s = intercalate " " ([con_name] ++ map show alt_bs)
     
@@ -112,7 +111,7 @@ instance (Env.Read m, Defs.Read m) => ShowM m Term where
         Just (name, args) -> do
           args' <- mapM showM args
           let args_s = concatMap ((" " ++) . bracketIfNeeded) args'
-          return (name ++ args_s) 
+          return ("$" ++ name ++ args_s) 
           
         Nothing -> 
           -- If we can't find an alias, then default to the normal show instance
