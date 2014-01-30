@@ -4,7 +4,7 @@ module Elea.Tests.Fusion
 )
 where
 
-import Prelude ()
+import Prelude()
 import Elea.Prelude
 import Elea.Term
 import qualified Elea.Env as Env

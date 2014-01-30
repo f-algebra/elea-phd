@@ -19,6 +19,7 @@ module Elea.Term
   fromVar, 
   matchedTo,
   altPattern, isFinite,
+  buildFold,
 )
 where
 
@@ -229,4 +230,73 @@ isFinite (App (Con ind n) args) = id
   . map (args !!)
   $ Type.recursiveArgs ind n
 isFinite _ = False
+
+
+buildFold :: Ind -> Type -> Term
+buildFold ind@(Ind _ cons) result_ty = 
+  unflattenLam lam_bs fix
+  where
+  -- Build the fixpoint that represents the fold function.
+  fix = id
+    . Fix mempty fix_b
+    . Lam (Bind "x" (Base ind))
+    $ Case ind (Var 0) alts
+    where
+    fix_lbl = "fold[" ++ show ind ++ "]"
+    fix_b = Bind fix_lbl (Fun (Base ind) result_ty)
+    
+    -- Build every branch of the outer pattern match from the index of 
+    -- the function which will be applied down that branch, and the
+    -- defintion of the constructor for that branch
+    alts = zipWith buildAlt lam_idxs cons
+      where
+      -- The indices of the functions which will replace each constructor
+      lam_idxs = reverse [2..length cons + 1]
+      
+      buildAlt :: Index -> (String, [ConArg]) -> Alt
+      buildAlt f_idx (_, con_args) = 
+        Alt alt_bs (app f f_args)
+        where
+        liftHere = Indices.liftMany (length con_args)
+        
+        -- The index of the fix variable
+        outer_f = liftHere (Var 1)
+        
+        -- The index of the parameter representing the function to be applied
+        -- down this branch
+        f = liftHere (Var f_idx)
+        
+        f_args = 
+          map conArgToArg con_args
+          where
+          conArgToArg IndVar = 
+        
+        alt_bs = 
+          map conArgToBind con_args
+          where
+          conArgToBind IndVar = Bind "y" Base ind
+          conArgToBind (ConArg ty) = Bind "a" ty
+    
+  -- The bindings for the outer lambdas of the fold function. 
+  -- These are the lambdas which receive the functions the constructors get 
+  -- replaced with when folding.
+  lam_bs = 
+    map makeBind cons
+    where
+    -- Turn a inductive constructor definition into the type of
+    -- the corresponding fold parameter. So for nat lists you'd get,
+    -- where X is 'result_ty':
+    -- ("Nil", []) => X
+    -- ("Cons", [ConArg nat, IndVar]) => nat -> X -> X
+    makeBind :: (String, [ConArg]) -> Bind
+    makeBind (name, conargs) = id
+      . Bind name 
+      . Type.unflatten
+      $ map conArgToTy conargs ++ [result_ty]
+      where
+      conArgToTy IndVar = result_ty
+      conArgToTy (ConArg ty) = ty
+    
+  
+    
 

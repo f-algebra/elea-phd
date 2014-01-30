@@ -108,7 +108,7 @@ strip (Context ctx_t) term = do
   -- If the terms are equal then there is no gap,
   -- viz. we have unified with a constant context.
   if Map.size uni == 0
-  then return (Absurd Type.empty)
+  then return (Absurd (Type.Base Type.empty))
   else do
     let [(idx, hole_term)] = Map.toList uni
     -- The only variable we should be replacing is the gap variable, 

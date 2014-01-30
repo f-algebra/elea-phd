@@ -8,6 +8,7 @@ module Elea.Terms
   decreasingArgs,
   applyCase,
   generaliseArgs,
+  pair,
 )
 where
 
@@ -134,6 +135,16 @@ generaliseArgs (App func args) run = do
   liftHere :: Indexed b => b -> b
   liftHere = Indices.liftMany (elength args)
         
+-- | Construct a pair of the two given terms. Needs to read the type of the
+-- two terms so it can construct the appropriate cartesian product type for
+-- the constructor.
+pair :: (Defs.Read m, Env.Read m) => Term -> Term -> m Term
+pair left right = do
+  left_ty <- Type.get left
+  right_ty <- Type.get right
+  let pair_ind = Type.pair left_ty right_ty
+  return (app (Con pair_ind 0) [left, right])
+  
   
 {-
 

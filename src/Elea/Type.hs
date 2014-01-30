@@ -2,7 +2,8 @@ module Elea.Type
 (
   Type (..), Ind (..), ConArg (..), Bind (..),
   name, constructors, boundLabel, boundType, 
-  empty, returnType,
+  empty, unit, pair,
+  returnType,
   isInd, isFun,
   unflatten, flatten, unfold,
   isRecursive, recursiveArgs, nonRecursiveArgs, 
@@ -57,9 +58,20 @@ instance Ord Ind where
   
 mkLabels [ ''Bind, ''Ind ]
 
--- | The 'empty' type. Made from the constructorless inductive type.
-empty :: Type
-empty = Base (Ind "empty" [])
+-- | The 'empty' type, viz. the constructorless inductive type.
+empty :: Ind
+empty = Ind "empty" []
+
+-- | The unit type, viz. the single parameterless constructor inductive type.
+unit :: Ind
+unit = Ind "unit" [("()", [])]
+
+-- | Cartesian product.
+pair :: Show Type => Type -> Type -> Ind
+pair a b = 
+  Ind name [("pair", [ConArg a, ConArg b])]
+  where
+  name = "(" ++ show a ++ ", " ++ show b ++ ")"
 
   
 -- Helpful functions

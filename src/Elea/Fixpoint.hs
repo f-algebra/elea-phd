@@ -1,9 +1,11 @@
--- | Contains two functions, 'fusion' and 'fission', which perform
--- fixpoint fusion and fixpoint fission respectively. 
--- Both take a simplification function as a first parameter.
+-- | The three functions which arise from the formula for fixpoint fusion.
+-- If we represent the fusion equation as @C[fix F] = fix G@ then, 
+-- 'fusion' takes @C@, @fix F@ and returns @fix G@,
+-- 'fission' takes @C@, @fix G@ and returns @fix F@,
+-- 'invention' takes @fix F@, @fix G@ and returns @C@.
 module Elea.Fixpoint
 (
-  fusion, fission
+  fusion, fission, invention
 )
 where
 
@@ -24,9 +26,10 @@ import qualified Elea.Monad.Failure as Fail
 import qualified Elea.Monad.Definitions as Defs
 import qualified Data.Map as Map
 
-
+-- | The first parameter is a simplification function to be called 
+-- within the fusion process.
 fusion :: forall m . (Fail.Can m, Env.Read m, Defs.Read m) =>
-  (Index -> Context -> Term -> m Term) ->
+  (Context -> Index -> Term -> m Term) ->
   Context -> Term -> m Term
 fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
 
@@ -55,7 +58,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   
     -- Finally, run the given simplification function on it.
     . Env.bindMany (reverse (fix_b:free_var_bs))
-    . simplify 0 outer_ctx'
+    . simplify outer_ctx' 0
     
     -- Apply the context to the unwrapped function body
     $ Context.apply outer_ctx' fix_t'
@@ -153,7 +156,8 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
       
   replace _ = mzero    
     
-  
+-- | The first parameter is a simplification function to be called 
+-- within the fission process.
 fission :: forall m . (Env.Read m, Fail.Can m, Defs.Read m) =>
   (Index -> Context -> Term -> m Term)
   -> Term -> Context -> m Term
@@ -240,4 +244,24 @@ fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
         return (Alt bs alt_t')
         
     floatCtxUp _ = mzero
+  
+    
+invent :: forall m . (Env.Read m, Defs.Read m, Fail.Can m) => 
+  (Index -> Index -> Term -> m Term)
+  -> Term -> Term -> m Context
+invent simplify 
+    f_term@(App (Fix _ _ f_fix) f_args) 
+    (App (Fix _ _ g_fix) g_args) = do
+  
+  arg_ty <- Type.get f_term
+  Fail.unless (Type.isInd arg_ty)
+  let Base ind_ty@(Type.unfold -> cons) = arg_ty
+  
+  result_ty <- Type.get g_term
+  fold_cases <- mapM inventCase cons
+  
+  let fold_f = Term.buildFold ind_ty result_ty
+      mkCtx gap = app fold_f (fold_cases ++ [gap]) 
+  return (Context.make mkCtx)
+  
   
