@@ -136,6 +136,7 @@ generaliseArgs (App func args) run = do
   liftHere :: Indexed b => b -> b
   liftHere = Indices.liftMany (elength args)
         
+  
 -- | Construct a pair of the two given terms. Needs to read the type of the
 -- two terms so it can construct the appropriate cartesian product type for
 -- the constructor.
@@ -158,7 +159,7 @@ buildFold ind@(Type.Ind _ cons) result_ty =
   -- Build the fixpoint that represents the fold function.
   fix = id
     . Fix mempty fix_b
-    . Lam (Bind "x" (Type.Base ind))
+    . Lam (Bind ("var_" ++ show ind) (Type.Base ind))
     $ Case ind (Var 0) alts
     where
     fix_lbl = "fold[" ++ show ind ++ "]"
@@ -190,10 +191,10 @@ buildFold ind@(Type.Ind _ cons) result_ty =
           zipWith conArgToArg arg_idxs con_args
           where
           arg_idxs :: [Index]
-          arg_idxs = (map enum . reverse) [0..length cons - 1]
+          arg_idxs = (map enum . reverse) [0..length con_args - 1]
           
           conArgToArg :: Index -> Type.ConArg -> Term
-          conArgToArg idx Type.IndVar = app f [Var idx]
+          conArgToArg idx Type.IndVar = app outer_f [Var idx]
           conArgToArg idx (Type.ConArg _) = Var idx
         
         alt_bs = 
@@ -215,7 +216,7 @@ buildFold ind@(Type.Ind _ cons) result_ty =
     -- ("Cons", [ConArg nat, IndVar]) => nat -> X -> X
     makeBind :: (String, [Type.ConArg]) -> Bind
     makeBind (name, conargs) = id
-      . Bind name 
+      . Bind ("case_" ++ name)
       . Type.unflatten
       $ map conArgToTy conargs ++ [result_ty]
       where

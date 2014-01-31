@@ -24,6 +24,6 @@ checkEquation (Equals name bs t1 t2) = id
 tests = Test.label "Simplifier"
     $ Test.run $ do
   Test.loadPrelude
-  eqs <- Test.loadFile "src/Elea/Tests/simplifier.elea"
+  eqs <- Test.loadFile "src-lib/Elea/Tests/simplifier.elea"
   mapM checkEquation eqs
 
