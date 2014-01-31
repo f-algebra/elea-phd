@@ -4,6 +4,7 @@ version:             0.1.0.0
 synopsis:            Automated inductive theorem prover for the simply typed 
                      lambda calculus, based on fixpoint-fusion.
 license:             MIT
+license-file:        LICENSE
 author:              William Sonnex
 maintainer:          will@sonnex.name                                 
 category:            Theorem Provers
@@ -16,10 +17,30 @@ source-repository head
   branch:            master
 
 library
-  hs-source-dirs:    src
+  hs-source-dirs:    src-lib
   build-tools:       happy
   
   extensions:        DoAndIfThenElse
+                     TemplateHaskell 
+                     TypeOperators 
+                     FunctionalDependencies 
+                     GADTs 
+                     MultiParamTypeClasses 
+                     FlexibleContexts 
+                     FlexibleInstances 
+                     ScopedTypeVariables 
+                     TypeSynonymInstances 
+                     ViewPatterns 
+                     TypeFamilies 
+                     BangPatterns 
+                     DeriveFunctor 
+                     DeriveFoldable 
+                     DeriveTraversable 
+                     RecursiveDo 
+                     RankNTypes 
+                     GeneralizedNewtypeDeriving 
+                     ConstraintKinds
+                     PatternGuards
   
   build-depends:     base ==4.6.*, 
                      containers ==0.5.*, 
@@ -38,8 +59,12 @@ library
                      recursion-schemes ==4.0.*, 
                      semigroupoids ==4.0.*
                      
+  exposed-modules:   Elea.Tests.All
+                     Elea.Prelude
+                     
+                     
 executable elea  
-  hs-source-dirs:    src
+  hs-source-dirs:    src-exec
   main-is:           Main.hs
   build-depends:     base, elea
   

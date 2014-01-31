@@ -1,19 +1,11 @@
 EXTS = -XTemplateHaskell -XTypeOperators -XFunctionalDependencies -XGADTs -XMultiParamTypeClasses -XFlexibleContexts -XFlexibleInstances -XScopedTypeVariables -XTypeSynonymInstances -XViewPatterns -XTypeFamilies -XBangPatterns -XDeriveFunctor -XDeriveFoldable -XDeriveTraversable -XRecursiveDo -XRankNTypes -XGeneralizedNewtypeDeriving -XConstraintKinds
-FLAGS = -funbox-strict-fields -hide-package groupoids -hidir obj -odir obj -isrc -itest $(EXTS)
-POWER = -O2
-NORMAL = -O
-MAIN = src/Main.hs
+FLAGS = -funbox-strict-fields -hide-package groupoids -hidir obj -odir obj -isrc-lib -isrc-exec -itest 
+MAIN = src-exec/Main.hs
 
-.PHONY : all power ghci clean
-
-all:
-	ghc --make -o elea $(NORMAL) $(FLAGS) $(MAIN)
-
-power:
-	ghc --make -o elea $(POWER) $(FLAGS) $(MAIN)
+.PHONY : ghci clean
 
 ghci:
-	ghci -fobject-code $(NORMAL) $(FLAGS) $(MAIN)
+	ghci -fobject-code -O $(FLAGS) $(EXTS) $(MAIN)
 	
 clean:
 	rm -rf obj/
