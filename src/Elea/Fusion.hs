@@ -94,7 +94,7 @@ fixfix oterm@(App ofix@(Fix {}) oargs) = id
           $ map liftInner oargs' 
 
   -- The internal simplification used in fixfix fusion
-  simplify :: Index -> Context -> Term -> m Term
+  simplify :: Context -> Index -> Term -> m Term
   simplify _ _ = run
   
 fixfix _ = Fail.here
@@ -139,7 +139,7 @@ repeatedArg fix_t@(App fix@(Fix {}) args) = id
         
   -- No need for fixpoint simplifications within repeated argument fusion
   -- (at least, not that I've ever observed)
-  simplify :: Index -> Context -> Term -> m Term
+  simplify :: Context -> Index -> Term -> m Term
   simplify _ _ = Simp.run
 
 repeatedArg _ = Fail.here
@@ -179,7 +179,7 @@ matchFix outer_t@(App fix@(Fix fix_info fix_b fix_t) args) = do
   usefulMatch _ = False
   
   -- The inner simplification used in match fix fusion
-  simplify :: Index -> Context -> Term -> m Term
+  simplify :: Context -> Index -> Term -> m Term
   simplify _ _ = Simp.run
   
   -- Fuse a pattern match into the outer fixpoint

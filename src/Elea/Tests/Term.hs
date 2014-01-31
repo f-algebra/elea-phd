@@ -34,7 +34,20 @@ tests = Test.label "Terms"
       fin1 = Test.assert (isFinite one)
       fin2 = Test.assert (isFinite x_list)
       fin3 = Test.assertNot (isFinite xs_list)
+      
+      
+  fold_nat_nat <- Test.term 
+    $ "fun (v: nat) (k: nat -> nat) -> "
+    ++  "fix (f: nat -> nat) (x: nat) ->"
+    ++  "match x with | 0 -> v | Suc x' -> k (f x') end"
+    
+  fold_ntree_nlist <- Test.term
+    $ "fun (v: nlist) (k: nlist -> nat -> nlist -> nlist) -> "
+    ++  "fix (f: ntree -> nlist) (t: ntree) -> "
+    ++  "match t with | Leaf -> v | Node t1 x t2 -> k (f t1) x (f t2) end"
   
+ -- let fold1 = Test.assertEq fold_nat_nat (buildFold 
+    
   return $ Test.list $
     [ dec1, dec2
     , fin1, fin2, fin3 

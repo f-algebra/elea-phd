@@ -1,6 +1,8 @@
 obj/*
+dist/*
 *~
 *.o
 *.hi
 *.out
 *.exe
+#*

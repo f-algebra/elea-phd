@@ -26,14 +26,16 @@ import qualified Elea.Monad.Failure as Fail
 import qualified Elea.Monad.Definitions as Defs
 import qualified Data.Map as Map
 
--- | The first parameter is a simplification function to be called 
--- within the fusion process.
-fusion :: forall m . (Fail.Can m, Env.Read m, Defs.Read m) =>
-  (Context -> Index -> Term -> m Term) ->
-  Context -> Term -> m Term
+-- | Fixpoint fusion.
+fusion :: forall m . (Fail.Can m, Env.Read m, Defs.Read m) 
+  -- | A simplification function to be called during fusion
+  => (Context -> Index -> Term -> m Term)
+  -> Context 
+  -> Term 
+  -> m Term
 fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
 
-  -- Note, the original list of free variables 'free_vars' is in
+  -- Note, the original list of free variables @free_vars@ is in
   -- ascending order of index, and every list generated from that
   -- such as types or new variables is the same, for simplicity.
   -- Lambdas will bind variables in descending order, so we
@@ -156,10 +158,10 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
       
   replace _ = mzero    
     
--- | The first parameter is a simplification function to be called 
--- within the fission process.
-fission :: forall m . (Env.Read m, Fail.Can m, Defs.Read m) =>
-  (Index -> Context -> Term -> m Term)
+-- | Fixpoint fission
+fission :: forall m . (Env.Read m, Fail.Can m, Defs.Read m) 
+  -- | A simplification function to be called within fission 
+  => (Index -> Context -> Term -> m Term)
   -> Term -> Context -> m Term
 fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
 
@@ -201,7 +203,7 @@ fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
   where
   outer_ctx' = Indices.lift outer_ctx
   
-  -- Attempt to remove the 'outer_ctx' from topmost in the given term.
+  -- Attempt to remove the @outer_ctx@ from topmost in the given term.
   -- Will first try to float this context to the top so it can be stripped.
   stripContext :: Term -> m Term
   stripContext orig_t = do
@@ -245,11 +247,16 @@ fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
         
     floatCtxUp _ = mzero
   
-    
-invent :: forall m . (Env.Read m, Defs.Read m, Fail.Can m) => 
-  (Index -> Index -> Term -> m Term)
+-- | Fixpoint invention.
+invention :: forall m . (Env.Read m, Defs.Read m, Fail.Can m)
+  -- | A simplification function to be called within invention.
+  => (Index -> Index -> Term -> m Term)
   -> Term -> Term -> m Context
-invent simplify 
+  
+invention = undefined
+  
+  {-
+invention simplify 
     f_term@(App (Fix _ _ f_fix) f_args) 
     (App (Fix _ _ g_fix) g_args) = do
   
@@ -263,5 +270,5 @@ invent simplify
   let fold_f = Term.buildFold ind_ty result_ty
       mkCtx gap = app fold_f (fold_cases ++ [gap]) 
   return (Context.make mkCtx)
-  
+  -}
   

@@ -144,3 +144,8 @@ let is_sorted =
       end
     end
     
+
+ind ntree = Leaf | Node ntree nat ntree
+
+
+    

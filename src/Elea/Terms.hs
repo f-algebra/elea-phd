@@ -9,6 +9,7 @@ module Elea.Terms
   applyCase,
   generaliseArgs,
   pair,
+  buildFold,
 )
 where
 
@@ -144,6 +145,83 @@ pair left right = do
   right_ty <- Type.get right
   let pair_ind = Type.pair left_ty right_ty
   return (app (Con pair_ind 0) [left, right])
+  
+  
+-- | Build a term representing a catamorphism (fold function).
+buildFold :: Type.Ind  -- ^ The inductive type the catamorphism 
+                       -- takes as an argument
+          -> Type      -- ^ The return type of the catamorphism
+          -> Term
+buildFold ind@(Type.Ind _ cons) result_ty = 
+  unflattenLam lam_bs fix
+  where
+  -- Build the fixpoint that represents the fold function.
+  fix = id
+    . Fix mempty fix_b
+    . Lam (Bind "x" (Type.Base ind))
+    $ Case ind (Var 0) alts
+    where
+    fix_lbl = "fold[" ++ show ind ++ "]"
+    fix_b = Bind fix_lbl (Type.Fun (Type.Base ind) result_ty)
+    
+    -- Build every branch of the outer pattern match from the index of 
+    -- the function which will be applied down that branch, and the
+    -- defintion of the constructor for that branch
+    alts = zipWith buildAlt lam_idxs cons
+      where
+      -- The indices of the functions which will replace each constructor
+      lam_idxs :: [Index]
+      lam_idxs = (map enum . reverse) [2..length cons + 1]
+      
+      buildAlt :: Index -> (String, [Type.ConArg]) -> Alt
+      buildAlt f_idx (_, con_args) = 
+        Alt alt_bs (app f f_args)
+        where
+        liftHere = Indices.liftMany (elength con_args)
+        
+        -- The index of the fix variable
+        outer_f = liftHere (Var 1)
+        
+        -- The index of the parameter representing the function to be applied
+        -- down this branch
+        f = liftHere (Var f_idx)
+        
+        f_args = 
+          zipWith conArgToArg arg_idxs con_args
+          where
+          arg_idxs :: [Index]
+          arg_idxs = (map enum . reverse) [0..length cons - 1]
+          
+          conArgToArg :: Index -> Type.ConArg -> Term
+          conArgToArg idx Type.IndVar = app f [Var idx]
+          conArgToArg idx (Type.ConArg _) = Var idx
+        
+        alt_bs = 
+          map conArgToBind con_args
+          where
+          conArgToBind Type.IndVar = Bind "y" (Type.Base ind)
+          conArgToBind (Type.ConArg ty) = Bind "a" ty
+    
+  -- The bindings for the outer lambdas of the fold function. 
+  -- These are the lambdas which receive the functions the constructors get 
+  -- replaced with when folding.
+  lam_bs = 
+    map makeBind cons
+    where
+    -- Turn a inductive constructor definition into the type of
+    -- the corresponding fold parameter. So for nat lists you'd get,
+    -- where X is 'result_ty':
+    -- ("Nil", []) => X
+    -- ("Cons", [ConArg nat, IndVar]) => nat -> X -> X
+    makeBind :: (String, [Type.ConArg]) -> Bind
+    makeBind (name, conargs) = id
+      . Bind name 
+      . Type.unflatten
+      $ map conArgToTy conargs ++ [result_ty]
+      where
+      conArgToTy Type.IndVar = result_ty
+      conArgToTy (Type.ConArg ty) = ty
+    
   
   
 {-
