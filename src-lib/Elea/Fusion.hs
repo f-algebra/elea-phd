@@ -196,37 +196,21 @@ matchFix outer_t@(App fix@(Fix fix_info fix_b fix_t) args) = do
       
     | otherwise = do
       -- If we haven't matched this term to anything yet within the fixpoint
-      -- then we can apply fusion
-      Fix.fusion simplify context fix'
+      -- then we can apply fusion to the context constraining @match_t@ to
+      -- have the constructor at @con_n@
+      context <- Term.constraint match_t con_n result_ty
+      -- Appending contexts composes them in the natural way
+      Fix.fusion simplify (context ++ args_ctx) fix'
     where
     cons = Type.unfold ind
-    context = Context.make makeContext
     match_fix_info = fixInfo (leftmost match_t)
+    args_ctx = Context.make (\t -> app t args)
     
     -- The new fused matches are all fused matches of the original fix,
     -- those of the match we are fusing in, and the match itself.
     -- 'FixInfo' is a monoid, so we can use append here.
     fix_info' = fix_info ++ match_fix_info ++ (FixInfo [(match_t, con_n)])
     fix' = Fix fix_info' fix_b fix_t
-    
-    -- The context which represents the pattern match, 
-    -- viz. return absurd down every branch which is not
-    -- the one that was matched, and return the gap down the one that was.
-    makeContext gap_f = 
-      Case ind match_t alts
-      where
-      alts = map buildAlt [0..length cons - 1]
-      
-      buildAlt :: Int -> Alt
-      buildAlt alt_n = 
-        Alt bs alt_t
-        where
-        Bind _ con_ty = cons !! alt_n
-        bs = map (Bind "X") (init (Type.flatten con_ty))
-        
-        -- If we are not down the matched branch we return absurd
-        alt_t | enum alt_n /= con_n = Absurd result_ty
-              | otherwise = Indices.liftMany (elength bs) (App gap_f args)
         
 matchFix _ = Fail.here
 

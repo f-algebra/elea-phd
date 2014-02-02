@@ -10,6 +10,7 @@ module Elea.Terms
   generaliseArgs,
   pair,
   buildFold,
+  constraint,
 )
 where
 
@@ -149,10 +150,10 @@ pair left right = do
   
   
 -- | Build a term representing a catamorphism (fold function).
-buildFold :: Type.Ind  -- ^ The inductive type the catamorphism 
-                       -- takes as an argument
-          -> Type      -- ^ The return type of the catamorphism
-          -> Term
+buildFold :: () 
+  => Type.Ind  -- ^ The inductive type the catamorphism 
+  -> Type      -- ^ The return type of the catamorphism
+  -> Term
 buildFold ind@(Type.Ind _ cons) result_ty = 
   unflattenLam lam_bs fix
   where
@@ -223,3 +224,33 @@ buildFold ind@(Type.Ind _ cons) result_ty =
       conArgToTy Type.IndVar = result_ty
       conArgToTy (Type.ConArg ty) = ty
     
+      
+-- | Create a constraint context. For example:
+-- > constraint (reverse xs) 0 nat == assert Nil <- reverse xs in _
+-- > constraint (reverse xs) 1 nat == assert Cons y ys <- reverse xs in _
+constraint :: (Env.Read m, Defs.Read m)
+  => Term -- ^ The term we constrain to be a specific constructor
+  -> Nat  -- ^ The constructor index we are constraining this term to be
+  -> Type -- ^ The type of the gap in the context
+  -> m Context 
+constraint match_t con_n result_ty = do
+  Type.Base ind <- Type.get match_t
+  return (Context.make (makeContext ind))
+  where
+  makeContext ind gap_t = 
+    Case ind match_t alts
+    where
+    cons = Type.unfold ind
+    alts = map buildAlt [0..length cons - 1]
+    
+    buildAlt :: Int -> Alt
+    buildAlt alt_n = 
+      Alt bs alt_t
+      where
+      Bind _ con_ty = cons !! alt_n
+      bs = map (Bind "X") (init (Type.flatten con_ty))
+      
+      -- If we are not down the matched branch we return absurd
+      alt_t | enum alt_n /= con_n = Absurd result_ty
+            | otherwise = gap_t
+            

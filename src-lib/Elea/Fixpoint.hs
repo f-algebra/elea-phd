@@ -158,11 +158,15 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
       
   replace _ = mzero    
     
+  
 -- | Fixpoint fission
 fission :: forall m . (Env.Read m, Fail.Can m, Defs.Read m) 
   -- | A simplification function to be called within fission 
   => (Index -> Context -> Term -> m Term)
-  -> Term -> Context -> m Term
+  -> Term 
+  -> Context 
+  -> m Term
+  
 fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
 
   -- DEBUG
@@ -247,28 +251,34 @@ fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
         
     floatCtxUp _ = mzero
   
+    
 -- | Fixpoint invention.
 invention :: forall m . (Env.Read m, Defs.Read m, Fail.Can m)
   -- | A simplification function to be called within invention.
   => (Index -> Index -> Term -> m Term)
-  -> Term -> Term -> m Context
-  
+  -> Term 
+  -> Term 
+  -> m Context
 invention = undefined
-  
-  {-
+
+{-
 invention simplify 
     f_term@(App (Fix _ _ f_fix) f_args) 
     (App (Fix _ _ g_fix) g_args) = do
   
   arg_ty <- Type.get f_term
   Fail.unless (Type.isInd arg_ty)
-  let Base ind_ty@(Type.unfold -> cons) = arg_ty
+  let Base ind_ty@(Ind _ cons) = arg_ty
   
   result_ty <- Type.get g_term
-  fold_cases <- mapM inventCase cons
+  fold_cases <- mapM (inventCase result_ty) cons
   
   let fold_f = Term.buildFold ind_ty result_ty
-      mkCtx gap = app fold_f (fold_cases ++ [gap]) 
-  return (Context.make mkCtx)
-  -}
+  fold <- Simp.run (app fold_f fold_cases)
   
+  return (Context.make (\t -> app fold [t]))
+  
+  where
+  inventCase :: Type -> (String, [Type.ConArg]) -> m Term
+  inventCase result_ty (con_lbl, con_args) = do
+    -}

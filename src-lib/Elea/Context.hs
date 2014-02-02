@@ -127,3 +127,10 @@ instance Substitutable Context where
 instance ContainsTerms Context where
   mapTermsM f = modifyM term f
 
+-- Contexts form a monoid under composition
+-- e.g. @C[_] . C'[_] == C[C'[_]]@
+instance Monoid Context where
+  mempty = make id
+  ctx1 `mappend` ctx2 =
+    Context (apply ctx1 (get term ctx2))
+
