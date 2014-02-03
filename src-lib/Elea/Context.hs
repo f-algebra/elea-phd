@@ -2,7 +2,7 @@ module Elea.Context
 (
   Context, term,
   make, apply,
-  isConstant, fromLambda,
+  isConstant, fromLambda, toLambda,
   strip, dropLambda, dropLambdas
 )
 where
@@ -44,6 +44,13 @@ apply (Context ctx_t) arg_t =
 fromLambda :: Term -> Context
 fromLambda = 
   Context . Indices.substAt 0 (Var Indices.omega) . inner
+
+-- | We can convert a context into a lambda if we assign a type to the gap  
+toLambda :: Type -> Context -> Term
+toLambda ty ctx = id
+  . Lam (Bind "x" ty)
+  . apply (Indices.lift ctx) 
+  $ Var 0
   
 -- | Returns whether there is any gap in the given context.
 isConstant :: Context -> Bool

@@ -3,6 +3,7 @@ module Elea.Testing
   Test, M, execute,
   label, list, run, 
   assert, assertEq, assertNot,
+  assertSimpEq,
   loadPrelude, loadFile,
   term, _type,
 ) 
@@ -14,12 +15,13 @@ import Elea.Term
 import Elea.Monad.Elea ( Elea )
 import qualified Elea.Env as Env
 import qualified Elea.Parser as Parse
+import qualified Elea.Simplifier as Simp
 import qualified Elea.Definitions as Defs
 import qualified Elea.Monad.Error as Err
 import qualified Test.HUnit as HUnit
 
 type Test = HUnit.Test
-type M = Defs.DBState
+type M = Defs.DBStateT (Reader [Bind])
 
 execute :: Test -> IO ()
 execute test = do
@@ -33,7 +35,7 @@ label :: String -> Test -> Test
 label = HUnit.TestLabel
 
 run :: HUnit.Testable t => M t -> Test
-run = HUnit.test . Defs.evalEmpty 
+run = HUnit.test . Env.empty . Defs.evalEmptyT 
 
 assert :: HUnit.Assertable t => t -> Test
 assert = HUnit.TestCase . HUnit.assert
@@ -43,6 +45,12 @@ assertNot = assert . not
 
 assertEq :: (Show a, Eq a) => a -> a -> Test
 assertEq = (HUnit.TestCase .) . HUnit.assertEqual ""
+
+assertSimpEq :: (Defs.Read m, Env.Read m) => Term -> Term -> m Test
+assertSimpEq t1 t2 = do
+  t1' <- Simp.run t1
+  t2' <- Simp.run t2
+  return (assertEq t1' t2')
 
 prelude :: String
 prelude = unsafePerformIO

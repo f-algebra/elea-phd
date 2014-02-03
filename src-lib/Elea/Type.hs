@@ -67,7 +67,7 @@ unit :: Ind
 unit = Ind "unit" [("()", [])]
 
 -- | Cartesian product.
-pair :: Show Type => Type -> Type -> Ind
+pair :: Type -> Type -> Ind
 pair a b = 
   Ind name [("pair", [ConArg a, ConArg b])]
   where

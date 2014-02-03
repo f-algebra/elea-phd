@@ -8,6 +8,7 @@ import Prelude ()
 import Elea.Prelude
 import Elea.Index
 import Elea.Term
+import Elea.Type
 import Elea.Context ( Context )
 import qualified Elea.Env as Env
 import qualified Elea.Type as Type
@@ -43,6 +44,11 @@ instance Show (Term' (String, Term)) where
     non_absurd_alts = id
       . filter (not . isAbsurd . snd . get altInner' . snd) 
       $ zip cons f_alts
+      
+      
+  -- Special case for showing equation pairs
+  show (App' (_, Con (Ind _ [("==", _)]) 0) [(left_t, _), (right_t, _)]) = 
+    "(" ++ left_t ++ " == " ++ right_t ++ ")"
       
   -- If these don't work then try the @Show (Term' String)@ instance.
   show term' =
@@ -116,8 +122,8 @@ instance (Env.Read m, Defs.Read m) => ShowM m Term where
         Nothing -> 
           -- If we can't find an alias, then default to the normal show instance
           return (show term')
-
-      
+          
+          
 instance (Env.Read m, Defs.Read m) => ShowM m Context where
   showM = showM . get Context.term
   

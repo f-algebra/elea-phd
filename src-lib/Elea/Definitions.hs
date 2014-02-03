@@ -26,6 +26,7 @@ import qualified Elea.Env as Env
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Monad.Failure as Fail
 import qualified Control.Monad.State as State
+import qualified Control.Monad.Trans as Trans
 import qualified Data.Map as Map
 import qualified Data.Set as Set
   
@@ -79,12 +80,23 @@ dbTermName term (get dbTermNames -> name_list) = do
   let uni_list = sort (Map.toList uni)
   Fail.unless (map (enum . fst) uni_list == [0..length uni_list - 1])
   
-  let arg_list = reverse (map snd uni_list)
+  let arg_list = id
+        . map (Indices.lowerMany large_number)
+        . reverse 
+        $ map snd uni_list
+        
   return (name, arg_list)
   where
+  -- This is a hack to get identity variable unifications to show up, 
+  -- e.g. if we need to rewrite index 2 to index 2 we want this to show up
+  -- in the unification, so we just add 100000 to every index so they
+  -- won't clash
+  large_number = 100000
+  term' = Indices.liftMany large_number term
+  
   unifiable :: Fail.Can m => (Term, String) -> m (Unifier Term, String)
   unifiable (inner_term, name) = do
-    uni <- Unifier.find inner_term term
+    uni <- Unifier.find inner_term term'
     return (uni, name)
   
       
@@ -118,6 +130,9 @@ evalEmptyT = flip evalStateT emptyDatabase . runDBStateT
 evalEmpty :: DBState a -> a 
 evalEmpty = runIdentity . evalEmptyT
 
+mapDBStateT :: (m (a, Database) -> n (b, Database)) -> DBStateT m a -> DBStateT n b
+mapDBStateT f = DBStateT . mapStateT f . runDBStateT
+
 instance (Show Term, Monad m) => Read (DBStateT m) where
   lookupTerm = State.gets . dbGetTerm
   lookupType = State.gets . dbGetType
@@ -126,3 +141,10 @@ instance (Show Term, Monad m) => Read (DBStateT m) where
 instance (Show Term, Monad m) => Write (DBStateT m) where
   defineTerm n = State.modify . dbAddTerm n
   defineType n = State.modify . dbAddType n
+  
+instance Env.Write m => Env.Write (DBStateT m) where
+  bindAt at b = mapDBStateT (Env.bindAt at b)
+  matched t w = mapDBStateT (Env.matched t w)
+  
+instance Env.Read m => Env.Read (DBStateT m) where
+  bindings = Trans.lift Env.bindings

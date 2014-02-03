@@ -25,8 +25,11 @@ import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Failure as Fail
 import qualified Elea.Monad.Definitions as Defs
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 
 -- | Fixpoint fusion.
+-- > if E' = fusion C E
+-- > then C[E] = E'
 fusion :: forall m . (Fail.Can m, Env.Read m, Defs.Read m) 
   -- | A simplification function to be called during fusion
   => (Context -> Index -> Term -> m Term)
@@ -98,7 +101,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   let s3 = "\nREPLACED:" ++ rep_s
   
   -- Fusion has failed if any occurrences of the old fix variable remain
-  Fail.when  
+  Fail.when                                                      
     -- DEBUG
    -- . trace (s1 ++ s2 ++ s3)
      . trace s3
@@ -159,7 +162,9 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   replace _ = mzero    
     
   
--- | Fixpoint fission
+-- | Fixpoint fission.
+-- > if E = fission C E'
+-- > then C[E] = E'
 fission :: forall m . (Env.Read m, Fail.Can m, Defs.Read m) 
   -- | A simplification function to be called within fission 
   => (Index -> Context -> Term -> m Term)
@@ -253,32 +258,133 @@ fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
   
     
 -- | Fixpoint invention.
+-- > if C = invention E E'
+-- > then C[E] = E'
 invention :: forall m . (Env.Read m, Defs.Read m, Fail.Can m)
   -- | A simplification function to be called within invention.
-  => (Index -> Index -> Term -> m Term)
+  => (Term -> m Term)
   -> Term 
   -> Term 
   -> m Context
-invention = undefined
-
-{-
+  
 invention simplify 
-    f_term@(App (Fix _ _ f_fix) f_args) 
-    (App (Fix _ _ g_fix) g_args) = do
+    f_term@(App f_fix f_args)
+    g_term = do  
+    
+  -- DEBUG  
+  f_term_s <- showM f_term
+  g_term_s <- showM g_term
+  let s1 = "\nInventing C s.t. C[" ++ f_term_s ++ "] is " ++ g_term_s
+    
+  -- Retrieve the type of f_term and g_term
+  -- so we can pass them to inventCase
+  f_ty <- Type.get f_term
+  let Type.Base ind_ty@(Type.Ind _ cons) = f_ty
+  g_ty <- Type.get g_term 
   
-  arg_ty <- Type.get f_term
-  Fail.unless (Type.isInd arg_ty)
-  let Base ind_ty@(Ind _ cons) = arg_ty
+  -- We are inventing a fold function and inventCase discovers each of
+  -- the fold parameters
+  fold_cases <-
+    mapM (inventCase f_ty g_ty . enum) [0..length cons - 1]
   
-  result_ty <- Type.get g_term
-  fold_cases <- mapM (inventCase result_ty) cons
-  
-  let fold_f = Term.buildFold ind_ty result_ty
+  let fold_f = Term.buildFold ind_ty g_ty
   fold <- Simp.run (app fold_f fold_cases)
-  
   return (Context.make (\t -> app fold [t]))
-  
   where
-  inventCase :: Type -> (String, [Type.ConArg]) -> m Term
-  inventCase result_ty (con_lbl, con_args) = do
-    -}
+  inventCase :: Type -> Type -> Nat -> m Term
+  inventCase f_ty g_ty con_n = do
+    -- Constrain @f_term@ to be this particular constructor
+    constraint_ctx <- Term.constraint f_term con_n eq_ty
+    
+    -- Compose the constraint with the equation context 
+    -- using the context monoid
+    let ctx = constraint_ctx ++ eq_ctx
+      
+    -- Fuse this context with the inner fixpoint.
+    -- If this fails then just unroll the inner fixpoint once.
+    mby_fused_eq <- Fail.catch (fusion (\_ _ -> simplify) ctx f_fix)
+    fused_eq <- case mby_fused_eq of
+      Just eq -> return eq
+      Nothing -> simplify (Context.apply ctx (Term.unfoldFix f_fix))
+      
+    -- DEBUG
+    fused_eq_s <- showM fused_eq
+    let s2 = "\nBranch: " ++ fused_eq_s
+    
+    -- Collect all the case functions which would satisfy the equation
+    case_funs <- trace s2 
+      $ Fold.foldM findCaseFunction fused_eq
+    
+    -- We should have a unique solution
+    Fail.unless (Set.size case_funs == 1)
+    let func = head (Set.elems case_funs)
+    
+    -- DEBUG 
+    func_s <- showM func
+    let s3 = "\nFunction discovered: " ++ func_s
+    trace s3 (return func)
+    where
+    -- We represent the equat ion using a new inductive type.
+    eq_ind = Type.Ind "__EQ" [("==", [Type.ConArg f_ty, Type.ConArg g_ty])]
+    eq_ty = Type.Base eq_ind
+    
+    -- Build a context which is an equation between f_term and g_term
+    -- where the fixpoint in f_term has been replaced by the gap.
+    eq_ctx = Context.make makeEqCtx
+      where
+      makeEqCtx gap_f = 
+        app (Con eq_ind 0) [app gap_f f_args, g_term]
+        
+    findCaseFunction :: Term -> m (Set Term)
+    findCaseFunction t@(App (Con eq_ind' 0) [left_t, right_t])
+      -- Make sure this is actually an equation
+      | eq_ind' == eq_ind
+      , get Type.name eq_ind' == "__EQ" = do
+        -- Check the shape of the left side of the equation is
+        -- the constructor we are finding the case for
+        Fail.unless (isCon left_f)
+        Fail.unless (ind == ind' && con_n == con_n')
+        
+        func <- foldrM constructFunction right_t (zip con_args left_args) 
+        return (Set.singleton func)
+      where
+      Type.Base ind@(Type.Ind _ cons) = f_ty
+      left_f:left_args = Term.flattenApp left_t
+      Con ind' con_n' = left_f
+      (_, con_args) = cons !! enum con_n
+      
+      -- We move through the constructor arguments backwards, building
+      -- up the term one by one.
+      constructFunction :: (Type.ConArg, Term) -> Term -> m Term
+      -- If we are at a regular constructor argument (non recursive) 
+      -- then the term at this position should just be a variable.
+      constructFunction (Type.ConArg ty, Var x) term =
+        return  
+          . Lam (Bind "x" ty)
+          -- Replace the variable at this position with the newly lambda 
+          -- abstracted variable
+          . Indices.replaceAt (succ x) (Var 0) 
+          $ Indices.lift term
+          
+      -- A pregeneralised recursive constructor argument
+      constructFunction (Type.IndVar, Var x) term =
+        return
+          . Lam (Bind "x" g_ty)
+          . Indices.replaceAt (succ x) (Var 0)
+          $ Indices.lift term
+          
+      -- If we are at a non variable recursive constructor argument,
+      -- then we'll need to rewrite the recursive call to @f_term@.
+      constructFunction (Type.IndVar, f_term') term = do
+        uni <- Unifier.find f_term f_term'
+        let g_term' = Unifier.apply uni g_term   
+        return
+          . Lam (Bind "x" g_ty)
+          . Term.replace (Indices.lift g_term') (Var 0)
+          $ Indices.lift term
+        
+      constructFunction _ _ = Fail.here
+        
+    findCaseFunction _ = 
+      return mempty
+  
