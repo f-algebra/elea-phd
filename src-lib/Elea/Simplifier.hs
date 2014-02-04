@@ -45,6 +45,7 @@ steps = eval_steps ++
   , propagateVarMatch
   , raiseVarCase
   , constantCase
+  , unfoldCaseFix
   ]
   where
   eval_steps = map (Fail.fromMaybe .) Eval.steps
@@ -335,6 +336,21 @@ constantCase (Case _ _ alts) = do
   loweredAltTerm :: Alt -> m Term
   loweredAltTerm (Alt bs alt_t) = 
     Indices.tryLowerMany (elength bs) alt_t
+    
 constantCase _ = Fail.here
 
+
+-- | Unfolds a 'Fix' which is being pattern matched upon if that pattern
+-- match only uses a finite amount of information from the 'Fix'.
+-- TODO: Extend this to arbitrary depth of unrolling, currently
+-- it only works for depth 1 (need to extend @Term.isFiniteMatch@).
+unfoldCaseFix :: Fail.Can m => Term -> m Term
+unfoldCaseFix term@(Case ind (App fix@(Fix {}) args) alts)
+  | Term.isProductive fix
+  , Term.isFiniteMatch ind alts = 
+    return (Case ind cse_t' alts)
+  where
+  cse_t' = app (Term.unfoldFix fix) args
+  
+unfoldCaseFix _ = Fail.here
 

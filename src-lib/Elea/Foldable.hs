@@ -7,7 +7,7 @@ module Elea.Foldable
   isoFindM, isoAnyM, isoAllM, isoRewriteOnceM, isoFoldM,
   isoRewrite, isoTransform, isoFind, isoRewriteM',
   rewriteM, foldM, rewriteOnceM, collectM, isoCollectM,
-  allM, findM, anyM, any, all, isoFold, isoAny,
+  allM, findM, anyM, any, all, isoFold, isoAny, find,
   transform, rewrite, recover,
   rewriteStepsM, rewriteSteps, countM,
   SelectorM, selectiveTransformM, selectAll,
@@ -15,7 +15,7 @@ module Elea.Foldable
 where
 
 import Prelude ()
-import Elea.Prelude hiding ( Foldable, allM, anyM, findM, any, all )
+import Elea.Prelude hiding ( Foldable, allM, anyM, findM, any, all, find, )
 import GHC.Prim ( Constraint )
 import Data.Functor.Foldable
 import qualified Elea.Prelude as Prelude
@@ -119,6 +119,10 @@ all, any :: WriterTransformableM Monoid.All Identity t =>
   (t -> Bool) -> t -> Bool
 all p = runIdentity . allM (return . p)
 any p = not . all (not . p)
+
+find :: WriterTransformableM (Monoid.First b) Identity t => 
+  (t -> Maybe b) -> t -> Maybe b
+find = isoFind id
 
 isoFoldM :: forall w m t a . WriterTransformableM w m t =>
   Iso a t -> (a -> m w) -> a -> m w
@@ -230,7 +234,7 @@ rewriteSteps steps = rewrite step
 
 -- | This "selector" restricts how you transform something recursively. 
 -- The outermost boolean tells you when to apply the transformation. 
--- The inner boolean tells you when and where to recurse.
+-- The inner boolean tells you when to recurse.
 type SelectorM m t = t -> m (Bool, Base t Bool)
 
 selectAll :: (Foldable t, Monad m) => SelectorM m t

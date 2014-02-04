@@ -3,14 +3,16 @@
 module Elea.Terms
 (
   module Elea.Term,
+  branches,
   replace, 
   unfoldFix,
   decreasingArgs,
   applyCase,
   generaliseArgs,
   pair,
-  buildFold,
   constraint,
+  isProductive,
+  isFiniteMatch,
 )
 where
 
@@ -33,6 +35,49 @@ import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
 import qualified Control.Monad.Trans as Trans
 
+-- | A wrapper around 'Term' for the 'branchesOnly' isomorphism.
+newtype BranchesOnly = BranchesOnly { notBranchesOnly :: Term }
+  deriving ( Eq, Ord, Show )
+
+-- | A 'Term' isomorphism whose 'Fold.Transformable' instance 
+-- only runs on the innermost terms of pattern matches and lambda abstractions.
+-- We can use this isomorphism for the /iso/ style functions in 'Elea.Foldable'.
+-- For example, to call @Fold.all p@ over just branches we use
+-- > Fold.isoAll branchesOnly p t
+-- > where p :: Term -> Bool, t :: Term
+branches :: Fold.Iso Term BranchesOnly
+branches = Fold.iso BranchesOnly notBranchesOnly
+
+type instance Fold.Base BranchesOnly = Term'
+  
+instance Fold.Foldable BranchesOnly where
+  project = fmap BranchesOnly . Fold.project . notBranchesOnly
+  
+instance Fold.Unfoldable BranchesOnly where
+  embed = BranchesOnly . Fold.embed . fmap notBranchesOnly
+  
+instance Env.Write m => Fold.FoldableM m BranchesOnly where
+  distM = Fold.distM . fmap (second notBranchesOnly)
+
+instance Env.Write m => Fold.TransformableM m BranchesOnly where
+  transformM f = id
+    . liftM BranchesOnly 
+    . Fold.selectiveTransformM (return . branches) f'
+    . notBranchesOnly
+    where
+    f' = liftM notBranchesOnly . f . BranchesOnly
+    
+    branches :: Term -> (Bool, Term' Bool)
+    branches (Case ind cse_t alts) =
+      (False, Case' ind False (map descAlt alts))
+      where 
+      descAlt (Alt bs alt_t) = Alt' bs True
+    branches (Lam b t) = 
+      (False, Lam' b True)
+    branches term = 
+      (True, fmap (const False) (Fold.project term))
+      
+      
 unfoldFix :: Term -> Term
 unfoldFix fix@(Fix _ _ fix_t) = 
   Indices.subst fix fix_t
@@ -148,82 +193,6 @@ pair left right = do
   let pair_ind = Type.pair left_ty right_ty
   return (app (Con pair_ind 0) [left, right])
   
-  
--- | Build a term representing a catamorphism (fold function).
-buildFold :: () 
-  => Type.Ind  -- ^ The inductive type the catamorphism 
-  -> Type      -- ^ The return type of the catamorphism
-  -> Term
-buildFold ind@(Type.Ind _ cons) result_ty = 
-  unflattenLam lam_bs fix
-  where
-  -- Build the fixpoint that represents the fold function.
-  fix = id
-    . Fix mempty fix_b
-    . Lam (Bind ("var_" ++ show ind) (Type.Base ind))
-    $ Case ind (Var 0) alts
-    where
-    fix_lbl = "fold[" ++ show ind ++ "]"
-    fix_b = Bind fix_lbl (Type.Fun (Type.Base ind) result_ty)
-    
-    -- Build every branch of the outer pattern match from the index of 
-    -- the function which will be applied down that branch, and the
-    -- defintion of the constructor for that branch
-    alts = zipWith buildAlt lam_idxs cons
-      where
-      -- The indices of the functions which will replace each constructor
-      lam_idxs :: [Index]
-      lam_idxs = (map enum . reverse) [2..length cons + 1]
-      
-      buildAlt :: Index -> (String, [Type.ConArg]) -> Alt
-      buildAlt f_idx (_, con_args) = 
-        Alt alt_bs (app f f_args)
-        where
-        liftHere = Indices.liftMany (elength con_args)
-        
-        -- The index of the fix variable
-        outer_f = liftHere (Var 1)
-        
-        -- The index of the parameter representing the function to be applied
-        -- down this branch
-        f = liftHere (Var f_idx)
-        
-        f_args = 
-          zipWith conArgToArg arg_idxs con_args
-          where
-          arg_idxs :: [Index]
-          arg_idxs = (map enum . reverse) [0..length con_args - 1]
-          
-          conArgToArg :: Index -> Type.ConArg -> Term
-          conArgToArg idx Type.IndVar = app outer_f [Var idx]
-          conArgToArg idx (Type.ConArg _) = Var idx
-        
-        alt_bs = 
-          map conArgToBind con_args
-          where
-          conArgToBind Type.IndVar = Bind "y" (Type.Base ind)
-          conArgToBind (Type.ConArg ty) = Bind "a" ty
-    
-  -- The bindings for the outer lambdas of the fold function. 
-  -- These are the lambdas which receive the functions the constructors get 
-  -- replaced with when folding.
-  lam_bs = 
-    map makeBind cons
-    where
-    -- Turn a inductive constructor definition into the type of
-    -- the corresponding fold parameter. So for nat lists you'd get,
-    -- where X is 'result_ty':
-    -- ("Nil", []) => X
-    -- ("Cons", [ConArg nat, IndVar]) => nat -> X -> X
-    makeBind :: (String, [Type.ConArg]) -> Bind
-    makeBind (name, conargs) = id
-      . Bind ("case_" ++ name)
-      . Type.unflatten
-      $ map conArgToTy conargs ++ [result_ty]
-      where
-      conArgToTy Type.IndVar = result_ty
-      conArgToTy (Type.ConArg ty) = ty
-    
       
 -- | Create a constraint context. For example:
 -- > constraint (reverse xs) 0 nat == assert Nil <- reverse xs in _
@@ -254,3 +223,37 @@ constraint match_t con_n result_ty = do
       alt_t | enum alt_n /= con_n = Absurd result_ty
             | otherwise = gap_t
             
+
+-- | A function is /productive/ if every recursive call is guarded
+-- by a constructor.
+isProductive :: Term -> Bool
+isProductive (Fix _ _ fix_t) = id
+  -- Track the index of the recursive call to the fixpoint
+  . Env.trackIndices 0
+  $ Fold.isoAllM branches productive fix_t
+  where
+  -- A productive branch is either in HNF, or returns a term with
+  -- no recursive call to the fixpoint inside it.
+  productive :: Term -> Env.TrackIndices Index Bool
+  productive (leftmost -> Con {}) = 
+    return True
+  productive term = do
+    fix_f <- Env.tracked
+    return (not (fix_f `Indices.freeWithin` term))
+    
+    
+-- | A /finite match/ in one in which any recursively typed variables
+-- bound down any pattern branch are unused. So if a finite match over a list
+-- does not reference the sub-list.
+-- Could be extended to depth greater than one, viz. matching over a list
+-- will only analyse a finite portion of the list.
+isFiniteMatch :: Type.Ind -> [Alt] -> Bool
+isFiniteMatch ind = and . zipWith recArgsUsed [0..]
+  where
+  recArgsUsed :: Nat -> Alt -> Bool
+  recArgsUsed n (Alt _ alt_t) = 
+    Set.null (Set.intersection (Indices.free alt_t) rec_args)
+    where
+    rec_args = Set.fromList (Type.recursiveArgIndices ind n)
+    
+

@@ -6,13 +6,14 @@ module Elea.Type
   returnType,
   isInd, isFun,
   unflatten, flatten, unfold,
-  isRecursive, recursiveArgs, nonRecursiveArgs, 
-  isBaseCase,
+  recursiveArgs, nonRecursiveArgs, recursiveArgIndices,
+  isBaseCase, isRecursive, 
 )
 where
 
 import Prelude ()
 import Elea.Prelude
+import Elea.Index
 import Elea.Monad.Error as Error
 
 -- An argument to a constructor is either the inductive type we are defining
@@ -109,12 +110,27 @@ unfold ind@(Ind _ cons) =
     unfoldArg IndVar = Base ind
     unfoldArg (ConArg ty) = ty
     
--- | Return the indices of the recursive arguments of a given constructor
+-- | Return the positions of the recursive arguments of a given constructor
 recursiveArgs :: Ind -> Nat -> [Int]
 recursiveArgs (Ind _ cons) n =
   findIndices (== IndVar) con_args
   where
   (_, con_args) = cons !! enum n
+
+-- | Return the de-Bruijn indices that will be bound to the recursive arguments
+-- of a given constructor within a pattern match. 
+-- For example, the second constructor of @ntree@ 
+-- is @Cons: nat -> nlist -> nlist@:
+-- > recursiveArgs nlist 1 == [1]
+-- > recursiveArgIndices nlist 1 == [0]
+recursiveArgIndices :: Ind -> Nat -> [Index]
+recursiveArgIndices ind@(Ind _ cons) n = id
+  . map enum
+  . map (\x -> (arg_count - x) - 1)
+  $ recursiveArgs ind n
+  where
+  -- The number of arguments this constructor has
+  arg_count = length (snd (cons !! enum n))
   
 -- | Returns the opposite indices to 'recursiveArgs'
 nonRecursiveArgs :: Ind -> Nat -> [Int]

@@ -6,6 +6,7 @@ module Elea.Testing
   assertSimpEq,
   loadPrelude, loadFile,
   term, _type,
+  simplifiedTerm,
 ) 
 where
 
@@ -66,6 +67,9 @@ loadPrelude = do
 
 term :: Defs.Has m => String -> m Term
 term = Err.noneM . Parse.term
+
+simplifiedTerm :: (Env.Read m, Defs.Has m) => String -> m Term
+simplifiedTerm = Simp.run <=< term
 
 _type :: Defs.Has m => String -> m Type
 _type = Err.noneM . Parse._type

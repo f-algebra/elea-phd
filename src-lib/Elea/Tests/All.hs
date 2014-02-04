@@ -20,7 +20,7 @@ tests = Test.list
   , Simplifier.tests
   , Context.tests
   , Fixpoint.tests
-  -- , Fusion.tests 
+ -- , Fusion.tests 
   ]
   
 runTests :: IO ()

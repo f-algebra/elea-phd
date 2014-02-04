@@ -145,7 +145,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
     | Indices.containsOmega term = do
       -- The term we are replacing
       replace_t <- id
-        . Env.liftHere 
+        . Env.liftByOffset 
         . Context.apply (Indices.lower outer_ctx') 
         $ Var Indices.omega
 
@@ -153,7 +153,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
       guard (not (Indices.omega `Map.member` uni))
       
       -- The new function call, lifted to the correct indices
-      repl_here <- Env.liftHere replace_with
+      repl_here <- Env.liftByOffset replace_with
       return (Unifier.apply uni repl_here)
     where
     new_fix_var = Var (enum (length new_vars))
@@ -289,7 +289,20 @@ invention simplify
   
   let fold_f = Term.buildFold ind_ty g_ty
   fold <- Simp.run (app fold_f fold_cases)
-  return (Context.make (\t -> app fold [t]))
+  let ctx = Context.make (\t -> app fold [t])
+  
+  {-
+  -- This algorithm is not sound by construction, so we check its answer using
+  -- fusion, which is sound.
+  let f_args_ctx = Context.make (\t -> app t f_args)
+      fusion_ctx = ctx ++ f_args_ctx
+  fused <- fusion (\_ _ -> Simp.run) fusion_ctx f_fix
+  Fail.unless (fused == g_term)
+  -}
+  
+  -- I've left the soundness check above out because the equality check
+  -- at the end is non-trivial. Will put this back in later.
+  return ctx
   where
   inventCase :: Type -> Type -> Nat -> m Term
   inventCase f_ty g_ty con_n = do
@@ -311,13 +324,12 @@ invention simplify
     fused_eq_s <- showM fused_eq
     let s2 = "\nBranch: " ++ fused_eq_s
     
-    -- Collect all the case functions which would satisfy the equation
-    case_funs <- trace s2 
-      $ Fold.foldM findCaseFunction fused_eq
-    
-    -- We should have a unique solution
-    Fail.unless (Set.size case_funs == 1)
-    let func = head (Set.elems case_funs)
+    -- Find a function which satisfies the equation
+    func <- trace s2
+      . Fail.fromMaybe
+      . Env.trackOffset
+      . Fold.findM (runMaybeT . caseFunction) 
+      $ fused_eq
     
     -- DEBUG 
     func_s <- showM func
@@ -335,8 +347,8 @@ invention simplify
       makeEqCtx gap_f = 
         app (Con eq_ind 0) [app gap_f f_args, g_term]
         
-    findCaseFunction :: Term -> m (Set Term)
-    findCaseFunction t@(App (Con eq_ind' 0) [left_t, right_t])
+    caseFunction :: Term -> MaybeT Env.TrackOffset Term
+    caseFunction t@(App (Con eq_ind' 0) [left_t, right_t])
       -- Make sure this is actually an equation
       | eq_ind' == eq_ind
       , get Type.name eq_ind' == "__EQ" = do
@@ -345,8 +357,15 @@ invention simplify
         Fail.unless (isCon left_f)
         Fail.unless (ind == ind' && con_n == con_n')
         
-        func <- foldrM constructFunction right_t (zip con_args left_args) 
-        return (Set.singleton func)
+        -- Try to invent a function which satisfies the equation at this point.
+        func <- id
+          . foldrM constructFunction right_t 
+          $ zip con_args left_args
+          
+        -- Lower the indices in the discovered function to be valid 
+        -- outside this point in the term. 
+        -- Remember we have descended into a term to collect equations.
+        Env.lowerByOffset func
       where
       Type.Base ind@(Type.Ind _ cons) = f_ty
       left_f:left_args = Term.flattenApp left_t
@@ -355,7 +374,8 @@ invention simplify
       
       -- We move through the constructor arguments backwards, building
       -- up the term one by one.
-      constructFunction :: (Type.ConArg, Term) -> Term -> m Term
+      constructFunction :: (Type.ConArg, Term) -> Term 
+        -> MaybeT Env.TrackOffset Term
       -- If we are at a regular constructor argument (non recursive) 
       -- then the term at this position should just be a variable.
       constructFunction (Type.ConArg ty, Var x) term =
@@ -366,25 +386,22 @@ invention simplify
           . Indices.replaceAt (succ x) (Var 0) 
           $ Indices.lift term
           
-      -- A pregeneralised recursive constructor argument
-      constructFunction (Type.IndVar, Var x) term =
-        return
-          . Lam (Bind "x" g_ty)
-          . Indices.replaceAt (succ x) (Var 0)
-          $ Indices.lift term
-          
       -- If we are at a non variable recursive constructor argument,
       -- then we'll need to rewrite the recursive call to @f_term@.
-      constructFunction (Type.IndVar, f_term') term = do
-        uni <- Unifier.find f_term f_term'
-        let g_term' = Unifier.apply uni g_term   
+      constructFunction (Type.IndVar, rec_term) term = do
+        -- Need to lift the indices in @f_term@ and @g_term@ to be 
+        -- what they would be at this point inside the equation term.
+        f_term' <- Env.liftByOffset f_term
+        g_term' <- Env.liftByOffset g_term
+        uni <- Unifier.find f_term' rec_term
+        let g_term'' = Unifier.apply uni g_term'
         return
           . Lam (Bind "x" g_ty)
-          . Term.replace (Indices.lift g_term') (Var 0)
+          . Term.replace (Indices.lift g_term'') (Var 0)
           $ Indices.lift term
         
       constructFunction _ _ = Fail.here
         
-    findCaseFunction _ = 
-      return mempty
+    caseFunction _ = 
+      Fail.here
   

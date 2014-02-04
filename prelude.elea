@@ -115,6 +115,28 @@ let count =
       else c n ys
     end
 
+let take =
+  fix (take: nat -> nlist -> nlist) (n: nat) (xs: nlist) ->
+    match n with
+    | 0 -> Nil
+    | Suc n' ->
+      match xs with
+      | Nil -> Nil
+      | Cons y ys -> Cons y (take n' ys)
+      end
+    end
+ 
+let filter = 
+  fun (p: nat -> bool) ->
+  fix (filter: nlist -> nlist) (xs: nlist) ->
+    match xs with
+    | Nil -> Nil
+    | Cons y ys -> 
+      if p y
+      then Cons y (filter ys)
+      else filter ys
+    end
+    
 let insert = 
   fix (ins: nat -> nlist -> nlist) (n: nat) (xs: nlist) ->
     match xs with
@@ -147,5 +169,18 @@ let is_sorted =
 
 ind ntree = Leaf | Node ntree nat ntree
 
-
+let flatten = 
+  fix (flat: ntree -> nlist) (t: ntree) ->
+    match t with
+    | Leaf -> Nil
+    | Node t1 x t2 -> append (flat t1) (Cons x (flat t2))
+    end
     
+let height = 
+  fix (height: ntree -> nat) (t: ntree) ->
+    match t with
+    | Leaf -> 0
+    | Node t1 x t2 -> Suc (max (height t1) (height t2))
+    end
+    
+

@@ -49,6 +49,13 @@ instance Show (Term' (String, Term)) where
   -- Special case for showing equation pairs
   show (App' (_, Con (Ind _ [("==", _)]) 0) [(left_t, _), (right_t, _)]) = 
     "(" ++ left_t ++ " == " ++ right_t ++ ")"
+    
+  -- Special case for showing /if/ expressions
+  show (Case' (Ind "bool" _) (cse_t, _) 
+          [Alt' [] (true_t, _), Alt' [] (false_t, _)]) =
+    "\nif " ++ indent cse_t 
+    ++ "\nthen "++ indent true_t 
+    ++ "\nelse " ++ indent false_t
       
   -- If these don't work then try the @Show (Term' String)@ instance.
   show term' =

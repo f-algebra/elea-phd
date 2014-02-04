@@ -19,7 +19,7 @@ module Elea.Env
   
   TrackOffset, TrackOffsetT,
   trackOffset, trackOffsetT,
-  offset, liftHere,
+  offset, liftByOffset, lowerByOffset,
   
   bind, bindMany,
   isoFree, isoShift,
@@ -302,12 +302,14 @@ trackOffsetT = trackIndicesT 0
 trackOffset :: TrackOffset a -> a
 trackOffset = runIdentity . trackOffsetT
 
-offset :: Tracks Index m => m Nat
-offset = trackeds (enum :: Index -> Nat)
+offset :: (Enum e, Tracks e m) => m Nat
+offset = trackeds enum
 
-liftHere :: (Tracks Index m, Indexed a) => a -> m a
-liftHere x = liftM (flip Indices.liftMany x) offset
+liftByOffset :: (Enum e, Tracks e m, Indexed a) => a -> m a
+liftByOffset x = liftM (flip Indices.liftMany x) offset
 
+lowerByOffset :: (Enum e, Tracks e m, Indexed a) => a -> m a
+lowerByOffset x = liftM (flip Indices.lowerMany x) offset
 
 newtype TrackMatches m a
   = TrackMatches { runTrackMatches :: ReaderT [(Term, Term)] m a }

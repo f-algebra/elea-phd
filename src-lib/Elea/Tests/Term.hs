@@ -53,10 +53,21 @@ tests = Test.label "Terms"
   
   let fold1 = Test.assertEq fold_nat_nat (buildFold nat (Base nat))
       fold2 = Test.assertEq fold_ntree_nlist (buildFold ntree (Base nlist))
+      
+  take_fix <- Test.simplifiedTerm "take"
+  height_fix <- Test.simplifiedTerm "height"
+  flat_fix <- Test.simplifiedTerm "flatten"
+  rev_fix <- Test.simplifiedTerm "reverse"
+  
+  let prod1 = Test.assert (isProductive take_fix)
+      prod2 = Test.assert (isProductive height_fix)
+      prod3 = Test.assertNot (isProductive flat_fix)
+      prod4 = Test.assertNot (isProductive rev_fix)
     
   return $ Test.list $
     [ dec1, dec2
     , fin1, fin2, fin3 
     , fold1, fold2
+    , prod1, prod2, prod3
     ]
 
