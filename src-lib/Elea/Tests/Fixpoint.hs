@@ -28,8 +28,8 @@ testFixFix term = do
   where
   fixFix :: Term -> m Test.Test
   fixFix term@(App o_fix [o_arg@(App i_fix i_args)]) = do
-    -- Take a composition of two fixpoints, fuse them, then split them with
-    -- fission and then invention.
+    -- Take a composition of two fixpoints, fuse them, 
+    -- then split them with invention.
     fused <- Fail.successM 
       $ Fix.fusion (\_ _ -> Simp.run) ctx i_fix
     invented <- Fail.successM 

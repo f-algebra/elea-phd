@@ -42,7 +42,7 @@ prop "count reverse": forall (n: nat) (xs: nlist) ->
   count n (reverse xs) = count n xs
   
 prop "count append": forall (n: nat) (xs ys: nlist) ->
-  count n (append xs ys) = add (count n xs) (count n ys)
+  1 = add (count n xs) (count n ys)
 
 prop "count snoc": forall (n: nat) (xs: nlist) ->
   count n (append xs (Cons n Nil)) = Suc (count n xs)
@@ -62,7 +62,12 @@ prop "eq_nat transitive": forall (i j k: nat) ->
   
 prop "leq_nat transitive": forall (i j k: nat) ->
   implies (and (leq_nat i j) (leq_nat j k)) (leq_nat i k)
+  
+  
+prop "filter reverse": forall (p: nat -> bool) (xs: nlist) ->
+  reverse (filter p xs) = filter p (reverse xs)
 
-
+/*
 prop "insertsort sorted": forall (xs: nlist) ->
   is_sorted (insertsort xs)
+*/

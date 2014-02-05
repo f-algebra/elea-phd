@@ -93,9 +93,72 @@ fixfix oterm@(App ofix@(Fix {}) oargs) = id
           . replaceAt arg_i (App gap_f iargs) 
           $ map liftInner oargs' 
 
-  -- The internal simplification used in fixfix fusion
+  -- The internal simplification used in fixfix fusion.
+  -- Recursively runs fusion, and then attempts to extract fixpoints
+  -- using invention.
   simplify :: Context -> Index -> Term -> m Term
-  simplify _ _ = run
+  simplify ctx fix_f term = do
+    term' <- run term
+    Env.alsoTrack 0
+      $ Fold.transformM extract term'
+    where
+    extract :: Term -> Env.AlsoTrack Index m Term
+    extract term@(App (Fix {}) args) 
+      | any varAppArg args = do
+        mby_extr <- runMaybeT extr
+        return (fromMaybe term mby_extr)
+      where
+      varAppArg (App (Var _) _) = True
+      varAppArg _ = False
+      
+      Just (f_term@(App (Var f) _)) = find varAppArg args
+      
+      extr :: MaybeT (Env.AlsoTrack Index m) Term
+      extr = do
+        -- Check this is definitely a recursive call
+        fix_f' <- Env.liftByOffset fix_f
+        guard (fix_f' == f)
+        
+        -- If a unifier exists, then we do not need to do fixpoint extraction
+        orig_term <- Env.liftByOffset (Context.apply ctx (Var fix_f))
+        guard (not (Unifier.exists orig_term term))
+        
+        -- Collect the recursive call in @orig_term@
+        -- so we can generalise it
+        let [rec_call] = id 
+              . Set.elems
+              . Env.trackIndices fix_f'
+              $ Term.collectM termToGeneralise orig_term 
+        
+        -- Generalise the recursive calls in both terms to the same variable
+        let term' = id
+              . Term.replace (Indices.lift f_term) (Var 0) 
+              $ Indices.lift term
+            orig_term' = id
+              . Term.replace (Indices.lift rec_call) (Var 0)
+              $ Indices.lift orig_term
+              
+        f_ty <- Type.get f_term
+                                                                       
+        invented_ctx <- id
+          . Env.bind (Bind "extrX" f_ty)
+          $ Fix.invention Simp.run orig_term' term'
+        
+        return
+          . Indices.substAt 0 f_term
+          $ Context.apply invented_ctx orig_term'
+          
+        where
+        termToGeneralise :: Term -> Env.TrackIndices Index Bool
+        termToGeneralise (App (Var f) _) = do
+          fix_f <- Env.tracked
+          return (f == fix_f)
+        termToGeneralise _ = 
+          return False
+
+    extract other = 
+      return other
+      
   
 fixfix _ = Fail.here
 

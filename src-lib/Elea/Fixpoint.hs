@@ -278,7 +278,7 @@ invention simplify
     
   -- Retrieve the type of f_term and g_term
   -- so we can pass them to inventCase
-  f_ty <- Type.get f_term
+  f_ty <- trace s1 $ Type.get f_term
   let Type.Base ind_ty@(Type.Ind _ cons) = f_ty
   g_ty <- Type.get g_term 
   
@@ -315,7 +315,10 @@ invention simplify
       
     -- Fuse this context with the inner fixpoint.
     -- If this fails then just unroll the inner fixpoint once.
-    mby_fused_eq <- Fail.catch (fusion (\_ _ -> simplify) ctx f_fix)
+    -- For now we don't use this, because it just makes computation longer
+    -- and is only for more advanced examples we can't do yet anyway
+    mby_fused_eq <- return Nothing 
+      -- Fail.catch (fusion (\_ _ -> simplify) ctx f_fix)
     fused_eq <- case mby_fused_eq of
       Just eq -> return eq
       Nothing -> simplify (Context.apply ctx (Term.unfoldFix f_fix))

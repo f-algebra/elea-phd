@@ -19,8 +19,8 @@ tests = Test.list
   , Term.tests
   , Simplifier.tests
   , Context.tests
-  , Fixpoint.tests
- -- , Fusion.tests 
+--  , Fixpoint.tests
+  , Fusion.tests 
   ]
   
 runTests :: IO ()

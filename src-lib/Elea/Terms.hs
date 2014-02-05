@@ -6,6 +6,7 @@ module Elea.Terms
   branches,
   replace, 
   unfoldFix,
+  collectM, collect,
   decreasingArgs,
   applyCase,
   generaliseArgs,
@@ -82,6 +83,24 @@ unfoldFix :: Term -> Term
 unfoldFix fix@(Fix _ _ fix_t) = 
   Indices.subst fix fix_t
   
+  
+-- | Collect terms which fulfil a given predicate. 
+-- The variables of these terms must be free outside the original term,
+-- and will be automatically lowered to the correct indices.
+collectM :: forall m . Env.Write m => 
+  (Term -> m Bool) -> Term -> m (Set Term)
+collectM p = Env.alsoTrack 0 . Fold.collectM collect
+  where
+  collect :: Term -> MaybeT (Env.AlsoTrack Index m) Term
+  collect t = do
+    c <- (Trans.lift . Trans.lift . p) t
+    guard c
+    Env.lowerByOffset t
+    
+-- | See 'collectM'
+collect :: (Term -> Bool) -> Term -> Set Term
+collect p = runIdentity . collectM (Identity . p)
+    
 
 -- | Replace all instances of one term with another within a term.
 replace :: Term -> Term -> Term -> Term
