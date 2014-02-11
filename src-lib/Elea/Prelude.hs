@@ -58,12 +58,12 @@ module Elea.Prelude
   insertAt, enum, indent, indentBy, debugNth,
   arrowSum, supremum, (|>), ($>), replaceAt,
   Maximum (..), Minimum (..), sconcatMap,
-  intersects, nlength, elength, liftMaybe, maybeT
+  intersects, length, liftMaybe, maybeT
 )
 where
 
 import Prelude hiding ( mapM, foldl, foldl1, mapM_, minimum, 
-  maximum, sequence_, zip, zipWith, Read (..),
+  maximum, sequence_, zip, zipWith, Read (..), length,
   foldr, foldr1, sequence, Maybe (..), maybe, all, any, elem, product,
   and, concat, notElem, or, concatMap, sum, (++), map, (.), id )
 
@@ -170,11 +170,8 @@ intercalate :: Monoid m => m -> [m] -> m
 intercalate x = concat . intersperse x
 
 -- | A more usefully typed 'length' function.
-elength :: (Foldable f, Enum n) => f a -> n
-elength = enum . Pre.length . toList
-
-nlength :: Foldable f => f a -> Nat
-nlength = elength
+length :: (Foldable f, Enum n) => f a -> n
+length = enum . Pre.length . toList
 
 partitionM :: Monad m => (a -> m Bool) -> [a] -> m ([a], [a])
 partitionM f = foldrM f' ([], [])  

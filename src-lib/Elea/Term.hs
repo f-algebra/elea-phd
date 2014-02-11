@@ -16,18 +16,21 @@ module Elea.Term
   isCon, isLam, isVar,
   isFix, isAbsurd, isCase,
   isAbsurd',
+  addFixInfo,
   fromVar, 
+  conjunction, true, false,
   matchedTo,
   altPattern, 
   isFinite,
   buildFold,
+  buildEq,
 )
 where
 
 import Prelude ()
 import Elea.Prelude
 import Elea.Index ( Index, Indexed, Substitutable, Inner )
-import Elea.Type ( Type, Ind, ConArg, Bind (..) )
+import Elea.Type ( Type (..), Ind (..), ConArg (..), Bind (..) )
 import qualified Elea.Type as Type
 import qualified Elea.Index as Indices
 import qualified Elea.Foldable as Fold
@@ -199,6 +202,9 @@ isAbsurd' _ = False
 fromVar :: Term -> Index
 fromVar (Var x) = x
 
+addFixInfo :: FixInfo -> Term -> Term
+addFixInfo i' (Fix i b t) = Fix (i ++ i') b t
+
 flattenLam :: Term -> ([Bind], Term)
 flattenLam (Lam b t) = first (b:) (flattenLam t)
 flattenLam t = ([], t)
@@ -235,6 +241,7 @@ altPattern ty@(Type.Ind _ cons) n = id
     . snd
     $ cons !! fromEnum n
     
+    
 -- | Whether a term contains a finite amount of information, from a
 -- strictness point of view. So @[x]@ is finite, even though @x@ is a variable
 -- since it is not of the same type as the overall term.
@@ -245,25 +252,29 @@ isFinite (App (Con ind n) args) = id
   . map (args !!)
   $ Type.recursiveArgs ind n
 isFinite _ = False
-  
 
--- | Build a term representing a catamorphism (fold function).
+
+-- | Build a fold function. 
 buildFold :: Indexed Term 
-  => Type.Ind  -- ^ The inductive type the catamorphism 
-  -> Type      -- ^ The return type of the catamorphism
+  => Type.Ind  -- ^ The inductive argument type of the fold function 
+  -> Type      -- ^ The return type of the fold function
   -> Term
 buildFold ind@(Type.Ind _ cons) result_ty = 
-  unflattenLam lam_bs fix
+  unflattenLam lam_bs fix_t
   where
-  -- Build the fixpoint that represents the fold function.
-  fix = id
-    . Fix mempty fix_b
-    . Lam (Bind ("var_" ++ show ind) (Type.Base ind))
-    $ Case ind (Var 0) alts
+  -- Add a fixpoint if the inductive type is recursive
+  fix_t 
+    | not (Type.isRecursive ind) = Indices.lower fold_t
+    | otherwise = Fix mempty fix_b fold_t
     where
     fix_lbl = "fold[" ++ show ind ++ "]"
-    fix_b = Bind fix_lbl (Type.Fun (Type.Base ind) result_ty)
-    
+    fix_b = Bind fix_lbl (Fun (Base ind) result_ty)
+  
+  -- Build the term that represents the fold function body
+  fold_t = id
+    . Lam (Bind ("var_" ++ show ind) (Base ind))
+    $ Case ind (Var 0) alts
+    where
     -- Build every branch of the outer pattern match from the index of 
     -- the function which will be applied down that branch, and the
     -- defintion of the constructor for that branch
@@ -273,11 +284,11 @@ buildFold ind@(Type.Ind _ cons) result_ty =
       lam_idxs :: [Index]
       lam_idxs = (map enum . reverse) [2..length cons + 1]
       
-      buildAlt :: Index -> (String, [Type.ConArg]) -> Alt
+      buildAlt :: Index -> (String, [ConArg]) -> Alt
       buildAlt f_idx (_, con_args) = 
         Alt alt_bs (app f f_args)
         where
-        liftHere = Indices.liftMany (elength con_args)
+        liftHere = Indices.liftMany (length con_args)
         
         -- The index of the fix variable
         outer_f = liftHere (Var 1)
@@ -292,15 +303,15 @@ buildFold ind@(Type.Ind _ cons) result_ty =
           arg_idxs :: [Index]
           arg_idxs = (map enum . reverse) [0..length con_args - 1]
           
-          conArgToArg :: Index -> Type.ConArg -> Term
-          conArgToArg idx Type.IndVar = app outer_f [Var idx]
-          conArgToArg idx (Type.ConArg _) = Var idx
+          conArgToArg :: Index -> ConArg -> Term
+          conArgToArg idx IndVar = app outer_f [Var idx]
+          conArgToArg idx (ConArg _) = Var idx
         
         alt_bs = 
           map conArgToBind con_args
           where
-          conArgToBind Type.IndVar = Bind "y" (Type.Base ind)
-          conArgToBind (Type.ConArg ty) = Bind "a" ty
+          conArgToBind IndVar = Bind "y" (Base ind)
+          conArgToBind (ConArg ty) = Bind "a" ty
     
   -- The bindings for the outer lambdas of the fold function. 
   -- These are the lambdas which receive the functions the constructors get 
@@ -313,13 +324,87 @@ buildFold ind@(Type.Ind _ cons) result_ty =
     -- where X is 'result_ty':
     -- ("Nil", []) => X
     -- ("Cons", [ConArg nat, IndVar]) => nat -> X -> X
-    makeBind :: (String, [Type.ConArg]) -> Bind
+    makeBind :: (String, [ConArg]) -> Bind
     makeBind (name, conargs) = id
       . Bind ("case_" ++ name)
       . Type.unflatten
       $ map conArgToTy conargs ++ [result_ty]
       where
-      conArgToTy Type.IndVar = result_ty
-      conArgToTy (Type.ConArg ty) = ty
+      conArgToTy IndVar = result_ty
+      conArgToTy (ConArg ty) = ty
+   
     
+false, true :: Term
+true = Con Type.bool 0
+false = Con Type.bool 1
+      
+-- | Returns an n-argument /and/ term.
+-- > conjunction 3 = fun (p q r: bool) -> and p (and q r)
+conjunction :: Indexed Term => Int -> Term
+conjunction n = id
+  . unflattenLam (replicate n (Bind "p" (Base Type.bool)))
+  . foldr and true
+  . reverse
+  $ map (Var . enum) [0..n-1]
+  where
+  and t t' = app bool_fold [t', false, t]
+  bool_fold = buildFold Type.bool (Base Type.bool)
+
+    
+-- | Build an equality function for a given inductive type.
+-- > buildEq nat : nat -> nat -> bool
+buildEq :: (Indexed Term, Show Term) => Type.Ind -> Term
+buildEq ind@(Ind _ cons) = 
+  app (buildFold ind fold_ty) cases
+  where
+  fold_ty = Fun (Base ind) (Base Type.bool)
+  cases = map buildCase [0..length cons - 1]
+  
+  buildCase :: Int -> Term
+  buildCase case_n = id 
+    . unflattenLam arg_bs
+    $ Case ind (Var 0) alts
+    where
+    (_, con_args) = cons !! case_n
+    
+    arg_bs = id
+      . map (Bind "y")
+      $ map getArgTy con_args ++ [Base ind]
+      where
+      getArgTy IndVar = fold_ty
+      getArgTy (ConArg ty) = ty
+
+    alts = map makeAlt [0..length cons - 1]
+      where 
+      makeAlt :: Int -> Alt
+      makeAlt match_n = 
+        Alt alt_bs alt_t
+        where
+        match_con_args = snd (cons !! match_n)
+        
+        alt_bs = map getArgBs match_con_args
+          where
+          getArgBs IndVar = Bind "r" (Base ind)
+          getArgBs (ConArg ty) = Bind "a" ty
+        
+        alt_t 
+          | case_n /= match_n = false
+          | otherwise = app (conjunction (length eq_checks)) eq_checks 
+          
+        eq_checks = 
+          zipWith getEqCheck (reverse [0..length con_args - 1]) con_args
+          where
+          getEqCheck _ (ConArg (Fun {})) = 
+            error 
+              $ "Cannot build an equality function for an inductive type "
+              ++ "which has function typed constructor arguments."
+          getEqCheck arg_i (ConArg (Base arg_ind)) = 
+            app eq_fun [Var (enum arg_i'), Var (enum arg_i)]
+            where
+            arg_i' = arg_i + 1 + length con_args
+            eq_fun = buildEq arg_ind
+          getEqCheck arg_i IndVar = 
+            app f_var [Var (enum arg_i)]
+            where
+            f_var = Var (enum (arg_i + 1 + length con_args))
 

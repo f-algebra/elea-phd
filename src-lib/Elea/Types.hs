@@ -135,7 +135,7 @@ typeOf term = id
   -- Check that an constructor is for an inductive type, and that the 
   -- constructor index is not greater than the number of constructors.
   fcheck (Con' ty n) 
-    | nlength (Type.unfold ty) <= n = Err.throw
+    | length (Type.unfold ty) <= n = Err.throw
       $ "The given inductive type does not have that many constructors."
       
   -- Check that the pattern matched branches properly match the 
@@ -145,7 +145,7 @@ typeOf term = id
       $ "Inductive type of pattern match [" ++ show ind_ty ++ "] does not"
       ++ " match type of matched term [" ++ show ind_ty' ++ "]"
       
-    | length falts /= length cons = Err.throw 
+    | length falts /= (length cons :: Int) = Err.throw 
       $ "Number of patterns does not match number of constructors."
       
     | not alts_correct = Err.throw 

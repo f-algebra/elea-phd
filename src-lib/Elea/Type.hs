@@ -2,9 +2,9 @@ module Elea.Type
 (
   Type (..), Ind (..), ConArg (..), Bind (..),
   name, constructors, boundLabel, boundType, 
-  empty, unit, pair,
+  empty, unit, pair, bool,
   returnType,
-  isInd, isFun,
+  isInd, isFun, fromBase,
   unflatten, flatten, unfold,
   recursiveArgs, nonRecursiveArgs, recursiveArgIndices,
   isBaseCase, isRecursive, 
@@ -16,12 +16,16 @@ import Elea.Prelude
 import Elea.Index
 import Elea.Monad.Error as Error
 
--- An argument to a constructor is either the inductive type we are defining
--- or another type.
-data ConArg = IndVar | ConArg !Type
+-- | An argument to a constructor.
+data ConArg 
+  -- | The inductive type we are defining.
+  = IndVar 
+  
+  -- | A non-recursive type argument for the constructor.
+  | ConArg !Type
   deriving ( Eq, Ord )
  
--- | "Ind"uctive type
+-- | /Ind/uctive type
 data Ind 
   = Ind   { _name :: !String
           , _constructors :: ![(String, [ConArg])] }
@@ -74,6 +78,9 @@ pair a b =
   where
   name = "(" ++ show a ++ ", " ++ show b ++ ")"
 
+bool :: Ind
+bool = Ind "bool" [("True", []), ("False", [])]
+
   
 -- Helpful functions
 
@@ -84,6 +91,9 @@ isInd _ = False
 isFun :: Type -> Bool
 isFun (Fun {}) = True
 isFun _ = False
+
+fromBase :: Type -> Ind
+fromBase = inductiveType
 
 flatten :: Type -> [Type]
 flatten (Fun x r) = x : flatten r

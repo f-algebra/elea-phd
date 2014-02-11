@@ -140,7 +140,7 @@ decreasingArgs (Fix _ fix_b fix_t) =
     arg_idx = enum (length arg_bs - (arg_i + 1))
     
     -- The deBrujin index of the fix bound function variable
-    fix_f = enum (length arg_bs)
+    fix_f = length arg_bs
     
     decreasing :: 
       Term -> Env.TrackSmallerTermsT (Env.TrackIndices Index) Bool
@@ -164,7 +164,7 @@ applyCase (Case ind cse_t alts) inner_t =
     where
     -- Takes a term from outside the pattern match and lifts the 
     -- indices to what they should be within this branch
-    liftHere = Indices.liftMany (nlength bs)
+    liftHere = Indices.liftMany (length bs)
     
     -- The new alt-term is the given inner_t, with all occurrences of
     -- the pattern matched term replaced with the pattern it is matched
@@ -196,10 +196,10 @@ generaliseArgs (App func args) run = do
     . zipWith Indices.liftMany [0..]
     $ reverse args
   where
-  new_vars = map Var [0..elength args - 1]
+  new_vars = map Var [0..length args - 1]
   
   liftHere :: Indexed b => b -> b
-  liftHere = Indices.liftMany (elength args)
+  liftHere = Indices.liftMany (length args)
         
   
 -- | Construct a pair of the two given terms. Needs to read the type of the
@@ -216,16 +216,16 @@ pair left right = do
 -- | Create a constraint context. For example:
 -- > constraint (reverse xs) 0 nat == assert Nil <- reverse xs in _
 -- > constraint (reverse xs) 1 nat == assert Cons y ys <- reverse xs in _
-constraint :: (Env.Read m, Defs.Read m)
+constraint :: ()
   => Term -- ^ The term we constrain to be a specific constructor
+  -> Type.Ind  -- ^ The inductive type of the first argument
   -> Nat  -- ^ The constructor index we are constraining this term to be
   -> Type -- ^ The type of the gap in the context
-  -> m Context 
-constraint match_t con_n result_ty = do
-  Type.Base ind <- Type.get match_t
-  return (Context.make (makeContext ind))
+  -> Context 
+constraint match_t ind con_n result_ty =
+  Context.make makeContext
   where
-  makeContext ind gap_t = 
+  makeContext gap_t = 
     Case ind match_t alts
     where
     cons = Type.unfold ind

@@ -28,6 +28,6 @@ tests = Test.label "Fusion"
   Test.loadPrelude
   eqs <- Test.loadFile "src-lib/Elea/Tests/fusion.elea"
   mapM checkEquation
-    . filter ((== "count append") . get equationName)
+   -- . filter ((== "count append") . get equationName)
     $ eqs
 

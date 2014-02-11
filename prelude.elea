@@ -1,4 +1,7 @@
 
+ind unit = Unit
+
+
 /* Booleans */ 
 
 ind bool = True | False
@@ -68,17 +71,6 @@ let mul =
     match x with
     | 0 -> 0
     | Suc x' -> add y (mul x' y)
-    end
-    
-let leq = 
-  fix (leq: nat -> nat -> bool) (x y:nat) ->
-    match x with
-    | 0 -> True
-    | Suc x' ->
-      match y with
-      | 0 -> False
-      | Suc y' -> leq x' y'
-      end
     end
 
 

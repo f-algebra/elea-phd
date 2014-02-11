@@ -29,28 +29,33 @@ run :: (Env.Read m, Defs.Read m) => Term -> m Term
 run = Fold.rewriteStepsM (map Type.checkStep steps)
 
 steps :: (Fail.Can m, Env.Read m, Defs.Read m) => [Term -> m Term]
-steps = eval_steps ++
-  [ const Fail.here
+steps = Eval.steps ++
+  [ const Fail.here 
   , caseFun
+  , Fail.concatTransforms transformSteps
   , caseApp
   , appCase
   , caseCase
-  , absurdity
-  , constArg
-  , identityCase
-  , uselessFix
   , finiteArgFix
   , unfoldFixInj
   , freeCaseFix
   , propagateVarMatch
   , raiseVarCase
-  , constantCase
-  , unfoldCaseFix
+  , unfoldCaseFix 
   ]
   where
-  eval_steps = map (Fail.fromMaybe .) Eval.steps
-  
-  
+  -- Transformation steps do not require sub terms to be rewritten upon success.
+  transformSteps = 
+    [ const Fail.here
+    , caseFun
+    , absurdity
+    , constArg
+    , identityCase
+    , uselessFix
+    , constantCase 
+    , constantFix
+    ] 
+
 -- | Remove arguments to a fixpoint if they never change in 
 -- any recursive calls.
 removeConstArgs :: Env.Write m => Term -> m Term
@@ -88,7 +93,7 @@ caseApp (App (Case ind t alts) args) =
   return (Case ind t (map appArg alts))
   where
   appArg (Alt bs alt_t) =
-    Alt bs (app alt_t (Indices.liftMany (nlength bs) args))
+    Alt bs (Eval.run (app alt_t (Indices.liftMany (length bs) args)))
     
 caseApp _ = Fail.here
 
@@ -99,7 +104,6 @@ appCase :: Fail.Can m => Term -> m Term
 appCase term@(App _ args) = do
   cse_t <- Fail.fromMaybe (find isCase args)
   return (Term.applyCase cse_t term)
-  
 appCase _ = Fail.here
 
 
@@ -140,9 +144,10 @@ constArg term@(Fix fix_info (Bind fix_name fix_ty) fix_t) = do
   where
   -- Strip off the preceding lambdas of the function
   (arg_bs, fix_body) = flattenLam fix_t
+  arg_count = length (Type.flatten fix_ty) - 1
   
   -- The index of the recursive call to the function within 'fix_body'
-  fix_f = enum (length arg_bs) 
+  fix_f = length arg_bs :: Index
   
   -- Does the given argument position never change in any recursive call?
   isConstArg :: Int -> Bool
@@ -161,7 +166,11 @@ constArg term@(Fix fix_info (Bind fix_name fix_ty) fix_t) = do
       (fix_f, arg_t) <- Env.tracked
       return 
         $ fix_f == f
-        && arg_t /= (args !! arg_i)
+        -- If the number of arguments differs then this function is not
+        -- in the correct shape for this process. So we fail by saying
+        -- the argument changed.
+        && (length args /= arg_count
+        || arg_t /= (args !! arg_i))
     isntConst _ = 
       return False
      
@@ -174,7 +183,7 @@ constArg term@(Fix fix_info (Bind fix_name fix_ty) fix_t) = do
     . flip app outer_args
     
     -- Need to make sure no variables are captured by these new outer lambdas
-    . Indices.liftManyAt (elength left_bs) 1 
+    . Indices.liftManyAt (length left_bs) 1 
     
     -- The fixpoint information is lifted by one to take into account the 
     -- removed argument index (which is 0 at this point).
@@ -226,7 +235,7 @@ constArg _ = Fail.here
 finiteArgFix :: Fail.Can m => Term -> m Term
 finiteArgFix (App fix@(Fix {}) args)
   | any isFinite dec_args = 
-    return (App (Term.unfoldFix fix) args)
+    return (Eval.run (app (Term.unfoldFix fix) args))
   where
   dec_args = map (args !!) (Term.decreasingArgs fix)
 finiteArgFix _ = Fail.here
@@ -255,7 +264,7 @@ uselessFix _ = Fail.here
 unfoldFixInj :: Fail.Can m => Term -> m Term
 unfoldFixInj term@(App fix@(Fix {}) args)
   | any isConArg (Term.decreasingArgs fix) = 
-    return (App (Term.unfoldFix fix) args)
+    return (Eval.run (app (Term.unfoldFix fix) args))
   where
   -- Check whether an argument is a constructor, and does not unify
   -- with any recursive calls the function itself makes (TODO).
@@ -297,11 +306,13 @@ propagateVarMatch (Case ind var@(Var idx) alts)
     return (Case ind var (zipWith propagateAlt [0..] alts))
   where
   propagateAlt :: Nat -> Alt -> Alt
-  propagateAlt n (Alt bs alt_t) =
-    Alt bs (Indices.replaceAt idx' alt_p alt_t)
+  propagateAlt n (Alt bs alt_t) = id
+    . Alt bs  
+    . Eval.run
+    $ Indices.replaceAt idx' alt_p alt_t
     where
     alt_p = Term.altPattern ind n
-    idx' = Indices.liftMany (elength bs) idx
+    idx' = Indices.liftMany (length bs) idx
     
 propagateVarMatch _ = Fail.here
 
@@ -318,7 +329,7 @@ raiseVarCase outer_t@(Case _ (leftmost -> Fix {}) alts) = do
   -- which is not from the pattern match, viz. it can be lowered
   -- to outside the match.
   caseOfVarAlt (Alt bs alt_t@(Case ind (Var x) i_alts)) = do
-    x' <- Indices.tryLowerMany (elength bs) x
+    x' <- Indices.tryLowerMany (length bs) x
     return (Case ind (Var x') i_alts)
   caseOfVarAlt _ = 
     Fail.here
@@ -335,7 +346,7 @@ constantCase (Case _ _ alts) = do
   where
   loweredAltTerm :: Alt -> m Term
   loweredAltTerm (Alt bs alt_t) = 
-    Indices.tryLowerMany (elength bs) alt_t
+    Indices.tryLowerMany (length bs) alt_t
     
 constantCase _ = Fail.here
 
@@ -348,9 +359,64 @@ unfoldCaseFix :: Fail.Can m => Term -> m Term
 unfoldCaseFix term@(Case ind (App fix@(Fix {}) args) alts)
   | Term.isProductive fix
   , Term.isFiniteMatch ind alts = 
-    return (Case ind cse_t' alts)
+    return (Eval.run (Case ind cse_t' alts))
   where
-  cse_t' = app (Term.unfoldFix fix) args
+  cse_t' = Eval.run (app (Term.unfoldFix fix) args)
   
 unfoldCaseFix _ = Fail.here
 
+
+-- | If a recursive function just returns the same value, regardless of its
+-- inputs, just reduce it to that value.
+constantFix :: forall m . Fail.Can m => Term -> m Term
+constantFix (Fix _ fix_b fix_t)
+  | Just [result] <- mby_results = guessConstant result
+  | Just [] <- mby_results = guessConstant (Absurd result_ty)
+  where
+  (arg_bs, _) = flattenLam fix_t
+  result_ty = Type.returnType (get Type.boundType fix_b)
+  mby_results = potentialResults fix_t
+
+  potentialResults :: Term -> Maybe [Term]
+  potentialResults = id
+    . map toList
+    . Env.trackIndices 0
+    . runMaybeT
+    . Fold.isoFoldM Term.branches resultTerm
+    where
+    resultTerm :: Term -> MaybeT (Env.TrackIndices Index) (Set Term)
+    resultTerm (Absurd _) = return mempty
+    resultTerm term = do
+      fix_f <- Env.tracked
+      if leftmost term == Var fix_f
+      then return mempty
+      else do
+        let depth = enum fix_f
+        -- Checking we can lower by one extra makes sure there is no
+        -- occurrence of the 'fix'ed variable itself.
+        guard (Indices.lowerableBy (depth + 1) term)
+        return
+          . Set.singleton
+          $ Indices.lowerMany depth term
+        
+  guessConstant :: Term -> m Term
+  guessConstant guess_t 
+    | Just [] <- mby_results' = return const_t
+    | Just [guess_t'] <- mby_results' = id
+      . assert (guess_t == guess_t') 
+      $ return const_t
+    where
+    rec_f = id
+      . unflattenLam arg_bs
+      . Indices.liftMany (length arg_bs)
+      $ guess_t
+      
+    fix_t' = Eval.run (Term.replace (Var 0) rec_f fix_t)
+    mby_results' = potentialResults fix_t'
+    const_t = Indices.lower rec_f
+    
+  guessConstant _ = 
+    Fail.here
+        
+constantFix _ = 
+  Fail.here

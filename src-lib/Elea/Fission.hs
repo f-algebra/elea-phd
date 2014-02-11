@@ -116,7 +116,7 @@ constructorFission fix@(Fix _ fix_b fix_t) = do
       where
       suggestAlt :: Alt -> MaybeT Env.TrackOffset (Set Context)
       suggestAlt (Alt bs alt_t) =
-        Env.liftTrackedMany (elength bs) (suggest alt_t)
+        Env.liftTrackedMany (length bs) (suggest alt_t)
         
     suggest (Absurd _) = 
       return (Set.singleton absurd_ctx)
@@ -133,7 +133,7 @@ constructorFission fix@(Fix _ fix_b fix_t) = do
       -- of them can be the gap, so we fail.
       Fail.when (length not_keepable > 1)
       
-      let idx_offset = enum free_limit - nlength arg_bs
+      let idx_offset = enum (free_limit - length arg_bs)
       
       if length not_keepable == 1
       then do

@@ -156,7 +156,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
       repl_here <- Env.liftByOffset replace_with
       return (Unifier.apply uni repl_here)
     where
-    new_fix_var = Var (enum (length new_vars))
+    new_fix_var = Var (length new_vars)
     replace_with = app new_fix_var (reverse new_vars)
       
   replace _ = mzero    
@@ -235,7 +235,7 @@ fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
     (lam_bs_dropped, lam_bs_rest) = splitAt (length dropped_bs) lam_bs
     inner_t' = Term.unflattenLam lam_bs_rest inner_t
     
-    ctx_inside_lam = Indices.liftMany (elength lam_bs) dropped_ctx
+    ctx_inside_lam = Indices.liftMany (length lam_bs) dropped_ctx
     
     floatCtxUp :: Term -> MaybeT (Env.TrackIndices Context) Term
     floatCtxUp cse@(Case ind t alts) = do
@@ -250,7 +250,7 @@ fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
         -- If a branch is absurd we can float any context out of it
         | Term.isAbsurd (get Term.altInner alt) = return alt
       floatAlt (Alt bs alt_t) = do
-        ctx <- Env.trackeds (Indices.liftMany (elength bs))
+        ctx <- Env.trackeds (Indices.liftMany (length bs))
         alt_t' <- Context.strip ctx alt_t
         return (Alt bs alt_t')
         
@@ -291,37 +291,29 @@ invention simplify
   fold <- Simp.run (app fold_f fold_cases)
   let ctx = Context.make (\t -> app fold [t])
   
-  {-
   -- This algorithm is not sound by construction, so we check its answer using
   -- fusion, which is sound.
+  {-
   let f_args_ctx = Context.make (\t -> app t f_args)
       fusion_ctx = ctx ++ f_args_ctx
   fused <- fusion (\_ _ -> Simp.run) fusion_ctx f_fix
   Fail.unless (fused == g_term)
   -}
-  
   -- I've left the soundness check above out because the equality check
   -- at the end is non-trivial. Will put this back in later.
   return ctx
   where
   inventCase :: Type -> Type -> Nat -> m Term
   inventCase f_ty g_ty con_n = do
-    -- Constrain @f_term@ to be this particular constructor
-    constraint_ctx <- Term.constraint f_term con_n eq_ty
-    
-    -- Compose the constraint with the equation context 
-    -- using the context monoid
-    let ctx = constraint_ctx ++ eq_ctx
-      
     -- Fuse this context with the inner fixpoint.
     -- If this fails then just unroll the inner fixpoint once.
     -- For now we don't use this, because it just makes computation longer
     -- and is only for more advanced examples we can't do yet anyway
     mby_fused_eq <- return Nothing 
-      -- Fail.catch (fusion (\_ _ -> simplify) ctx f_fix)
+      -- Fail.catch (fusion (\_ _ -> simplify) full_ctx f_fix)
     fused_eq <- case mby_fused_eq of
       Just eq -> return eq
-      Nothing -> simplify (Context.apply ctx (Term.unfoldFix f_fix))
+      Nothing -> simplify (Context.apply full_ctx (Term.unfoldFix f_fix))
       
     -- DEBUG
     fused_eq_s <- showM fused_eq
@@ -339,7 +331,11 @@ invention simplify
     let s3 = "\nFunction discovered: " ++ func_s
     trace s3 (return func)
     where
-    -- We represent the equat ion using a new inductive type.
+    -- Constrain @f_term@ to be this particular constructor
+    constraint_ctx = 
+      Term.constraint f_term (Type.inductiveType f_ty) con_n eq_ty
+    
+    -- We represent the equation using a new inductive type.
     eq_ind = Type.Ind "__EQ" [("==", [Type.ConArg f_ty, Type.ConArg g_ty])]
     eq_ty = Type.Base eq_ind
     
@@ -349,6 +345,10 @@ invention simplify
       where
       makeEqCtx gap_f = 
         app (Con eq_ind 0) [app gap_f f_args, g_term]
+        
+    -- Compose the constraint with the equation context 
+    -- using the context monoid
+    full_ctx = constraint_ctx ++ eq_ctx
         
     caseFunction :: Term -> MaybeT Env.TrackOffset Term
     caseFunction t@(App (Con eq_ind' 0) [left_t, right_t])
@@ -407,4 +407,45 @@ invention simplify
         
     caseFunction _ = 
       Fail.here
+      
+      
+-- | Checks (using induction by fusion) whether two terms are equal. 
+-- Assumes both terms have already been simplified.
+-- Unfinished.
+isEqual :: forall m . (Env.Read m, Defs.Read m, Fail.Can m)
+  -- | A simplification function to be called within proving.
+  => (Term -> m Term)
+  -> Term
+  -> Term
+  -> m Bool
+isEqual _ (Var x) (Var y) = do
+  Fail.unless (x == y)
+  return True
   
+-- If both sides are constructors...
+isEqual simp 
+    (flattenApp -> Con _ n : l_args) 
+    (flattenApp -> Con _ m : r_args) = do
+  if n /= m
+  then return False
+  else do
+    args_eq <- zipWithM (isEqual simp) l_args r_args
+    return (and args_eq)
+
+-- If one side is constructor shaped and the other isn't
+-- then we cannot decide equality.
+isEqual _ (leftmost -> Con {}) _ = Fail.here
+isEqual _ _ (leftmost -> Con {}) = Fail.here
+
+-- If both sides are the application of a function
+-- we can unroll those functions and check equality inductively
+isEqual simp  
+    (flattenApp -> Fix _ fix_b1 fix_t1 : args1) 
+    (flattenApp -> Fix _ fix_b2 fix_t2 : args2) = do
+  Fail.here
+  where
+  term1 = app (Indices.liftAt 1 fix_t1) (map (Indices.liftMany 2) args1)
+  term2 = app (Indices.lift fix_t2) (map (Indices.liftMany 2) args2)
+  
+isEqual _ _ _ = Fail.here
+    

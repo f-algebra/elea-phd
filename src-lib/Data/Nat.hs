@@ -30,8 +30,9 @@ instance Enum Nat where
 instance Num Nat where
   Nat x + Nat y = Nat (x + y)
   Nat x - Nat y 
-    | x > y = Nat (x - y)
-    | otherwise = Nat 0
+    | x >= y = Nat (x - y)
+    | otherwise = 
+      error $ "Cannot subtract " ++ show y ++ " from " ++ show x ++ "."
   Nat x * Nat y = Nat (x * y)
   abs = id
   negate = error "Cannot negate a natural number"

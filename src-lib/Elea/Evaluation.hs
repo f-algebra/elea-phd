@@ -19,16 +19,11 @@ import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Failure as Fail
 import qualified Data.Set as Set
 
-run :: Term -> Term
+run :: Term -> Term                           
 run = Fold.rewriteSteps steps
 
 steps :: Fail.Can m => [Term -> m Term]
-steps = 
-  [ normaliseApp  
-  , beta
-  , eta
-  , caseOfCon
-  ]
+steps = [ Fail.concatTransforms [ normaliseApp, eta ] , beta, caseOfCon ]
 
 normaliseApp :: Fail.Can m => Term -> m Term
 normaliseApp (App f []) = return f

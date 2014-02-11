@@ -6,7 +6,7 @@ prop "2*2=2+2":
   mul 2 2 = add 2 2
 
 prop "1<=2": 
-  leq 1 2
+  leq_nat 1 2
   
 prop "not-not": forall (p: bool) ->
   not (not p) = p
@@ -37,4 +37,19 @@ let dneppa =
 prop "non-rec first arg": forall (xs: nlist) (ys: nlist) ->
   dneppa ys xs = append xs ys
     
+  
+let always_true = 
+  fix (true: nat -> nat -> bool) (x y: nat) ->
+    match x with
+    | 0 -> True
+    | Suc x' ->
+      match y with
+      | 0 -> True
+      | Suc y' -> true x' y'
+      end
+    end
+
+prop "always true": forall (n m: nat) ->
+  always_true n m
+ 
 

@@ -21,28 +21,13 @@ prop "revapp def": forall (n: nat) (xs: nlist) ->
 
 prop "revapp cons": forall (n: nat) (xs: nlist) ->
   revapp n xs = Cons n (reverse xs)
-  
 
-let always_true = 
-  fix (true: nat -> nat -> bool) (x y: nat) ->
-    match x with
-    | 0 -> True
-    | Suc x' ->
-      match y with
-      | 0 -> True
-      | Suc y' -> true x' y'
-      end
-    end
-
-prop "always true": forall (n m: nat) ->
-  always_true n m
- 
   
 prop "count reverse": forall (n: nat) (xs: nlist) ->
   count n (reverse xs) = count n xs
   
 prop "count append": forall (n: nat) (xs ys: nlist) ->
-  1 = add (count n xs) (count n ys)
+  count n (append xs ys) = add (count n xs) (count n ys)
 
 prop "count snoc": forall (n: nat) (xs: nlist) ->
   count n (append xs (Cons n Nil)) = Suc (count n xs)

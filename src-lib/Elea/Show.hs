@@ -94,7 +94,7 @@ instance (Env.Read m, Defs.Read m) => ShowM m Term where
     fshow :: Term' (String, Term) -> m String
     fshow (Var' idx) = do
       bs <- Env.bindings
-      if idx >= enum (length bs)
+      if idx >= length bs
       -- If we don't have a binding for this index 
       -- just display the index itself
       then return (show idx)

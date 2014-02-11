@@ -50,6 +50,8 @@ data RawTerm
   | TAbsurd RawType
   | TCase RawTerm [RawAlt]
   | TLet String RawTerm RawTerm
+  | TEq RawType
+  | TFold RawType
   
 data RawAlt
   = TAlt [String] RawTerm
@@ -95,6 +97,8 @@ mkLabels [''Scope, ''RawBind, ''RawProgram]
   if          { TokenIf }
   then        { TokenThen }
   else        { TokenElse }
+  'fold['     { TokenFold  }
+  'eq['       { TokenEqEq  }
   
 %right '->'
   
@@ -139,6 +143,8 @@ Term :: { RawTerm }
   | fun Bindings '->' Term            { TLam $2 $4 }
   | fix Bindings '->' Term            { TFix $2 $4 }
   | let name '=' Term in Term         { TLet $2 $4 $6 }
+  | 'eq[' Type ']'                    { TEq $2 }
+  | 'fold[' Type ']'                  { TFold $2 }
   | match Term with Matches end       { TCase $2 $4 }
   | if Term then Term else Term       { TCase $2 [ TAlt ["True"] $4
                                                  , TAlt ["False"] $6] }
@@ -288,6 +294,12 @@ parseRawBind (TBind label raw_ty) = do
   return (Bind label ty)
 
 parseRawTerm :: RawTerm -> ParserMonad m Term
+parseRawTerm (TFold raw_ty) = do
+  Fun (Base ind) res_ty <- parseRawType raw_ty
+  return (buildFold ind res_ty)
+parseRawTerm (TEq raw_ty) = do
+  Base ind <- parseRawType raw_ty
+  return (buildEq ind)
 parseRawTerm (TVar var) = 
   lookupTerm var
 parseRawTerm (TAbsurd rty) = do
@@ -369,12 +381,14 @@ data Token
   | TokenIf
   | TokenThen
   | TokenElse
+  | TokenFold
+  | TokenEqEq
   
 happyError :: [Token] -> a
 happyError tokens = error $ "Parse error\n" ++ (show tokens)
 
 isNameChar :: Char -> Bool
-isNameChar c = isAlphaNum c || c `elem` "'_[]"
+isNameChar c = isAlphaNum c || c `elem` "'_"
   
 lexer :: String -> [Token]
 lexer [] = []
@@ -390,14 +404,16 @@ lexer ('_':'|':'_':cs) = TokenAbsurd : lexer cs
 lexer (':':cs) = TokenTypeOf : lexer cs
 lexer ('(':cs) = TokenOP : lexer cs
 lexer (')':cs) = TokenCP : lexer cs
+lexer ('[':cs) = TokenOS : lexer cs
+lexer (']':cs) = TokenCS : lexer cs
 lexer ('|':cs) = TokenBar : lexer cs
 lexer ('=':cs) = TokenEq : lexer cs
 lexer ('\"':cs) = TokenName name : lexer rest
   where
-  (name, '\"':rest) = span (not . (== '\"')) cs
+  (name, '\"':rest) = span (/= '\"') cs
 lexer ('{':cs) = TokenName ("{" ++ name ++ "}") : lexer rest
   where
-  (name, '}':rest) = span (not . (== '}')) cs
+  (name, '}':rest) = span (/= '}') cs
 lexer (c:cs) 
   | isSpace c = lexer cs
   | isNameChar c = lexVar (c : cs)
@@ -418,6 +434,8 @@ lexer (c:cs)
       ("end", rest) -> TokenEnd : lexer rest
       ("prop", rest) -> TokenProp : lexer rest
       ("forall", rest) -> TokenAll : lexer rest
+      ("fold", '[':rest) -> TokenFold : lexer rest
+      ("eq", '[':rest) -> TokenEqEq : lexer rest
       (name, rest) -> TokenName name : lexer rest
 lexer cs = error $ "Unrecognized symbol " ++ take 1 cs
 
@@ -446,6 +464,8 @@ instance Show Token where
   show TokenIf = "if"
   show TokenThen = "then"
   show TokenElse = "else"
+  show TokenFold = "fold["
+  show TokenEqEq = "eq["
   show (TokenInj n) = "inj" ++ show n
   
   showList = (++) . intercalate " " . map show

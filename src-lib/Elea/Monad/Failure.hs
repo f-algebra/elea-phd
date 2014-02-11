@@ -2,7 +2,8 @@
 -- Requires qualified import (usually as "Fail").
 module Elea.Monad.Failure (
   Can (..), when, unless, toMaybe, withDefault, assert, choose,
-  success, successM, catchWith, fromEither, has, fromMaybe, mapLookup
+  success, successM, catchWith, fromEither, has, fromMaybe, mapLookup,
+  concatTransforms
 ) where
 
 import Prelude ()
@@ -17,7 +18,7 @@ class Monad m => Can m where
   here :: m a
   
   -- | If the given computation has failed, return 'Nothing' (and succeed),
-  -- otherwise return the value of the original computation.
+  -- otherwise return 'Just' the value of the original computation.
   catch :: m a -> m (Maybe a)
   
 
@@ -138,4 +139,31 @@ instance Monad Monoid.First where
 instance Can Monoid.First where
   here = Monoid.First mzero
   catch = Monoid.First . catch . Monoid.getFirst
+  
+
+-- | See the definition of @mappend@ to 
+-- understand how the /transformation/ monoid works.
+newtype Transform m a
+  = Transform { runTransform :: a -> m a }
+
+concatTransforms :: Can m => [a -> m a] -> a -> m a
+concatTransforms = runTransform . concat . map Transform
+  
+instance Can m => Monoid (Transform m a) where
+  -- An alternative identity element would be:
+  -- > mempty = Transform return
+  mempty = Transform (\_ -> here)
+  
+  Transform f `mappend` Transform g = Transform fg
+    where
+    fg x = do
+      mby_fx <- catch (f x)
+      case mby_fx of
+        Nothing -> g x
+        Just fx -> do
+          mby_gfx <- catch (g fx)
+          -- If f succeeded then f ++ g succeeded
+          case mby_gfx of
+            Nothing -> return fx
+            Just gfx -> return gfx
 

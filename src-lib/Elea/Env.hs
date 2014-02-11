@@ -98,7 +98,7 @@ instance Write m => Fold.FoldableM m Term where
     distAltM (Alt' bs (mt, _)) alt_n = do
       t <- id
         . bindMany bs
-        . matched (Indices.liftMany (nlength bs) cse_t) pat
+        . matched (Indices.liftMany (length bs) cse_t) pat
         $ mt
       return (Alt' bs t)
       where
@@ -159,19 +159,19 @@ instance Indexed Term where
 instance Indexed Alt where
   free (Alt bs alt_t) = id
     -- Drop the remaining variables to their value outside of the alt bindings
-    . Set.map (Indices.lowerMany (elength bs))
+    . Set.map (Indices.lowerMany (length bs))
     -- Take the free variables of the term, minus those bound by the alt
     $ Indices.free alt_t `Set.difference` not_free
     where
     not_free :: Set Index
-    not_free = Set.fromList [0..elength bs - 1]
+    not_free = Set.fromList (map enum [0..length bs - 1])
     
   shift f (Alt bs alt_t) = 
     Alt bs (Indices.shift f' alt_t)
     where
     -- The first index not bound by the alt
     min_idx :: Index
-    min_idx = elength bs
+    min_idx = length bs
     
     -- The shifting function, altered to be within the alt bindings
     f' idx 
@@ -499,14 +499,14 @@ instance Unifiable Term where
       return mempty
     uni (Case ind1 t1 alts1) (Case ind2 t2 alts2) = do
       Fail.when (ind1 /= ind2) 
-      Fail.assert (length alts1 == length alts2)
+      Fail.assert (length alts1 == (length alts2 :: Int))
       ut <- uni t1 t2
       ualts <- zipWithM uniAlt alts1 alts2
       Unifier.unions (ut:ualts) 
       where
       uniAlt :: Alt -> Alt -> TrackIndicesT Index m (Unifier Term)
       uniAlt (Alt bs1 t1) (Alt bs2 t2) =
-        liftTrackedMany (nlength bs1) (uni t1 t2)
+        liftTrackedMany (length bs1) (uni t1 t2)
     uni _ _ = Fail.here 
     
   apply uni = id

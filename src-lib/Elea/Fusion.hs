@@ -28,7 +28,22 @@ import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
 
 run :: (Defs.Read m, Env.Read m) => Term -> m Term
-run term = do
+run = runSteps (fission_steps ++ fusion_steps)
+  where
+  fusion_steps =
+    [ const Fail.here
+    , Fold.rewriteOnceM repeatedArg
+    , Fold.rewriteOnceM fixfix
+    , mapMaybeT Env.trackMatches . Fold.rewriteOnceM matchFix
+    ]
+   
+  fission_steps = 
+    map Fold.rewriteOnceM Fission.steps
+    
+    
+runSteps :: (Defs.Read m, Env.Read m) => 
+    [Term -> MaybeT m Term] -> Term -> m Term
+runSteps steps term = do
   -- Make sure the term has had all non-fixpoint based simplifications run
   -- before we try the more advanced fixpoint based one, some of which rely
   -- on the term being in some normal form 
@@ -40,17 +55,15 @@ run term = do
   mby_term'' <- id
     . runMaybeT 
     . Fail.choose 
-    $ map ($ term') (fission_steps ++ fusion_steps)
+    $ map ($ term') steps
   
   maybe (return term') run mby_term''
+  
+runMatchFix :: (Defs.Read m, Env.Read m) => Term -> m Term
+runMatchFix = runSteps (fission_steps ++ [match_fix])
   where
-  fusion_steps =
-    [ const Fail.here
-    , Fold.rewriteOnceM repeatedArg
-    , Fold.rewriteOnceM fixfix
-    , mapMaybeT Env.trackMatches . Fold.rewriteOnceM matchFix
-    ]
-   
+  match_fix = 
+    mapMaybeT Env.trackMatches . Fold.rewriteOnceM matchFix
   fission_steps = 
     map Fold.rewriteOnceM Fission.steps
 
@@ -159,7 +172,6 @@ fixfix oterm@(App ofix@(Fix {}) oargs) = id
     extract other = 
       return other
       
-  
 fixfix _ = Fail.here
 
 
@@ -221,7 +233,18 @@ matchFix outer_t@(App fix@(Fix fix_info fix_b fix_t) args) = do
   
   matches <- Env.findMatches usefulMatch
   result_ty <- Type.get outer_t
-  Fail.choose (map (fuseMatch result_ty) matches)
+  
+  -- We try to apply match-fix fusion once
+  fused_t <- id
+    . Fail.choose 
+    $ map (fuseMatch result_ty) matches
+  
+  -- If we have managed to remove the fixpoint 
+  -- then match-fix fusion has succeeded. 
+  -- Otherwise we try running it again.
+  if (not . isFix . leftmost) fused_t
+  then return fused_t
+  else matchFix fused_t
   where
   dec_args = id
     . Set.fromList
@@ -241,10 +264,6 @@ matchFix outer_t@(App fix@(Fix fix_info fix_b fix_t) args) = do
       $ Term.decreasingArgs m_fix
   usefulMatch _ = False
   
-  -- The inner simplification used in match fix fusion
-  simplify :: Context -> Index -> Term -> m Term
-  simplify _ _ = Simp.run
-  
   -- Fuse a pattern match into the outer fixpoint
   fuseMatch :: Type -> (Term, Term) -> m Term
   fuseMatch result_ty (match_t, leftmost -> Con ind con_n) 
@@ -261,19 +280,65 @@ matchFix outer_t@(App fix@(Fix fix_info fix_b fix_t) args) = do
       -- If we haven't matched this term to anything yet within the fixpoint
       -- then we can apply fusion to the context constraining @match_t@ to
       -- have the constructor at @con_n@
-      context <- Term.constraint match_t con_n result_ty
-      -- Appending contexts composes them in the natural way
-      Fix.fusion simplify (context ++ args_ctx) fix'
+      Fix.fusion simplify full_ctx fix'
     where
     cons = Type.unfold ind
-    match_fix_info = fixInfo (leftmost match_t)
+    App match_fix match_args = match_t
+    match_t' = App (addFixInfo fix_info match_fix) match_args
+    
     args_ctx = Context.make (\t -> app t args)
+    match_ctx = Term.constraint match_t' ind con_n result_ty
+    -- Appending contexts composes them in the natural way
+    full_ctx = match_ctx ++ args_ctx
     
     -- The new fused matches are all fused matches of the original fix,
     -- those of the match we are fusing in, and the match itself.
     -- 'FixInfo' is a monoid, so we can use append here.
-    fix_info' = fix_info ++ match_fix_info ++ (FixInfo [(match_t, con_n)])
+    fix_info' = fix_info ++ fixInfo match_fix ++ (FixInfo [(match_t, con_n)])
     fix' = Fix fix_info' fix_b fix_t
+    
+    -- The inner simplification used in match fix fusion
+    simplify :: Context -> Index -> Term -> m Term
+    simplify ctx fix_f term = do
+      term' <- Simp.run term
+      return
+        . Env.trackIndices fix_f
+        $ Fold.transformM expressPattern term'
+      where
+      orig_term = Context.apply ctx (Var fix_f)
+      
+      expressPattern :: Term -> Env.TrackIndices Index Term
+      expressPattern (Case ind cse_t alts) 
+        -- If we have found a pattern match which unifies with the original
+        -- match context then we should express it at recursive calls to the
+        -- function
+        | Unifier.exists match_t cse_t = do
+          fix_f <- Env.tracked
+          let alt_t' = id
+                . Env.trackIndices (fix_f, cse_t)
+                . Env.liftTrackedMany (length alt_bs)
+                $ Fold.transformM express alt_t
+              alts' = l_alts ++ (Alt alt_bs alt_t' : r_alts)
+          return (Case ind cse_t alts')
+        where
+        (l_alts, Alt alt_bs alt_t : r_alts) = splitAt (enum con_n) alts
+        
+        express :: Term -> Env.TrackIndices (Index, Term) Term
+        express term@(App (Var f) args) = do
+          (fix_f, cse_t) <- Env.tracked
+          let cse_ctx = Term.constraint cse_t ind con_n result_ty
+              term' = Context.apply cse_ctx term
+          -- We only need to express the constraint if it can be unified with
+          -- the original constraint, and hence could be replaced by fusion.
+          if fix_f == f 
+            && Unifier.exists orig_term term'
+          then return term'
+          else return term
+        express other = 
+          return other
+          
+      expressPattern other = 
+        return other
         
 matchFix _ = Fail.here
 
