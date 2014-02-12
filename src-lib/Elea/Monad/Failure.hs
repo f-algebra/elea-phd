@@ -1,10 +1,13 @@
 -- | Constructing and using computations which can fail.
 -- Requires qualified import (usually as "Fail").
-module Elea.Monad.Failure (
+module Elea.Monad.Failure 
+(
   Can (..), when, unless, toMaybe, withDefault, assert, choose,
   success, successM, catchWith, fromEither, has, fromMaybe, mapLookup,
-  concatTransforms
-) where
+  concatTransforms,
+  whenM, unlessM
+)
+where
 
 import Prelude ()
 import Elea.Prelude hiding ( catch, when, unless, fromMaybe, assert )
@@ -29,6 +32,10 @@ when = flip Prelude.when here
 -- | The computation fails if the argument is 'False'.
 unless :: Can m => Bool -> m ()
 unless = when . not
+
+whenM, unlessM :: Can m => m Bool -> m ()
+whenM = join . liftM when
+unlessM = join . liftM unless
 
 fromEither :: Can m => Either a b -> m b
 fromEither (Left _) = here

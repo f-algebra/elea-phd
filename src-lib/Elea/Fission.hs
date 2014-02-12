@@ -184,7 +184,7 @@ constructorFission fix@(Fix _ fix_b fix_t) = do
           -- to the function that will be supplied at the gap.
           gap_t = id
             . app gap_f
-            . map (Var . enum) 
+            . map (Var . toEnum) 
             $ reverse [0..length arg_bs - 1]
             
     suggest _ = 

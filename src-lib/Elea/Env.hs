@@ -19,7 +19,7 @@ module Elea.Env
   
   TrackOffset, TrackOffsetT,
   trackOffset, trackOffsetT,
-  offset, liftByOffset, lowerByOffset,
+  offset, liftByOffset, lowerByOffset, lowerableByOffset,
   
   bind, bindMany,
   isoFree, isoShift,
@@ -225,7 +225,10 @@ liftTracked = liftTrackedMany 1
 instance Tracks r m => Tracks r (MaybeT m) where
   tracked = Trans.lift tracked
   liftTrackedMany n = mapMaybeT (liftTrackedMany n)
-
+  
+instance (Monoid w, Tracks r m) => Tracks r (WriterT w m) where
+  tracked = Trans.lift tracked
+  liftTrackedMany n = mapWriterT (liftTrackedMany n)
   
 -- Place 'AlsoTrack' over the top of a 'Write' environment monad.
 -- 'AlsoTrack' will capture all changes to the environment and pass them
@@ -310,6 +313,9 @@ liftByOffset x = liftM (flip Indices.liftMany x) offset
 
 lowerByOffset :: (Enum e, Tracks e m, Indexed a) => a -> m a
 lowerByOffset x = liftM (flip Indices.lowerMany x) offset
+
+lowerableByOffset :: (Enum e, Tracks e m, Indexed a) => a -> m Bool
+lowerableByOffset x = liftM (flip Indices.lowerableBy x) offset 
 
 newtype TrackMatches m a
   = TrackMatches { runTrackMatches :: ReaderT [(Term, Term)] m a }
@@ -444,7 +450,7 @@ instance (Show Term, Write m) => Write (TrackSmallerTermsT m) where
       Smaller than set'
       where
       set' | term == than = set ++ rec_args
-           | term `Set.member` set = Set.insert term (set ++ rec_args)
+           | term `Set.member` set = Set.insert with (set ++ rec_args)
            | otherwise = set
 
         

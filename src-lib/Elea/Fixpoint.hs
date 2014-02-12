@@ -72,12 +72,20 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   simp_s <- Env.bindMany (reverse (fix_b:free_var_bs)) (showM simplified_t)
   let s2 = "\nSIMPLIFIED:\n" ++ simp_s
   
+  -- Before we can replace we need to revert any pattern matches
+  -- over the recursive function call, 
+  -- as this will rewrite the term we are replacing
+  let reverted_t = id
+        -- DEBUG
+        . trace s2
+        . Env.trackIndices 0
+        . Term.revertMatchesWhenM isInnerFixMatch
+        $ simplified_t
+    
+  
   -- The new fix body with every occurrence of the context composed
   -- with the old fix variable replaced with the new fix variable
   let replaced_t = id 
-        -- DEBUG
-        . trace s2
-  
         -- Now replace all occurrences of the outer context 
         -- composed with omega (the old fix variable)
         . Env.trackOffset
@@ -85,28 +93,35 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
         
         -- We replace all occurrences of the old fix variable with omega
         . Indices.substAt 0 (Var Indices.omega)
-        $ simplified_t
+        $ reverted_t
         
   -- Our shiny new function
-  let new_fix = id
+  let new_fix_body = id
+        -- Put the recursive calls back in
+        . Indices.substAt Indices.omega (Indices.lift inner_fix)
+        . Term.unflattenLam (reverse free_var_bs) 
+        $ replaced_t
+      new_fix =
         -- We keep the fixpoint information of the inner fixpoint.
         -- So far it only stored fused matches, and these will continue to
         -- be applicable after a fusion step (I'm pretty sure...).
-        . Fix fix_info new_fix_b
-        . Term.unflattenLam (reverse free_var_bs)
-        $ replaced_t
+        Fix fix_info new_fix_b new_fix_body
         
   -- DEBUG
   rep_s <- showM new_fix
   let s3 = "\nREPLACED:" ++ rep_s
   
-  -- Fusion has failed if any occurrences of the old fix variable remain
-  Fail.when                                                      
+  -- Fusion has failed if we do not recurse as much as the original function,
+  -- unless all recursive occurrences have been removed.
+  -- Seems to be a good heuristic, but this is just evidence based.
+  let old_rc = Term.occurrences (Var 0) fix_t
+      new_rc = Term.occurrences (Var 0) new_fix_body
+      rem_rc = Term.occurrences (Var Indices.omega) replaced_t
+  Fail.unless                                                      
     -- DEBUG
    -- . trace (s1 ++ s2 ++ s3)
-     . trace s3
-    
-    $ Indices.containsOmega replaced_t
+    . trace s3
+    $ rem_rc == 0 || new_rc >= old_rc
     
   new_term <- id
     . Simp.run
@@ -125,11 +140,17 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
     . sort
     . toList 
     $ Indices.free orig_t
-  new_vars = map (Var . enum) [0..length free_vars - 1]
+  new_vars = map (Var . toEnum) [0..length free_vars - 1]
   
   -- Replace all free variables with fresh new variables
   fix_t' = rebindVars fix_t
   outer_ctx' = rebindVars (Indices.lift outer_ctx)
+  
+  isInnerFixMatch :: Term -> Env.TrackIndices Index Bool
+  isInnerFixMatch (App (Var f) _ ) = do
+    f_var <- Env.tracked
+    return (f == f_var)
+  isInnerFixMatch _ = return False
   
   rebindVars :: (Substitutable a, Inner a ~ Term) => a -> a
   rebindVars = id
@@ -285,7 +306,7 @@ invention simplify
   -- We are inventing a fold function and inventCase discovers each of
   -- the fold parameters
   fold_cases <-
-    mapM (inventCase f_ty g_ty . enum) [0..length cons - 1]
+    mapM (inventCase f_ty g_ty . toEnum) [0..length cons - 1]
   
   let fold_f = Term.buildFold ind_ty g_ty
   fold <- Simp.run (app fold_f fold_cases)
@@ -368,7 +389,9 @@ invention simplify
         -- Lower the indices in the discovered function to be valid 
         -- outside this point in the term. 
         -- Remember we have descended into a term to collect equations.
-        Env.lowerByOffset func
+        offset <- Env.offset
+        Fail.unless (Indices.lowerableBy offset func)
+        return (Indices.lowerMany offset func)
       where
       Type.Base ind@(Type.Ind _ cons) = f_ty
       left_f:left_args = Term.flattenApp left_t
@@ -408,44 +431,80 @@ invention simplify
     caseFunction _ = 
       Fail.here
       
+    
+-- | This is like 'Maybe' 'Bool' but with a distinctive monoid instance.
+-- It characterises a proof in which all parts must be true for it to be true,
+-- but only one part need be false for it to be false.
+data InjectiveEquality 
+  = Equal
+  | Unequal
+  | Unknown
+  
+instance Monoid InjectiveEquality where
+  mempty = Equal
+  
+  Equal   `mappend` Equal   = Equal
+  Unequal `mappend` _       = Unequal
+  _       `mappend` Unequal = Unequal
+  _       `mappend` _       = Unknown
+  
+equalityToBool :: Fail.Can m => InjectiveEquality -> m Bool
+equalityToBool Unknown = Fail.here
+equalityToBool Equal = return True
+equalityToBool Unequal = return False
+  
       
 -- | Checks (using induction by fusion) whether two terms are equal. 
 -- Assumes both terms have already been simplified.
--- Unfinished.
 isEqual :: forall m . (Env.Read m, Defs.Read m, Fail.Can m)
   -- | A simplification function to be called within proving.
   => (Term -> m Term)
   -> Term
   -> Term
   -> m Bool
-isEqual _ (Var x) (Var y) = do
-  Fail.unless (x == y)
-  return True
-  
--- If both sides are constructors...
-isEqual simp 
-    (flattenApp -> Con _ n : l_args) 
-    (flattenApp -> Con _ m : r_args) = do
-  if n /= m
-  then return False
-  else do
-    args_eq <- zipWithM (isEqual simp) l_args r_args
-    return (and args_eq)
+isEqual simplify t1 t2 = do
+  eq <- injEqual t1 t2
+  equalityToBool eq
+  where 
+  injEqual :: Term -> Term -> m InjectiveEquality
 
--- If one side is constructor shaped and the other isn't
--- then we cannot decide equality.
-isEqual _ (leftmost -> Con {}) _ = Fail.here
-isEqual _ _ (leftmost -> Con {}) = Fail.here
-
--- If both sides are the application of a function
--- we can unroll those functions and check equality inductively
-isEqual simp  
-    (flattenApp -> Fix _ fix_b1 fix_t1 : args1) 
-    (flattenApp -> Fix _ fix_b2 fix_t2 : args2) = do
-  Fail.here
-  where
-  term1 = app (Indices.liftAt 1 fix_t1) (map (Indices.liftMany 2) args1)
-  term2 = app (Indices.lift fix_t2) (map (Indices.liftMany 2) args2)
+  injEqual (Var x) (Var y)
+    | x == y = return Equal
+    | otherwise = return Unknown
+    
+  -- If both sides are constructors check they are the same constructor and that
+  -- every argument is equal
+  injEqual 
+      (flattenApp -> Con _ n : l_args) 
+      (flattenApp -> Con _ m : r_args) = do
+    if n /= m
+    then return Unequal
+    else do
+      args_eq <- zipWithM injEqual l_args r_args
+      -- Because constructors are injective we can use the concatenate
+      -- of our injective equality to conjoin the equality of each argument.
+      return (mconcat args_eq)
   
-isEqual _ _ _ = Fail.here
+  -- If one side is constructor shaped and the other isn't
+  -- then we cannot decide equality.
+  injEqual (leftmost -> Con {}) _ = return Unknown
+  injEqual _ (leftmost -> Con {}) = return Unknown
+  
+  -- If both sides are the application of a function
+  -- we can unroll those functions and check equality inductively
+  injEqual
+      (flattenApp -> Fix _ fix_b1 fix_t1 : args1) 
+      (flattenApp -> Fix _ fix_b2 fix_t2 : args2) = do
+    eq <- Term.equation term1 term2
+    eq_simp <- simplify eq
+    undefined
+    where
+    term1 = app (Indices.liftAt 1 fix_t1) (map (Indices.liftMany 2) args1)
+    term2 = app (Indices.lift fix_t2) (map (Indices.liftMany 2) args2)
+    
+    solveEquation :: Term -> m Bool
+    solveEquation _ = return False
+    
+  injEqual _ _ = 
+    return Unknown
     

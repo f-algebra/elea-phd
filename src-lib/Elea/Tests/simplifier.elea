@@ -53,3 +53,17 @@ prop "always true": forall (n m: nat) ->
   always_true n m
  
 
+let is_sorted2 = 
+  fix (srtd: nlist -> bool) (xs: nlist) ->
+    match xs with
+    | Nil -> True
+    | Cons y ys ->
+      match ys with
+      | Nil -> srtd Nil
+      | Cons z zs -> and (leq_nat y z) (srtd ys)
+      end
+    end
+  
+prop "unfold within fix": forall (xs: nlist) ->
+  is_sorted xs = is_sorted2 xs
+

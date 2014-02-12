@@ -26,6 +26,7 @@ tests = Test.label "Terms"
   let (_, App add_fix@(Fix {}) _) = flattenLam add
   
   nat_leq <- Test.term "leq_nat"
+  srtd_fix <- Test.term "is_sorted"
   
   one <- Test.term "1"
   Lam _ x_list <- Test.term "fun (x: nat) -> Cons x Nil"
@@ -33,6 +34,7 @@ tests = Test.label "Terms"
    
   let dec1 = Test.assertEq [0] (decreasingArgs add_fix)
       dec2 = Test.assertEq [0, 1] (decreasingArgs nat_leq)
+      dec3 = Test.assertEq [0] (decreasingArgs srtd_fix)
       
       fin1 = Test.assert (isFinite one)
       fin2 = Test.assert (isFinite x_list)
@@ -93,7 +95,7 @@ tests = Test.label "Terms"
       eq4 = Test.assertEq eq_unit' eq_unit 
       
   return $ Test.list $
-    [ dec1, dec2
+    [ dec1, dec2, dec3
     , fin1, fin2, fin3 
     , fold1, fold2
     , prod1, prod2, prod3

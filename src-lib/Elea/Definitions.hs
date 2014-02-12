@@ -78,7 +78,7 @@ dbTermName term (get dbTermNames -> name_list) = do
   -- Every free variable needs to have been bound, so we just check the 
   -- sorted list of indices is equal to the list of all indices
   let uni_list = sort (Map.toList uni)
-  Fail.unless (map (enum . fst) uni_list == [0..length uni_list - 1])
+  Fail.unless (map (fromEnum . fst) uni_list == [0..length uni_list - 1])
   
   let arg_list = id
         . map (Indices.lowerMany large_number)

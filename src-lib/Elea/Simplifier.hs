@@ -42,6 +42,7 @@ steps = Eval.steps ++
   , propagateVarMatch
   , raiseVarCase
   , unfoldCaseFix 
+  , unfoldWithinFix
   ]
   where
   -- Transformation steps do not require sub terms to be rewritten upon success.
@@ -262,15 +263,34 @@ uselessFix _ = Fail.here
 
 -- | Unfolds a 'Fix' if one of its arguments is a constructor term.
 unfoldFixInj :: Fail.Can m => Term -> m Term
-unfoldFixInj term@(App fix@(Fix {}) args)
-  | any isConArg (Term.decreasingArgs fix) = 
+unfoldFixInj term@(App fix@(Fix _ _ fix_t) args)
+  | any isSafeConArg (Term.decreasingArgs fix) = 
     return (Eval.run (app (Term.unfoldFix fix) args))
   where
   -- Check whether an argument is a constructor, and does not unify
   -- with any recursive calls the function itself makes (TODO).
-  isConArg :: Int -> Bool
-  isConArg arg_i = isCon . leftmost $ args !! arg_i
+  isSafeConArg :: Int -> Bool
+  isSafeConArg arg_i =
+    isCon (leftmost arg) && not any_unify
+    where
+    arg = args !! arg_i
+    
+    any_unify = id
+      . Env.trackIndices 0
+      $ Fold.anyM unifies fix_t
+      where
+      unifies :: Term -> Env.TrackIndices Index Bool
+      unifies (App (Var f) args') = do
+        f_var <- Env.tracked
+        return (f == f_var && uni_exists)
+        where
+        arg' = args' !! arg_i
+        uni_exists = Unifier.exists arg arg'
+      unifies _ =
+        return False
+        
 unfoldFixInj _ = Fail.here
+
 
 -- | If we pattern match inside a 'Fix', but only using variables that exist
 -- outside of the 'Fix', then we can float this pattern match outside
@@ -420,3 +440,30 @@ constantFix (Fix _ fix_b fix_t)
         
 constantFix _ = 
   Fail.here
+  
+  
+-- | Unfolds a 'Fix' within itself if it can be unrolled at
+-- at a point it is called recursively.
+unfoldWithinFix :: Fail.Can m => Term -> m Term
+unfoldWithinFix fix@(Fix fix_i fix_b fix_t) = do
+  Fail.unless any_replaced
+  return (Fix fix_i fix_b fix_t')
+  where
+  (fix_t', Monoid.Any any_replaced) = id
+    . Env.trackIndices (0, fix_t)
+    . runWriterT
+    $ Fold.transformM unfold fix_t
+  
+  unfold :: Term -> WriterT Monoid.Any (Env.TrackIndices (Index, Term)) Term
+  unfold term@(App (Var f) args) = do
+    (fix_f, fix_t) <- Env.tracked
+    if f /= fix_f || any (not . Term.isFinite) args
+    then return term
+    else do
+      tell (Any True)
+      (_, fix_t) <- Env.tracked
+      return (Eval.run (app fix_t args))
+  unfold other = 
+    return other
+  
+unfoldWithinFix _ = Fail.here

@@ -2,7 +2,7 @@ module Elea.Type
 (
   Type (..), Ind (..), ConArg (..), Bind (..),
   name, constructors, boundLabel, boundType, 
-  empty, unit, pair, bool,
+  empty, unit, pair, bool, equation,
   returnType,
   isInd, isFun, fromBase,
   unflatten, flatten, unfold,
@@ -25,7 +25,7 @@ data ConArg
   | ConArg !Type
   deriving ( Eq, Ord )
  
--- | /Ind/uctive type
+-- | @Ind@uctive type
 data Ind 
   = Ind   { _name :: !String
           , _constructors :: ![(String, [ConArg])] }
@@ -77,6 +77,14 @@ pair a b =
   Ind name [("pair", [ConArg a, ConArg b])]
   where
   name = "(" ++ show a ++ ", " ++ show b ++ ")"
+  
+-- | Just like a cartesian product, but with both parts of the same type.
+-- This also has a special display rule in "Elea.Show".
+equation :: Type -> Ind
+equation a = 
+  Ind name [("==", [ConArg a, ConArg a])]
+  where
+  name = "==[" ++ show a ++ "]"
 
 bool :: Ind
 bool = Ind "bool" [("True", []), ("False", [])]

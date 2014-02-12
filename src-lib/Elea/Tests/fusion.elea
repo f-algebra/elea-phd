@@ -48,11 +48,13 @@ prop "eq_nat transitive": forall (i j k: nat) ->
 prop "leq_nat transitive": forall (i j k: nat) ->
   implies (and (leq_nat i j) (leq_nat j k)) (leq_nat i k)
   
+prop "leq_nat total": forall (n m: nat) ->
+  implies (not (leq_nat n m)) (leq_nat m n)
+  
   
 prop "filter reverse": forall (p: nat -> bool) (xs: nlist) ->
   reverse (filter p xs) = filter p (reverse xs)
 
-/*
 prop "insertsort sorted": forall (xs: nlist) ->
   is_sorted (insertsort xs)
-*/
+

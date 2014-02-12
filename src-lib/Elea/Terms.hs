@@ -11,9 +11,14 @@ module Elea.Terms
   applyCase,
   generaliseArgs,
   pair,
+  equation,
   constraint,
   isProductive,
   isFiniteMatch,
+  revertMatchesWhenM, 
+  revertMatchesWhen, 
+  revertMatches,
+  occurrences,
 )
 where
 
@@ -211,6 +216,12 @@ pair left right = do
   right_ty <- Type.get right
   let pair_ind = Type.pair left_ty right_ty
   return (app (Con pair_ind 0) [left, right])
+ 
+equation :: (Defs.Read m, Env.Read m) => Term -> Term -> m Term
+equation left right = do
+  ty <- Type.get left
+  let eq_ind = Type.equation ty
+  return (app (Con eq_ind 0) [left, right])
   
       
 -- | Create a constraint context. For example:
@@ -276,3 +287,44 @@ isFiniteMatch ind = and . zipWith recArgsUsed [0..]
     rec_args = Set.fromList (Type.recursiveArgIndices ind n)
     
 
+-- | Reverting a pattern match is to replace the pattern it was matched to
+-- with the term that was matched.
+-- > revertMatches (match n with | 0 -> 0 | Suc x' -> Suc x' end)
+-- >   = match n with | 0 -> 0 | Suc x' -> n end
+-- TODO revert all matches over variables of the pattern first, otherwise
+-- this function will only work for single depth matches
+revertMatchesWhenM :: forall m . Env.Write m 
+  -- | A predicate that will be passed terms matched upon to ask whether
+  -- they should be reverted
+  => (Term -> m Bool) 
+  -> Term 
+  -> m Term
+revertMatchesWhenM when = Fold.transformM revert
+  where
+  revert term@(Case ind cse_t alts) = do
+    here <- when cse_t
+    if not here
+    then return term
+    else do
+      let alts' = zipWith revertAlt [0..] alts
+      return (Case ind cse_t alts')
+    where
+    revertAlt n alt
+      | Type.isBaseCase ind n = alt
+    revertAlt n (Alt bs alt_t) = 
+      Alt bs alt_t'
+      where
+      cse_t' = Indices.liftMany (length bs) cse_t
+      alt_t' = replace (altPattern ind n) cse_t' alt_t
+  revert other = 
+    return other
+    
+revertMatchesWhen :: (Term -> Bool) -> Term -> Term
+revertMatchesWhen when = runIdentity . revertMatchesWhenM (return . when)
+    
+revertMatches :: Term -> Term
+revertMatches = revertMatchesWhen (const True)
+
+-- | Return the number of times a given subterm occurs in a larger term.
+occurrences :: Term -> Term -> Int
+occurrences t = Env.trackIndices t . Fold.countM (\t -> Env.trackeds (== t))
