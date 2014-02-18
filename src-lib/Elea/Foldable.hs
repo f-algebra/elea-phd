@@ -7,7 +7,7 @@ module Elea.Foldable
   isoFindM, isoAnyM, isoAllM, isoRewriteOnceM, isoFoldM,
   isoRewrite, isoTransform, isoFind, isoRewriteM',
   rewriteM, foldM, rewriteOnceM, collectM, isoCollectM,
-  allM, findM, anyM, any, all, isoFold, isoAny, find,
+  allM, findM, anyM, any, all, isoFold, isoAny, isoAll, find,
   transform, rewrite, recover,
   rewriteStepsM, rewriteSteps, countM,
   SelectorM, selectiveTransformM, selectAll,
@@ -217,9 +217,10 @@ isoFind :: WriterTransformableM (Monoid.First b) Identity t =>
   Iso a t -> (a -> Maybe b) -> a -> Maybe b
 isoFind iso f = runIdentity . isoFindM iso (return . f) 
 
-isoAny :: WriterTransformableM Monoid.All Identity t =>
+isoAny, isoAll :: WriterTransformableM Monoid.All Identity t =>
   Iso a t -> (a -> Bool) -> a -> Bool
-isoAny iso p = runIdentity . isoAnyM iso (return . p)
+isoAll iso p = runIdentity . isoAllM iso (return . p)
+isoAny iso p = not . isoAll iso (not . p)
   
 transform :: Bifoldable t => (t -> t) -> t -> t
 transform = isoTransform id

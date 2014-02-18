@@ -16,12 +16,16 @@ module Elea.Term
   isCon, isLam, isVar,
   isFix, isAbsurd, isCase,
   isAbsurd',
-  addFixInfo,
+  alreadyFused,
+  addFusedMatches,
+  inductivelyTyped,
   fromVar, 
   conjunction, true, false,
-  matchedTo,
   altPattern, 
+  isSimple,
   isFinite,
+  lowerableAltInner,
+  loweredAltInner,
   buildFold,
   buildEq,
 )
@@ -67,11 +71,11 @@ data Alt
   
 -- | Information stored about fixpoints, to add efficiency.
 data FixInfo
-  = FixInfo { -- | The pattern matches that have been fused into this fixpoint.
-              -- We only store the constructor index of the matched pattern
-              -- since the type can be inferred from the term, and the matched
-              -- variables are always fresh.
-              _fusedMatches :: ![(Term, Nat)] }
+  = FixInfo { -- | The sets of pattern matches that have been unsuccessfully
+              -- fused into this fixpoint.
+              -- Stops match-fix fusion from constantly repeating itself.
+              -- Purely for efficiency, shouldn't affect soundness.
+              _fusedMatches :: !(Set (Set Term)) }
               
 -- Fixpoint information does not change the meaning of a fixpoint, so
 -- it does not effect equality between terms.
@@ -81,13 +85,8 @@ instance Ord FixInfo where
   _ `compare` _ = EQ
   
 instance Monoid FixInfo where
-  mempty = FixInfo []
-  
-  -- Map union is what we are going for here.
-  -- We only store these as lists rather than map
-  -- to allow easier definitions later.
-  FixInfo i1 `mappend` FixInfo i2 = 
-    FixInfo (Map.toList (Map.fromList i1 ++ Map.fromList i2))
+  mempty = FixInfo mempty
+  FixInfo i1 `mappend` FixInfo i2 = FixInfo (i1 ++ i2)
   
 -- | Equations between terms
 data Equation
@@ -202,9 +201,6 @@ isAbsurd' _ = False
 fromVar :: Term -> Index
 fromVar (Var x) = x
 
-addFixInfo :: FixInfo -> Term -> Term
-addFixInfo i' (Fix i b t) = Fix (i ++ i') b t
-
 flattenLam :: Term -> ([Bind], Term)
 flattenLam (Lam b t) = first (b:) (flattenLam t)
 flattenLam t = ([], t)
@@ -222,15 +218,30 @@ leftmost = head . flattenApp
 arguments :: Term -> [Term]
 arguments = tail . flattenApp
 
-matchedTo :: FixInfo -> Term -> Maybe Nat
-matchedTo (FixInfo fused) term = 
-  lookup term fused
+-- | This should maybe be called @fullyApplied@ but it checks whether a fixpoint
+-- has every argument applied to it.
+inductivelyTyped :: Term -> Bool
+inductivelyTyped (App (Fix _ (Bind _ fix_ty) _) args) =
+  Type.argumentCount fix_ty == length args
+
+-- | Whether we have already attempted to fuse this set of terms into
+-- this fixpoint.
+alreadyFused :: FixInfo -> Set Term -> Bool
+alreadyFused (FixInfo fused) = 
+  flip Set.member fused
+  
+-- | Add a set of matches we attempted to fuse into a fixpoint.
+addFusedMatches :: Set Term -> Term -> Term
+addFusedMatches ms (flattenApp -> Fix (FixInfo mss) fix_b fix_t : args) = 
+  app (Fix (FixInfo (Set.insert ms mss)) fix_b fix_t) args
+  
   
 -- | Given an inductive type and a constructor index this will return
 -- a fully instantiated constructor term.
 -- E.g. "altPattern [list] 1 == Cons _1 _0"
 altPattern :: Type.Ind -> Nat -> Term
 altPattern ty@(Type.Ind _ cons) n = id
+  . assert (length cons > n)
   . app (Con ty n)
   . reverse
   . map (Var . enum)
@@ -252,6 +263,22 @@ isFinite (App (Con ind n) args) = id
   . map (args !!)
   $ Type.recursiveArgs ind n
 isFinite _ = False
+
+
+-- | A /simple/ term contains only contructors and variables.
+isSimple :: Term -> Bool
+isSimple (flattenApp -> Con _ _ : args) =
+  all isSimple args
+isSimple (Var _) = True
+isSimple _ = False
+
+lowerableAltInner :: Indexed Term => Alt -> Bool
+lowerableAltInner (Alt bs alt_t) =
+  Indices.lowerableBy (length bs) alt_t
+
+loweredAltInner :: Indexed Term => Alt -> Term
+loweredAltInner (Alt bs alt_t) =
+  Indices.lowerMany (length bs) alt_t
 
 
 -- | Build a fold function. 

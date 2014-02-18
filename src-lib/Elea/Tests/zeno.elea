@@ -1,0 +1,29 @@
+
+prop "prop 1": forall (n: nat) (xs: nlist) ->
+  append (take n xs) (drop n xs) = xs
+  
+prop "prop 3": forall (n: nat) (xs ys: nlist) ->
+  leq_nat (count n xs) (count n (append xs ys))
+
+prop "prop 6": forall (n m: nat) ->
+  minus n (add n m) = 0 
+  
+prop "prop 9": forall (i j k: nat) ->
+  minus (minus i j) k = minus i (add j k)
+  
+prop "prop 26": forall (x: nat) (xs ys: nlist) ->
+  implies (elem x xs) (elem x (append xs ys))
+  
+prop "prop 27": forall (x: nat) (xs ys: nlist) ->
+  implies (elem x ys) (elem x (append xs ys))
+
+prop "prop 30": forall (x: nat) (xs: nlist) ->
+  elem x (insert x xs)
+  
+prop "prop 41": forall (n: nat) (xs: nlist) (f: nat -> nat) ->
+  take n (map f xs) = map f (take n xs)
+  
+prop "prop 47": forall (t: ntree) ->
+  height (mirror t) = height t
+
+  

@@ -5,7 +5,7 @@ MAIN = src-exec/Main.hs
 .PHONY : ghci happy clean
 
 ghci:
-	ghci -fobject-code -O $(FLAGS) $(EXTS) $(MAIN)
+	ghci -fobject-code $(FLAGS) $(EXTS) $(MAIN)
 
 happy:
 	happy src-lib/Elea/Parser.y -o src-lib/Elea/Parser.hs

@@ -9,12 +9,14 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Terms
 import Elea.Type
+import Elea.Show
 import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Testing as Test
 import qualified Elea.Evaluation as Eval
 import qualified Elea.Simplifier as Simp
+import qualified Elea.Fusion as Fusion
 import qualified Elea.Definitions as Defs
 import qualified Data.Set as Set
 
@@ -25,7 +27,7 @@ tests = Test.label "Terms"
   add <- Test.term "add"
   let (_, App add_fix@(Fix {}) _) = flattenLam add
   
-  nat_leq <- Test.term "leq_nat"
+  leq_nat <- Test.term "leq_nat"
   srtd_fix <- Test.term "is_sorted"
   
   one <- Test.term "1"
@@ -33,13 +35,12 @@ tests = Test.label "Terms"
   xs_list <- liftM (\t -> app t [Var 0]) (Test.term "Cons 1")
    
   let dec1 = Test.assertEq [0] (decreasingArgs add_fix)
-      dec2 = Test.assertEq [0, 1] (decreasingArgs nat_leq)
+      dec2 = Test.assertEq [0, 1] (decreasingArgs leq_nat)
       dec3 = Test.assertEq [0] (decreasingArgs srtd_fix)
       
       fin1 = Test.assert (isFinite one)
       fin2 = Test.assert (isFinite x_list)
       fin3 = Test.assertNot (isFinite xs_list)
-      
       
   fold_nat_nat <- Test.term 
     $ "fun (v: nat) (k: nat -> nat) -> "

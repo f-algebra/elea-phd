@@ -108,26 +108,34 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
         Fix fix_info new_fix_b new_fix_body
         
   -- DEBUG
-  rep_s <- showM new_fix
-  let s3 = "\nREPLACED:" ++ rep_s
-  
-  -- Fusion has failed if we do not recurse as much as the original function,
-  -- unless all recursive occurrences have been removed.
-  -- Seems to be a good heuristic, but this is just evidence based.
-  let old_rc = Term.occurrences (Var 0) fix_t
-      new_rc = Term.occurrences (Var 0) new_fix_body
-      rem_rc = Term.occurrences (Var Indices.omega) replaced_t
-  Fail.unless                                                      
-    -- DEBUG
-   -- . trace (s1 ++ s2 ++ s3)
-    . trace s3
-    $ rem_rc == 0 || new_rc >= old_rc
-    
   new_term <- id
     . Simp.run
     . app new_fix 
     . map Var 
     $ reverse free_vars
+  
+  rep_s <- showM new_term
+  let s3 = "\nREPLACED:" ++ rep_s
+  
+  -- Fusion has failed if we do not recurse as much as the original function,
+  -- or all recursive occurrences have been removed.
+  -- Seems to be a good heuristic, but this is just evidence based.
+  let old_rc = functionCalls (Var 0) fix_t
+      new_rc = functionCalls (Var 0) new_fix_body
+      rem_rc = Term.occurrences (Var Indices.omega) replaced_t
+      
+  Fail.unless                                                      
+    -- DEBUG
+    . trace s3
+   -- . trace (s1 ++ s2 ++ s3)
+    $ rem_rc == 0 
+    || new_rc >= old_rc
+    
+    -- Couple of extra ad hoc reasons fusion would have succeeded.
+    -- Trivially sound and terminating so why not.
+    || Term.isAbsurd new_term
+    || Term.isSimple new_term
+    
   
   -- DEBUG
   final_s <- showM new_term
@@ -158,6 +166,23 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
     . reverse
     . zipWith Indices.replaceAt (map Indices.lift free_vars)
     $ map Indices.lift new_vars
+    
+  -- A hacky attempt to detect the number of unique times a function
+  -- is called within a term. Could underestimate.
+  functionCalls :: Term -> Term -> Set Term
+  functionCalls func = id
+    . Env.trackIndices func
+    . Fold.foldM call
+    where
+    call :: Term -> Env.TrackIndices Term (Set Term)
+    call term@(App func' _) = do
+      func <- Env.tracked
+      if func' /= func
+      then return mempty
+      else do
+        let min = minimum (Indices.free term)
+        return (Set.singleton (Indices.lowerMany (enum min) term))
+    call _ = return mempty
   
   -- Replace occurrences of the context applied to the inner
   -- (now uninterpreted) fixpoint variable.
@@ -396,7 +421,9 @@ invention simplify
       Type.Base ind@(Type.Ind _ cons) = f_ty
       left_f:left_args = Term.flattenApp left_t
       Con ind' con_n' = left_f
-      (_, con_args) = cons !! enum con_n
+      (_, con_args) = id
+        . assert (length cons > con_n)
+        $ cons !! enum con_n
       
       -- We move through the constructor arguments backwards, building
       -- up the term one by one.

@@ -73,6 +73,16 @@ let mul =
     | Suc x' -> add y (mul x' y)
     end
 
+let minus = 
+  fix (minus: nat -> nat -> nat) (x y: nat) -> 
+    match y with
+    | 0 -> x
+    | Suc y' ->
+      match x with
+      | 0 -> 0
+      | Suc x' -> minus x' y'
+      end
+    end
 
 ind nlist = Nil | Cons nat nlist
 
@@ -117,6 +127,17 @@ let take =
       | Cons y ys -> Cons y (take n' ys)
       end
     end
+    
+let drop = 
+  fix (drop: nat -> nlist -> nlist) (n: nat) (xs: nlist) ->
+    match n with
+    | 0 -> xs
+    | Suc n' ->
+      match xs with
+      | Nil -> Nil
+      | Cons y ys -> drop n' ys
+      end
+    end
  
 let filter = 
   fun (p: nat -> bool) ->
@@ -127,6 +148,21 @@ let filter =
       if p y
       then Cons y (filter ys)
       else filter ys
+    end
+    
+let map =
+  fun (f: nat -> nat) ->
+  fix (map: nlist -> nlist) (xs: nlist) ->
+    match xs with
+    | Nil -> Nil
+    | Cons y ys -> Cons (f y) (map ys)
+    end
+    
+let elem =
+  fix (elem: nat -> nlist -> bool) (n: nat) (xs: nlist) ->
+    match xs with
+    | Nil -> False
+    | Cons y ys -> or (eq_nat n y) (elem n ys)
     end
     
 let insert = 
@@ -175,4 +211,10 @@ let height =
     | Node t1 x t2 -> Suc (max (height t1) (height t2))
     end
     
+let mirror = 
+  fix (mir: ntree -> ntree) (t: ntree) ->
+    match t with
+    | Leaf -> Leaf 
+    | Node t1 x t2 -> Node (mir t2) x (mir t1)
+    end  
 

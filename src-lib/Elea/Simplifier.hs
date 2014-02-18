@@ -30,8 +30,7 @@ run = Fold.rewriteStepsM (map Type.checkStep steps)
 
 steps :: (Fail.Can m, Env.Read m, Defs.Read m) => [Term -> m Term]
 steps = Eval.steps ++
-  [ const Fail.here 
-  , caseFun
+  [ const Fail.here
   , Fail.concatTransforms transformSteps
   , caseApp
   , appCase
@@ -39,7 +38,7 @@ steps = Eval.steps ++
   , finiteArgFix
   , unfoldFixInj
   , freeCaseFix
-  , propagateVarMatch
+  , propagateMatch
   , raiseVarCase
   , unfoldCaseFix 
   , unfoldWithinFix
@@ -49,12 +48,12 @@ steps = Eval.steps ++
   transformSteps = 
     [ const Fail.here
     , caseFun
+    , constantFix
     , absurdity
     , constArg
     , identityCase
     , uselessFix
-    , constantCase 
-    , constantFix
+    , constantCase
     ] 
 
 -- | Remove arguments to a fixpoint if they never change in 
@@ -234,11 +233,11 @@ constArg _ = Fail.here
 -- | If a fixpoint has a finite input to one of its decreasing arguments
 -- then you can safely unfold it.
 finiteArgFix :: Fail.Can m => Term -> m Term
-finiteArgFix (App fix@(Fix {}) args)
+finiteArgFix term@(App fix@(Fix {}) args)
   | any isFinite dec_args = 
     return (Eval.run (app (Term.unfoldFix fix) args))
   where
-  dec_args = map (args !!) (Term.decreasingArgs fix)
+  dec_args = map (args !!) (Term.decreasingAppArgs term)
 finiteArgFix _ = Fail.here
 
 
@@ -264,11 +263,11 @@ uselessFix _ = Fail.here
 -- | Unfolds a 'Fix' if one of its arguments is a constructor term.
 unfoldFixInj :: Fail.Can m => Term -> m Term
 unfoldFixInj term@(App fix@(Fix _ _ fix_t) args)
-  | any isSafeConArg (Term.decreasingArgs fix) = 
+  | any isSafeConArg (Term.decreasingAppArgs term) = 
     return (Eval.run (app (Term.unfoldFix fix) args))
   where
   -- Check whether an argument is a constructor, and does not unify
-  -- with any recursive calls the function itself makes (TODO).
+  -- with any recursive calls the function itself makes.
   isSafeConArg :: Int -> Bool
   isSafeConArg arg_i =
     isCon (leftmost arg) && not any_unify
@@ -282,7 +281,10 @@ unfoldFixInj term@(App fix@(Fix _ _ fix_t) args)
       unifies :: Term -> Env.TrackIndices Index Bool
       unifies (App (Var f) args') = do
         f_var <- Env.tracked
-        return (f == f_var && uni_exists)
+        return 
+           $ f == f_var 
+          && length args' > arg_i 
+          && uni_exists
         where
         arg' = args' !! arg_i
         uni_exists = Unifier.exists arg arg'
@@ -318,23 +320,25 @@ freeCaseFix fix@(Fix _ _ fix_t) = do
 freeCaseFix _ = Fail.here
 
 
--- | If we pattern match over a variable, we replace all instances of 
--- that variable with the matched pattern down each branch.
-propagateVarMatch :: Fail.Can m => Term -> m Term
-propagateVarMatch (Case ind var@(Var idx) alts) 
-  | idx `Set.member` concatMap Indices.free alts =
-    return (Case ind var (zipWith propagateAlt [0..] alts))
+-- | Replace all instances of a term with the pattern it is matched to.
+propagateMatch :: Fail.Can m => Term -> m Term
+propagateMatch (Case ind cse_t alts) 
+  | any altSubterm alts =
+    return (Case ind cse_t (zipWith propagateAlt [0..] alts))
   where
+  altSubterm (Alt bs alt_t) = 
+    Term.isSubterm (Indices.liftMany (length bs) cse_t) alt_t
+  
   propagateAlt :: Nat -> Alt -> Alt
   propagateAlt n (Alt bs alt_t) = id
     . Alt bs  
     . Eval.run
-    $ Indices.replaceAt idx' alt_p alt_t
+    $ Term.replace cse_t' alt_p alt_t
     where
     alt_p = Term.altPattern ind n
-    idx' = Indices.liftMany (length bs) idx
+    cse_t' = Indices.liftMany (length bs) cse_t
     
-propagateVarMatch _ = Fail.here
+propagateMatch _ = Fail.here
 
 
 -- | Pattern matches over variables should be above those over function

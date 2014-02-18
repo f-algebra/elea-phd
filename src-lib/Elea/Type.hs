@@ -5,7 +5,7 @@ module Elea.Type
   empty, unit, pair, bool, equation,
   returnType,
   isInd, isFun, fromBase,
-  unflatten, flatten, unfold,
+  unflatten, flatten, unfold, argumentCount,
   recursiveArgs, nonRecursiveArgs, recursiveArgIndices,
   isBaseCase, isRecursive, 
 )
@@ -113,6 +113,9 @@ unflatten = foldr1 Fun
 returnType :: Type -> Type
 returnType = last . flatten
 
+argumentCount :: Type -> Int
+argumentCount = pred . length . flatten
+
 unfold :: Ind -> [Bind]
 unfold ind@(Ind _ cons) =
   map unfoldCon cons
@@ -130,8 +133,9 @@ unfold ind@(Ind _ cons) =
     
 -- | Return the positions of the recursive arguments of a given constructor
 recursiveArgs :: Ind -> Nat -> [Int]
-recursiveArgs (Ind _ cons) n =
-  findIndices (== IndVar) con_args
+recursiveArgs (Ind _ cons) n = id
+  . assert (length cons > n)
+  $ findIndices (== IndVar) con_args
   where
   (_, con_args) = cons !! enum n
 
@@ -143,6 +147,7 @@ recursiveArgs (Ind _ cons) n =
 -- > recursiveArgIndices nlist 1 == [0]
 recursiveArgIndices :: Ind -> Nat -> [Index]
 recursiveArgIndices ind@(Ind _ cons) n = id
+  . assert (length cons > n)
   . map enum
   . map (\x -> (arg_count - x) - 1)
   $ recursiveArgs ind n
@@ -152,8 +157,9 @@ recursiveArgIndices ind@(Ind _ cons) n = id
   
 -- | Returns the opposite indices to 'recursiveArgs'
 nonRecursiveArgs :: Ind -> Nat -> [Int]
-nonRecursiveArgs (Ind _ cons) n =
-  findIndices (/= IndVar) con_args
+nonRecursiveArgs (Ind _ cons) n = id
+  . assert (length cons > n)
+  $ findIndices (/= IndVar) con_args
   where
   (_, con_args) = cons !! enum n
   

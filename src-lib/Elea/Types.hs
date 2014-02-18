@@ -180,7 +180,7 @@ typeOf term = id
   ftype (Con' ind_ty n) =
     return
     . Prelude.get boundType
-    . (!! fromEnum n)
+    . (\xs -> debugNth "ftype" xs (fromEnum n))
     $ Type.unfold ind_ty
   ftype (Case' _ _ (Alt' _ (ty, _) : _)) =
     return ty

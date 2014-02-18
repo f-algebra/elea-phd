@@ -57,15 +57,14 @@ runSteps steps term = do
     . Fail.choose 
     $ map ($ term') steps
   
-  maybe (return term') run mby_term''
-  
-runMatchFix :: (Defs.Read m, Env.Read m) => Term -> m Term
-runMatchFix = runSteps (fission_steps ++ [match_fix])
-  where
-  match_fix = 
-    mapMaybeT Env.trackMatches . Fold.rewriteOnceM matchFix
-  fission_steps = 
-    map Fold.rewriteOnceM Fission.steps
+  case mby_term'' of
+    Nothing -> return term'
+    Just term'' -> do
+      ts'' <- showM term''
+      ts' <- showM term'
+      id
+      --  . trace ("\nMAIN LOOP FROM: " ++ ts' ++ "\nINTO: " ++ ts'')
+        $ run term''
 
 
 -- | Uses fixpoint fusion on a fix with a fix as a decreasing argument.
@@ -73,13 +72,16 @@ fixfix :: forall m . (Env.Read m, Fail.Can m, Defs.Read m) =>
   Term -> m Term
 
 -- ofix means "outer fixpoint", oargs is "outer arguments"
-fixfix oterm@(App ofix@(Fix {}) oargs) = id
-  -- Pick the first one which does not fail
-  . Fail.choose
-  -- Run fixfixArg on every decreasing fixpoint argument position
-  . map fixfixArg
-  . filter (Term.isFix . Term.leftmost . (oargs !!))
-  $ Term.decreasingArgs ofix
+fixfix oterm@(App ofix@(Fix {}) oargs) 
+  -- Check this is not a partially applied fixpoint
+  -- since I'm not sure what happens in this case.
+  | Term.inductivelyTyped oterm = id
+    -- Pick the first one which does not fail
+    . Fail.choose
+    -- Run fixfixArg on every decreasing fixpoint argument position
+    . map fixfixArg
+    . filter (Term.isFix . Term.leftmost . (oargs !!))
+    $ Term.decreasingArgs ofix
   where
   -- Run fixfix fusion on the argument at the given position
   fixfixArg :: Int -> m Term
@@ -180,17 +182,18 @@ fixfix _ = Fail.here
 repeatedArg :: forall m . (Env.Read m, Fail.Can m, Defs.Read m) => 
   Term -> m Term
   
-repeatedArg fix_t@(App fix@(Fix {}) args) = id
-  -- Pick the first success
-  . Fail.choose
-  . map fuseRepeated 
-  -- We only care about ones with at least a single repetition
-  . filter ((> 1) . length)
-  -- Group up all decreasing arguments which are equal
-  . groupBy ((==) `on` (args !!))
-  -- We only care about variable arguments
-  . filter (Term.isVar . (args !!))
-  $ Term.decreasingArgs fix
+repeatedArg fix_t@(App fix@(Fix {}) args) 
+  | Term.inductivelyTyped fix_t = id
+    -- Pick the first success
+    . Fail.choose
+    . map fuseRepeated 
+    -- We only care about ones with at least a single repetition
+    . filter ((> 1) . length)
+    -- Group up all decreasing arguments which are equal
+    . groupBy ((==) `on` (args !!))
+    -- We only care about variable arguments
+    . filter (Term.isVar . (args !!))
+    $ Term.decreasingArgs fix
   where
   fuseRepeated :: [Int] -> m Term
   fuseRepeated arg_is = 
@@ -225,77 +228,89 @@ repeatedArg _ = Fail.here
 matchFix :: forall m . (Env.MatchRead m, Fail.Can m, Defs.Read m) => 
   Term -> m Term
   
-matchFix outer_t@(App fix@(Fix fix_info fix_b fix_t) args) = do
+matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
   -- We don't try to fuse matches into a term which is not just a fixpoint
-  -- with variable arguments. I haven't investigated the behaviour of this
+  -- with variable or constructor arguments. 
+  -- I haven't investigated the behaviour of this
   -- thoroughly enough.
-  Fail.unless (all isVar args)
+  Fail.unless (all Term.isSimple args)
+  
+  -- Check that we don't have a partially applied fixpoint.
+  -- Could mess things up, and not a case worth considering I think.
+  Fail.unless (Term.inductivelyTyped outer_t)
   
   matches <- Env.findMatches usefulMatch
   result_ty <- Type.get outer_t
   
-  -- We try to apply match-fix fusion once
-  fused_t <- id
-    . Fail.choose 
-    $ map (fuseMatch result_ty) matches
+  Fail.when (null matches)
   
-  -- If we have managed to remove the fixpoint 
-  -- then match-fix fusion has succeeded. 
-  -- Otherwise we try running it again.
-  if (not . isFix . leftmost) fused_t
-  then return fused_t
-  else matchFix fused_t
-  where
-  dec_args = id
-    . Set.fromList
-    . map (args !!) 
-    $ Term.decreasingArgs fix
+  -- Check whether we have already tried fusing this set of matches into
+  -- the fixpoint. This is what 'FixInfo' is for.
+  let matches_set = Set.fromList (map fst matches)
+  Fail.when (Term.alreadyFused fix_info matches_set)
+  
+  -- We apply match-fix fusion for every match
+  (fused_t, Monoid.Any any_fused) <- id
+    . runWriterT
+    $ foldrM (fuseMatch result_ty) outer_t matches
     
+  -- Check to see whether any match-fix fusion steps succeeded.
+  Fail.unless any_fused
+  
+  -- Successful match-fix fusion will have eliminated all occurrences of
+  -- absurdity or reduced the entire term to absurdity.
+  if matchFixSuccess fused_t
+  then return (Term.removeConstraints fused_t)
+  
+  -- If match-fix fusion has failed we save the list of matches we attempted
+  -- to fuse in.
+  else return (Term.addFusedMatches matches_set outer_t)
+  where
   -- Whether a pattern match should be fused into the current fixpoint.
-  -- We check that one of the decreasing arguments matches a decreasing
-  -- argument of the fixpoint.
-  usefulMatch (App m_fix@(Fix {}) m_args) 
-    | all isVar m_args = id
-      . not 
-      . Set.null
-      . Set.intersection dec_args
-      . Set.fromList
-      . map (m_args !!)
-      $ Term.decreasingArgs m_fix
+  -- We also check that one of the strict arguments of each term match.
+  usefulMatch match_t@(App (Fix {}) m_args) =
+    all Term.isSimple m_args 
+    && not (Set.null shared_strict_vars)
+    where
+    shared_strict_vars = 
+      Set.intersection (Term.strictVars outer_t) (Term.strictVars match_t)
   usefulMatch _ = False
   
-  -- Fuse a pattern match into the outer fixpoint
-  fuseMatch :: Type -> (Term, Term) -> m Term
-  fuseMatch result_ty (match_t, leftmost -> Con ind con_n) 
-    | Just con_n' <- Term.matchedTo fix_info match_t = do
-      -- If we have already matched this term to this constructor in this 
-      -- fixpoint then we would repeating ourself if we do fusion, so we fail.
-      Fail.when (con_n == con_n')
+  -- Whether a term does not contain any fixpoints which have constraints.
+  -- A pretty ad hoc way of detecting that match-fix fusion has succeeded.
+  -- This was mostly picked because it made examples work. Bleh.
+  matchFixSuccess :: Term -> Bool
+  matchFixSuccess = not . Fold.any constrainedFix
+    where
+    constrainedFix (Fix _ _ fix_t) =
+      Fold.any Term.isConstraint fix_t
+    constrainedFix _ = False
+  
+  -- Fuse a pattern match into a fixpoint.
+  -- Typed so that we can apply it using foldrM over the list of matches.
+  -- If fusion fails it returns the original term.
+  -- Will write whether fusion ever succeeds.
+  fuseMatch :: Type -> (Term, Term) -> Term -> WriterT Monoid.Any m Term
+  fuseMatch result_ty 
+      (match_t, leftmost -> Con ind con_n) 
+      term@(App fix@(Fix {}) args) = do
       
-      -- Otherwise we are down an absurd branch, since we have matched
-      -- a term to two different constructors
-      return (Absurd result_ty)
+    mby_fused <- id
+      . lift 
+      . Fail.catch 
+      $ Fix.fusion simplify full_ctx fix
       
-    | otherwise = do
-      -- If we haven't matched this term to anything yet within the fixpoint
-      -- then we can apply fusion to the context constraining @match_t@ to
-      -- have the constructor at @con_n@
-      Fix.fusion simplify full_ctx fix'
+    case mby_fused of
+      Nothing -> return term
+      Just fused -> do
+        tell (Monoid.Any True)
+        return fused
     where
     cons = Type.unfold ind
-    App match_fix match_args = match_t
-    match_t' = App (addFixInfo fix_info match_fix) match_args
-    
     args_ctx = Context.make (\t -> app t args)
-    match_ctx = Term.constraint match_t' ind con_n result_ty
+    match_ctx = Term.constraint match_t ind con_n result_ty
     -- Appending contexts composes them in the natural way
     full_ctx = match_ctx ++ args_ctx
-    
-    -- The new fused matches are all fused matches of the original fix,
-    -- those of the match we are fusing in, and the match itself.
-    -- 'FixInfo' is a monoid, so we can use append here.
-    fix_info' = fix_info ++ fixInfo match_fix ++ (FixInfo [(match_t, con_n)])
-    fix' = Fix fix_info' fix_b fix_t
     
     -- The inner simplification used in match fix fusion
     simplify :: Context -> Index -> Term -> m Term
@@ -339,6 +354,9 @@ matchFix outer_t@(App fix@(Fix fix_info fix_b fix_t) args) = do
           
       expressPattern other = 
         return other
+        
+  fuseMatch _ _ term =
+    return term
         
 matchFix _ = Fail.here
 

@@ -67,7 +67,13 @@ class Write m => Read m where
   
 -- | Lookup the type of a variable. 
 boundAt :: Read m => Index -> m Bind
-boundAt at = liftM (!! fromEnum at) bindings
+boundAt at = do
+  bs <- bindings
+  if at >= length bs
+  then error $ "Cannot retrieve the binding for index " ++ show at
+    ++ " in an environment with only " ++ show (length bs :: Int) 
+    ++ " bindings."
+  else return (bs !! enum at)
 
 -- | Returns the number of indices that have been bound.
 bindingDepth :: Read m => m Int
@@ -142,13 +148,16 @@ isoShift iso f = id
   -- As the terms stored within them are not exposed by the Term' type, they
   -- will not be reached by 'isoTransformM.
   shiftVar (Fix info b t) = do
-    info' <- modifyM fusedMatches (mapM shiftMatch) info
+    offset <- tracked
+    let info' = modify fusedMatches (shiftMatches offset) info
     return (Fix info' b t)
     where
-    shiftMatch (term, n) = do
-      term' <- Fold.isoTransformM iso shiftVar term
-      return (term', n)
-  
+    shiftMatches :: Index -> Set (Set Term) -> Set (Set Term)
+    shiftMatches offset = id
+      . Set.map
+      . Set.map
+      $ trackIndices offset 
+      . Fold.isoTransformM iso shiftVar
   shiftVar other = 
     return other
   
@@ -179,8 +188,8 @@ instance Indexed Alt where
       | otherwise = f (idx - min_idx) + min_idx
       
 instance Indexed FixInfo where
-  free = concatMap (Indices.free . fst) . get fusedMatches
-  shift f = modify fusedMatches (map (first (Indices.shift f)))
+  free = concatMap (concatMap Indices.free) . get fusedMatches
+  shift f = modify fusedMatches (Set.map (Set.map (Indices.shift f)))
 
 instance Substitutable Term where
   type Inner Term = Term
@@ -198,7 +207,20 @@ instance Substitutable Term where
         -- Substitution does not occur
         LT -> Var (pred var)
         GT -> Var var
-    substVar other =
+    -- Fixpoint information is not reached by the regular transformations
+    -- but substitution needs to still affect it, as it changes indices.
+    substVar (Fix (FixInfo ms) b t) = do
+      sub <- tracked
+      let ms' = substMatches sub ms
+      return (Fix (FixInfo ms') b t) 
+      where 
+      substMatches :: (Index, Term) -> Set (Set Term) -> Set (Set Term)
+      substMatches sub = id
+        . Set.map
+        . Set.map
+        $ trackIndices sub 
+        . Fold.transformM substVar
+    substVar other = 
       return other
       
 -- | If you just need a simple type environment, use the reader

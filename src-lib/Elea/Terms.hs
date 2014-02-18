@@ -4,14 +4,18 @@ module Elea.Terms
 (
   module Elea.Term,
   branches,
-  replace, 
+  replace,
   unfoldFix,
   collectM, collect,
   decreasingArgs,
+  decreasingAppArgs,
+  strictVars,
   applyCase,
   generaliseArgs,
   pair,
   equation,
+  isConstraint,
+  removeConstraints,
   constraint,
   isProductive,
   isFiniteMatch,
@@ -19,6 +23,7 @@ module Elea.Terms
   revertMatchesWhen, 
   revertMatches,
   occurrences,
+  isSubterm,
 )
 where
 
@@ -123,7 +128,15 @@ replace me with = id
     then return with
     else return term
   
+
+-- | A wrapped around 'decreasingArgs' which takes a fixpoint with arguments
+-- applied and removes any return indices which are greater than the length
+-- of the arguments.
+decreasingAppArgs :: Term -> [Int]
+decreasingAppArgs (App fix args) = 
+  filter (length args >) (decreasingArgs fix)
   
+
 -- | Returns the indices of the strictly decreasing arguments for
 -- a given function. Undefined if not given a 'Fix'.
 decreasingArgs :: Term -> [Int]
@@ -151,12 +164,32 @@ decreasingArgs (Fix _ fix_b fix_t) =
       Term -> Env.TrackSmallerTermsT (Env.TrackIndices Index) Bool
     decreasing t@(App (Var f) args) = do
       fix_f <- Trans.lift Env.tracked
-      if fix_f /= f
+      if fix_f /= f || arg_i >= length args
       then return True
       else Env.isSmaller (args !! arg_i)
     decreasing _ = 
       return True
       
+-- | The variables whose value must be known in order to unroll the given term.
+-- If we expanded this term these variables would be inside pattern matches
+-- topmost.
+strictVars :: Term -> Set Index
+strictVars (App (Fix _ _ fix_t) args) = id
+  . Set.intersection (Indices.free args)
+  . Env.trackIndices 0
+  . Fold.foldM matchedUpon
+  . Eval.run
+  $ App fix_t args
+  where
+  matchedUpon :: Term -> Env.TrackIndices Index (Set Index)
+  matchedUpon (Case _ (Var x) _) = do
+    offset <- Env.tracked
+    if x >= offset
+    then return (Set.singleton (x - offset))
+    else return mempty
+  matchedUpon _ = 
+    return mempty
+  
       
 -- | Take a case-of term and replace the result term down each branch
 -- with the second term argument.
@@ -205,6 +238,29 @@ generaliseArgs (App func args) run = do
   
   liftHere :: Indexed b => b -> b
   liftHere = Indices.liftMany (length args)
+  
+  
+-- | Whether a term is a constraint. 
+isConstraint :: Term -> Bool
+isConstraint (Case _ _ alts)
+  | length alts > 1
+  , [alt_i] <- findIndices (not . isAbsurd . get altInner) alts =
+    lowerableAltInner (alts !! alt_i)
+isConstraint _ = False
+
+  
+-- | Removes any instances of constraints
+removeConstraints :: Term -> Term
+removeConstraints = Fold.transform remove
+  where
+  remove (Case _ _ alts)
+    -- Find the single non-absurd branch, and return just that term
+    | length alts > 1
+    , [alt_i] <- findIndices (not . isAbsurd . get altInner) alts
+    , lowerableAltInner (alts !! alt_i) =
+      loweredAltInner (alts !! alt_i)
+    where
+  remove term = term
         
   
 -- | Construct a pair of the two given terms. Needs to read the type of the
@@ -246,13 +302,31 @@ constraint match_t ind con_n result_ty =
     buildAlt alt_n = 
       Alt bs alt_t
       where
-      Bind _ con_ty = cons !! alt_n
+      Bind _ con_ty = id
+        . assert (length cons > alt_n)
+        $ cons !! alt_n
       bs = map (Bind "X") (init (Type.flatten con_ty))
       
       -- If we are not down the matched branch we return absurd
       alt_t | enum alt_n /= con_n = Absurd result_ty
             | otherwise = gap_t
             
+            {-
+-- | Take a free variable of a fixpoint and express it as a new first argument
+-- of that fixpoint.
+-- It can reverse the @constArg@ step from "Elea.Simplifier".
+-- Necessary for then @freeDecreasingArg@ step from "Elea.Fusion".
+expressFreeVariable :: Index -> Term -> Term
+expressFreeVariable free_var (Fix fix_i fix_b fix_t) =
+  
+  where
+  replaceRecCall :: Term -> Env.TrackIndices Index Term
+  replaceRecCall term@(App (Var f) args) = do
+    old_f <- Env.tracked
+    if f /= old_f
+    then return term
+    else return (app (Var (succ old_f)) (Var old_f : args))
+            -}
 
 -- | A function is /productive/ if every recursive call is guarded
 -- by a constructor.
@@ -328,3 +402,7 @@ revertMatches = revertMatchesWhen (const True)
 -- | Return the number of times a given subterm occurs in a larger term.
 occurrences :: Term -> Term -> Int
 occurrences t = Env.trackIndices t . Fold.countM (\t -> Env.trackeds (== t))
+
+-- | Whether the first argument is a subterm of the first
+isSubterm :: Term -> Term -> Bool
+isSubterm t = Env.trackIndices t . Fold.anyM (\t -> Env.trackeds (== t))

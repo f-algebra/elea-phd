@@ -73,8 +73,9 @@ instance Show (Term' String) where
     "\nfix " ++ b ++ " -> " ++ indent t
   show (Lam' (show -> b) t) =
     "\nfun " ++ b ++ " -> " ++ t
-  show (Con' (Type.Ind _ cons) idx) =
-    fst (cons !! fromEnum idx)
+  show (Con' (Type.Ind _ cons) idx) = id
+    . assert (length cons > idx)
+    $ fst (cons !! fromEnum idx)
   show (Case' (Type.unfold -> cons) cse_t f_alts) =
       "\nmatch " ++ cse_t ++ " with"
     ++ concat alts_s
@@ -116,7 +117,15 @@ instance (Env.Read m, Defs.Read m) => ShowM m Term where
         if same_lbl_count > 0
         then return (lbl' ++ "[" ++ show (same_lbl_count + 1) ++ "]")
         else return lbl'
-
+        
+    {-
+    DEBUG CODE
+    fshow (Fix' info (show -> b) (t, _)) = do
+      inf_s <- showM info
+      return 
+        $ "\nfix " ++ b ++ " " ++ inf_s ++ " -> " ++ indent t
+      -}  
+      
     fshow term' = do
       -- Attempt to find an alias for this function in our definition database
       mby_name <- Defs.lookupName (Fold.recover term')
@@ -133,6 +142,9 @@ instance (Env.Read m, Defs.Read m) => ShowM m Term where
           
 instance (Env.Read m, Defs.Read m) => ShowM m Context where
   showM = showM . get Context.term
+    
+instance Show FixInfo where
+  show (FixInfo ms) = show ms
   
 instance Show Context where
   show = show . get Context.term

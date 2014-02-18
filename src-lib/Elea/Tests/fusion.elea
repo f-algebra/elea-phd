@@ -51,10 +51,18 @@ prop "leq_nat transitive": forall (i j k: nat) ->
 prop "leq_nat total": forall (n m: nat) ->
   implies (not (leq_nat n m)) (leq_nat m n)
   
+  /*
+prop "drop take": forall (n: nat) (xs: nlist) ->
+  xs = append (take n xs) (drop n xs)
+  */
   
 prop "filter reverse": forall (p: nat -> bool) (xs: nlist) ->
   reverse (filter p xs) = filter p (reverse xs)
 
 prop "insertsort sorted": forall (xs: nlist) ->
   is_sorted (insertsort xs)
+  
 
+prop "main": forall (xs ys: nlist) (y: nat) ->
+  implies (is_sorted (Cons y ys)) (is_sorted ys)
+ 
