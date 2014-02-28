@@ -42,13 +42,10 @@ identityFix fix@(Fix _ (Bind _ (Type.Fun arg_ty res_ty)) _)
   -- they will have type @A -> A@ where @A@ is inductive. 
   | Type.isInd arg_ty
   , arg_ty == res_ty = 
-    Fix.fission simplify fix ctx
+    Fix.fission Simp.run fix ctx
   where
   -- A constant context which returns the identity function
   ctx = Context.make (\_ -> Lam (Bind "x" arg_ty) (Var 0))
-  
-  -- The sub-simplification is just the regular simplifier
-  simplify _ _ = Simp.run
   
 identityFix _ = Fail.here
 
@@ -65,7 +62,7 @@ constructorFission fix@(Fix _ fix_b fix_t) = do
   -- Pick the first successful fission step
   Fail.choose
     -- Attempt fission on each of the suggested constructors
-    . map runFission
+    . map (Fix.fission Simp.run fix)
     $ toList suggestions
   where 
   return_ty = Type.returnType (get Type.boundType fix_b)
@@ -75,11 +72,6 @@ constructorFission fix@(Fix _ fix_b fix_t) = do
     . const
     . unflattenLam arg_bs
     $ Absurd return_ty
-  
-  runFission :: Context -> m Term
-  runFission = Fix.fission simplify fix 
-    where
-    simplify _ _ = Simp.run
     
   -- A very quick check as to whether we can float a constructor out of
   -- this fixpoint. Makes sure that only one constructor is returned down

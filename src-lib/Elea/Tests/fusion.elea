@@ -1,13 +1,14 @@
 
 prop "add 0": forall (n: nat) -> add n 0 = n
 
-prop "add associative": 
-  forall (x y z: nat) -> 
-    add (add x y) z = add x (add y z)
-
-prop "append associative": 
-  forall (xs ys zs: nlist) ->
-    append (append xs ys) zs = append xs (append ys zs)
+prop "add associative": forall (x y z: nat) -> 
+  add (add x y) z = add x (add y z)
+    /*
+prop "add commutative": forall (x y z: nat) ->
+  eq_nat (add x y) (add y x)
+*/
+prop "append associative": forall (xs ys zs: nlist) ->
+  append (append xs ys) zs = append xs (append ys zs)
     
 let revapp = 
   fix (rap: nat -> nlist -> nlist) (n: nat) (xs: nlist) ->
@@ -21,6 +22,9 @@ prop "revapp def": forall (n: nat) (xs: nlist) ->
 
 prop "revapp cons": forall (n: nat) (xs: nlist) ->
   revapp n xs = Cons n (reverse xs)
+  
+prop "revrev": forall (xs: nlist) ->
+  xs = reverse (reverse xs)
 
   
 prop "count reverse": forall (n: nat) (xs: nlist) ->
@@ -57,12 +61,11 @@ prop "drop take": forall (n: nat) (xs: nlist) ->
   */
   
 prop "filter reverse": forall (p: nat -> bool) (xs: nlist) ->
-  reverse (filter p xs) = filter p (reverse xs)
+  filter p (reverse xs)
 
 prop "insertsort sorted": forall (xs: nlist) ->
   is_sorted (insertsort xs)
-  
 
-prop "main": forall (xs ys: nlist) (y: nat) ->
-  implies (is_sorted (Cons y ys)) (is_sorted ys)
+prop "main": forall (y: nat) (t: ntree) ->
+  is_sorted (flatten t)
  

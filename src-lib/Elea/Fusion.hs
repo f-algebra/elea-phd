@@ -11,6 +11,7 @@ import Elea.Term
 import Elea.Context ( Context )
 import Elea.Show ( showM )
 import qualified Elea.Fixpoint as Fix
+import qualified Elea.Inventor as Invent
 import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
 import qualified Elea.Terms as Term
@@ -89,34 +90,39 @@ fixfix oterm@(App ofix@(Fix {}) oargs)
     -- Generalise the arguments of the outer fixpoint
     Term.generaliseArgs oterm outerGeneralised
     where
-    outerGeneralised :: (Term -> Term) -> Term -> m Term
-    outerGeneralised liftOuter (App ofix' oargs') =
+    outerGeneralised :: Indices.Shift -> Term -> m Term
+    outerGeneralised shiftOuter (App ofix' oargs') =
       -- Generalise the arguments of the inner fixpoint
       Term.generaliseArgs ifix_t innerGeneralised 
       where
-      ifix_t = liftOuter (oargs !! arg_i)
+      ifix_t = shiftOuter (oargs !! arg_i)
       
-      innerGeneralised :: (Term -> Term) -> Term -> m Term
-      innerGeneralised liftInner (App ifix iargs) = do 
-        Fix.fusion simplify (Context.make mkCtx) ifix
+      innerGeneralised :: Indices.Shift -> Term -> m Term
+      innerGeneralised shiftInner (App ifix iargs) = do 
+        Fix.fusion (simplify ctx) ctx ifix
         where
         -- The context is the outer term, with all variables generalised
         -- except the position of the inner fixpoint, and with this inner 
         -- fixpoint replaced by the gap.
-        mkCtx gap_f = id
-          . App (liftInner ofix')
-          . replaceAt arg_i (App gap_f iargs) 
-          $ map liftInner oargs' 
+        ctx = Context.make mkCtx
+          where
+          mkCtx gap_f = id
+            . App (shiftInner ofix')
+            . replaceAt arg_i (App gap_f iargs) 
+            $ map shiftInner oargs' 
 
   -- The internal simplification used in fixfix fusion.
   -- Recursively runs fusion, and then attempts to extract fixpoints
   -- using invention.
-  simplify :: Context -> Index -> Term -> m Term
-  simplify ctx fix_f term = do
+  simplify :: Context -> Term -> m Term
+  simplify (Indices.lift -> ctx) term = do
     term' <- run term
-    Env.alsoTrack 0
+    Env.alsoTrack fix_f
       $ Fold.transformM extract term'
     where
+    -- The index of the unrolled fixpoint variable
+    fix_f = 0
+    
     extract :: Term -> Env.AlsoTrack Index m Term
     extract term@(App (Fix {}) args) 
       | any varAppArg args = do
@@ -131,11 +137,11 @@ fixfix oterm@(App ofix@(Fix {}) oargs)
       extr :: MaybeT (Env.AlsoTrack Index m) Term
       extr = do
         -- Check this is definitely a recursive call
-        fix_f' <- Env.liftByOffset fix_f
+        fix_f' <- Env.tracked
         guard (fix_f' == f)
         
         -- If a unifier exists, then we do not need to do fixpoint extraction
-        orig_term <- Env.liftByOffset (Context.apply ctx (Var fix_f))
+        orig_term <- Env.liftByOffset (Context.apply ctx (Var 0))
         guard (not (Unifier.exists orig_term term))
         
         -- Collect the recursive call in @orig_term@
@@ -157,7 +163,7 @@ fixfix oterm@(App ofix@(Fix {}) oargs)
                                                                        
         invented_ctx <- id
           . Env.bind (Bind "extrX" f_ty)
-          $ Fix.invention Simp.run orig_term' term'
+          $ Invent.run Simp.run orig_term' term'
         
         return
           . Indices.substAt 0 f_term
@@ -199,9 +205,9 @@ repeatedArg fix_t@(App fix@(Fix {}) args)
   fuseRepeated arg_is = 
     Term.generaliseArgs fix_t generalised
     where
-    generalised :: (Term -> Term) -> Term -> m Term
+    generalised :: Indices.Shift -> Term -> m Term
     generalised _ (App fix' args') =
-      Fix.fusion simplify (Context.make mkCtx) fix'
+      Fix.fusion Simp.run (Context.make mkCtx) fix'
       where
       -- The context is the original term, with every argument generalised,
       -- and the repeated arguments in the correct places, and the gap
@@ -214,11 +220,6 @@ repeatedArg fix_t@(App fix@(Fix {}) args)
         -- Replace every argument position from the list 
         -- of repeated args 'arg_is' with the same variable.
         args'' = foldr (\i -> replaceAt i rep_arg) args' (tail arg_is) 
-        
-  -- No need for fixpoint simplifications within repeated argument fusion
-  -- (at least, not that I've ever observed)
-  simplify :: Context -> Index -> Term -> m Term
-  simplify _ _ = Simp.run
 
 repeatedArg _ = Fail.here
 
@@ -313,13 +314,15 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
     full_ctx = match_ctx ++ args_ctx
     
     -- The inner simplification used in match fix fusion
-    simplify :: Context -> Index -> Term -> m Term
-    simplify ctx fix_f term = do
+    simplify :: Term -> m Term
+    simplify term = do
       term' <- Simp.run term
       return
         . Env.trackIndices fix_f
         $ Fold.transformM expressPattern term'
       where
+      fix_f = 0
+      ctx = Indices.lift full_ctx
       orig_term = Context.apply ctx (Var fix_f)
       
       expressPattern :: Term -> Env.TrackIndices Index Term
@@ -360,4 +363,63 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
         
 matchFix _ = Fail.here
 
-
+{-
+decreasingFreeVar :: forall m . (Env.Read m, Fail.Can m, Defs.Read m) => 
+  Term -> m Term
+decreasingFreeVar orig_t@(App fix@(Fix {}) args) = do
+  Fail.unless (Term.inductivelyTyped orig_t)
+  Fail.choose (map fuseVar potential_args)
+  where
+  -- The variable arguments we should attempt this technique on.
+  -- They must be a decreasing argument, and free within the fixpoint itself. 
+  potential_args :: [Int]
+  potential_args = filter isFreeVar (Term.decreasingArgs fix)
+    where
+    isFreeVar arg_i 
+      | Var x <- args !! arg_i =
+        x `Indices.freeWithin` fix
+    isFreeVar = False
+  
+  fuseVar :: Int -> m Term
+  fuseVar arg_i = 
+    -- Generalise all the arguments first, the return value of this will
+    -- ungeneralise the arguments again
+    Term.generaliseArgs orig_t generalised
+    where
+    generalised :: (Term -> Term) -> Term -> m Term
+    generalised liftHere (App fix args) = do
+      App fix' [Var _] <- Term.expressFreeVariable free_x fix
+      Fix.fusion (simplify fix') ctx fix'
+      where
+      Var free_x = liftHere (args !! arg_i)
+      
+      ctx = Context.make (\t -> app t args')
+        where
+        args' = Var free_x : setAt arg_i (Var free_x) args
+      
+    simplify :: Term -> Term -> m Term
+    simplify (Indices.lift -> fix) term = do
+      term' <- Simp.run term
+      Env.alsoTrack (fix, 0)
+        $ Fold.transformM express term'
+      where
+      express :: Term -> Env.AlsoTrack (Term, Index) m Term
+      express term@(App (Var f) args) = do
+        (fix, fix_f) <- Env.tracked 
+        if f /= fix_f
+        then return term
+        else do
+          -- The trick here is that Simp.run will push the constant argument
+          -- back into the fixpoint, so it will not be generalised by the
+          -- generaliseArgs call
+          term' <- Simp.run (App fix args)
+          
+          -- Recursively run fixpoint fusion
+          Term.generaliseArgs term' generalised
+        where 
+        generalised :: Indices.Shift -> Term -> m (Maybe Term)
+        generalised shiftHere term = do
+          
+          
+         -} 
+          

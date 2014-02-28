@@ -1,7 +1,10 @@
 -- | de-Bruijn indices, lifting, and substitution.
 module Elea.Index
 (
-  Index, Indexed (..), Substitutable (..),
+  Index, 
+  Indexed (..), 
+  Substitutable (..),
+  Shift,
   lift, liftAt, liftManyAt, liftMany, subst, 
   lowerAt, lower, lowerMany, lowerableBy,
   freeWithin, replaceAt, tryLowerMany,
@@ -30,6 +33,9 @@ class Indexed t where
   
   -- | Only modifies free indices.
   shift :: (Index -> Index) -> t -> t
+  
+-- | Functions which shift indices. A useful synonym.
+type Shift = forall a . Indexed a => a -> a
   
 freeWithin :: Indexed a => Index -> a -> Bool
 freeWithin x = Set.member x . free

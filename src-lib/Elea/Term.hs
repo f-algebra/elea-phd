@@ -18,7 +18,7 @@ module Elea.Term
   isAbsurd',
   alreadyFused,
   addFusedMatches,
-  inductivelyTyped,
+  inductivelyTyped, 
   fromVar, 
   conjunction, true, false,
   altPattern, 
@@ -37,6 +37,7 @@ import Elea.Index ( Index, Indexed, Substitutable, Inner )
 import Elea.Type ( Type (..), Ind (..), ConArg (..), Bind (..) )
 import qualified Elea.Type as Type
 import qualified Elea.Index as Indices
+import qualified Elea.Monad.Failure as Fail
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 import qualified Data.Map as Map
@@ -54,10 +55,10 @@ data Term
             , binding :: !Bind 
             , inner :: !Term }
 
-  | Con     { inductiveType :: !Type.Ind
+  | Con     { constructorOf :: !Type.Ind
             , constructorIndex :: !Nat }
 
-  | Case    { inductiveType :: !Type.Ind
+  | Case    { caseInd :: !Type.Ind
             , inner :: !Term
             , alts :: ![Alt] }
 

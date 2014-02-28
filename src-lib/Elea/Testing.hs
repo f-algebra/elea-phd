@@ -7,6 +7,8 @@ module Elea.Testing
   loadPrelude, loadFile,
   term, _type,
   simplifiedTerm,
+  assertProvablyEq,
+  assertTermEq,
 ) 
 where
 
@@ -14,9 +16,11 @@ import Prelude ()
 import Elea.Prelude hiding ( assert )
 import Elea.Term
 import Elea.Monad.Elea ( Elea )
+import Elea.Show
 import qualified Elea.Env as Env
 import qualified Elea.Parser as Parse
 import qualified Elea.Simplifier as Simp
+import qualified Elea.Equality as Equality
 import qualified Elea.Definitions as Defs
 import qualified Elea.Monad.Error as Err
 import qualified Test.HUnit as HUnit
@@ -64,6 +68,27 @@ loadPrelude :: Defs.Has m => m ()
 loadPrelude = do
   eqs <- Err.noneM (Parse.program prelude)
   return ()
+  
+assertProvablyEq :: (Defs.Has m, Env.Read m) => Term -> Term -> m Test
+assertProvablyEq t1 t2 = do
+  mby_eq <- runMaybeT (Equality.prove Simp.run t1 t2)
+  t1s <- showM t1
+  t2s <- showM t2
+  let prop_s = "\nexpected: " ++ t1s ++ "\nbut got: " ++ t2s
+  return 
+    . HUnit.TestCase   
+    . HUnit.assertBool prop_s
+    $ fromMaybe False mby_eq
+  
+assertTermEq :: (Defs.Has m, Env.Read m) => Term -> Term -> m Test
+assertTermEq t1 t2 = do
+  t1s <- showM t1
+  t2s <- showM t2
+  let prop_s = "\nexpected: " ++ t1s ++ "\nbut got: " ++ t2s
+  return 
+    . HUnit.TestCase
+    . HUnit.assertBool prop_s 
+    $ t1 == t2
 
 term :: Defs.Has m => String -> m Term
 term = Err.noneM . Parse.term

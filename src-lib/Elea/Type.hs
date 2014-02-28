@@ -2,19 +2,21 @@ module Elea.Type
 (
   Type (..), Ind (..), ConArg (..), Bind (..),
   name, constructors, boundLabel, boundType, 
-  empty, unit, pair, bool, equation,
+  empty, unit, pair, bool, 
+  equation, isEquation,
   returnType,
   isInd, isFun, fromBase,
   unflatten, flatten, unfold, argumentCount,
   recursiveArgs, nonRecursiveArgs, recursiveArgIndices,
   isBaseCase, isRecursive, 
+  makeAltBindings,
 )
 where
 
 import Prelude ()
 import Elea.Prelude
 import Elea.Index
-import Elea.Monad.Error as Error
+import qualified Elea.Monad.Failure as Fail
 
 -- | An argument to a constructor.
 data ConArg 
@@ -85,6 +87,11 @@ equation a =
   Ind name [("==", [ConArg a, ConArg a])]
   where
   name = "==[" ++ show a ++ "]"
+  
+isEquation :: Fail.Can m => Ind -> m Type
+isEquation (Ind _ [("==", [ConArg x, ConArg y])]) 
+  | x == y = return x
+isEquation _ = Fail.here
 
 bool :: Ind
 bool = Ind "bool" [("True", []), ("False", [])]
@@ -175,6 +182,17 @@ isRecursive :: Ind -> Bool
 isRecursive ind = id
   . any (not . isBaseCase ind . enum)
   $ [0..length (get constructors ind) - 1]
+  
+-- | Given a specific constructor index of an inductive type, return 
+-- appropriate bindings for a pattern match on that constructor.
+-- > makeAltBindings nlist 1 = [Bind "B0" nat, Bind "B1" nlist]
+makeAltBindings :: Ind -> Nat -> [Bind]
+makeAltBindings ind con_n =
+  zipWith Bind arg_names arg_tys
+  where
+  Bind _ con_ty = unfold ind !! enum con_n
+  arg_tys = init (flatten con_ty)
+  arg_names = map (\n -> "B" ++ show n) [0..]
   
   
 instance Show Ind where

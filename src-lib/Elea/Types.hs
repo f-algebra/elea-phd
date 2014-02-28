@@ -5,6 +5,7 @@
 module Elea.Types
 (
   module Elea.Type,
+  quickGet,
   get, check, checkStep, checkTrace,
 )
 where
@@ -25,8 +26,23 @@ import qualified Elea.Monad.Definitions as Defs
 
 type TypingMonad m = (Err.Can m, Env.Read m, Defs.Read m)
 
+-- | Return the type of a term. Assumes the term is well-typed.
 get :: (Defs.Read m, Env.Read m) => Term -> m Type
 get = Err.noneM . typeOf
+
+-- | Return the type of a term if it can be found without an environment.
+-- Assumes the term is well-typed.
+-- Performs no type-checking at all.
+-- Requires the result type to not depend upon the type of any free variables.
+-- Right now it only works on fixpoints with or without arguments applied.
+quickGet :: Term -> Type
+quickGet (Fix _ (Bind _ ty) _) = ty
+quickGet (App f args) = id
+  . Type.unflatten 
+  . drop (length args)
+  . Type.flatten
+  $ quickGet f
+
 
 -- | Throws an error if a term is not correctly typed.
 check :: TypingMonad m => Term -> m ()
@@ -180,7 +196,7 @@ typeOf term = id
   ftype (Con' ind_ty n) =
     return
     . Prelude.get boundType
-    . (\xs -> debugNth "ftype" xs (fromEnum n))
+    . (!! enum n)
     $ Type.unfold ind_ty
   ftype (Case' _ _ (Alt' _ (ty, _) : _)) =
     return ty

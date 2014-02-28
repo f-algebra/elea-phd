@@ -10,7 +10,7 @@ import qualified Elea.Tests.Type as Type
 import qualified Elea.Tests.Term as Term
 import qualified Elea.Tests.Simplifier as Simplifier 
 import qualified Elea.Tests.Context as Context
-import qualified Elea.Tests.Fixpoint as Fixpoint
+import qualified Elea.Tests.Inventor as Inventor
 import qualified Elea.Tests.Fusion as Fusion
 
 tests = Test.list
@@ -19,7 +19,7 @@ tests = Test.list
   , Term.tests
   , Simplifier.tests
   , Context.tests
- -- , Fixpoint.tests
+ --  , Inventor.tests
   , Fusion.tests  
   ]
   

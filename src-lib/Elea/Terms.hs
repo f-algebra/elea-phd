@@ -14,11 +14,13 @@ module Elea.Terms
   generaliseArgs,
   pair,
   equation,
+  isEquation,
   isConstraint,
   removeConstraints,
   constraint,
   isProductive,
   isFiniteMatch,
+  expressFreeVariable,
   revertMatchesWhenM, 
   revertMatchesWhen, 
   revertMatches,
@@ -214,9 +216,9 @@ applyCase (Case ind cse_t alts) inner_t =
 -- | Generalise all the arguments of a term to fresh variables.
 -- The first argument of the inner computation to run will lift 
 -- indices by the number of new variables.
-generaliseArgs :: (Indexed a, Substitutable t, 
-                   Inner t ~ Term, Env.Read m, Defs.Read m) =>
-  Term -> ((a -> a) -> Term -> m t) -> m t
+generaliseArgs :: ( Substitutable t, Inner t ~ Term, 
+                    Env.Read m, Defs.Read m ) =>
+  Term -> (Indices.Shift -> Term -> m t) -> m t
 generaliseArgs (App func args) run = do
   -- Use the type of every arguments to generate bindings for our new 
   -- generalised variables.
@@ -279,6 +281,11 @@ equation left right = do
   let eq_ind = Type.equation ty
   return (app (Con eq_ind 0) [left, right])
   
+isEquation :: Fail.Can m => Term -> m (Term, Term)
+isEquation (App (Con ind 0) [left, right]) 
+  | isJust (Type.isEquation ind) = return (left, right)
+isEquation _ = Fail.here
+  
       
 -- | Create a constraint context. For example:
 -- > constraint (reverse xs) 0 nat == assert Nil <- reverse xs in _
@@ -311,22 +318,33 @@ constraint match_t ind con_n result_ty =
       alt_t | enum alt_n /= con_n = Absurd result_ty
             | otherwise = gap_t
             
-            {-
+            
 -- | Take a free variable of a fixpoint and express it as a new first argument
 -- of that fixpoint.
 -- It can reverse the @constArg@ step from "Elea.Simplifier".
 -- Necessary for then @freeDecreasingArg@ step from "Elea.Fusion".
-expressFreeVariable :: Index -> Term -> Term
-expressFreeVariable free_var (Fix fix_i fix_b fix_t) =
-  
+expressFreeVariable :: Env.Read m => Index -> Term -> m Term
+expressFreeVariable free_var (Fix fix_i (Bind fix_n fix_ty) fix_t) = do
+  var_b <- Env.boundAt free_var
+  let fix_ty' = Type.Fun (get Type.boundType var_b) fix_ty
+  return
+    . (\t -> app t [Var free_var])
+    . Fix fix_i (Bind fix_n fix_ty')
+    . Lam var_b 
+    . Indices.replaceAt (free_var + 2) (Var 0)
+    . Env.trackOffset
+    . Fold.transformM updateRecCall
+    $ Indices.lift fix_t
   where
-  replaceRecCall :: Term -> Env.TrackIndices Index Term
-  replaceRecCall term@(App (Var f) args) = do
-    old_f <- Env.tracked
-    if f /= old_f
-    then return term
-    else return (app (Var (succ old_f)) (Var old_f : args))
-            -}
+  updateRecCall :: Term -> Env.TrackOffset Term
+  updateRecCall term@(App (Var f) args) = do
+    idx <- Env.tracked
+    if f == idx
+    then return (app (Var (idx + 1)) (Var idx : args))
+    else return term
+  updateRecCall other = 
+    return other
+
 
 -- | A function is /productive/ if every recursive call is guarded
 -- by a constructor.

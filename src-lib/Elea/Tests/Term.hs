@@ -124,3 +124,4 @@ def_eq_ntree =
     ++ "| Leaf -> False "
     ++ "| Node t1' x' t2' -> and (eq t1 t1') (and (eq[nat] x x') (eq t2 t2')) "
     ++ "end end"
+    

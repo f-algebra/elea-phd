@@ -1,11 +1,10 @@
--- | The three functions which arise from the formula for fixpoint fusion.
+-- | The two functions which arise from the formula for fixpoint fusion.
 -- If we represent the fusion equation as @C[fix F] = fix G@ then, 
 -- 'fusion' takes @C@, @fix F@ and returns @fix G@,
 -- 'fission' takes @C@, @fix G@ and returns @fix F@,
--- 'invention' takes @fix F@, @fix G@ and returns @C@.
 module Elea.Fixpoint
 (
-  fusion, fission, invention
+  fusion, fission
 )
 where
 
@@ -31,18 +30,14 @@ import qualified Data.Set as Set
 -- > if E' = fusion C E
 -- > then C[E] = E'
 fusion :: forall m . (Fail.Can m, Env.Read m, Defs.Read m) 
-  -- | A simplification function to be called during fusion
-  => (Context -> Index -> Term -> m Term)
+  -- | A simplification function to be called during fusion.
+  -- All indices will have been lifted by one in the supplied term,
+  -- and the index of the unrolled fixpoint variable will be 0.
+  => (Term -> m Term)
   -> Context 
   -> Term 
   -> m Term
 fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
-
-  -- Note, the original list of free variables @free_vars@ is in
-  -- ascending order of index, and every list generated from that
-  -- such as types or new variables is the same, for simplicity.
-  -- Lambdas will bind variables in descending order, so we
-  -- end up reversing these lists all over the place.
   
   -- DEBUG
   ctx_s <- showM outer_ctx
@@ -61,12 +56,17 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
     -- DEBUG
     . trace s1
   
+    -- After simplification we replace all of the free
+    -- variables within the term with fresh new ones,
+    -- to be captured by the lambdas are new function will have.
+    . liftM rebindVars
+    
     -- Finally, run the given simplification function on it.
-    . Env.bindMany (reverse (fix_b:free_var_bs))
-    . simplify outer_ctx' 0
+    . Env.bind fix_b
+    . simplify
     
     -- Apply the context to the unwrapped function body
-    $ Context.apply outer_ctx' fix_t'
+    $ Context.apply (Indices.lift outer_ctx) fix_t
     
   -- DEBUG
   simp_s <- Env.bindMany (reverse (fix_b:free_var_bs)) (showM simplified_t)
@@ -120,9 +120,11 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   -- Fusion has failed if we do not recurse as much as the original function,
   -- or all recursive occurrences have been removed.
   -- Seems to be a good heuristic, but this is just evidence based.
-  let old_rc = functionCalls (Var 0) fix_t
-      new_rc = functionCalls (Var 0) new_fix_body
+  let old_rc = Set.size (functionCalls (Var 0) fix_t)
+      new_rc = Set.size (functionCalls (Var 0) new_fix_body)
       rem_rc = Term.occurrences (Var Indices.omega) replaced_t
+      
+  Fail.unless (rem_rc == 0)
       
   Fail.unless                                                      
     -- DEBUG
@@ -139,7 +141,8 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   
   -- DEBUG
   final_s <- showM new_term
-  let s4 = "\nDONE:\n" ++ final_s
+  let rc = "\nold_rc = " ++ show old_rc ++ "; new_rc = " ++ show new_rc ++ "\n" ++ show fix_t 
+      s4 = "\nDONE:\n" ++ rc ++ final_s
   return (trace s4 new_term)
   
   where
@@ -150,16 +153,15 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
     $ Indices.free orig_t
   new_vars = map (Var . toEnum) [0..length free_vars - 1]
   
-  -- Replace all free variables with fresh new variables
-  fix_t' = rebindVars fix_t
-  outer_ctx' = rebindVars (Indices.lift outer_ctx)
-  
   isInnerFixMatch :: Term -> Env.TrackIndices Index Bool
   isInnerFixMatch (App (Var f) _ ) = do
     f_var <- Env.tracked
     return (f == f_var)
   isInnerFixMatch _ = return False
   
+  -- Replace all free variables with fresh variables which
+  -- will be bound by the lambdas of the new function
+  -- we are creating
   rebindVars :: (Substitutable a, Inner a ~ Term) => a -> a
   rebindVars = id
     . concatEndos 
@@ -192,16 +194,20 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
       -- The term we are replacing
       replace_t <- id
         . Env.liftByOffset 
-        . Context.apply (Indices.lower outer_ctx') 
+        . Context.apply outer_ctx'
         $ Var Indices.omega
 
-      uni :: Map Index Term <- Unifier.find replace_t term
-      guard (not (Indices.omega `Map.member` uni))
+      uni <- Unifier.find replace_t term
+      guard (not (Indices.containsOmega (Map.keysSet uni)))
+      
+      let mapped_to = concatMap Indices.free (Map.elems uni)
+      guard (not (Indices.containsOmega mapped_to))
       
       -- The new function call, lifted to the correct indices
       repl_here <- Env.liftByOffset replace_with
       return (Unifier.apply uni repl_here)
     where
+    outer_ctx' = (Indices.lower . rebindVars . Indices.lift) outer_ctx
     new_fix_var = Var (length new_vars)
     replace_with = app new_fix_var (reverse new_vars)
       
@@ -213,7 +219,9 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
 -- > then C[E] = E'
 fission :: forall m . (Env.Read m, Fail.Can m, Defs.Read m) 
   -- | A simplification function to be called within fission 
-  => (Index -> Context -> Term -> m Term)
+  -- All indices will have been lifted by one in the supplied term,
+  -- and the index of the unrolled fixpoint variable will be 0.
+  => (Term -> m Term)
   -> Term 
   -> Context 
   -> m Term
@@ -231,10 +239,10 @@ fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
   
     -- Simplify the result
     . Env.bind fix_b
-    . simplify 0 outer_ctx'
+    . simplify
     
     -- Add the outer context to every recursive call site
-    . Indices.replaceAt 0 (Context.apply outer_ctx' (Var 0))
+    . Indices.replaceAt 0 (Context.apply (Indices.lift outer_ctx) (Var 0))
     $ fix_t
   
   -- Attempt to strip the context from the term,
@@ -256,8 +264,6 @@ fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
     $ return new_term
   
   where
-  outer_ctx' = Indices.lift outer_ctx
-  
   -- Attempt to remove the @outer_ctx@ from topmost in the given term.
   -- Will first try to float this context to the top so it can be stripped.
   stripContext :: Term -> m Term
@@ -276,7 +282,7 @@ fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
       . Fold.rewriteM floatCtxUp
       $ orig_t
     
-    (dropped_bs, dropped_ctx) = Context.dropLambdas outer_ctx'
+    (dropped_bs, dropped_ctx) = Context.dropLambdas (Indices.lift outer_ctx)
     (lam_bs, inner_t) = Term.flattenLam floated_t
     (lam_bs_dropped, lam_bs_rest) = splitAt (length dropped_bs) lam_bs
     inner_t' = Term.unflattenLam lam_bs_rest inner_t
@@ -303,235 +309,4 @@ fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
     floatCtxUp _ = mzero
   
     
--- | Fixpoint invention.
--- > if C = invention E E'
--- > then C[E] = E'
-invention :: forall m . (Env.Read m, Defs.Read m, Fail.Can m)
-  -- | A simplification function to be called within invention.
-  => (Term -> m Term)
-  -> Term 
-  -> Term 
-  -> m Context
-  
-invention simplify 
-    f_term@(App f_fix f_args)
-    g_term = do  
-    
-  -- DEBUG  
-  f_term_s <- showM f_term
-  g_term_s <- showM g_term
-  let s1 = "\nInventing C s.t. C[" ++ f_term_s ++ "] is " ++ g_term_s
-    
-  -- Retrieve the type of f_term and g_term
-  -- so we can pass them to inventCase
-  f_ty <- trace s1 $ Type.get f_term
-  let Type.Base ind_ty@(Type.Ind _ cons) = f_ty
-  g_ty <- Type.get g_term 
-  
-  -- We are inventing a fold function and inventCase discovers each of
-  -- the fold parameters
-  fold_cases <-
-    mapM (inventCase f_ty g_ty . toEnum) [0..length cons - 1]
-  
-  let fold_f = Term.buildFold ind_ty g_ty
-  fold <- Simp.run (app fold_f fold_cases)
-  let ctx = Context.make (\t -> app fold [t])
-  
-  -- This algorithm is not sound by construction, so we check its answer using
-  -- fusion, which is sound.
-  {-
-  let f_args_ctx = Context.make (\t -> app t f_args)
-      fusion_ctx = ctx ++ f_args_ctx
-  fused <- fusion (\_ _ -> Simp.run) fusion_ctx f_fix
-  Fail.unless (fused == g_term)
-  -}
-  -- I've left the soundness check above out because the equality check
-  -- at the end is non-trivial. Will put this back in later.
-  return ctx
-  where
-  inventCase :: Type -> Type -> Nat -> m Term
-  inventCase f_ty g_ty con_n = do
-    -- Fuse this context with the inner fixpoint.
-    -- If this fails then just unroll the inner fixpoint once.
-    -- For now we don't use this, because it just makes computation longer
-    -- and is only for more advanced examples we can't do yet anyway
-    mby_fused_eq <- return Nothing 
-      -- Fail.catch (fusion (\_ _ -> simplify) full_ctx f_fix)
-    fused_eq <- case mby_fused_eq of
-      Just eq -> return eq
-      Nothing -> simplify (Context.apply full_ctx (Term.unfoldFix f_fix))
-      
-    -- DEBUG
-    fused_eq_s <- showM fused_eq
-    let s2 = "\nBranch: " ++ fused_eq_s
-    
-    -- Find a function which satisfies the equation
-    func <- trace s2
-      . Fail.fromMaybe
-      . Env.trackOffset
-      . Fold.findM (runMaybeT . caseFunction) 
-      $ fused_eq
-    
-    -- DEBUG 
-    func_s <- showM func
-    let s3 = "\nFunction discovered: " ++ func_s
-    trace s3 (return func)
-    where
-    -- Constrain @f_term@ to be this particular constructor
-    constraint_ctx = 
-      Term.constraint f_term (Type.inductiveType f_ty) con_n eq_ty
-    
-    -- We represent the equation using a new inductive type.
-    eq_ind = Type.Ind "__EQ" [("==", [Type.ConArg f_ty, Type.ConArg g_ty])]
-    eq_ty = Type.Base eq_ind
-    
-    -- Build a context which is an equation between f_term and g_term
-    -- where the fixpoint in f_term has been replaced by the gap.
-    eq_ctx = Context.make makeEqCtx
-      where
-      makeEqCtx gap_f = 
-        app (Con eq_ind 0) [app gap_f f_args, g_term]
-        
-    -- Compose the constraint with the equation context 
-    -- using the context monoid
-    full_ctx = constraint_ctx ++ eq_ctx
-        
-    caseFunction :: Term -> MaybeT Env.TrackOffset Term
-    caseFunction t@(App (Con eq_ind' 0) [left_t, right_t])
-      -- Make sure this is actually an equation
-      | eq_ind' == eq_ind
-      , get Type.name eq_ind' == "__EQ" = do
-        -- Check the shape of the left side of the equation is
-        -- the constructor we are finding the case for
-        Fail.unless (isCon left_f)
-        Fail.unless (ind == ind' && con_n == con_n')
-        
-        -- Try to invent a function which satisfies the equation at this point.
-        func <- id
-          . foldrM constructFunction right_t 
-          $ zip con_args left_args
-          
-        -- Lower the indices in the discovered function to be valid 
-        -- outside this point in the term. 
-        -- Remember we have descended into a term to collect equations.
-        offset <- Env.offset
-        Fail.unless (Indices.lowerableBy offset func)
-        return (Indices.lowerMany offset func)
-      where
-      Type.Base ind@(Type.Ind _ cons) = f_ty
-      left_f:left_args = Term.flattenApp left_t
-      Con ind' con_n' = left_f
-      (_, con_args) = id
-        . assert (length cons > con_n)
-        $ cons !! enum con_n
-      
-      -- We move through the constructor arguments backwards, building
-      -- up the term one by one.
-      constructFunction :: (Type.ConArg, Term) -> Term 
-        -> MaybeT Env.TrackOffset Term
-      -- If we are at a regular constructor argument (non recursive) 
-      -- then the term at this position should just be a variable.
-      constructFunction (Type.ConArg ty, Var x) term =
-        return  
-          . Lam (Bind "x" ty)
-          -- Replace the variable at this position with the newly lambda 
-          -- abstracted variable
-          . Indices.replaceAt (succ x) (Var 0) 
-          $ Indices.lift term
-          
-      -- If we are at a non variable recursive constructor argument,
-      -- then we'll need to rewrite the recursive call to @f_term@.
-      constructFunction (Type.IndVar, rec_term) term = do
-        -- Need to lift the indices in @f_term@ and @g_term@ to be 
-        -- what they would be at this point inside the equation term.
-        f_term' <- Env.liftByOffset f_term
-        g_term' <- Env.liftByOffset g_term
-        uni <- Unifier.find f_term' rec_term
-        let g_term'' = Unifier.apply uni g_term'
-        return
-          . Lam (Bind "x" g_ty)
-          . Term.replace (Indices.lift g_term'') (Var 0)
-          $ Indices.lift term
-        
-      constructFunction _ _ = Fail.here
-        
-    caseFunction _ = 
-      Fail.here
-      
-    
--- | This is like 'Maybe' 'Bool' but with a distinctive monoid instance.
--- It characterises a proof in which all parts must be true for it to be true,
--- but only one part need be false for it to be false.
-data InjectiveEquality 
-  = Equal
-  | Unequal
-  | Unknown
-  
-instance Monoid InjectiveEquality where
-  mempty = Equal
-  
-  Equal   `mappend` Equal   = Equal
-  Unequal `mappend` _       = Unequal
-  _       `mappend` Unequal = Unequal
-  _       `mappend` _       = Unknown
-  
-equalityToBool :: Fail.Can m => InjectiveEquality -> m Bool
-equalityToBool Unknown = Fail.here
-equalityToBool Equal = return True
-equalityToBool Unequal = return False
-  
-      
--- | Checks (using induction by fusion) whether two terms are equal. 
--- Assumes both terms have already been simplified.
-isEqual :: forall m . (Env.Read m, Defs.Read m, Fail.Can m)
-  -- | A simplification function to be called within proving.
-  => (Term -> m Term)
-  -> Term
-  -> Term
-  -> m Bool
-isEqual simplify t1 t2 = do
-  eq <- injEqual t1 t2
-  equalityToBool eq
-  where 
-  injEqual :: Term -> Term -> m InjectiveEquality
 
-  injEqual (Var x) (Var y)
-    | x == y = return Equal
-    | otherwise = return Unknown
-    
-  -- If both sides are constructors check they are the same constructor and that
-  -- every argument is equal
-  injEqual 
-      (flattenApp -> Con _ n : l_args) 
-      (flattenApp -> Con _ m : r_args) = do
-    if n /= m
-    then return Unequal
-    else do
-      args_eq <- zipWithM injEqual l_args r_args
-      -- Because constructors are injective we can use the concatenate
-      -- of our injective equality to conjoin the equality of each argument.
-      return (mconcat args_eq)
-  
-  -- If one side is constructor shaped and the other isn't
-  -- then we cannot decide equality.
-  injEqual (leftmost -> Con {}) _ = return Unknown
-  injEqual _ (leftmost -> Con {}) = return Unknown
-  
-  -- If both sides are the application of a function
-  -- we can unroll those functions and check equality inductively
-  injEqual
-      (flattenApp -> Fix _ fix_b1 fix_t1 : args1) 
-      (flattenApp -> Fix _ fix_b2 fix_t2 : args2) = do
-    eq <- Term.equation term1 term2
-    eq_simp <- simplify eq
-    undefined
-    where
-    term1 = app (Indices.liftAt 1 fix_t1) (map (Indices.liftMany 2) args1)
-    term2 = app (Indices.lift fix_t2) (map (Indices.liftMany 2) args2)
-    
-    solveEquation :: Term -> m Bool
-    solveEquation _ = return False
-    
-  injEqual _ _ = 
-    return Unknown
-    

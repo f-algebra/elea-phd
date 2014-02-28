@@ -11,6 +11,7 @@ import qualified Elea.Env as Env
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Testing as Test
 import qualified Elea.Fusion as Fusion
+import qualified Elea.Equality as Equality
 import qualified Elea.Definitions as Defs
 
 checkEquation :: Equation -> Test.M Test.Test
@@ -20,7 +21,7 @@ checkEquation (Equals name bs t1 t2) = id
   . Env.bindMany bs $ do
     t1' <- Fusion.run t1
     t2' <- Fusion.run t2
-    return (Test.assertEq t2' t1')
+    Test.assertTermEq t1' t2'
 
   
 tests = Test.label "Fusion"
@@ -28,7 +29,7 @@ tests = Test.label "Fusion"
   Test.loadPrelude
   eqs <- Test.loadFile "src-lib/Elea/Tests/fusion.elea"
   mapM checkEquation
-  --  . filter ((== "main") . get equationName)
+    . filter ((== "main") . get equationName)
     $ eqs
 
 

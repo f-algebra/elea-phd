@@ -217,4 +217,22 @@ let mirror =
     | Leaf -> Leaf 
     | Node t1 x t2 -> Node (mir t2) x (mir t1)
     end  
-
+    
+let tree_insert = 
+  fix (ins: nat -> ntree -> ntree) (n: nat) (t: ntree) ->
+  match t with
+  | Leaf -> Node Leaf n Leaf
+  | Node t1 x t2 ->
+    if leq_nat n x 
+    then Node (ins n t1) x t2
+    else Node t1 n (ins n t2)
+  end
+  
+let build = 
+  fix (build: nlist -> ntree) (xs: nlist) ->
+  match xs with
+  | Nil -> Leaf
+  | Cons y ys -> tree_insert y (build ys)
+  end
+  
+let treesort = fun (xs: nlist) -> flatten (build xs)
