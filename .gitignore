@@ -6,3 +6,4 @@ dist/*
 *.out
 *.exe
 #*
+*.marks
