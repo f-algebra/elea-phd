@@ -24,6 +24,7 @@ import qualified Elea.Simplifier as Simp
 import qualified Elea.Context as Context
 import qualified Elea.Foldable as Fold
 import qualified Elea.Fixpoint as Fix
+import qualified Elea.Constraint as Constraint
 import qualified Elea.Monad.Failure as Fail
 import qualified Elea.Monad.Definitions as Defs
 
@@ -113,17 +114,18 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
       return 
         . Alt alt_bs
         . Indices.liftMany (length alt_bs) 
+        . Constraint.removeAll
         $ alt_t
       where
       alt_bs = Type.makeAltBindings f_ind con_n
-      con_ctx = Term.constraint f_term f_ind con_n g_ty
+      con_ctx = Constraint.makeContext f_term f_ind con_n g_ty
       g_args_ctx = Context.make (\gap -> app gap g_args)
       full_ctx = con_ctx ++ g_args_ctx
     
     
   -- Otherwise we need to do proper fixpoint
   inventor g_term@(App (Fix {}) _) = do  
-    Fail.here
+ --   Fail.here
     -- DEBUG  
     f_term_s <- showM f_term
     g_term_s <- showM g_term
@@ -186,7 +188,7 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
       where
       -- Constrain @f_term@ to be this particular constructor
       constraint_ctx = 
-        Term.constraint f_term (Type.inductiveType f_ty) con_n eq_ty
+        Constraint.makeContext f_term (Type.inductiveType f_ty) con_n eq_ty
       
       -- We represent the equation using a new inductive type.
       eq_ind = Type.Ind "__EQ" [("==", [Type.ConArg f_ty, Type.ConArg g_ty])]

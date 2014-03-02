@@ -123,9 +123,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   let old_rc = Set.size (functionCalls (Var 0) fix_t)
       new_rc = Set.size (functionCalls (Var 0) new_fix_body)
       rem_rc = Term.occurrences (Var Indices.omega) replaced_t
-      
-  Fail.unless (rem_rc == 0)
-      
+  
   Fail.unless                                                      
     -- DEBUG
     . trace s3
@@ -141,8 +139,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   
   -- DEBUG
   final_s <- showM new_term
-  let rc = "\nold_rc = " ++ show old_rc ++ "; new_rc = " ++ show new_rc ++ "\n" ++ show fix_t 
-      s4 = "\nDONE:\n" ++ rc ++ final_s
+  let s4 = "\nDONE:\n" ++ final_s
   return (trace s4 new_term)
   
   where

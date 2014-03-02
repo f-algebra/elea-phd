@@ -9,15 +9,11 @@ module Elea.Terms
   collectM, collect,
   decreasingArgs,
   decreasingAppArgs,
-  strictVars,
   applyCase,
   generaliseArgs,
   pair,
   equation,
   isEquation,
-  isConstraint,
-  removeConstraints,
-  constraint,
   isProductive,
   isFiniteMatch,
   expressFreeVariable,
@@ -37,7 +33,6 @@ import qualified Elea.Types as Type
 import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
 import qualified Elea.Context as Context
-import qualified Elea.Evaluation as Eval
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Error as Err
@@ -172,27 +167,7 @@ decreasingArgs (Fix _ fix_b fix_t) =
     decreasing _ = 
       return True
       
--- | The variables whose value must be known in order to unroll the given term.
--- If we expanded this term these variables would be inside pattern matches
--- topmost.
-strictVars :: Term -> Set Index
-strictVars (App (Fix _ _ fix_t) args) = id
-  . Set.intersection (Indices.free args)
-  . Env.trackIndices 0
-  . Fold.foldM matchedUpon
-  . Eval.run
-  $ App fix_t args
-  where
-  matchedUpon :: Term -> Env.TrackIndices Index (Set Index)
-  matchedUpon (Case _ (Var x) _) = do
-    offset <- Env.tracked
-    if x >= offset
-    then return (Set.singleton (x - offset))
-    else return mempty
-  matchedUpon _ = 
-    return mempty
   
-      
 -- | Take a case-of term and replace the result term down each branch
 -- with the second term argument.
 applyCase :: Term -> Term -> Term
@@ -241,29 +216,7 @@ generaliseArgs (App func args) run = do
   liftHere :: Indexed b => b -> b
   liftHere = Indices.liftMany (length args)
   
-  
--- | Whether a term is a constraint. 
-isConstraint :: Term -> Bool
-isConstraint (Case _ _ alts)
-  | length alts > 1
-  , [alt_i] <- findIndices (not . isAbsurd . get altInner) alts =
-    lowerableAltInner (alts !! alt_i)
-isConstraint _ = False
 
-  
--- | Removes any instances of constraints
-removeConstraints :: Term -> Term
-removeConstraints = Fold.transform remove
-  where
-  remove (Case _ _ alts)
-    -- Find the single non-absurd branch, and return just that term
-    | length alts > 1
-    , [alt_i] <- findIndices (not . isAbsurd . get altInner) alts
-    , lowerableAltInner (alts !! alt_i) =
-      loweredAltInner (alts !! alt_i)
-    where
-  remove term = term
-        
   
 -- | Construct a pair of the two given terms. Needs to read the type of the
 -- two terms so it can construct the appropriate cartesian product type for
@@ -285,39 +238,7 @@ isEquation :: Fail.Can m => Term -> m (Term, Term)
 isEquation (App (Con ind 0) [left, right]) 
   | isJust (Type.isEquation ind) = return (left, right)
 isEquation _ = Fail.here
-  
-      
--- | Create a constraint context. For example:
--- > constraint (reverse xs) 0 nat == assert Nil <- reverse xs in _
--- > constraint (reverse xs) 1 nat == assert Cons y ys <- reverse xs in _
-constraint :: ()
-  => Term -- ^ The term we constrain to be a specific constructor
-  -> Type.Ind  -- ^ The inductive type of the first argument
-  -> Nat  -- ^ The constructor index we are constraining this term to be
-  -> Type -- ^ The type of the gap in the context
-  -> Context 
-constraint match_t ind con_n result_ty =
-  Context.make makeContext
-  where
-  makeContext gap_t = 
-    Case ind match_t alts
-    where
-    cons = Type.unfold ind
-    alts = map buildAlt [0..length cons - 1]
-    
-    buildAlt :: Int -> Alt
-    buildAlt alt_n = 
-      Alt bs alt_t
-      where
-      Bind _ con_ty = id
-        . assert (length cons > alt_n)
-        $ cons !! alt_n
-      bs = map (Bind "X") (init (Type.flatten con_ty))
-      
-      -- If we are not down the matched branch we return absurd
-      alt_t | enum alt_n /= con_n = Absurd result_ty
-            | otherwise = gap_t
-            
+          
             
 -- | Take a free variable of a fixpoint and express it as a new first argument
 -- of that fixpoint.

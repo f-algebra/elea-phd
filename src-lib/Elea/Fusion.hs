@@ -12,6 +12,8 @@ import Elea.Context ( Context )
 import Elea.Show ( showM )
 import qualified Elea.Fixpoint as Fix
 import qualified Elea.Inventor as Invent
+import qualified Elea.Constraint as Constraint
+import qualified Elea.Evaluation as Eval
 import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
 import qualified Elea.Terms as Term
@@ -253,7 +255,7 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
   -- We apply match-fix fusion for every match
   (fused_t, Monoid.Any any_fused) <- id
     . runWriterT
-    $ foldrM (fuseMatch result_ty) outer_t matches
+    $ foldrM fuseMatch outer_t matches
     
   -- Check to see whether any match-fix fusion steps succeeded.
   Fail.unless any_fused
@@ -261,7 +263,7 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
   -- Successful match-fix fusion will have eliminated all occurrences of
   -- absurdity or reduced the entire term to absurdity.
   if matchFixSuccess fused_t
-  then return (Term.removeConstraints fused_t)
+  then return (Constraint.removeAll fused_t)
   
   -- If match-fix fusion has failed we save the list of matches we attempted
   -- to fuse in.
@@ -274,7 +276,7 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
     && not (Set.null shared_strict_vars)
     where
     shared_strict_vars = 
-      Set.intersection (Term.strictVars outer_t) (Term.strictVars match_t)
+      Set.intersection (Eval.strictVars outer_t) (Eval.strictVars match_t)
   usefulMatch _ = False
   
   -- Whether a term does not contain any fixpoints which have constraints.
@@ -284,82 +286,27 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
   matchFixSuccess = not . Fold.any constrainedFix
     where
     constrainedFix (Fix _ _ fix_t) =
-      Fold.any Term.isConstraint fix_t
+      Fold.any Constraint.is fix_t
     constrainedFix _ = False
   
   -- Fuse a pattern match into a fixpoint.
   -- Typed so that we can apply it using foldrM over the list of matches.
   -- If fusion fails it returns the original term.
-  -- Will write whether fusion ever succeeds.
-  fuseMatch :: Type -> (Term, Term) -> Term -> WriterT Monoid.Any m Term
-  fuseMatch result_ty 
-      (match_t, leftmost -> Con ind con_n) 
-      term@(App fix@(Fix {}) args) = do
-      
+  -- Will write 'True' if fusion ever succeeds.
+  fuseMatch :: (Term, Term) -> Term -> WriterT Monoid.Any m Term
+  fuseMatch (match_t, leftmost -> Con ind con_n) term = do
     mby_fused <- id
-      . lift 
+      . lift
       . Fail.catch 
-      $ Fix.fusion simplify full_ctx fix
+      $ Constraint.fuse constr term
       
     case mby_fused of
       Nothing -> return term
       Just fused -> do
         tell (Monoid.Any True)
         return fused
-    where
-    cons = Type.unfold ind
-    args_ctx = Context.make (\t -> app t args)
-    match_ctx = Term.constraint match_t ind con_n result_ty
-    -- Appending contexts composes them in the natural way
-    full_ctx = match_ctx ++ args_ctx
-    
-    -- The inner simplification used in match fix fusion
-    simplify :: Term -> m Term
-    simplify term = do
-      term' <- Simp.run term
-      return
-        . Env.trackIndices fix_f
-        $ Fold.transformM expressPattern term'
-      where
-      fix_f = 0
-      ctx = Indices.lift full_ctx
-      orig_term = Context.apply ctx (Var fix_f)
-      
-      expressPattern :: Term -> Env.TrackIndices Index Term
-      expressPattern (Case ind cse_t alts) 
-        -- If we have found a pattern match which unifies with the original
-        -- match context then we should express it at recursive calls to the
-        -- function
-        | Unifier.exists match_t cse_t = do
-          fix_f <- Env.tracked
-          let alt_t' = id
-                . Env.trackIndices (fix_f, cse_t)
-                . Env.liftTrackedMany (length alt_bs)
-                $ Fold.transformM express alt_t
-              alts' = l_alts ++ (Alt alt_bs alt_t' : r_alts)
-          return (Case ind cse_t alts')
-        where
-        (l_alts, Alt alt_bs alt_t : r_alts) = splitAt (enum con_n) alts
-        
-        express :: Term -> Env.TrackIndices (Index, Term) Term
-        express term@(App (Var f) args) = do
-          (fix_f, cse_t) <- Env.tracked
-          let cse_ctx = Term.constraint cse_t ind con_n result_ty
-              term' = Context.apply cse_ctx term
-          -- We only need to express the constraint if it can be unified with
-          -- the original constraint, and hence could be replaced by fusion.
-          if fix_f == f 
-            && Unifier.exists orig_term term'
-          then return term'
-          else return term
-        express other = 
-          return other
-          
-      expressPattern other = 
-        return other
-        
-  fuseMatch _ _ term =
-    return term
+    where 
+    constr = Constraint.make match_t ind con_n
         
 matchFix _ = Fail.here
 

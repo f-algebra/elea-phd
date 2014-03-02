@@ -280,8 +280,8 @@ lowerableAltInner (Alt bs alt_t) =
 loweredAltInner :: Indexed Term => Alt -> Term
 loweredAltInner (Alt bs alt_t) =
   Indices.lowerMany (length bs) alt_t
-
-
+  
+  
 -- | Build a fold function. 
 buildFold :: Indexed Term 
   => Type.Ind  -- ^ The inductive argument type of the fold function 

@@ -32,9 +32,6 @@ steps :: (Fail.Can m, Env.Read m, Defs.Read m) => [Term -> m Term]
 steps = Eval.steps ++
   [ const Fail.here
   , Fail.concatTransforms transformSteps
-  , caseApp
-  , appCase
-  , caseCase
   , finiteArgFix
   , unfoldFixInj
   , freeCaseFix
@@ -84,35 +81,6 @@ caseFun cse@(Case ind t alts) = do
     arg = Var (toEnum (length bs))
     
 caseFun _ = Fail.here
-
-
--- | If we have a case statement on the left of term 'App'lication
--- then float it out.
-caseApp :: Fail.Can m => Term -> m Term
-caseApp (App (Case ind t alts) args) =
-  return (Case ind t (map appArg alts))
-  where
-  appArg (Alt bs alt_t) =
-    Alt bs (Eval.run (app alt_t (Indices.liftMany (length bs) args)))
-    
-caseApp _ = Fail.here
-
-
--- | If we have a case statement on the right of term 'App'lication
--- then float it out.
-appCase :: Fail.Can m => Term -> m Term
-appCase term@(App _ args) = do
-  cse_t <- Fail.fromMaybe (find isCase args)
-  return (Term.applyCase cse_t term)
-appCase _ = Fail.here
-
-
--- | If we are pattern matching on a pattern match then remove this 
--- using distributivity.
-caseCase :: Fail.Can m => Term -> m Term
-caseCase outer_cse@(Case _ inner_cse@(Case {}) _) =
-  return (Term.applyCase inner_cse outer_cse)
-caseCase _ = Fail.here
 
 
 -- | Finds terms that are absurd and sets them that way.

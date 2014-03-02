@@ -61,11 +61,32 @@ prop "drop take": forall (n: nat) (xs: nlist) ->
   */
   
 prop "filter reverse": forall (p: nat -> bool) (xs: nlist) ->
-  filter p (reverse xs)
+  filter p (reverse xs) = reverse (filter p xs)
 
 prop "insertsort sorted": forall (xs: nlist) ->
   is_sorted (insertsort xs)
 
-prop "main": forall (y: nat) (t: ntree) ->
-  is_sorted (flatten t)
- 
+  /*
+let sorted_tree = 
+  fix (srtd: ntree -> bool) (t: ntree) ->
+  match t with
+  | Leaf -> True
+  | Node t1 x t2 -> 
+    match flatten t2 with
+    | Nil -> 
+  */
+  /*
+let rightmost_leq = 
+  fix (leq: nat -> nlist -> bool) (n: nat) (xs: nlist) ->
+  match xs with
+  | Nil -> True
+  | Cons x xs ->
+    match xs with
+    | Nil -> leq_nat x n
+    | Cons y ys -> leq n xs
+    end
+  end
+  
+prop "main": forall (y: nat) (t: ntree) (xs: nlist) ->
+  rightmost_leq y (flatten t)
+ */
