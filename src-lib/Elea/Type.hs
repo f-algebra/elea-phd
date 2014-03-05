@@ -4,7 +4,7 @@ module Elea.Type
   name, constructors, boundLabel, boundType, 
   empty, unit, pair, bool, 
   equation, isEquation,
-  returnType,
+  returnType, argumentTypes,
   isInd, isFun, fromBase,
   unflatten, flatten, unfold, argumentCount,
   recursiveArgs, nonRecursiveArgs, recursiveArgIndices,
@@ -119,6 +119,9 @@ unflatten = foldr1 Fun
 
 returnType :: Type -> Type
 returnType = last . flatten
+
+argumentTypes :: Type -> [Type]
+argumentTypes = init . flatten
 
 argumentCount :: Type -> Int
 argumentCount = pred . length . flatten

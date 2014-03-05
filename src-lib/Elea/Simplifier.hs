@@ -2,7 +2,10 @@
 -- not involve fixpoint fusion.
 module Elea.Simplifier
 (
-  run, steps, removeConstArgs
+  run, steps, removeConstArgs,
+  
+  -- | These two steps are useful for fixpoint fusion
+  finiteCaseFix, finiteArgFix,
 )
 where
 
@@ -37,7 +40,7 @@ steps = Eval.steps ++
   , freeCaseFix
   , propagateMatch
   , raiseVarCase
-  , unfoldCaseFix 
+  , finiteCaseFix 
   , unfoldWithinFix
   ]
   where
@@ -50,13 +53,12 @@ steps = Eval.steps ++
     , constArg
     , identityCase
     , uselessFix
-    , constantCase
     ] 
 
 -- | Remove arguments to a fixpoint if they never change in 
 -- any recursive calls.
 removeConstArgs :: Env.Write m => Term -> m Term
-removeConstArgs = Fold.rewriteM constArg
+removeConstArgs = liftM Eval.run . Fold.rewriteM constArg
 
   
 -- | We do not want pattern matches to return function typed values,
@@ -329,33 +331,28 @@ raiseVarCase outer_t@(Case _ (leftmost -> Fix {}) alts) = do
 raiseVarCase _ = Fail.here
 
 
--- | Removes a pattern match if every branch returns the same value.
-constantCase :: forall m . Fail.Can m => Term -> m Term
-constantCase (Case _ _ alts) = do
-  (alt_t:alt_ts) <- mapM loweredAltTerm alts
-  Fail.unless (all (== alt_t) alt_ts)
-  return alt_t
-  where
-  loweredAltTerm :: Alt -> m Term
-  loweredAltTerm (Alt bs alt_t) = 
-    Indices.tryLowerMany (length bs) alt_t
-    
-constantCase _ = Fail.here
-
-
 -- | Unfolds a 'Fix' which is being pattern matched upon if that pattern
 -- match only uses a finite amount of information from the 'Fix'.
--- TODO: Extend this to arbitrary depth of unrolling, currently
--- it only works for depth 1 (need to extend @Term.isFiniteMatch@).
-unfoldCaseFix :: Fail.Can m => Term -> m Term
-unfoldCaseFix term@(Case ind (App fix@(Fix {}) args) alts)
-  | Term.isProductive fix
-  , Term.isFiniteMatch ind alts = 
-    return (Eval.run (Case ind cse_t' alts))
-  where
-  cse_t' = Eval.run (app (Term.unfoldFix fix) args)
+-- Currently only works for a single unrolling, but otherwise we'd need an 
+-- arbitrary amount of unrolling, which seems difficult.
+finiteCaseFix :: Fail.Can m => Term -> m Term
+finiteCaseFix term@(Case ind (App (Fix _ _ fix_t) args) alts) = do
+  -- This line is just for speed.
+  -- It's just a guess, but I can't think of a non-recursive datatype
+  -- returning function which this would work on.
+  Fail.unless (Type.isRecursive ind)
   
-unfoldCaseFix _ = Fail.here
+  -- Check that unrolling the function removed recursive calls 
+  Fail.when (0 `Indices.freeWithin` unrolled)
+  return (Indices.lower unrolled)
+  where
+  extendedEval = Fold.rewriteSteps (Eval.steps ++ [finiteCaseFix])
+  unrolled = id
+    . extendedEval
+    . Case ind (App fix_t (Indices.lift args)) 
+    $ Indices.lift alts
+  
+finiteCaseFix _ = Fail.here
 
 
 -- | If a recursive function just returns the same value, regardless of its

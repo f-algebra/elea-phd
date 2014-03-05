@@ -35,17 +35,35 @@ steps = Simp.steps ++
   ]                   
 
 
--- | Remove a fixpoint which recursively returns the original argument
-identityFix :: (Env.Read m, Fail.Can m, Defs.Read m) => Term -> m Term
-identityFix fix@(Fix _ (Bind _ (Type.Fun arg_ty res_ty)) _)
-  -- We can quickly identify potential functions as 
-  -- they will have type @A -> A@ where @A@ is inductive. 
-  | Type.isInd arg_ty
-  , arg_ty == res_ty = 
-    Fix.fission Simp.run fix ctx
+-- | Remove a fixpoint which recursively returns one of its arguments
+identityFix :: forall m . (Env.Read m, Fail.Can m, Defs.Read m) => 
+  Term -> m Term
+identityFix fix@(Fix _ (Bind _ fix_ty) fix_t) = do
+  -- Just in case we have a function where not all lambdas are topmost,
+  -- even though this shouldn't occur
+  Fail.unless (length arg_bs == (length arg_tys :: Int))
+  
+  Fail.choose (map identityOn potential_args)
   where
-  -- A constant context which returns the identity function
-  ctx = Context.make (\_ -> Lam (Bind "x" arg_ty) (Var 0))
+  arg_tys = Type.argumentTypes fix_ty
+  res_ty = Type.returnType fix_ty
+  
+  -- Potential argument indices are those whose type matches the return type
+  -- of the function
+  potential_args = findIndices (== res_ty) arg_tys
+  
+  -- Pull the bindings for the arguments
+  (arg_bs, _) = Term.flattenLam fix_t
+  
+  -- See if the function is an identity on the given argument index
+  identityOn :: Int -> m Term
+  identityOn arg_i = 
+    Fix.fission Simp.run fix ctx
+    where
+    -- A constant context which returns the identity function
+    -- on the given argument index
+    lam_var = (length arg_tys - arg_i) - 1
+    ctx = Context.make (\_ -> unflattenLam arg_bs (Var (enum lam_var)))
   
 identityFix _ = Fail.here
 

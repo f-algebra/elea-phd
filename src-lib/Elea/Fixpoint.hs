@@ -26,6 +26,7 @@ import qualified Elea.Monad.Definitions as Defs
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
+
 -- | Fixpoint fusion.
 -- > if E' = fusion C E
 -- > then C[E] = E'
@@ -54,7 +55,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   
   simplified_t <- id
     -- DEBUG
-    . trace s1
+  --  . trace s1
   
     -- After simplification we replace all of the free
     -- variables within the term with fresh new ones,
@@ -77,18 +78,23 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   -- as this will rewrite the term we are replacing
   let reverted_t = id
         -- DEBUG
-        . trace s2
+  --      . trace s2
         . Env.trackIndices 0
         . Term.revertMatchesWhenM isInnerFixMatch
         $ simplified_t
-    
   
   -- The new fix body with every occurrence of the context composed
   -- with the old fix variable replaced with the new fix variable
-  let replaced_t = id 
+  let inner_fix_here = Indices.liftMany (length free_vars + 1) inner_fix
+      replaced_t = id 
+        -- Expand every call to the inner fixpoint if it uses a finite
+        -- amount of information from that fixpoint
+        . expandFiniteCalls Indices.omega inner_fix_here
+  
         -- Now replace all occurrences of the outer context 
         -- composed with omega (the old fix variable)
         . Env.trackOffset
+        . Env.trackMatches
         . Fold.rewriteM replace
         
         -- We replace all occurrences of the old fix variable with omega
@@ -126,10 +132,10 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   
   Fail.unless                                                      
     -- DEBUG
-    . trace s3
-   -- . trace (s1 ++ s2 ++ s3)
+   -- . trace s3
+    . trace (s1 ++ s2 ++ s3)
     $ rem_rc == 0 
-    || new_rc >= old_rc
+ --   || new_rc >= old_rc
     
     -- Couple of extra ad hoc reasons fusion would have succeeded.
     -- Trivially sound and terminating so why not.
@@ -185,30 +191,77 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   
   -- Replace occurrences of the context applied to the inner
   -- (now uninterpreted) fixpoint variable.
-  replace :: Term -> MaybeT Env.TrackOffset Term
-  replace term 
-    | Indices.containsOmega term = do
-      -- The term we are replacing
-      replace_t <- id
-        . Env.liftByOffset 
-        . Context.apply outer_ctx'
-        $ Var Indices.omega
-
-      uni <- Unifier.find replace_t term
-      guard (not (Indices.containsOmega (Map.keysSet uni)))
+  replace :: Term -> MaybeT (Env.TrackMatches Env.TrackOffset) Term
+  replace term = do
+    -- Make sure there is only a single recursive call in the term
+    Fail.unless (Term.occurrences (Var Indices.omega) term == 1)
+    -- and that it contains no bound variables
+    Fail.unless (Set.size term_calls == 1)
+    
+    -- The term we are hoping to replace this term with
+    replace_t <- id
+      . Env.liftByOffset 
+      . Context.apply outer_ctx'
+      $ Var Indices.omega
+    
+    mby_uni <- Fail.catch (Unifier.find replace_t term)
+    case mby_uni of
+      -- If we found a unification then just check it is a valid one
+      -- and use it
+      Just uni -> do
+        let mapped_to = concatMap Indices.free (Map.elems uni)
+        Fail.when (Indices.containsOmega (Map.keysSet uni))
+        Fail.when (Indices.containsOmega mapped_to)
+        
+        -- The new function call, lifted to the correct indices
+        repl_here <- Env.liftByOffset replace_with
+        return (Unifier.apply uni repl_here)
       
-      let mapped_to = concatMap Indices.free (Map.elems uni)
-      guard (not (Indices.containsOmega mapped_to))
-      
-      -- The new function call, lifted to the correct indices
-      repl_here <- Env.liftByOffset replace_with
-      return (Unifier.apply uni repl_here)
+      -- Otherwise it could be a /degenerate/ instance of the context,
+      -- so apply the background pattern matches and see if that is the case.
+      Nothing -> do
+        -- Calls to the unrolled fixpoint in the term we are replacing with
+        -- and the original term
+        let [repl_call] = toList (Term.collect fixpointCall replace_t)
+            [term_call] = toList term_calls
+        
+        Fail.here
     where
+    -- Calls to the unrolled fixpoint within the term
+    -- we are trying to replace
+    term_calls = Term.collect fixpointCall term
+    
     outer_ctx' = (Indices.lower . rebindVars . Indices.lift) outer_ctx
     new_fix_var = Var (length new_vars)
     replace_with = app new_fix_var (reverse new_vars)
+    
+    -- Find calls to the unrolled fixpoint
+    fixpointCall :: Term -> Bool
+    fixpointCall (App (Var f) _) = f == Indices.omega
+    fixpointCall _ = False
+
+  
+  -- Remove any recursive calls to the inner fixpoint 
+  -- which will be finitely used.
+  -- Specifically those for which the simplifier's 'finiteArgFix'
+  -- and 'finiteCaseFix' apply.
+  expandFiniteCalls :: Index -> Term -> Term -> Term
+  expandFiniteCalls fix_var fix = id
+    . Env.trackIndices (fix_var, fix)
+    . Fold.rewriteM expand
+    where
+    expand :: Term -> MaybeT (Env.TrackIndices (Index, Term)) Term
+    expand (Case ind (App (Var f) args) alts) = do
+      (fix_f, inner_fix) <- Env.tracked
+      Fail.unless (f == fix_f)
+      Simp.finiteCaseFix (Case ind (App inner_fix args) alts)
+    expand (App (Var f) args) = do
+      (fix_f, inner_fix) <- Env.tracked
+      Fail.unless (f == fix_f)
+      Simp.finiteArgFix (App inner_fix args)
+    expand _ = 
+      Fail.here
       
-  replace _ = mzero    
     
   
 -- | Fixpoint fission.

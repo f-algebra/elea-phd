@@ -10,13 +10,12 @@ module Elea.Term
   projectAlt, embedAlt,
   altBindings, altInner,
   altBindings', altInner',
-  fusedMatches,
   flattenApp, leftmost, arguments,
   flattenLam, unflattenLam,
   isCon, isLam, isVar,
   isFix, isAbsurd, isCase,
   isAbsurd',
-  alreadyFused,
+  emptyInfo,
   addFusedMatches,
   inductivelyTyped, 
   fromVar, 
@@ -73,10 +72,10 @@ data Alt
 -- | Information stored about fixpoints, to add efficiency.
 data FixInfo
   = FixInfo { -- | The sets of pattern matches that have been unsuccessfully
-              -- fused into this fixpoint.
-              -- Stops match-fix fusion from constantly repeating itself.
-              -- Purely for efficiency, shouldn't affect soundness.
-              _fusedMatches :: !(Set (Set Term)) }
+              -- fused into this fixpoint, and the value of the applied
+              -- arguments to the fixpoint itself.
+              -- Stops match-fix fusion from repeating itself.
+              _failedFusionSteps :: ![(Set Term, Term)] }
               
 -- Fixpoint information does not change the meaning of a fixpoint, so
 -- it does not effect equality between terms.
@@ -85,16 +84,13 @@ instance Eq FixInfo where
 instance Ord FixInfo where
   _ `compare` _ = EQ
   
-instance Monoid FixInfo where
-  mempty = FixInfo mempty
-  FixInfo i1 `mappend` FixInfo i2 = FixInfo (i1 ++ i2)
-  
 -- | Equations between terms
 data Equation
   = Equals  { _equationName :: String
             , _equationVars :: [Bind]
             , _equationLHS :: Term
             , _equationRHS :: Term }
+
  
 -- * Base types for generalised cata/para morphisms.
   
@@ -219,22 +215,24 @@ leftmost = head . flattenApp
 arguments :: Term -> [Term]
 arguments = tail . flattenApp
 
+emptyInfo :: FixInfo
+emptyInfo = FixInfo []
+
+
 -- | This should maybe be called @fullyApplied@ but it checks whether a fixpoint
 -- has every argument applied to it.
 inductivelyTyped :: Term -> Bool
 inductivelyTyped (App (Fix _ (Bind _ fix_ty) _) args) =
   Type.argumentCount fix_ty == length args
-
--- | Whether we have already attempted to fuse this set of terms into
--- this fixpoint.
-alreadyFused :: FixInfo -> Set Term -> Bool
-alreadyFused (FixInfo fused) = 
-  flip Set.member fused
+  
   
 -- | Add a set of matches we attempted to fuse into a fixpoint.
 addFusedMatches :: Set Term -> Term -> Term
-addFusedMatches ms (flattenApp -> Fix (FixInfo mss) fix_b fix_t : args) = 
-  app (Fix (FixInfo (Set.insert ms mss)) fix_b fix_t) args
+addFusedMatches ms term = 
+  app (Fix info' fix_b fix_t) args
+  where
+  Fix (FixInfo mss) fix_b fix_t : args = flattenApp term
+  info' = FixInfo ((ms, term) : mss)
   
   
 -- | Given an inductive type and a constructor index this will return
@@ -293,7 +291,7 @@ buildFold ind@(Type.Ind _ cons) result_ty =
   -- Add a fixpoint if the inductive type is recursive
   fix_t 
     | not (Type.isRecursive ind) = Indices.lower fold_t
-    | otherwise = Fix mempty fix_b fold_t
+    | otherwise = Fix emptyInfo fix_b fold_t
     where
     fix_lbl = "fold[" ++ show ind ++ "]"
     fix_b = Bind fix_lbl (Fun (Base ind) result_ty)

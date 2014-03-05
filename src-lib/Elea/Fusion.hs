@@ -37,6 +37,7 @@ run = runSteps (fission_steps ++ fusion_steps)
     [ const Fail.here
     , Fold.rewriteOnceM repeatedArg
     , Fold.rewriteOnceM fixfix
+    , Fold.rewriteOnceM decreasingFreeVars
     , mapMaybeT Env.trackMatches . Fold.rewriteOnceM matchFix
     ]
    
@@ -165,7 +166,7 @@ fixfix oterm@(App ofix@(Fix {}) oargs)
                                                                        
         invented_ctx <- id
           . Env.bind (Bind "extrX" f_ty)
-          $ Invent.run Simp.run orig_term' term'
+          $ Invent.run run orig_term' term'
         
         return
           . Indices.substAt 0 f_term
@@ -250,7 +251,7 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
   -- Check whether we have already tried fusing this set of matches into
   -- the fixpoint. This is what 'FixInfo' is for.
   let matches_set = Set.fromList (map fst matches)
-  Fail.when (Term.alreadyFused fix_info matches_set)
+  Fail.when (Term.alreadyFused fix_info matches_set outer_t)
   
   -- We apply match-fix fusion for every match
   (fused_t, Monoid.Any any_fused) <- id
@@ -310,63 +311,133 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
         
 matchFix _ = Fail.here
 
-{-
-decreasingFreeVar :: forall m . (Env.Read m, Fail.Can m, Defs.Read m) => 
+
+-- | Find all decreasing arguments to a fixpoint which are also free within
+-- that fixpoint. Express these internal arguments as arguments to the fixpoint
+-- itself and then do fusion on the repeating variables.
+-- For example, the second argument of addition is constant and will be
+-- moved into the definition of the fixpoint itself. 
+-- So to simplify @add x x@ we fuse the context @fun f -> f x x@ with
+-- the fixpoint @add@ having reexpressed the inner argument as an 
+-- argument to the fixpoint.
+decreasingFreeVars :: forall m . (Env.Read m, Fail.Can m, Defs.Read m) => 
   Term -> m Term
-decreasingFreeVar orig_t@(App fix@(Fix {}) args) = do
+decreasingFreeVars orig_t@(App fix@(Fix {}) orig_args) = do
   Fail.unless (Term.inductivelyTyped orig_t)
-  Fail.choose (map fuseVar potential_args)
+  Fail.unless (length dec_free_args > 0)
+  
+  -- DEBUG
+  orig_s <- showM orig_t
+  let s1 = "\n\n[decreasing-free-var] starting point:\n" ++ orig_s
+  
+  -- Generalise all the arguments first, the return value of this will
+  -- ungeneralise the arguments again
+  trace s1 
+    $ Term.generaliseArgs orig_t generalised
   where
   -- The variable arguments we should attempt this technique on.
   -- They must be a decreasing argument, and free within the fixpoint itself. 
-  potential_args :: [Int]
-  potential_args = filter isFreeVar (Term.decreasingArgs fix)
+  dec_free_args :: [Int]
+  dec_free_args = filter isFreeVar (Term.decreasingArgs fix)
     where
     isFreeVar arg_i 
-      | Var x <- args !! arg_i =
+      | Var x <- orig_args !! arg_i =
         x `Indices.freeWithin` fix
-    isFreeVar = False
+    isFreeVar _ = False
   
-  fuseVar :: Int -> m Term
-  fuseVar arg_i = 
-    -- Generalise all the arguments first, the return value of this will
-    -- ungeneralise the arguments again
-    Term.generaliseArgs orig_t generalised
+  generalised :: Indices.Shift -> Term -> m Term
+  generalised shiftVars (App fix args) = do
+    App fix' _ <- Term.expressFreeVariables free_vars fix
+    Fix.fusion (simplify fix') ctx fix'
     where
-    generalised :: (Term -> Term) -> Term -> m Term
-    generalised liftHere (App fix args) = do
-      App fix' [Var _] <- Term.expressFreeVariable free_x fix
-      Fix.fusion (simplify fix') ctx fix'
+    free_vars = id
+      . shiftVars
+      . map Term.fromVar 
+      . map (orig_args !!) 
+      $ dec_free_args
+    
+    ctx = Context.make (\t -> app t args')
       where
-      Var free_x = liftHere (args !! arg_i)
-      
-      ctx = Context.make (\t -> app t args')
+      -- The list of arguments with matching variables set
+      args' = map Var free_vars ++ foldr setArg args dec_free_args
         where
-        args' = Var free_x : setAt arg_i (Var free_x) args
+        setArg :: Int -> [Term] -> [Term]
+        setArg i = setAt i (Var (free_vars !! i))
       
-    simplify :: Term -> Term -> m Term
-    simplify (Indices.lift -> fix) term = do
-      term' <- Simp.run term
-      Env.alsoTrack (fix, 0)
-        $ Fold.transformM express term'
+  simplify :: forall m . (Defs.Read m, Env.Read m) => 
+    Term -> Term -> m Term
+  simplify (Indices.lift -> fix) term = do
+    term' <- Simp.run term
+    Env.alsoTrack (fix, 0)
+      $ Fold.transformM express term'
+    where
+    express :: Term -> Env.AlsoTrack (Term, Index) m Term
+    express term@(App (Var f) args) = do
+      (fix, fix_f) <- Env.tracked 
+      if f /= fix_f
+      then return term
+      else do
+        -- The trick here is to push the constant arguments
+        -- back into the fixpoint, so they will not be generalised by the
+        -- generaliseArgs call
+        term' <- Simp.removeConstArgs (App fix args)
+        
+        -- Recursively run fixpoint fusion with all arguments generalised
+        fused <- Term.generaliseArgs term' (\_ -> run)
+        
+        -- Undo the above replacement of the fix variable with the fixpoint
+        replaced <- Fold.rewriteM replace fused
+        
+        -- DEBUG
+        term_s <- showM term'
+        fused_s <- showM fused
+        repl_s <- showM replaced
+        let s1 = "\n\n[decreasing-free-var] original:\n" ++ term_s
+              ++ "\n\n[decreasing-free-var] fused:\n" ++ fused_s
+              ++ "\n\n[decreasing-free-var] replaced:\n" ++ repl_s
+        
+        -- Make sure that we actually succeeded in the above step
+        -- otherwise this fusion step will always trivially succeed
+        -- at it just strips out every fix variable
+        if trace s1 
+          $ fix_f `Indices.freeWithin` replaced
+        then return replaced
+        else return term
       where
-      express :: Term -> Env.AlsoTrack (Term, Index) m Term
-      express term@(App (Var f) args) = do
-        (fix, fix_f) <- Env.tracked 
-        if f /= fix_f
-        then return term
-        else do
-          -- The trick here is that Simp.run will push the constant argument
-          -- back into the fixpoint, so it will not be generalised by the
-          -- generaliseArgs call
-          term' <- Simp.run (App fix args)
-          
-          -- Recursively run fixpoint fusion
-          Term.generaliseArgs term' generalised
-        where 
-        generalised :: Indices.Shift -> Term -> m (Maybe Term)
-        generalised shiftHere term = do
-          
-          
-         -} 
+      -- Replace the fixpoint term with the fix variable
+      -- if we can properly match it to the original fixpoint
+      replace :: Term -> MaybeT (Env.AlsoTrack (Term, Index) m) Term
+      replace term@(App inner_fix@(Fix {}) args) = do
+        (orig_fix, fix_f) <- Env.tracked
+      
+        -- Check that this fixpoint can have the same argument expressed
+        -- as the original one
+        Fail.unless (all (Term.isVar . (args !!)) dec_free_args)
+        Fail.unless (all (`Indices.freeWithin` inner_fix) free_vars)
+        
+        -- We reexpress the free-within arguments as variables to the fixpoint
+        -- then we can check if this fixpoint matches the given one 
+        -- (since that one had its variables expressed too).
+        inner_t@(App inner_fix' _) <- 
+          Term.expressFreeVariables free_vars inner_fix
+        
+        -- DEBUG 
+        inner_s <- showM inner_t
+        let s1 = "\n\n[decreasing-free-var] inner:\n" ++ inner_s
+        
+        Fail.unless (inner_fix' == orig_fix)
+        
+        -- If it does we can replace it with the fix variable again
+        return (App (Var fix_f) (map Var free_vars ++ args))
+        where
+        free_vars = map (Term.fromVar . (args !!)) dec_free_args
+        
+      replace _ = 
+        Fail.here
+        
+    express term = 
+      return term
+        
+decreasingFreeVars _ =
+  Fail.here
           

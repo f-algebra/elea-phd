@@ -66,4 +66,18 @@ let is_sorted2 =
   
 prop "unfold within fix": forall (xs: nlist) ->
   is_sorted xs = is_sorted2 xs
+  
+prop "unfold productive fix": forall (xs: nlist) ->
+  (match append xs (Cons 1 Nil) with
+   | Nil -> 0 | Cons y ys -> y end)
+  =
+  (match xs with
+   | Nil -> 1 | Cons y ys -> y end)
+   
+prop "unfold branching fix": forall (t: ntree) ->
+  (match flatten t with
+   | Nil -> 0 | Cons y ys -> 1 end)
+  = 
+  (match t with
+   | Leaf -> 0 | Node t1 x t2 -> 1 end)
 

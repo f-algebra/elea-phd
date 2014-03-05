@@ -19,7 +19,7 @@ tests = Test.list
   , Term.tests
   , Simplifier.tests
   , Context.tests
- --  , Inventor.tests
+ -- , Inventor.tests
   , Fusion.tests  
   ]
   

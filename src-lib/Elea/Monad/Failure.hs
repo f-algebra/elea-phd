@@ -138,6 +138,10 @@ instance Can m => Can (EitherT e m) where
         Nothing -> return (Right Nothing)
         Just (Left e) -> return (Left e)
         Just (Right x) -> return (Right (Just x))
+        
+instance Can m => Can (IdentityT m) where
+  here = lift here
+  catch = mapIdentityT catch
   
 instance Monad Monoid.First where
   return = Monoid.First . return

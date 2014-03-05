@@ -30,7 +30,8 @@ steps =
   , caseOfCon
   , caseApp
   , appCase
-  , caseCase 
+  , caseCase
+  , constantCase
   ]
   
   
@@ -121,4 +122,18 @@ caseCase :: Fail.Can m => Term -> m Term
 caseCase outer_cse@(Case _ inner_cse@(Case {}) _) =
   return (Term.applyCase inner_cse outer_cse)
 caseCase _ = Fail.here
+
+
+-- | Removes a pattern match if every branch returns the same value.
+constantCase :: forall m . Fail.Can m => Term -> m Term
+constantCase (Case _ _ alts) = do
+  (alt_t:alt_ts) <- mapM loweredAltTerm alts
+  Fail.unless (all (== alt_t) alt_ts)
+  return alt_t
+  where
+  loweredAltTerm :: Alt -> m Term
+  loweredAltTerm (Alt bs alt_t) = 
+    Indices.tryLowerMany (length bs) alt_t
+    
+constantCase _ = Fail.here
 

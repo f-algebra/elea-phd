@@ -24,8 +24,7 @@ tests = Test.label "Terms"
     $ Test.run $ do
   Test.loadPrelude
   
-  add <- Test.term "add"
-  let (_, App add_fix@(Fix {}) _) = flattenLam add
+  add_fix <- Test.term "add"
   
   leq_nat <- Test.term "leq_nat"
   srtd_fix <- Test.term "is_sorted"
@@ -59,18 +58,6 @@ tests = Test.label "Terms"
   let fold1 = Test.assertEq fold_nat_nat (buildFold nat (Base nat))
       fold2 = Test.assertEq fold_ntree_nlist (buildFold ntree (Base nlist))
       
-      
-  take_fix <- Test.simplifiedTerm "take"
-  height_fix <- Test.simplifiedTerm "height"
-  flat_fix <- Test.simplifiedTerm "flatten"
-  rev_fix <- Test.simplifiedTerm "reverse"
-  
-  let prod1 = Test.assert (isProductive take_fix)
-      prod2 = Test.assert (isProductive height_fix)
-      prod3 = Test.assertNot (isProductive flat_fix)
-      prod4 = Test.assertNot (isProductive rev_fix)
-    
-      
   -- A weird problem I had at one point
   let eq_ind = Ind "__EQ" [("==", [ConArg (Base nat), ConArg (Base nat)])]
       weird_free = Indices.free (Alt [] (App (Con eq_ind 0) [Var 0, Var 1]))
@@ -95,14 +82,20 @@ tests = Test.label "Terms"
       eq3 = Test.assertEq eq_bool' eq_bool 
       eq4 = Test.assertEq eq_unit' eq_unit 
       
+  Lam bind_y add_simp <- Test.simplifiedTerm def_add_raw
+  add_raw <- Test.term def_add_raw
+  express1 <- Env.bind bind_y $ do
+    App add_raw' [_] <- expressFreeVariable 0 add_simp
+    Test.assertTermEq add_raw add_raw'
+      
   return $ Test.list $
     [ dec1, dec2, dec3
     , fin1, fin2, fin3 
     , fold1, fold2
-    , prod1, prod2, prod3
     , weird1
     , conj1
     , eq1, eq2, eq3, eq4
+    , express1
     ]
 
 def_eq_unit, def_eq_bool, def_eq_nat, def_eq_ntree :: String
@@ -124,4 +117,8 @@ def_eq_ntree =
     ++ "| Leaf -> False "
     ++ "| Node t1' x' t2' -> and (eq t1 t1') (and (eq[nat] x x') (eq t2 t2')) "
     ++ "end end"
+    
+def_add_raw =
+  "fix (add: nat -> nat -> nat) (y: nat) (x: nat) -> "
+  ++ "match x with | 0 -> y | Suc x' -> Suc (add y x') end"
     

@@ -34,6 +34,11 @@ class Indexed t where
   -- | Only modifies free indices.
   shift :: (Index -> Index) -> t -> t
   
+-- I don't think this adds any speed, but it's good to know.
+{-# RULES
+  "shift natural" forall f g xs . shift f (shift g xs) = shift (f . g) xs
+  #-}
+  
 -- | Functions which shift indices. A useful synonym.
 type Shift = forall a . Indexed a => a -> a
   
@@ -105,6 +110,14 @@ instance Show Index where
 class Indexed t => Substitutable t where
   type Inner t
   substAt :: Index -> Inner t -> t -> t
+  
+instance Substitutable t => Substitutable [t] where
+  type Inner [t] = Inner t
+  substAt i x = map (substAt i x)
+  
+instance (Ord t, Substitutable t) => Substitutable (Set t) where
+  type Inner (Set t) = Inner t
+  substAt i x = Set.map (substAt i x)
   
 subst :: Substitutable t => Inner t -> t -> t
 subst = substAt 0

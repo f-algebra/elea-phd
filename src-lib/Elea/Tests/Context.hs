@@ -12,7 +12,7 @@ import qualified Elea.Env as Env
 import qualified Elea.Testing as Test
 
 context :: String -> Test.M Context.Context
-context = liftM Context.fromLambda . Test.term
+context = liftM Context.fromLambda . Test.simplifiedTerm
 
 tests = Test.label "Contexts"                                          
     $ Test.run $ do
@@ -43,8 +43,8 @@ tests = Test.label "Contexts"
 contextTest :: String -> String -> String -> Test.M Test.Test
 contextTest ctx_s sub_s aim_s = do
   ctx <- context ctx_s
-  sub <- Test.term sub_s
-  aim <- Test.term aim_s
+  sub <- Test.simplifiedTerm sub_s
+  aim <- Test.simplifiedTerm aim_s
   let app = Context.apply ctx sub
       test1 = Test.assertEq aim app
       Just sub' = Context.strip ctx aim

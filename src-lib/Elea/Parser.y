@@ -14,7 +14,7 @@ import qualified Elea.Index as Indices
 import qualified Elea.Types as Type
 import qualified Elea.Env as Env
 import qualified Elea.Foldable as Fold
-import qualified Elea.Simplifier as Simp
+import qualified Elea.Evaluation as Eval
 import qualified Elea.Monad.Definitions as Defs      
 import qualified Elea.Monad.Error as Err
 import qualified Data.Map as Map
@@ -190,9 +190,6 @@ instance Err.Can m => Env.Read (ReaderT Scope m) where
   bindings = asks (get bindStack)
   
 type ParserMonad m a = (Err.Can m, Defs.Has m) => ReaderT Scope m a
-
-simplify :: Defs.Has m => Term -> m Term
-simplify = Env.emptyT . Simp.run
     
 localDef :: MonadReader Scope m => String -> Term -> m a -> m a
 localDef name term = id
@@ -203,7 +200,7 @@ localDef name term = id
 term :: (Err.Can m, Defs.Has m) => String -> m Term
 term = id
   . withEmptyScope 
-  . (>>= simplify)
+  . liftM Eval.run
   . parseAndCheckTerm 
   . happyTerm 
   . lexer
@@ -257,8 +254,7 @@ program text =
   
   defineTerm (name, raw_term) = do
     term <- parseAndCheckTerm raw_term
-    term' <- simplify term
-    Defs.defineTerm name term'
+    Defs.defineTerm name (Eval.run term)
     
 lookupTerm :: String -> ParserMonad m Term
 lookupTerm name = do
@@ -313,7 +309,7 @@ parseRawTerm (TFix rbs rt) = do
   bs <- mapM parseRawBind rbs
   t <- Env.bindMany bs (parseRawTerm rt)
   return 
-    $ Fix mempty (head bs) 
+    $ Fix emptyInfo (head bs) 
     $ unflattenLam (tail bs) t 
 parseRawTerm (TLam rbs rt) = do
   bs <- mapM parseRawBind rbs

@@ -11,15 +11,16 @@ import Elea.Index
 import qualified Elea.Index as Indices
 import qualified Elea.Monad.Failure as Fail
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 
 type Unifier a = Map Index a
 
-class Substitutable t => Unifiable t where
+class (Eq (Inner t), Substitutable t) => Unifiable t where
   -- | Returns the unifier that should be applied to the first argument
   -- to produce the second, fails if no such unifier exists. 
   find :: Fail.Can m => t -> t -> m (Unifier (Inner t))
   
-  -- | Apply a unifier, so @apply (find t1 t2) t1 == t2@.
+  -- | Apply a unifier, so @apply (find t1 t2) t1 ==> t2@.
   apply :: Unifier (Inner t) -> t -> t
 
 singleton :: Index -> a -> Unifier a
@@ -43,3 +44,21 @@ unions = foldrM union mempty
 
 exists :: Unifiable t => t -> t -> Bool
 exists t = isJust . find t
+
+
+instance Unifiable t => Unifiable [t] where
+  find xs ys = do
+    Fail.unless ((length xs :: Int) == length ys)
+    unis <- zipWithM find xs ys
+    unions unis
+    
+  apply uni = 
+    map (apply uni)
+
+instance (Ord t, Unifiable t) => Unifiable (Set t) where
+  find xs ys = 
+    find (Set.toAscList xs) (Set.toAscList ys)
+    
+  apply uni = 
+    Set.map (apply uni)
+    

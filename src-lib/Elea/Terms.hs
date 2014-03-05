@@ -14,14 +14,15 @@ module Elea.Terms
   pair,
   equation,
   isEquation,
-  isProductive,
   isFiniteMatch,
   expressFreeVariable,
+  expressFreeVariables,
   revertMatchesWhenM, 
   revertMatchesWhen, 
   revertMatches,
   occurrences,
   isSubterm,
+  alreadyFused,
 )
 where
 
@@ -198,7 +199,7 @@ generaliseArgs (App func args) run = do
   -- Use the type of every arguments to generate bindings for our new 
   -- generalised variables.
   arg_tys <- mapM Type.get args
-  let gen_bs = zipWith (\n -> Bind ("X" ++ show n)) [0..] arg_tys
+  let gen_bs = zipWith makeBind [0..] arg_tys
         
   -- Run the inner computation
   done_t <- id
@@ -212,6 +213,11 @@ generaliseArgs (App func args) run = do
     $ reverse args
   where
   new_vars = map Var [0..length args - 1]
+  
+  makeBind :: Int -> Type -> Bind
+  makeBind n ty = Bind name ty
+    where
+    name = show ty ++ "_" ++ show n
   
   liftHere :: Indexed b => b -> b
   liftHere = Indices.liftMany (length args)
@@ -251,39 +257,77 @@ expressFreeVariable free_var (Fix fix_i (Bind fix_n fix_ty) fix_t) = do
   return
     . (\t -> app t [Var free_var])
     . Fix fix_i (Bind fix_n fix_ty')
-    . Lam var_b 
-    . Indices.replaceAt (free_var + 2) (Var 0)
+    . Lam var_b
     . Env.trackOffset
-    . Fold.transformM updateRecCall
+    . Fold.transformM update
     $ Indices.lift fix_t
   where
-  updateRecCall :: Term -> Env.TrackOffset Term
-  updateRecCall term@(App (Var f) args) = do
+  update :: Term -> Env.TrackOffset Term
+  -- Update function calls
+  update term@(App (Var f) args) = do
     idx <- Env.tracked
-    if f == idx
-    then return (app (Var (idx + 1)) (Var idx : args))
+    if f == succ idx
+    then return (app (Var (succ idx)) (Var idx : args))
     else return term
-  updateRecCall other = 
+  -- Update variables occurrences
+  update (Var x) = do
+    idx <- Env.tracked
+    if x == free_var + idx + 2
+    then return (Var idx)
+    else return (Var x)
+  update other = 
     return other
 
-
--- | A function is /productive/ if every recursive call is guarded
--- by a constructor.
-isProductive :: Term -> Bool
-isProductive (Fix _ _ fix_t) = id
+-- | The fold of 'expressFreeVariable' over a list of indices.
+-- The order of the new variables applied to the output term will match
+-- the order of the indices input.
+-- > expressFreeVariables [x, y, z] (fix F) = (fix G) x y z
+expressFreeVariables :: forall m . Env.Read m => [Index] -> Term -> m Term
+expressFreeVariables = flip (foldrM express) 
+  where
+  express :: Index -> Term -> m Term
+  express free_var (flattenApp -> fix : args) = do
+    App fix' [new_arg] <- expressFreeVariable free_var fix
+    return (app fix' (new_arg : args))
+    
+    
+ {-
+-- | A function is /non-recursively productive/ 
+-- if one unrolling will decide which constructor is returned, 
+-- and the value of every non-recursive argument to that constructor
+isNonRecProductive :: Term -> Bool
+isNonRecProductive (Fix _ _ fix_t) = id
+  -- Productive functions are not unproductive
+  . not
   -- Track the index of the recursive call to the fixpoint
   . Env.trackIndices 0
-  $ Fold.isoAllM branches productive fix_t
+  $ Fold.paraM unproductive (trace (show fix_t) fix_t)
   where
-  -- A productive branch is either in HNF, or returns a term with
-  -- no recursive call to the fixpoint inside it.
-  productive :: Term -> Env.TrackIndices Index Bool
-  productive (leftmost -> Con {}) = 
-    return True
-  productive term = do
+  JUST REWRITE THIS with manual recursion! Much simpler.
+  
+  -- Best represented as a monadic paramorphism. Hurray for category theory.
+  unproductive :: Term' (Bool, Term) -> Env.TrackIndices Index Bool
+  -- A term is unproductive if it involves a call to the recursive function
+  unproductive (Var' f) = do
     fix_f <- Env.tracked
-    return (not (fix_f `Indices.freeWithin` term))
+    return (fix_f == f)
+  -- Constructors block unproductivity from recursive arguments
+  -- so we only check non-recursive ones
+  unproductive (App' (_, Con ind con_n) args) = id
+    . or
+    . map fst
+    . map (args !!)
+    $ Type.nonRecursiveArgs ind con_n
+  -- Matches where every branch is the same constructor do the same,
+  -- this was an ad-hoc extension to deal with the @height@ function.
+  unproductive (
+    where
     
+  -- Otherwise we check whether any subterm is unproductive
+  unproductive term = 
+    return (or (map fst (toList term)))  
+  -}
+
     
 -- | A /finite match/ in one in which any recursively typed variables
 -- bound down any pattern branch are unused. So if a finite match over a list
@@ -345,3 +389,17 @@ occurrences t = Env.trackIndices t . Fold.countM (\t -> Env.trackeds (== t))
 -- | Whether the first argument is a subterm of the first
 isSubterm :: Term -> Term -> Bool
 isSubterm t = Env.trackIndices t . Fold.anyM (\t -> Env.trackeds (== t))
+  
+-- | Whether we have already attempted to fuse this set of terms into
+-- this fixpoint.
+alreadyFused :: FixInfo -> Set Term -> Term -> Bool
+alreadyFused (FixInfo fused) matched fix_term = 
+  any unifiable fused
+  where
+  unifiable :: (Set Term, Term) -> Bool
+  unifiable (matched', fix_term')
+    | Just term_uni <- Unifier.find fix_term fix_term'
+    , Just m_uni <- Unifier.find matched matched' =  
+      isJust (Unifier.union term_uni m_uni)
+  unifiable _ = False
+  

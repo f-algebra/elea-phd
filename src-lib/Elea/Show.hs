@@ -1,3 +1,5 @@
+-- | The display code for terms and the like. Very hacky and full of commented
+-- out bits. But show being a monadic paramorphism over terms is kinda cool.
 module Elea.Show 
 ( 
   ShowM (..)
@@ -31,6 +33,9 @@ bracketIfNeeded :: String -> String
 bracketIfNeeded s 
   | ' ' `elem` s = "(" ++ s ++ ")"
   | otherwise = s
+  
+instance (Env.Read m, Defs.Read m) => ShowM m Term where
+  showM = Fold.paraM showM
   
 instance Show (Term' (String, Term)) where
   -- Special case for displaying constraints
@@ -88,57 +93,61 @@ instance Show (Term' String) where
       "\n| " ++ pat_s ++ " -> " ++ indent alt_t
       where
       pat_s = intercalate " " ([con_name] ++ map show alt_bs)
-    
-instance (Env.Read m, Defs.Read m) => ShowM m Term where
-  showM = Fold.paraM fshow
-    where
-    fshow :: Term' (String, Term) -> m String
-    fshow (Var' idx) = do
-      bs <- Env.bindings
-      if idx >= length bs
-      -- If we don't have a binding for this index 
-      -- just display the index itself
-      then return (show idx)
-      else do
-        Bind lbl _ <- Env.boundAt idx
-        let lbl' | ' ' `elem` lbl = "\"" ++ lbl ++ "\""
-                 | otherwise = lbl
-                 
-        -- Count the number of bindings before this one
-        -- which have the same label
-        let same_lbl_count = id
-              . length
-              . filter (== lbl)
-              . map (get Type.boundLabel)
-              $ take (fromEnum idx) bs
-              
-        -- Append this count to the end of the variable label, so we know
-        -- exactly which variable we are considering
-        if same_lbl_count > 0
-        then return (lbl' ++ "[" ++ show (same_lbl_count + 1) ++ "]")
-        else return lbl'
-        
-    {-
-    DEBUG CODE
-    fshow (Fix' info (show -> b) (t, _)) = do
-      inf_s <- showM info
-      return 
-        $ "\nfix " ++ b ++ " " ++ inf_s ++ " -> " ++ indent t
-      -}  
       
-    fshow term' = do
-      -- Attempt to find an alias for this function in our definition database
-      mby_name <- Defs.lookupName (Fold.recover term')
-      case mby_name of
-        Just (name, args) -> do
-          args' <- mapM showM args
-          let args_s = concatMap ((" " ++) . bracketIfNeeded) args'
-          return ("$" ++ name ++ args_s) 
-          
-        Nothing -> 
-          -- If we can't find an alias, then default to the normal show instance
-          return (show term')
-          
+instance (Env.Read m, Defs.Read m) => ShowM m (Term' (String, Term)) where
+  showM (Var' idx) = do
+    bs <- Env.bindings
+    if idx >= length bs
+    -- If we don't have a binding for this index 
+    -- just display the index itself
+    then return (show idx)
+    else do
+      Bind lbl _ <- Env.boundAt idx
+      let lbl' | ' ' `elem` lbl = "\"" ++ lbl ++ "\""
+               | otherwise = lbl
+               
+      -- Count the number of bindings before this one
+      -- which have the same label
+      let same_lbl_count = id
+            . length
+            . filter (== lbl)
+            . map (get Type.boundLabel)
+            $ take (fromEnum idx) bs
+            
+      -- Append this count to the end of the variable label, so we know
+      -- exactly which variable we are considering
+      if same_lbl_count > 0
+      then return (lbl' ++ "[" ++ show (same_lbl_count + 1) ++ "]")
+      else return lbl'
+      
+  {-
+  DEBUG CODE
+  fshow (Fix' info (show -> b) (t, _)) = do
+    inf_s <- showM info
+    return 
+      $ "\nfix " ++ b ++ " " ++ inf_s ++ " -> " ++ indent t
+    -}  
+    
+  showM term' = do
+    -- Attempt to find an alias for this function in our definition database
+    mby_name <- Defs.lookupName (Fold.recover term')
+    case mby_name of
+      Just (name, args) -> do
+        args' <- mapM showM args
+        let args_s = concatMap ((" " ++) . bracketIfNeeded) args'
+        inf <- info
+        return ("$" ++ name ++ inf ++ args_s) 
+        
+      Nothing -> 
+        -- If we can't find an alias, then default to the normal show instance
+        return (show term')
+    where
+    info
+      | otherwise = return ""
+      | Fix' inf _ _ <- term' = do
+          ms_s <- showM inf 
+          return (" " ++ ms_s)
+      | otherwise = return ""
           
 instance (Env.Read m, Defs.Read m) => ShowM m Context where
   showM = showM . get Context.term
@@ -146,10 +155,22 @@ instance (Env.Read m, Defs.Read m) => ShowM m Context where
 instance Show FixInfo where
   show (FixInfo ms) = show ms
   
+instance (Env.Read m, Defs.Read m) => ShowM m FixInfo where
+  showM (FixInfo ms) = do
+    ms_s <- mapM showFused ms
+    let ms_s' = "[" ++ intercalate ", " ms_s ++ "]"
+    return ("fused@" ++ ms_s')
+    where
+    showFused :: (Set Term, Term) -> m String
+    showFused (ts, t) = do
+      ts_s <- mapM showM (toList ts)
+      t_s <- showM t
+      return (intercalate ", " ts_s ++ " |- " ++ t_s)
+    
 instance Show Context where
   show = show . get Context.term
   
-instance ShowM m a => ShowM m (a, a) where
+instance (ShowM m a, ShowM m b) => ShowM m (a, b) where
   showM (x, y) = do
     sx <- showM x
     sy <- showM y
@@ -160,6 +181,11 @@ instance ShowM m a => ShowM m [a] where
     sxs <- mapM showM xs
     return 
       $ "[" ++ intercalate ", " sxs ++ "]"
+      
+instance ShowM m a => ShowM m (Set a) where
+  showM xs = do
+    xs_s <- showM (toList xs)
+    return ("Set" ++ xs_s)
  
 instance ShowM m a => ShowM m (Map a a) where
   showM = showM . Map.toList

@@ -21,7 +21,7 @@ checkEquation (Equals name bs t1 t2) = id
   . Env.bindMany bs $ do
     t1' <- Fusion.run t1
     t2' <- Fusion.run t2
-    Test.assertTermEq t1' t2'
+    Test.assertProvablyEq t1' t2'
 
   
 tests = Test.label "Fusion"
@@ -29,7 +29,7 @@ tests = Test.label "Fusion"
   Test.loadPrelude
   eqs <- Test.loadFile "src-lib/Elea/Tests/fusion.elea"
   mapM checkEquation
- --   . filter ((== "main") . get equationName)
+    . filter ((/= "test add") . get equationName)
     $ eqs
 
 

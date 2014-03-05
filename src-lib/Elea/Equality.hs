@@ -40,8 +40,7 @@ resultToBool Proven = return True
 resultToBool Disproven = return False
   
       
--- | Checks (using induction) whether two terms are equal. 
--- Assumes both terms have already been simplified.
+-- | Checks (using induction) whether two terms are equal.
 prove :: forall m . (Env.Read m, Defs.Read m, Fail.Can m)
   -- | A simplification function to be called within proving.
   => (Term -> m Term)
@@ -49,7 +48,9 @@ prove :: forall m . (Env.Read m, Defs.Read m, Fail.Can m)
   -> Term
   -> m Bool
 prove simplify t1 t2 = do
-  eq <- equal t1 t2
+  t1' <- simplify t1
+  t2' <- simplify t2
+  eq <- equal t1' t2'
   resultToBool eq
   where 
   equal :: Term -> Term -> m Result
