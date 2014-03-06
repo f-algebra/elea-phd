@@ -1,4 +1,4 @@
--- | This module is not used at the moment
+-- | An equation solver which uses proof by induction.
 module Elea.Equality
 (
   prove
@@ -15,8 +15,10 @@ import qualified Elea.Env as Env
 import qualified Elea.Terms as Term
 import qualified Elea.Types as Type
 import qualified Elea.Foldable as Fold
+import qualified Elea.Simplifier as Simp
 import qualified Elea.Monad.Failure as Fail
 import qualified Elea.Monad.Definitions as Defs
+import qualified Data.Map as Map
 
 -- | This is like 'Maybe' 'Bool' but with a distinctive monoid instance.
 -- It characterises a proof in which all parts must be true for it to be true,
@@ -82,44 +84,58 @@ prove simplify t1 t2 = do
       (flattenApp -> Fix _ fix_b1 fix_t1 : args1) 
       (flattenApp -> Fix _ fix_b2 fix_t2 : args2) = bindFixes $ do
     eq <- Term.equation term1 term2
-    eq' <- simplify eq
-    eq_s <- showM eq'
-    trace ("?=? " ++ eq_s) $ Env.alsoTrack 0 (Fold.foldM solveEquation eq')
+    let rewr_eq = id
+          . Env.trackIndices (rewr1, rewr2)
+          . Fold.rewriteM applyIndHyp
+          $ Simp.run eq
+    if Indices.freeWithin 0 rewr_eq
+    -- If the fix variable of the left equation is still free then
+    -- apply the inductive hypothesis has failed.
+    then do
+      eq_s <- showM rewr_eq
+      id
+        . trace ("\n[prove eq] failed on: " ++ eq_s) 
+        $ return Unknown
+    else do
+      simp_eq <- simplify rewr_eq
+      eq_s <- showM simp_eq
+      id
+        . trace ("\n[prove eq] checking: "++ eq_s) 
+        $ Fold.foldM solveEquation simp_eq
     where
     args1' = map (Indices.liftMany 2) args1
     args2' = map (Indices.liftMany 2) args2
     
+    -- The terms on either side of the equation, with the fixpoints
+    -- unwrapped (not unrolled, the fix variables will be uninterpreted)
     term1 = app (Indices.liftAt 1 fix_t1) args1'
     term2 = app (Indices.lift fix_t2) args2'
+    
+    -- The terms we will be rewriting from and to when 
+    -- we apply the inductive hypothesis
+    rewr1 = app (Var 0) args1'
+    rewr2 = app (Var 1) args2'
     
     bindFixes :: m a -> m a
     bindFixes = Env.bind fix_b2 . Env.bind fix_b1
     
-    solveEquation :: Term -> Env.AlsoTrack Index m Result
+    -- Unifies with instances of the lhs fix variable and replaces then
+    -- with the rhs fix variable.
+    applyIndHyp :: Term -> MaybeT (Env.TrackIndices (Term, Term)) Term
+    applyIndHyp term@(App (Var f) _) = do
+       (rewr1@(App (Var fix_f) _), rewr2) <- Env.tracked
+       Fail.unless (f == fix_f)
+       uni <- Unifier.find rewr1 term
+       return (Unifier.apply uni rewr2)
+    applyIndHyp _ = 
+      Fail.here
+      
+    solveEquation :: Term -> m Result
     solveEquation term
-      | Just (left, right) <- Term.isEquation term = do
-        offset <- Env.tracked
-        let left' = id
-              . Env.trackIndices offset
-              $ Fold.rewriteM applyIndHyp left
-        ls <- showM left'
-        rs <- showM right
-        let s = ls ++ " =?= " ++ rs
-        trace s $ lift (equal left' right)
-      where
-      applyIndHyp :: Term -> MaybeT (Env.TrackIndices Index) Term
-      applyIndHyp term@(App (Var f) _) = do
-        f_var <- Env.tracked
-        Fail.unless (f == f_var)
-        uni_with <- Env.liftByOffset (app (Var 0) args1')
-        uni <- Unifier.find term uni_with
-        rep_with <- Env.liftByOffset (app (Var 1) args2')
-        return (Unifier.apply uni rep_with)
-      applyIndHyp _ =
-        Fail.here
-        
+      | Just (left, right) <- Term.isEquation term =
+        equal left right
     solveEquation _ = 
-      return mempty
+        return mempty
   
   equal _ _ =
     return Unknown

@@ -8,6 +8,7 @@ module Elea.Foldable
   isoRewrite, isoTransform, isoFind, isoRewriteM',
   rewriteM, foldM, rewriteOnceM, collectM, isoCollectM,
   allM, findM, anyM, any, all, isoFold, isoAny, isoAll, find,
+  collect, count,
   transform, rewrite, recover,
   rewriteStepsM, rewriteSteps, countM,
   SelectorM, selectiveTransformM, selectAll,
@@ -116,6 +117,10 @@ collectM :: (Ord b, WriterTransformableM (Set b) m t) =>
   (t -> MaybeT m b) -> t -> m (Set b)
 collectM = isoCollectM id
 
+collect :: (Ord b, WriterTransformableM (Set b) Identity t) =>
+  (t -> Maybe b) -> t -> Set b
+collect f = runIdentity . collectM (MaybeT . Identity . f)
+
 all, any :: WriterTransformableM Monoid.All Identity t =>
   (t -> Bool) -> t -> Bool
 all p = runIdentity . allM (return . p)
@@ -162,6 +167,10 @@ countM p = liftM Monoid.getSum . foldM (liftM (Monoid.Sum . found) . p)
   found :: Bool -> Int
   found False = 0
   found True = 1
+  
+count :: WriterTransformableM (Monoid.Sum Int) Identity t => 
+  (t -> Bool) -> t -> Int
+count p = runIdentity . countM (Identity . p)
 
 -- | Apply a given transformation exactly once. If it is never applied
 -- then this returns 'Nothing'.

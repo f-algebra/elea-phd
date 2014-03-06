@@ -53,10 +53,14 @@ let leq_nat =
     end
     
 let max = 
-  fun (x: nat) (y: nat) ->
-    match leq_nat x y with
-    | True -> y
-    | False -> x
+  fix (max: nat -> nat -> nat) (x y: nat) ->
+    match x with
+    | 0 -> y
+    | Suc x' -> 
+      match y with 
+      | 0 -> x
+      | Suc y' -> Suc (max x' y')
+      end
     end
 
 let add = 

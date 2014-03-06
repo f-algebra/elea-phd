@@ -22,21 +22,21 @@ import qualified Elea.Monad.Failure as Fail
 import qualified Data.Set as Set
 
 testFixFix :: forall m . (Defs.Read m, Env.Read m) => Term -> m Test.Test
-testFixFix term = do
-  term' <- Simp.run term
-  let (bs, inner_t) = flattenLam term
+testFixFix term =
   Env.bindMany bs (fixFix inner_t)
   where
+  (bs, inner_t) = flattenLam (Simp.run term)
+  
   fixFix :: Term -> m Test.Test
   fixFix term@(App o_fix [o_arg@(App i_fix i_args)]) = do
     -- Take a composition of two fixpoints, fuse them, 
     -- then split them with invention.
     fused <- Fail.successM 
-      $ Fix.fusion Simp.run ctx i_fix
+      $ Fix.fusion (return . Simp.run) ctx i_fix
     invented <- Fail.successM 
-      $ Invent.run Simp.run o_arg fused
+      $ Invent.run (return . Simp.run) o_arg fused
     
-    test1 <- Test.assertSimpEq term (Context.apply invented o_arg)
+    let test1 = Test.assertSimpEq term (Context.apply invented o_arg)
     return (Test.list [ test1 ])
     where
     ctx = Context.make (\gap_f -> App o_fix [App gap_f i_args])
@@ -65,10 +65,9 @@ tests = id
   id_fold_ctx <- id
     . Env.bindMany [xs_b, ys_b]
     . Fail.successM 
-    $ Invent.run Simp.run append_t append_t
+    $ Invent.run (return . Simp.run) append_t append_t
   let id_fold' = Context.toLambda (Base nlist) id_fold_ctx
-  
-  test_id <- Test.assertSimpEq id_fold id_fold'
+      test_id = Test.assertSimpEq id_fold id_fold'
   
   appapp <- Test.term 
     $ "fun (xs: nlist) (ys: nlist) (zs: nlist) -> "

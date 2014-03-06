@@ -52,3 +52,12 @@ instance Write m => Write (MaybeT m) where
   defineTerm n = lift . defineTerm n
   defineType n = lift . defineType n
 
+instance (Monoid w, Read m) => Read (WriterT w m) where
+  lookupTerm = lift . lookupTerm
+  lookupType = lift . lookupType
+  lookupName = lift . lookupName 
+  
+instance (Monoid w, Write m) => Write (WriterT w m) where
+  defineTerm n = lift . defineTerm n
+  defineType n = lift . defineType n
+  

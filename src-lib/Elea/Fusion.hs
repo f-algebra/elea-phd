@@ -52,7 +52,7 @@ runSteps steps term = do
   -- before we try the more advanced fixpoint based one, some of which rely
   -- on the term being in some normal form 
   -- because of these earlier simplifications
-  term' <- Simp.run term
+  let term' = Simp.run term
   
   -- Fixpoint steps are heavyweight. It is faster to make sure they are
   -- only applied one at a time.
@@ -210,7 +210,7 @@ repeatedArg fix_t@(App fix@(Fix {}) args)
     where
     generalised :: Indices.Shift -> Term -> m Term
     generalised _ (App fix' args') =
-      Fix.fusion Simp.run (Context.make mkCtx) fix'
+      Fix.fusion (return . Simp.run) (Context.make mkCtx) fix'
       where
       -- The context is the original term, with every argument generalised,
       -- and the repeated arguments in the correct places, and the gap
@@ -229,7 +229,7 @@ repeatedArg _ = Fail.here
 
 -- | Match-Fix fusion. Makes use of an environment which you can read pattern 
 -- matches from.
-matchFix :: forall m . (Env.MatchRead m, Fail.Can m, Defs.Read m) => 
+matchFix :: forall m . (Env.MatchRead m, Env.Read m, Fail.Can m, Defs.Read m) => 
   Term -> m Term
   
 matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
@@ -250,8 +250,8 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
   
   -- Check whether we have already tried fusing this set of matches into
   -- the fixpoint. This is what 'FixInfo' is for.
-  let matches_set = Set.fromList (map fst matches)
-  Fail.when (Term.alreadyFused fix_info matches_set outer_t)
+  let constraint_set = Set.fromList (map Constraint.fromMatch matches)
+  Fail.when (Term.alreadyFused fix_info constraint_set outer_t)
   
   -- We apply match-fix fusion for every match
   (fused_t, Monoid.Any any_fused) <- id
@@ -268,16 +268,16 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
   
   -- If match-fix fusion has failed we save the list of matches we attempted
   -- to fuse in.
-  else return (Term.addFusedMatches matches_set outer_t)
+  else return (Term.addFusedMatches constraint_set outer_t)
   where
   -- Whether a pattern match should be fused into the current fixpoint.
   -- We also check that one of the strict arguments of each term match.
   usefulMatch match_t@(App (Fix {}) m_args) =
     all Term.isSimple m_args 
-    && not (Set.null shared_strict_vars)
+    && not (Set.null shared_terms)
     where
-    shared_strict_vars = 
-      Set.intersection (Eval.strictVars outer_t) (Eval.strictVars match_t)
+    shared_terms = 
+      Set.intersection (Eval.strictTerms outer_t) (Eval.strictTerms match_t)
   usefulMatch _ = False
   
   -- Whether a term does not contain any fixpoints which have constraints.
@@ -295,19 +295,23 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
   -- If fusion fails it returns the original term.
   -- Will write 'True' if fusion ever succeeds.
   fuseMatch :: (Term, Term) -> Term -> WriterT Monoid.Any m Term
-  fuseMatch (match_t, leftmost -> Con ind con_n) term = do
-    mby_fused <- id
-      . lift
-      . Fail.catch 
-      $ Constraint.fuse constr term
-      
-    case mby_fused of
-      Nothing -> return term
-      Just fused -> do
-        tell (Monoid.Any True)
-        return fused
-    where 
-    constr = Constraint.make match_t ind con_n
+  fuseMatch (match_t, leftmost -> Con ind con_n) term =
+    -- Generalise any uninterpreted function calls
+    Term.generaliseUninterpreted (match_t, term) generalised 
+    where
+    generalised _ (match_t, term) = do
+      mby_fused <- id
+        . lift
+        . Fail.catch 
+        $ Fix.constraintFusion (return . Simp.run) constr term
+        
+      case mby_fused of
+        Nothing -> return term
+        Just fused -> do
+          tell (Monoid.Any True)
+          return fused
+      where 
+      constr = Constraint.make match_t ind con_n
         
 matchFix _ = Fail.here
 
@@ -366,10 +370,10 @@ decreasingFreeVars orig_t@(App fix@(Fix {}) orig_args) = do
       
   simplify :: forall m . (Defs.Read m, Env.Read m) => 
     Term -> Term -> m Term
-  simplify (Indices.lift -> fix) term = do
-    term' <- Simp.run term
-    Env.alsoTrack (fix, 0)
-      $ Fold.transformM express term'
+  simplify (Indices.lift -> fix) = id
+    . Env.alsoTrack (fix, 0)
+    . Fold.transformM express
+    . Simp.run
     where
     express :: Term -> Env.AlsoTrack (Term, Index) m Term
     express term@(App (Var f) args) = do
@@ -380,7 +384,7 @@ decreasingFreeVars orig_t@(App fix@(Fix {}) orig_args) = do
         -- The trick here is to push the constant arguments
         -- back into the fixpoint, so they will not be generalised by the
         -- generaliseArgs call
-        term' <- Simp.removeConstArgs (App fix args)
+        let term' = Simp.removeConstArgs (App fix args)
         
         -- Recursively run fixpoint fusion with all arguments generalised
         fused <- Term.generaliseArgs term' (\_ -> run)

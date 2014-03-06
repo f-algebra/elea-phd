@@ -143,8 +143,9 @@ instance (Env.Read m, Defs.Read m) => ShowM m (Term' (String, Term)) where
         return (show term')
     where
     info
-      | otherwise = return ""
-      | Fix' inf _ _ <- term' = do
+      | Fix' inf@(FixInfo ms) _ _ <- term'
+      , not (null ms)
+      , False = do
           ms_s <- showM inf 
           return (" " ++ ms_s)
       | otherwise = return ""
@@ -161,7 +162,7 @@ instance (Env.Read m, Defs.Read m) => ShowM m FixInfo where
     let ms_s' = "[" ++ intercalate ", " ms_s ++ "]"
     return ("fused@" ++ ms_s')
     where
-    showFused :: (Set Term, Term) -> m String
+    showFused :: (Set Constraint, Term) -> m String
     showFused (ts, t) = do
       ts_s <- mapM showM (toList ts)
       t_s <- showM t
@@ -169,6 +170,16 @@ instance (Env.Read m, Defs.Read m) => ShowM m FixInfo where
     
 instance Show Context where
   show = show . get Context.term
+  
+instance (Env.Read m, Defs.Read m) => ShowM m Constraint where
+  showM (Constraint term (Type.Ind _ cons) con_n) = do
+    term_s <- showM term
+    return (con_name ++ " <- " ++ term_s)
+    where
+    con_name = fst (cons !! enum con_n)
+    
+instance Show Constraint where
+  show = Defs.readEmpty . Env.emptyT . showM
   
 instance (ShowM m a, ShowM m b) => ShowM m (a, b) where
   showM (x, y) = do

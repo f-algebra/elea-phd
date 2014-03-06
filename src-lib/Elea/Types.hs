@@ -23,6 +23,7 @@ import qualified Elea.Foldable as Fold
 import qualified Elea.Env as Env
 import qualified Elea.Monad.Error as Err
 import qualified Elea.Monad.Definitions as Defs
+import qualified Elea.Monad.Failure as Fail
 
 type TypingMonad m = (Err.Can m, Env.Read m, Defs.Read m)
 
@@ -52,13 +53,13 @@ check = liftM (const ()) . typeOf
 checkTrace :: (Defs.Read m, Env.Read m) => Term -> m a -> m a
 checkTrace term m = Err.noneM (check term) >> m
 
--- | Wrap this around a term transformation step @Term -> m (Maybe Term)@
+-- | Wrap this around a term transformation step @Term -> m Term@
 -- to add a check that the step preserves the type of the term.
-checkStep :: forall m . (Defs.Read m, Env.Read m) => 
-  (Term -> MaybeT m Term) -> Term -> MaybeT m Term
+checkStep :: forall m . (Defs.Read m, Env.Read m, Fail.Can m) => 
+  (Term -> m Term) -> Term -> m Term
 checkStep step term = do
   result <- step term
-  lift . Err.noneM . Err.augmentM (stepErr result) $ do
+  Err.noneM . Err.augmentM (stepErr result) $ do
     t_ty <- typeOf term
     r_ty <- typeOf result
     if t_ty == r_ty

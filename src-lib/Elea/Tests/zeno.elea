@@ -26,4 +26,5 @@ prop "prop 41": forall (n: nat) (xs: nlist) (f: nat -> nat) ->
 prop "prop 47": forall (t: ntree) ->
   height (mirror t) = height t
 
-  
+prop "prop 66": forall (p: nat -> bool) (xs: nlist) ->
+  leq_nat (length (filter p xs)) (length xs)

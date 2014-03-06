@@ -3,13 +3,15 @@ module Elea.Term
   module Elea.Index,
   Term (..), Alt (..),
   Term' (..), Alt' (..),
-  Type, Bind (..), FixInfo (..),
-  ContainsTerms (..), mapTerms,
+  Type, Bind (..), 
+  Constraint (..), FixInfo (..),
+  ContainsTerms (..), mapTerms, containedTerms,
   Equation (..), equationName, equationLHS, equationRHS,
   app,
   projectAlt, embedAlt,
   altBindings, altInner,
   altBindings', altInner',
+  constraintOver, constraintType, constrainedTo,
   flattenApp, leftmost, arguments,
   flattenLam, unflattenLam,
   isCon, isLam, isVar,
@@ -69,13 +71,22 @@ data Alt
             , _altInner :: !Term }
   deriving ( Eq, Ord )
   
+-- | A constraint is a pattern match where only one branch is non-absurd.
+-- Functions surrounding constraints can be found in "Elea.Constraint".
+data Constraint 
+  = Constraint  { _constraintOver :: !Term
+                , _constraintType :: !Type.Ind
+                , _constrainedTo :: !Nat }
+  deriving ( Eq, Ord )
+  
+  
 -- | Information stored about fixpoints, to add efficiency.
 data FixInfo
   = FixInfo { -- | The sets of pattern matches that have been unsuccessfully
               -- fused into this fixpoint, and the value of the applied
               -- arguments to the fixpoint itself.
               -- Stops match-fix fusion from repeating itself.
-              _failedFusionSteps :: ![(Set Term, Term)] }
+              _failedFusionSteps :: ![(Set Constraint, Term)] }
               
 -- Fixpoint information does not change the meaning of a fixpoint, so
 -- it does not effect equality between terms.
@@ -111,7 +122,7 @@ data Alt' a
          , _altInner' :: a }
   deriving ( Functor, Foldable, Traversable )
   
-mkLabels [ ''Alt, ''Alt', ''FixInfo, ''Equation ]
+mkLabels [ ''Alt, ''Alt', ''FixInfo, ''Equation, ''Constraint ]
 
 projectAlt :: Alt -> Alt' Term
 projectAlt (Alt bs t) = Alt' bs t
@@ -143,8 +154,22 @@ class ContainsTerms t where
 mapTerms :: ContainsTerms t => (Term -> Term) -> t -> t
 mapTerms f = runIdentity . mapTermsM (return . f)
 
+containedTerms :: ContainsTerms t => t -> [Term]
+containedTerms = execWriter . mapTermsM tellTerm
+  where
+  tellTerm t = tell [t] >> return t
+  
+instance ContainsTerms Term where
+  mapTermsM = ($)
+  
 instance ContainsTerms Equation where
   mapTermsM f = modifyM equationLHS f <=< modifyM equationRHS f
+  
+instance (ContainsTerms a, ContainsTerms b) => ContainsTerms (a, b) where
+  mapTermsM f (t1, t2) = do
+    t1' <- mapTermsM f t1
+    t2' <- mapTermsM f t2
+    return (t1', t2')
   
 instance Zip Alt' where
   zip (Alt' bs t) (Alt' _ t') = Alt' bs (t, t')
@@ -227,7 +252,7 @@ inductivelyTyped (App (Fix _ (Bind _ fix_ty) _) args) =
   
   
 -- | Add a set of matches we attempted to fuse into a fixpoint.
-addFusedMatches :: Set Term -> Term -> Term
+addFusedMatches :: Set Constraint -> Term -> Term
 addFusedMatches ms term = 
   app (Fix info' fix_b fix_t) args
   where
@@ -268,8 +293,10 @@ isFinite _ = False
 isSimple :: Term -> Bool
 isSimple (flattenApp -> Con _ _ : args) =
   all isSimple args
-isSimple (Var _) = True
+isSimple (flattenApp -> Var _ : args) = 
+  all isSimple args
 isSimple _ = False
+
 
 lowerableAltInner :: Indexed Term => Alt -> Bool
 lowerableAltInner (Alt bs alt_t) =

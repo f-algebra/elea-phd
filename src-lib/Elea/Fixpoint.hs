@@ -1,10 +1,13 @@
 -- | The two functions which arise from the formula for fixpoint fusion.
 -- If we represent the fusion equation as @C[fix F] = fix G@ then, 
 -- 'fusion' takes @C@, @fix F@ and returns @fix G@,
--- 'fission' takes @C@, @fix G@ and returns @fix F@,
+-- 'fission' takes @C@, @fix G@ and returns @fix F@.
+-- Also a function for fusing constraints into a term. I put it here
+-- to prevent cycles.
 module Elea.Fixpoint
 (
-  fusion, fission
+  fusion, fission, 
+  constraintFusion,
 )
 where
 
@@ -18,8 +21,10 @@ import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
 import qualified Elea.Terms as Term
 import qualified Elea.Types as Type
+import qualified Elea.Evaluation as Eval
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Context as Context
+import qualified Elea.Constraint as Constraint
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Failure as Fail
 import qualified Elea.Monad.Definitions as Defs
@@ -55,7 +60,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   
   simplified_t <- id
     -- DEBUG
-  --  . trace s1
+    . trace s1
   
     -- After simplification we replace all of the free
     -- variables within the term with fresh new ones,
@@ -78,7 +83,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   -- as this will rewrite the term we are replacing
   let reverted_t = id
         -- DEBUG
-  --      . trace s2
+        . trace s2
         . Env.trackIndices 0
         . Term.revertMatchesWhenM isInnerFixMatch
         $ simplified_t
@@ -114,11 +119,11 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
         Fix fix_info new_fix_b new_fix_body
         
   -- DEBUG
-  new_term <- id
-    . Simp.run
-    . app new_fix 
-    . map Var 
-    $ reverse free_vars
+  let new_term = id
+        . Simp.run
+        . app new_fix 
+        . map Var 
+        $ reverse free_vars
   
   rep_s <- showM new_term
   let s3 = "\nREPLACED:" ++ rep_s
@@ -128,12 +133,15 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   -- Seems to be a good heuristic, but this is just evidence based.
   let old_rc = Set.size (functionCalls (Var 0) fix_t)
       new_rc = Set.size (functionCalls (Var 0) new_fix_body)
-      rem_rc = Term.occurrences (Var Indices.omega) replaced_t
+      rem_rc = id
+        . Env.trackOffset
+        . Env.trackMatches
+        $ Fold.countM fixpointCall replaced_t
   
   Fail.unless                                                      
     -- DEBUG
-   -- . trace s3
-    . trace (s1 ++ s2 ++ s3)
+    . trace s3
+   -- . trace (s1 ++ s2 ++ s3)
     $ rem_rc == 0 
  --   || new_rc >= old_rc
     
@@ -141,7 +149,6 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
     -- Trivially sound and terminating so why not.
     || Term.isAbsurd new_term
     || Term.isSimple new_term
-    
   
   -- DEBUG
   final_s <- showM new_term
@@ -155,6 +162,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
     . toList 
     $ Indices.free orig_t
   new_vars = map (Var . toEnum) [0..length free_vars - 1]
+  rebound_outer_ctx = (Indices.lower . rebindVars . Indices.lift) outer_ctx
   
   isInnerFixMatch :: Term -> Env.TrackIndices Index Bool
   isInnerFixMatch (App (Var f) _ ) = do
@@ -188,6 +196,16 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
         let min = minimum (Indices.free term)
         return (Set.singleton (Indices.lowerMany (enum min) term))
     call _ = return mempty
+    
+  -- Whether we have a call to the fixpoint variable (Indices.omega),
+  -- which is not down a degenerate context branch
+  fixpointCall :: Term -> Env.TrackMatches Env.TrackOffset Bool
+  fixpointCall (App (Var f) _) 
+    | f == Indices.omega = do
+      ctx <- Env.liftByOffset rebound_outer_ctx
+      liftM not (Eval.degenerateContext ctx)
+  fixpointCall _ = 
+    return False
   
   -- Replace occurrences of the context applied to the inner
   -- (now uninterpreted) fixpoint variable.
@@ -201,9 +219,13 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
     -- The term we are hoping to replace this term with
     replace_t <- id
       . Env.liftByOffset 
-      . Context.apply outer_ctx'
+      . Context.apply rebound_outer_ctx
       $ Var Indices.omega
     
+    -- The new function call, lifted to the correct indices
+    -- this is what we replace with if unification succeeds in some form.
+    repl_here <- Env.liftByOffset replace_with
+        
     mby_uni <- Fail.catch (Unifier.find replace_t term)
     case mby_uni of
       -- If we found a unification then just check it is a valid one
@@ -212,9 +234,6 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
         let mapped_to = concatMap Indices.free (Map.elems uni)
         Fail.when (Indices.containsOmega (Map.keysSet uni))
         Fail.when (Indices.containsOmega mapped_to)
-        
-        -- The new function call, lifted to the correct indices
-        repl_here <- Env.liftByOffset replace_with
         return (Unifier.apply uni repl_here)
       
       -- Otherwise it could be a /degenerate/ instance of the context,
@@ -224,14 +243,34 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
         -- and the original term
         let [repl_call] = toList (Term.collect fixpointCall replace_t)
             [term_call] = toList term_calls
-        
-        Fail.here
+        match_uni <- Env.variableMatches
+        call_uni <- Unifier.find repl_call term_call
+        -- Take the combination of unification with the fixpoint call site
+        -- variables, and the various pattern matches which have been applied,
+        -- and run evaluation to hopefully form a degenerate context.
+        let applyUnis = id
+              . Unifier.apply match_uni 
+              . Unifier.apply call_uni
+            replace_t' = id
+              . Simp.run 
+              $ applyUnis replace_t
+            
+        -- debug
+        let s1 = "\n\n!!! in: " ++ show term 
+              ++ "\nfound "  ++ show term_call 
+              ++ "\nunified with " ++ show repl_call
+              ++ "\nplus " ++ show match_uni
+              ++ "\napplied to " ++ show replace_t
+              ++ "\ngiving " ++ show replace_t'
+              ++ "\nreplaced? " ++ show (replace_t' == term) ++ "\n\n"
+              
+        -- Check for a match
+        Fail.unless (replace_t' == term)
+        return (applyUnis repl_here)
     where
     -- Calls to the unrolled fixpoint within the term
     -- we are trying to replace
     term_calls = Term.collect fixpointCall term
-    
-    outer_ctx' = (Indices.lower . rebindVars . Indices.lift) outer_ctx
     new_fix_var = Var (length new_vars)
     replace_with = app new_fix_var (reverse new_vars)
     
@@ -359,4 +398,71 @@ fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
     floatCtxUp _ = mzero
   
     
+-- | Uses fixpoint fusion to merge a constraint into a fixpoint.
+constraintFusion :: forall m . (Env.Read m, Defs.Read m, Fail.Can m)
+  => (Term -> m Term)
+  -> Constraint 
+  -> Term
+  -> m Term
+constraintFusion simplify
+     cons@(Constraint match_t ind con_n) 
+     term@(App fix@(Fix {}) args) = do
+     
+  -- Run fixpoint fusion with our special simplification function.
+  fusion simplifyAndExpress full_ctx fix
+  where
+  -- We can use quickGet here because it's a fixpoint with arguments applied
+  result_ty = Type.quickGet term
+  
+  -- Appending contexts composes them in the natural way
+  cons_ctx = Constraint.toContext result_ty cons
+  args_ctx = Context.make (\t -> app t args)
+  full_ctx = cons_ctx ++ args_ctx
 
+  -- The inner simplification used in match fix fusion
+  simplifyAndExpress :: Term -> m Term
+  simplifyAndExpress term = do
+    term' <- simplify term
+    return
+      . Env.trackIndices fix_f
+      $ Fold.transformM expressPattern term'
+    where
+    fix_f = 0
+    ctx = Indices.lift full_ctx
+    orig_term = Context.apply ctx (Var fix_f)
+    
+    expressPattern :: Term -> Env.TrackIndices Index Term
+    expressPattern (Case ind cse_t alts) 
+      -- If we have found a pattern match which unifies with the original
+      -- match context then we should express it at recursive calls to the
+      -- function
+      | Unifier.exists match_t cse_t = do
+        fix_f <- Env.tracked
+        let alt_t' = id
+              . Env.trackIndices (fix_f, cse_t)
+              . Env.liftTrackedMany (length alt_bs)
+              $ Fold.transformM express alt_t
+            alts' = l_alts ++ (Alt alt_bs alt_t' : r_alts)
+        return (Case ind cse_t alts')
+      where
+      (l_alts, Alt alt_bs alt_t : r_alts) = splitAt (enum con_n) alts
+      
+      express :: Term -> Env.TrackIndices (Index, Term) Term
+      express term@(App (Var f) args) = do
+        (fix_f, cse_t) <- Env.tracked
+        let cse_ctx = Constraint.makeContext cse_t ind con_n result_ty
+            term' = Context.apply cse_ctx term
+        -- We only need to express the constraint if it can be unified with
+        -- the original constraint, and hence could be replaced by fusion.
+        if fix_f == f 
+          && Unifier.exists orig_term term'
+        then return term'
+        else return term
+      express other = 
+        return other
+        
+    expressPattern other = 
+      return other
+
+constraintFusion _ _ _ = 
+  Fail.here

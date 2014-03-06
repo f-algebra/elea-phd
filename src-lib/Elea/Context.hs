@@ -3,7 +3,7 @@ module Elea.Context
   Context, term,
   make, apply,
   isConstant, fromLambda, toLambda,
-  strip, dropLambda, dropLambdas
+  strip, dropLambda, dropLambdas,
 )
 where
 
@@ -108,7 +108,7 @@ dropLambdas ctx =
 -- E.g. "remove (f [_] y) (f x y) == Just x" 
 -- If this is a constant context then it returns 'Absurd' if it matches,
 -- because obviously there is no gap to return when the context is stripped.
-strip :: forall m . Fail.Can m => Context -> Term -> m Term
+strip :: Fail.Can m => Context -> Term -> m Term
 strip (Context ctx_t) term = do
   uni <- Unifier.find ctx_t term
   Fail.when (Map.size uni > 1)
@@ -122,7 +122,8 @@ strip (Context ctx_t) term = do
     -- viz. omega
     Fail.when (idx /= Indices.omega)
     return hole_term
-    
+
+  
 instance Indexed Context where
   free = Indices.free . get term
   shift f = modify term (Indices.shift f)

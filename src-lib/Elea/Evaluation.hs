@@ -1,8 +1,10 @@
--- | The most basic and well established simplification steps.
+-- | The most basic and well established simplification steps,
+-- plus a couple of functions which strongly rely on evaluation.
 module Elea.Evaluation 
 (
   run, steps,
-  strictVars,
+  strictTerms,
+  degenerateContext,
 )
 where
 
@@ -10,8 +12,10 @@ import Prelude ()
 import Elea.Prelude
 import Elea.Index
 import Elea.Term
+import Elea.Context ( Context )
 import qualified Elea.Terms as Term
 import qualified Elea.Env as Env
+import qualified Elea.Context as Context
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
@@ -35,26 +39,42 @@ steps =
   ]
   
   
--- | The variables whose value must be known in order to unroll the given term.
--- If we expanded this term these variables would be inside pattern matches
--- topmost.
-strictVars :: Term -> Set Index
-strictVars (App (Fix _ _ fix_t) args) = id
-  . Set.intersection (Indices.free args)
-  . Env.trackIndices 0
-  . Fold.foldM matchedUpon
-  . run
-  $ App fix_t args
+-- | The variables or uninterpreted function application terms
+-- whose value must be known in order to evaluate the given term.
+strictTerms :: Term -> Set Term
+strictTerms (Case _ cse_t@(App (Fix {}) _) _) = 
+  strictTerms cse_t
+strictTerms (App (Fix _ _ fix_t) args) = id
+  . collectTerms 
+  $ run (App fix_t' args)
   where
-  matchedUpon :: Term -> Env.TrackIndices Index (Set Index)
-  matchedUpon (Case _ (Var x) _) = do
-    offset <- Env.tracked
-    if x >= offset
-    then return (Set.singleton (x - offset))
-    else return mempty
-  matchedUpon _ = 
-    return mempty
+  fix_t' = substAt 0 (Var Indices.omega) fix_t
 
+  collectTerms (Case _ cse_t alts)
+    | isVar (leftmost cse_t) = 
+      Set.insert cse_t (concatMap altVars alts)
+    where
+    altVars (Alt bs alt_t) = id
+      . Set.map (Indices.lowerMany (length bs))
+      . Set.filter (Indices.lowerableBy (length bs))
+      $ collectTerms alt_t 
+  collectTerms _ = Set.empty
+  
+strictTerms _ = 
+  Set.empty
+  
+    
+-- | Whether a context is degenerate down the current branch of a term.
+-- A degenerate context is one which has lost its shape because we are down
+-- a base case branch. For example @take n _@ is degenerate when @n = 0@.
+-- This function is here because it requires 'strictVars'. 
+degenerateContext :: Env.MatchRead m => Context -> m Bool
+degenerateContext ctx = id
+  . anyM Env.isBaseCase 
+  . toList 
+  . strictTerms
+  $ Context.apply ctx (Var Indices.omega)
+    
 
 normaliseApp :: Fail.Can m => Term -> m Term
 normaliseApp (App f []) = return f

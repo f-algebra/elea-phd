@@ -5,7 +5,7 @@ module Elea.Monad.Failure
   Can (..), when, unless, toMaybe, withDefault, assert, choose,
   success, successM, catchWith, fromEither, has, fromMaybe, mapLookup,
   concatTransforms,
-  whenM, unlessM
+  whenM, unlessM, hasM
 )
 where
 
@@ -47,6 +47,10 @@ assert p = Prelude.assert p (unless p)
 
 has :: Maybe a -> Bool
 has = isNothing
+
+hasM :: Monad m => MaybeT m a -> m Bool
+hasM = liftM isNothing . runMaybeT
+
 
 -- | Strips the 'Fail.Can' by assuming that a computation has succeeded, 
 -- will throw an error if this is not the case.

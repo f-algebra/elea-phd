@@ -17,6 +17,8 @@ module Elea.Env
   
   isoFree, isoShift,
   empty, emptyT,
+  variableMatches,
+  isBaseCase,
   
   TrackSmallerTermsT, TrackSmallerTerms, 
   trackSmallerThan, isSmaller,
@@ -155,6 +157,36 @@ empty = runIdentity . emptyT
 emptyT :: Monad m => ReaderT [Bind] m a -> m a
 emptyT = flip runReaderT mempty
 
+
+-- | Create a 'Unifier' from just the pattern matches over variables.
+-- Requires the 'Substitutable' instance for 'Term'. Hence why it's here.
+variableMatches :: MatchRead m => m (Unifier Term)
+variableMatches =
+  liftM (foldl addMatch mempty) matches
+  where
+  addMatch :: Unifier Term -> (Term, Term) -> Unifier Term
+  addMatch uni (Var x, t) = id
+    . Map.insert x t 
+    -- Apply this substitution to earlier matches.
+    -- This is why we use 'foldl' as opposed to 'foldr', 
+    -- as the leftmost element is the first match.
+    $ map (substAt x t) uni
+  addMatch uni _ = uni
+
+  
+-- | Whether a given term has been matched to a base case
+-- down this branch.
+isBaseCase :: MatchRead m => Term -> m Bool
+isBaseCase term = do
+  ms <- matches
+  case lookup term ms of
+    Nothing -> return False
+    Just con_term -> do
+      let Con ind con_n : args = flattenApp con_term
+      allM isBaseCase
+        . map (args !!)
+        $ Type.recursiveArgs ind con_n
+
   
 -- Place 'AlsoTrack' over the top of a 'Write' environment monad.
 -- 'AlsoTrack' will capture all changes to the environment and pass them
@@ -254,7 +286,7 @@ instance Write m => Write (TrackMatches m) where
 instance Read m => Read (TrackMatches m) where
   bindings = Trans.lift bindings
   
-instance Read m => MatchRead (TrackMatches m) where
+instance Write m => MatchRead (TrackMatches m) where
   matches = TrackMatches ask
   
 instance Fail.Can m => Fail.Can (TrackMatches m) where
@@ -318,9 +350,6 @@ instance (Show Term, Write m) => Write (TrackSmallerTermsT m) where
 
         
 -- Other stuff
-  
-instance ContainsTerms Term where
-  mapTermsM = ($)
 
 instance Unifiable Term where
   find t1 t2 = do
@@ -393,4 +422,20 @@ instance Unifiable Term where
           Just t -> return (Indices.liftMany n t)
     replace other = 
       return other
-
+      
+instance Indexed Constraint where
+  free = free . get constraintOver
+  shift f = modify constraintOver (shift f)
+      
+instance Substitutable Constraint where 
+  type Inner Constraint = Term
+  substAt x t = 
+    modify constraintOver (substAt x t)
+  
+instance Unifiable Constraint where
+  apply uni =
+    modify constraintOver (Unifier.apply uni)
+    
+  find (Constraint t1 ind1 n1) (Constraint t2 ind2 n2) = do
+    Fail.unless (ind1 == ind2 && n1 == n2)
+    Unifier.find t1 t2

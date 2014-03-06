@@ -63,7 +63,7 @@ tests = Test.label "Terms"
       weird_free = Indices.free (Alt [] (App (Con eq_ind 0) [Var 0, Var 1]))
       weird1 = Test.assertEq (Set.fromList [0, 1]) weird_free
       
-  conj3_t <- Simp.run (conjunction 3)
+  let conj3_t = Simp.run (conjunction 3)
   conj3_t' <- Test.simplifiedTerm "fun (p q r: bool) -> and p (and q r)"
   let conj1 = Test.assertEq conj3_t' conj3_t
       

@@ -20,11 +20,13 @@ import Prelude ()
 import Elea.Prelude
 import Elea.Index
 import Elea.Term
+import Elea.Unifier ( Unifier )
 import qualified Elea.Type as Type
 import qualified Elea.Index as Indices
 import qualified Elea.Monad.Failure as Fail
 import qualified Elea.Monad.Definitions as Defs
 import qualified Control.Monad.Trans as Trans
+import qualified Data.Map as Map
 
 
 -- | A writable type and pattern match environment.
@@ -65,7 +67,7 @@ bindingDepth = liftM length bindings
 
 -- | Whether you can read locally bound pattern matches from
 -- an environment monad
-class Read m => MatchRead m where
+class Write m => MatchRead m where
   matches :: m [(Term, Term)]
   
 findMatches :: MatchRead m => (Term -> Bool) -> m [(Term, Term)]

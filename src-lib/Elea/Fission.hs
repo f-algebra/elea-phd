@@ -58,7 +58,7 @@ identityFix fix@(Fix _ (Bind _ fix_ty) fix_t) = do
   -- See if the function is an identity on the given argument index
   identityOn :: Int -> m Term
   identityOn arg_i = 
-    Fix.fission Simp.run fix ctx
+    Fix.fission (return . Simp.run) fix ctx
     where
     -- A constant context which returns the identity function
     -- on the given argument index
@@ -80,7 +80,7 @@ constructorFission fix@(Fix _ fix_b fix_t) = do
   -- Pick the first successful fission step
   Fail.choose
     -- Attempt fission on each of the suggested constructors
-    . map (Fix.fission Simp.run fix)
+    . map (Fix.fission (return . Simp.run) fix)
     $ toList suggestions
   where 
   return_ty = Type.returnType (get Type.boundType fix_b)

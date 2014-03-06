@@ -11,6 +11,8 @@ module Elea.Terms
   decreasingAppArgs,
   applyCase,
   generaliseArgs,
+  generaliseTerms,
+  generaliseUninterpreted,
   pair,
   equation,
   isEquation,
@@ -23,6 +25,7 @@ module Elea.Terms
   occurrences,
   isSubterm,
   alreadyFused,
+  findContext,
 )
 where
 
@@ -101,8 +104,12 @@ collectM p = Env.alsoTrack 0 . Fold.collectM collect
   where
   collect :: Term -> MaybeT (Env.AlsoTrack Index m) Term
   collect t = do
-    c <- (Trans.lift . Trans.lift . p) t
-    guard c
+    condition <- (Trans.lift . Trans.lift . p) t
+    Fail.unless condition
+    
+    lowerable <- Env.lowerableByOffset t
+    Fail.unless lowerable
+    
     Env.lowerByOffset t
     
 -- | See 'collectM'
@@ -192,9 +199,8 @@ applyCase (Case ind cse_t alts) inner_t =
 -- | Generalise all the arguments of a term to fresh variables.
 -- The first argument of the inner computation to run will lift 
 -- indices by the number of new variables.
-generaliseArgs :: ( Substitutable t, Inner t ~ Term, 
-                    Env.Read m, Defs.Read m ) =>
-  Term -> (Indices.Shift -> Term -> m t) -> m t
+generaliseArgs :: (Env.Read m, Defs.Read m, Substitutable a, Inner a ~ Term) =>
+  Term -> (Indices.Shift -> Term -> m a) -> m a
 generaliseArgs (App func args) run = do
   -- Use the type of every arguments to generate bindings for our new 
   -- generalised variables.
@@ -222,7 +228,59 @@ generaliseArgs (App func args) run = do
   liftHere :: Indexed b => b -> b
   liftHere = Indices.liftMany (length args)
   
-
+  
+-- | Like 'generaliseArgs' but generalises /every/ occurrence of a set of terms
+-- within another.
+generaliseTerms :: ( Env.Read m, Defs.Read m, ContainsTerms t
+                   , Substitutable a, Inner a ~ Term ) =>
+  Set Term -> t -> (Indices.Shift -> t -> m a) -> m a
+generaliseTerms (toList -> terms) target run
+  | length terms == 0 = run id target
+  | otherwise = do
+    term_tys <- mapM Type.get terms
+    let gen_bs = zipWith makeBind [0..] term_tys
+          
+    -- Run the inner computation
+    done_t <- id
+      . Env.bindMany (reverse gen_bs)
+      . run liftHere 
+      . mapTerms generalise
+      $ target
+      
+    -- Reverse the generalisation
+    return 
+      . foldr Indices.subst done_t
+      $ zipWith Indices.liftMany [0..] (reverse terms)
+  where
+  generalise :: Term -> Term
+  generalise = id
+    . concatEndos (zipWith replace terms' new_vars)
+    . liftHere
+    where
+    terms' = map liftHere terms
+    new_vars = map Var [0..length terms - 1]
+    
+  makeBind :: Int -> Type -> Bind
+  makeBind n ty = Bind name ty
+    where
+    name = show ty ++ "_" ++ show n
+  
+  liftHere :: Indexed b => b -> b
+  liftHere = Indices.liftMany (length terms)
+  
+  
+-- | Finds uninterpreted function calls and generalises them.
+generaliseUninterpreted :: ( Env.Read m, Defs.Read m, ContainsTerms t
+                           , Substitutable a, Inner a ~ Term ) =>
+  t -> (Indices.Shift -> t -> m a) -> m a
+generaliseUninterpreted target =
+  generaliseTerms f_calls target
+  where
+  f_calls = concatMap (collect functionCall) (containedTerms target)
+    where
+    functionCall (App (Var f) _) = True
+    functionCall _ = False
+    
   
 -- | Construct a pair of the two given terms. Needs to read the type of the
 -- two terms so it can construct the appropriate cartesian product type for
@@ -291,44 +349,6 @@ expressFreeVariables = flip (foldrM express)
     return (app fix' (new_arg : args))
     
     
- {-
--- | A function is /non-recursively productive/ 
--- if one unrolling will decide which constructor is returned, 
--- and the value of every non-recursive argument to that constructor
-isNonRecProductive :: Term -> Bool
-isNonRecProductive (Fix _ _ fix_t) = id
-  -- Productive functions are not unproductive
-  . not
-  -- Track the index of the recursive call to the fixpoint
-  . Env.trackIndices 0
-  $ Fold.paraM unproductive (trace (show fix_t) fix_t)
-  where
-  JUST REWRITE THIS with manual recursion! Much simpler.
-  
-  -- Best represented as a monadic paramorphism. Hurray for category theory.
-  unproductive :: Term' (Bool, Term) -> Env.TrackIndices Index Bool
-  -- A term is unproductive if it involves a call to the recursive function
-  unproductive (Var' f) = do
-    fix_f <- Env.tracked
-    return (fix_f == f)
-  -- Constructors block unproductivity from recursive arguments
-  -- so we only check non-recursive ones
-  unproductive (App' (_, Con ind con_n) args) = id
-    . or
-    . map fst
-    . map (args !!)
-    $ Type.nonRecursiveArgs ind con_n
-  -- Matches where every branch is the same constructor do the same,
-  -- this was an ad-hoc extension to deal with the @height@ function.
-  unproductive (
-    where
-    
-  -- Otherwise we check whether any subterm is unproductive
-  unproductive term = 
-    return (or (map fst (toList term)))  
-  -}
-
-    
 -- | A /finite match/ in one in which any recursively typed variables
 -- bound down any pattern branch are unused. So if a finite match over a list
 -- does not reference the sub-list.
@@ -392,14 +412,24 @@ isSubterm t = Env.trackIndices t . Fold.anyM (\t -> Env.trackeds (== t))
   
 -- | Whether we have already attempted to fuse this set of terms into
 -- this fixpoint.
-alreadyFused :: FixInfo -> Set Term -> Term -> Bool
+alreadyFused :: FixInfo -> Set Constraint -> Term -> Bool
 alreadyFused (FixInfo fused) matched fix_term = 
   any unifiable fused
   where
-  unifiable :: (Set Term, Term) -> Bool
+  unifiable :: (Set Constraint, Term) -> Bool
   unifiable (matched', fix_term')
     | Just term_uni <- Unifier.find fix_term fix_term'
     , Just m_uni <- Unifier.find matched matched' =  
       isJust (Unifier.union term_uni m_uni)
   unifiable _ = False
+    
+-- | Finds a context which will turn the first term into the second.
+-- Basically takes the first term and replaces all instances of it 
+-- with the gap in the second. Will fail if there was not at least one
+-- instance.
+findContext :: Fail.Can m => Term -> Term -> m Context
+findContext inner full = do
+  Fail.unless (inner `isSubterm` full)
+  return (Context.make (\gap -> replace inner gap full))
+  
   

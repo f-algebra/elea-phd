@@ -48,8 +48,8 @@ contextTest ctx_s sub_s aim_s = do
   let app = Context.apply ctx sub
       test1 = Test.assertEq aim app
       Just sub' = Context.strip ctx aim
-  sub'' <- Env.emptyT (Simp.run sub')
-  let test2 = Test.assertEq sub sub''
+      sub'' = Simp.run sub'
+      test2 = Test.assertEq sub sub''
   return $ Test.list [test1, test2]
   
 dropLambdasTest :: String -> String -> Test.M Test.Test

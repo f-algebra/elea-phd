@@ -9,14 +9,15 @@
 -- less-than-or-equal-to the value of @y@.
 module Elea.Constraint
 (
-  Constraint (..),
   make,
   strip,
   target,
   is,
+  contains,
+  fromMatch,
   removeAll,
+  removeWhen,
   toContext,
-  fuse,
   makeContext,
 )
 where
@@ -26,21 +27,16 @@ import Elea.Prelude hiding ( replace )
 import Elea.Term
 import Elea.Context ( Context )
 import qualified Elea.Types as Type
+import qualified Elea.Terms as Term
 import qualified Elea.Index as Indices
 import qualified Elea.Env as Env
 import qualified Elea.Context as Context
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Foldable as Fold
 import qualified Elea.Simplifier as Simp
-import qualified Elea.Fixpoint as Fix
 import qualified Elea.Monad.Failure as Fail
 import qualified Elea.Monad.Definitions as Defs
 
-
-data Constraint 
-  = Constraint  { matchTerm :: !Term
-                , inductiveType :: !Type.Ind
-                , constructorIndex :: !Nat }
                 
 make :: Term -> Type.Ind -> Nat -> Constraint
 make = Constraint
@@ -49,12 +45,20 @@ make = Constraint
 -- | Remove a constraint from a term, returning the constraint, and the term
 -- it was applied to.
 strip :: Fail.Can m => Term -> m (Constraint, Term)
-strip (Case ind cse_t alts)
-  | length alts > 1
-  , [con_n] <- findIndices (not . isAbsurd . get altInner) alts
-  , lowerableAltInner (alts !! con_n) = 
-    return ( make cse_t ind (enum con_n)
-           , loweredAltInner (alts !! con_n) )
+strip (Case ind cse_t alts) = do
+  Fail.unless (length non_abs == 1)
+  inner_t <- Indices.tryLowerMany (length bs) alt_t'
+  return (make cse_t ind (enum con_n), inner_t)
+  where
+  non_abs = findIndices (not . isAbsurd . get altInner) alts
+  [con_n] = non_abs
+  Alt bs alt_t = alts !! con_n
+  
+  -- Revert the pattern match
+  cse_t' = Indices.liftMany (length bs) cse_t
+  pat_t = Term.altPattern ind (enum con_n)
+  alt_t' = Term.replace pat_t cse_t' alt_t
+    
 strip _ = 
   Fail.here
   
@@ -69,17 +73,36 @@ target = liftM snd . strip
 is :: Term -> Bool
 is = isJust . strip
 
+-- | Whether a given term contains constraints
+contains :: Term -> Bool
+contains = Fold.any is
 
 -- | Removes any instances of constraints within a term.
 -- Constraints on a term are always equivalent to just the term.
 removeAll :: Term -> Term
-removeAll = Fold.transform (\t -> fromMaybe t (target t))
+removeAll = removeWhen (const True)
 
-
+-- | Strips all constraints from a term which fulfil the given predicate
+removeWhen :: (Constraint -> Bool) -> Term -> Term
+removeWhen p = Fold.transform remove
+  where
+  remove term
+    | Just (con, inner_t) <- strip term, p con = inner_t
+    | otherwise = term
+      
+    
 -- | A function which composes 'make' and 'toContext'
 makeContext :: Term -> Type.Ind -> Nat -> Type -> Context
 makeContext match_t ind con_n res_ty = 
   toContext res_ty (make match_t ind con_n)
+  
+  
+-- | Pattern matches from "Elea.Env" are represented as term pairs, where
+-- the first term has been matched to the second (which will always
+-- be a constructor applied to variables).
+fromMatch :: (Term, Term) -> Constraint
+fromMatch (from_t, leftmost -> Con ind con_n) = 
+  make from_t ind con_n
         
   
 -- | Create a context from a constraint. Requires the return type of the gap.
@@ -105,71 +128,4 @@ toContext result_ty (Constraint match_t ind con_n) =
       -- If we are not down the matched branch we return absurd
       alt_t | enum alt_n /= con_n = Absurd result_ty
             | otherwise = gap_t
-       
-            
--- | Use fixpoint fusion to merge a constraint into a fixpoint.
-fuse :: forall m . (Env.Read m, Defs.Read m, Fail.Can m)
-  => Constraint 
-  -> Term
-  -> m Term
-fuse cons@(Constraint match_t ind con_n) 
-     term@(App fix@(Fix {}) args) = do
-     
-  -- Run fixpoint fusion with our special simplification function.
-  Fix.fusion simplify full_ctx fix
-  where
-  -- We can use quickGet here because it's a fixpoint with arguments applied
-  result_ty = Type.quickGet term
-  
-  -- Appending contexts composes them in the natural way
-  cons_ctx = toContext result_ty cons
-  args_ctx = Context.make (\t -> app t args)
-  full_ctx = cons_ctx ++ args_ctx
 
-  -- The inner simplification used in match fix fusion
-  simplify :: Term -> m Term
-  simplify term = do
-    term' <- Simp.run term
-    return
-      . Env.trackIndices fix_f
-      $ Fold.transformM expressPattern term'
-    where
-    fix_f = 0
-    ctx = Indices.lift full_ctx
-    orig_term = Context.apply ctx (Var fix_f)
-    
-    expressPattern :: Term -> Env.TrackIndices Index Term
-    expressPattern (Case ind cse_t alts) 
-      -- If we have found a pattern match which unifies with the original
-      -- match context then we should express it at recursive calls to the
-      -- function
-      | Unifier.exists match_t cse_t = do
-        fix_f <- Env.tracked
-        let alt_t' = id
-              . Env.trackIndices (fix_f, cse_t)
-              . Env.liftTrackedMany (length alt_bs)
-              $ Fold.transformM express alt_t
-            alts' = l_alts ++ (Alt alt_bs alt_t' : r_alts)
-        return (Case ind cse_t alts')
-      where
-      (l_alts, Alt alt_bs alt_t : r_alts) = splitAt (enum con_n) alts
-      
-      express :: Term -> Env.TrackIndices (Index, Term) Term
-      express term@(App (Var f) args) = do
-        (fix_f, cse_t) <- Env.tracked
-        let cse_ctx = toContext result_ty (make cse_t ind con_n)
-            term' = Context.apply cse_ctx term
-        -- We only need to express the constraint if it can be unified with
-        -- the original constraint, and hence could be replaced by fusion.
-        if fix_f == f 
-          && Unifier.exists orig_term term'
-        then return term'
-        else return term
-      express other = 
-        return other
-        
-    expressPattern other = 
-      return other
-
-fuse _ _ = 
-  Fail.here

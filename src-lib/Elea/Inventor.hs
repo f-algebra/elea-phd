@@ -22,6 +22,7 @@ import qualified Elea.Terms as Term
 import qualified Elea.Types as Type
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Context as Context
+import qualified Elea.Equality as Equality
 import qualified Elea.Foldable as Fold
 import qualified Elea.Fixpoint as Fix
 import qualified Elea.Constraint as Constraint
@@ -110,18 +111,19 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
     
     makeAlt :: Nat -> m Alt
     makeAlt con_n = do
-      alt_t <- Constraint.fuse constr g_term
-      alt_t' <- simplify (Constraint.removeAll alt_t)
+      alt_t <- Fix.constraintFusion simplify constr g_term
       return 
         . Alt alt_bs
-        $ Indices.liftMany (length alt_bs) alt_t'
+        . Indices.liftMany (length alt_bs) 
+        $ Constraint.removeAll alt_t
       where
       constr = Constraint.make f_term f_ind con_n
       alt_bs = Type.makeAltBindings f_ind con_n
     
-  -- Otherwise we need to do proper fixpoint
+
+  -- Otherwise we need to do proper fixpoint invention
   inventor g_term@(App (Fix {}) _) = do  
- --   Fail.here
+   -- Fail.here
     -- DEBUG  
     f_term_s <- showM f_term
     g_term_s <- showM g_term
@@ -139,19 +141,16 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
       mapM (inventCase f_ty g_ty . toEnum) [0..length cons - 1]
     
     let fold_f = Term.buildFold ind_ty g_ty
-    fold <- Simp.run (app fold_f fold_cases)
-    let ctx = Context.make (\t -> app fold [t])
+        fold = Simp.run (app fold_f fold_cases)
+        ctx = Context.make (\t -> app fold [t])
     
-    -- This algorithm is not sound by construction, so we check its answer using
-    -- fusion, which is sound.
-    {-
-    let f_args_ctx = Context.make (\t -> app t f_args)
-        fusion_ctx = ctx ++ f_args_ctx
-    fused <- fusion (\_ _ -> Simp.run) fusion_ctx f_fix
-    Fail.unless (fused == g_term)
-    -}
-    -- I've left the soundness check above out because the equality check
-    -- at the end is non-trivial. Will put this back in later.
+    -- This algorithm is not sound by construction, so we check its 
+    -- answer using our equation solver
+    
+    let ctx_f_term = Context.apply ctx f_term
+    eq <- Equality.prove simplify ctx_f_term g_term
+    Fail.unless eq
+    
     return ctx
     where
     inventCase :: Type -> Type -> Nat -> m Term

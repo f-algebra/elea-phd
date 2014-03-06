@@ -12,18 +12,14 @@ import qualified Elea.Testing as Test
 import qualified Elea.Definitions as Defs
 import qualified Elea.Simplifier as Simp
 
-checkEquation :: Equation -> Test.M Test.Test
+checkEquation :: Equation -> Test.Test
 checkEquation (Equals name bs t1 t2) = id
-  . liftM (Test.label name)
-  . Env.emptyT
-  . Env.bindMany bs $ do
-    t1' <- Simp.run t1
-    t2' <- Simp.run t2
-    Test.assertTermEq t2' t1'
+  . Test.label name
+  $ Test.assertSimpEq t1 t2
   
 tests = Test.label "Simplifier"
     $ Test.run $ do
   Test.loadPrelude
   eqs <- Test.loadFile "src-lib/Elea/Tests/simplifier.elea"
-  mapM checkEquation eqs
+  return (map checkEquation eqs)
 

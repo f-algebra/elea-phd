@@ -2,7 +2,8 @@
 -- not involve fixpoint fusion.
 module Elea.Simplifier
 (
-  run, steps, removeConstArgs,
+  run, runChecked,
+  steps, removeConstArgs,
   
   -- | These two steps are useful for fixpoint fusion
   finiteCaseFix, finiteArgFix,
@@ -28,10 +29,13 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Control.Monad.Trans as Trans
 
-run :: (Env.Read m, Defs.Read m) => Term -> m Term
-run = Fold.rewriteStepsM (map Type.checkStep steps)
+run :: Term -> Term
+run = Fold.rewriteSteps steps
 
-steps :: (Fail.Can m, Env.Read m, Defs.Read m) => [Term -> m Term]
+runChecked :: (Env.Read m, Defs.Read m) => Term -> m Term
+runChecked = Fold.rewriteStepsM (map Type.checkStep steps)
+
+steps :: Fail.Can m => [Term -> m Term]
 steps = Eval.steps ++
   [ const Fail.here
   , Fail.concatTransforms transformSteps
@@ -57,24 +61,27 @@ steps = Eval.steps ++
 
 -- | Remove arguments to a fixpoint if they never change in 
 -- any recursive calls.
-removeConstArgs :: Env.Write m => Term -> m Term
-removeConstArgs = liftM Eval.run . Fold.rewriteM constArg
+removeConstArgs :: Term -> Term
+removeConstArgs = Eval.run . Fold.rewrite constArg
 
   
 -- | We do not want pattern matches to return function typed values,
 -- so we add a new lambda above one if this is the case.
-caseFun :: (Fail.Can m, Env.Read m, Defs.Read m) => Term -> m Term
+caseFun :: Fail.Can m => Term -> m Term
 caseFun cse@(Case ind t alts) = do
-  cse_ty <- Type.get cse
-  -- We only apply this step if the pattern match is of function type.
-  Fail.unless (Type.isFun cse_ty)
-  let Type.Fun arg_ty _ = cse_ty
+  Fail.unless (length potential_bs > 0)
   return
-    . Lam (Bind "X" arg_ty)
+    . Lam (head potential_bs)
     . Case ind (Indices.lift t)
     $ map appAlt alts
   where
   alt_ts = map (get altInner) alts
+  
+  potential_bs = mapMaybe findLam alts
+    where
+    findLam :: Alt -> Maybe Bind
+    findLam (Alt _ (Lam b _)) = Just b
+    findLam _ = Nothing
   
   appAlt (Alt bs alt_t) =
     Alt bs (app alt_t' [arg])
@@ -86,18 +93,16 @@ caseFun _ = Fail.here
 
 
 -- | Finds terms that are absurd and sets them that way.
--- So far it detects pattern matching over absurdity, 
--- and applying arguments to an absurd function.
-absurdity :: (Fail.Can m, Env.Read m, Defs.Read m) => Term -> m Term
-absurdity term
-  | isAbsurd term = do
-    ty <- Type.get term
-    return (Absurd ty)
+-- So far it detects applying arguments to an absurd function.
+-- Need to add pattern matching over absurdity, but how to find the type?
+absurdity :: Fail.Can m => Term -> m Term
+absurdity (App (Absurd ty) args) = 
+  return (Absurd new_ty)
   where
-  isAbsurd (App (Absurd _) _) = True
-  isAbsurd (Case _ (Absurd _) _) = True
-  isAbsurd _ = False
-    
+  new_ty = id
+    . Type.unflatten 
+    . drop (length args) 
+    $ Type.flatten ty
 absurdity _ =
   Fail.here
   
