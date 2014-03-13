@@ -1,6 +1,9 @@
 module Elea.Type
 (
   Type (..), Ind (..), ConArg (..), Bind (..),
+  
+  ContainsTypes (..), mapTypes,
+  
   name, constructors, boundLabel, boundType, 
   empty, unit, pair, bool, 
   equation, isEquation,
@@ -10,12 +13,17 @@ module Elea.Type
   recursiveArgs, nonRecursiveArgs, recursiveArgIndices,
   isBaseCase, isRecursive, 
   makeAltBindings,
+  
+  Polymorphic, 
+  polymorphic, polymorphicM, 
+  monomorphic, uninterpreted,
 )
 where
 
 import Prelude ()
 import Elea.Prelude
 import Elea.Index
+import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Failure as Fail
 
 -- | An argument to a constructor.
@@ -63,7 +71,80 @@ instance Ord Bind where
 instance Ord Ind where
   compare = compare `on` map snd . _constructors
   
+  
+-- | The prime type for 'Type', to allow us to use the "Elea.Foldable" code.
+data Type' a 
+  = Base' (Ind' a)
+  | Fun' a a
+  deriving ( Functor, Foldable, Traversable )
+  
+data ConArg' a 
+  = IndVar'
+  | ConArg' a
+  deriving ( Functor, Foldable, Traversable )
+  
+data Ind' a 
+  = Ind' String [(String, [ConArg' a])]
+  deriving ( Functor, Foldable, Traversable )
+  
+type instance Fold.Base Type = Type'
+
+projectConArg :: ConArg -> ConArg' Type 
+projectConArg IndVar = IndVar'
+projectConArg (ConArg ty) = ConArg' ty
+
+projectInd :: Ind -> Ind' Type
+projectInd (Ind n cs) = Ind' n (map (second (map projectConArg)) cs)
+
+embedConArg :: ConArg' Type -> ConArg 
+embedConArg IndVar' = IndVar
+embedConArg (ConArg' ty) = ConArg ty
+
+embedInd :: Ind' Type -> Ind
+embedInd (Ind' n cs) = Ind n (map (second (map embedConArg)) cs)
+
+instance Fold.Foldable Type where
+  project (Base ind) = Base' (projectInd ind)
+  project (Fun t1 t2) = Fun' t1 t2
+  
+instance Fold.Unfoldable Type where
+  embed (Base' ind) = Base (embedInd ind)
+  embed (Fun' t1 t2) = Fun t1 t2
+  
+  
 mkLabels [ ''Bind, ''Ind ]
+
+-- | Anything that contains types. Will only apply the function to the very
+-- top level types within something. Does not recurse into types themselves,
+-- hence the instance for 'Type' itself.
+class ContainsTypes t where
+  mapTypesM :: Monad m => (Type -> m Type) -> t -> m t
+  
+mapTypes :: ContainsTypes t => (Type -> Type) -> t -> t
+mapTypes f = runIdentity . mapTypesM (return . f)
+
+
+instance ContainsTypes Type where
+  mapTypesM = ($)
+
+instance ContainsTypes ConArg where
+  mapTypesM _ IndVar = 
+    return IndVar
+  mapTypesM f (ConArg ty) =
+    return ConArg `ap` f ty
+    
+instance ContainsTypes Bind where
+  mapTypesM f (Bind name ty) =
+    return (Bind name) `ap` f ty
+  
+instance ContainsTypes Ind where
+  mapTypesM f (Ind name cons) = do
+    args' <- mapM (mapM (mapTypesM f)) args
+    return (Ind name (zip names args'))
+    where
+    args :: [[ConArg]]
+    (names, args) = unzip cons
+  
 
 -- | The 'empty' type, viz. the constructorless inductive type.
 empty :: Ind
@@ -198,8 +279,78 @@ makeAltBindings ind con_n =
   arg_names = map (\n -> "B" ++ show n) [0..]
   
   
+-- | Things parameterised by types. 
+-- Doesn't correspond to anywhere on the lambda cube, these are just macros
+-- which allow for easier monomorphic typing. Actual terms are always 
+-- monomorphic, but we can use these macros to define /polymorphic/ functions
+-- and types.
+data Polymorphic a
+  = Poly [String] a
+  deriving ( Functor )
+  
+instance Indexed a => Indexed (Polymorphic a) where
+  free (Poly _ a) = free a
+  shift f (Poly ns a) = Poly ns (shift f a)
+  
+typeArgCount :: Polymorphic t -> Nat
+typeArgCount (Poly ns _) = length ns
+  
+-- | Make a polymorphic instance of something which contains types.
+-- Also propagates a monad, because that's always useful.
+polymorphicM :: (Monad m, ContainsTypes t) 
+  -- | The type argument names
+  => [String] 
+  -- | The function which when given the type arguments returns the 
+  -- monomorphic object
+  -> ([Type] -> m t)
+  -> m (Polymorphic t)
+polymorphicM arg_ns make = id
+  . liftM (Poly arg_ns)
+  $ make (map Base inds)
+  where
+  -- We use specially named empty inductive types to mark type arguments
+  inds = map makeInd [0..length arg_ns - 1]
+    where
+    makeInd i = Ind ("$" ++ show i) []
+    
+polymorphic :: ContainsTypes t => [String] -> ([Type] -> t) -> Polymorphic t
+polymorphic ns f = 
+  runIdentity (polymorphicM ns (return . f))
+
+-- | Apply type arguments to a polymorphic instance to get a monomorphic one
+monomorphic :: (Show t, ContainsTypes t) => [Type] -> Polymorphic t -> t
+monomorphic args poly@(Poly ns _)
+  | length ns /= (length args :: Int) = 
+    error 
+       $ "Tried to make a monomorphic instance of " ++ show poly
+       ++ " supplying types " ++ show args
+       ++ " for variables " ++ show ns
+monomorphic args poly@(Poly _ t) =
+  mapTypes (Fold.transform applyArgs) t
+  where
+  applyArgs (Base (Ind ('$':idx) [])) = 
+    args !! read idx
+  applyArgs other = other
+  
+-- | Make a monomorphic instance of a polymorphic object using uninterpreted
+-- type variables (we just use empty inductive types for this).
+uninterpreted :: (Show t, ContainsTypes t) => Polymorphic t -> t
+uninterpreted poly@(Poly ns _) = 
+  monomorphic (map Base inds) poly
+  where
+  inds = map (\n -> Ind n []) ns
+  
+  
 instance Show Ind where
-  show = get name
+  show (Ind name cons) = name
+  --  "(ind " ++ name ++ " with" ++ concatMap showCon cons ++ " end)"
+    where
+    showCon :: (String, [ConArg]) -> String
+    showCon (con_name, args) = 
+      " | " ++ con_name ++ concatMap (\t -> " " ++ showArg t) args
+      where
+      showArg IndVar = name
+      showArg (ConArg ty) = show ty
   
 instance Show Type where
   show (Base ind) = show ind
@@ -214,4 +365,9 @@ instance Show Type where
 instance Show Bind where
   show (Bind name ty) =
     "(" ++ name ++ ": " ++ show ty ++ ")" 
+    
+instance (ContainsTypes a, Show a) => Show (Polymorphic a) where
+  show p@(Poly ns _) =
+    "forall " ++ intercalate " " ns ++ " -> " 
+    ++ show (uninterpreted p)
 

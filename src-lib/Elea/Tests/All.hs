@@ -16,8 +16,8 @@ import qualified Elea.Tests.Fusion as Fusion
 tests = Test.list
   [ Prelude.tests
   , Type.tests
-  , Term.tests
-  , Simplifier.tests
+--  , Term.tests
+--  , Simplifier.tests
   , Context.tests
  -- , Inventor.tests
   , Fusion.tests  

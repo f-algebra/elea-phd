@@ -1,22 +1,10 @@
-
+/*
 prop "id nat":
   (fun (n: nat) -> n)
   = 
   (fix (id: nat -> nat) (n: nat) -> 
     match n with | 0 -> 0 | Suc n' -> Suc (id n') end)
     
-prop "id list":
-  (fun (n: nat) (xs: nlist) -> xs)
-  =
-  (fix (id: nat -> nlist -> nlist) (n: nat) (xs: nlist) ->
-    match n with
-    | 0 -> xs
-    | Suc n' -> 
-      match xs with
-      | Nil -> Nil
-      | Cons y ys -> Cons y (id n' ys)
-      end
-    end)
 
 prop "add 0": forall (n: nat) -> add n 0 = n
 
@@ -39,35 +27,51 @@ let double =
 prop "add double": forall (x: nat) ->
   double x = add x x
 
-prop "append associative": forall (xs ys zs: nlist) ->
-  append (append xs ys) zs = append xs (append ys zs)
-    
-let revapp = 
-  fix (rap: nat -> nlist -> nlist) (n: nat) (xs: nlist) ->
+  */
+prop "id list"<A>:
+  (fun (n: nat) (xs: list<A>) -> xs)
+  =
+  (fix (id: nat -> list<A> -> list<A>) (n: nat) (xs: list<A>) ->
+    match n with
+    | 0 -> xs
+    | Suc n' -> 
+      match xs with
+      | Nil -> Nil<A>
+      | Cons y ys -> Cons<A> y (id n' ys)
+      end
+    end)
+
+prop "append nil"<A>: forall (xs: list<A>) ->
+  append<A> xs Nil<A> = xs
+ 
+prop "append associative"<A>: forall (xs ys zs: list<A>) ->
+  append<A> (append<A> xs ys) zs = append<A> xs (append<A> ys zs)
+
+  
+let revapp<A> = 
+  fix (rap: A -> list<A> -> list<A>) (n: A) (xs: list<A>) ->
     match xs with
-    | Nil -> Cons n Nil
-    | Cons y ys -> append (rap n ys) (Cons y Nil)
+    | Nil -> Cons<A> n Nil<A>
+    | Cons y ys -> append<A> (rap n ys) (Cons<A> y Nil<A>)
     end
     
-prop "revapp def": forall (n: nat) (xs: nlist) ->
-  reverse (append xs (Cons n Nil)) = revapp n xs
+prop "revapp def"<A>: forall (n: A) (xs: list<A>) ->
+  reverse<A> (append<A> xs (Cons<A> n Nil<A>)) = revapp<A> n xs
 
-prop "revapp cons": forall (n: nat) (xs: nlist) ->
-  revapp n xs = Cons n (reverse xs)
+prop "revapp cons"<A>: forall (n: A) (xs: list<A>) ->
+  revapp<A> n xs = Cons<A> n (reverse<A> xs)
   
-prop "revrev": forall (xs: nlist) ->
-  xs = reverse (reverse xs)
+prop "revrev"<A>: forall (xs: list<A>) ->
+  xs = reverse<A> (reverse<A> xs)
 
+prop "count reverse": forall (n: nat) (xs: list<nat>) ->
+  count_nat n (reverse<nat> xs) = count_nat n xs
   
-prop "count reverse": forall (n: nat) (xs: nlist) ->
-  count n (reverse xs) = count n xs
-  
-prop "count append": forall (n: nat) (xs ys: nlist) ->
-  count n (append xs ys) = add (count n xs) (count n ys)
+prop "count append": forall (n: nat) (xs ys: list<nat>) ->
+  count_nat n (append<nat> xs ys) = add (count_nat n xs) (count_nat n ys)
 
-prop "count snoc": forall (n: nat) (xs: nlist) ->
-  count n (append xs (Cons n Nil)) = Suc (count n xs)
-  
+prop "count snoc": forall (n: nat) (xs: list<nat>) ->
+  count_nat n (append<nat> xs (Cons<nat> n Nil<nat>)) = Suc (count_nat n xs)
   
 prop "eq_nat reflexive": forall (n: nat) -> 
   eq_nat n n
@@ -90,41 +94,18 @@ prop "leq_nat total": forall (n m: nat) ->
 prop "leq_nat total 2": forall (f: nat -> nat) (n m: nat) ->
   implies (not (leq_nat (f n) m)) (leq_nat m (f n))
   
-prop "drop take": forall (n: nat) (xs: nlist) ->
-  xs = append (take n xs) (drop n xs)
+prop "drop take"<A>: forall (n: nat) (xs: list<A>) ->
+  xs = append<A> (take<A> n xs) (drop<A> n xs)
   
-prop "drop add": forall (n: nat) (m: nat) (xs: nlist) ->
-  drop (add m n) xs = drop n (drop m xs)
+prop "drop add"<A>: forall (n: nat) (m: nat) (xs: list<A>) ->
+  drop<A> (add m n) xs = drop<A> n (drop<A> m xs)
   
-prop "filter reverse": forall (p: nat -> bool) (xs: nlist) ->
-  reverse (filter p xs) = filter p (reverse xs)
+prop "filter reverse"<A>: forall (p: A -> bool) (xs: list<A>) ->
+  reverse<A> (filter<A> p xs) = filter<A> p (reverse<A> xs)
 
-prop "insertsort sorted": forall (xs: nlist) ->
+prop "insertsort sorted": forall (xs: list<nat>) ->
   is_sorted (insertsort xs)
 
-  /*
-let sorted_tree = 
-  fix (srtd: ntree -> bool) (t: ntree) ->
-  match t with
-  | Leaf -> True
-  | Node t1 x t2 -> 
-    match flatten t2 with
-    | Nil -> 
-  */
-  
-let rightmost_leq = 
-  fix (leq: nat -> nlist -> bool) (n: nat) (xs: nlist) ->
-  match xs with
-  | Nil -> True
-  | Cons x xs ->
-    match xs with
-    | Nil -> leq_nat x n
-    | Cons y ys -> leq n xs
-    end
-  end
-  
-prop "main": forall (t: ntree) (n: nat) ->
-  height (mirror t)
- 
- 
+prop "height mirror" <A>: forall (t: tree<A>) ->
+  height<A> (mirror<A> t) = height<A> t
 

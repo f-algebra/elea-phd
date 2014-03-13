@@ -19,14 +19,22 @@ import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Error as Err
 import qualified Data.Map as Map
 
+type TypeArgs = [String]
+
+-- A parameterised variable call can have type arguments.
+-- > append<list<nat>>
+type ParamCall = (String, [RawType])
+
+type ParamName = (String, [String])
+
 -- Inductive data types
-type TypeDef = (String, [[String]])
+type TypeDef = (ParamName, [[String]])
 
 -- Let bindings of terms
-type TermDef = (String, RawTerm)
+type TermDef = (ParamName, RawTerm)
 
--- "show" declarations to decide equality between terms
-type PropDef = (String, [RawBind], (RawTerm, RawTerm))
+-- Declarations to decide equality between terms
+type PropDef = (ParamName, [RawBind], (RawTerm, RawTerm))
 
 data RawProgram 
   = RawProgram  { _programTypes :: [TypeDef]
@@ -34,7 +42,7 @@ data RawProgram
                 , _programProps :: [PropDef] }
 
 data RawType 
-  = TBase String
+  = TBase ParamCall
   | TFun RawType RawType
 
 data RawBind 
@@ -42,7 +50,7 @@ data RawBind
           , _rawType :: RawType }
 
 data RawTerm
-  = TVar String
+  = TVar ParamCall
   | TApp RawTerm RawTerm
   | TFix [RawBind] RawTerm
   | TLam [RawBind] RawTerm
@@ -58,7 +66,8 @@ data RawAlt
   
 data Scope 
   = Scope { _bindMap :: Map String Term
-          , _bindStack :: [Bind] }
+          , _bindStack :: [Bind]
+          , _typeArgs :: Map String Type }
   
 mkLabels [''Scope, ''RawBind, ''RawProgram]
 }
@@ -81,6 +90,9 @@ mkLabels [''Scope, ''RawBind, ''RawProgram]
   ']'         { TokenCS }
   '('         { TokenOP }
   ')'         { TokenCP }
+  '<'         { TokenOA }
+  '>'         { TokenCA }
+  ','         { TokenComma }
   '_|_'       { TokenAbsurd }
   match       { TokenMatch }
   with        { TokenWith }
@@ -105,7 +117,7 @@ mkLabels [''Scope, ''RawBind, ''RawProgram]
 %%
 
 Type :: { RawType }
-  : name                              { TBase $1 }
+  : ParamCall                         { TBase $1 }
   | '(' Type ')'                      { $2 }
   | Type '->' Type                    { TFun $1 $3 }
   
@@ -114,7 +126,7 @@ Cons :: { [[String]] }
   | Cons '|' Pattern                  { $1 ++ [$3] }
   
 TypeDef :: { TypeDef }
-  : ind name '=' Cons                 { ($2, $4) }
+  : ind ParamName '=' Cons            { ($2, $4) }
   
 Pattern :: { [String] }
   : name                              { [$1] }
@@ -135,9 +147,9 @@ Bindings :: { [RawBind] }
   | Bindings Bind                     { $1 ++ $2 }
   
 Term :: { RawTerm }
-  : name                              { TVar $1 }
+  : ParamCall                         { TVar $1 }
   | '_|_' Type                        { TAbsurd $2 }
-  | Term name                         { TApp $1 (TVar $2) }
+  | Term ParamCall                    { TApp $1 (TVar $2) }
   | Term '(' Term ')'                 { TApp $1 $3 }  
   | '(' Term ')'                      { $2 }
   | fun Bindings '->' Term            { TLam $2 $4 }
@@ -150,22 +162,38 @@ Term :: { RawTerm }
                                                  , TAlt ["False"] $6] }
   
 TermDef :: { TermDef }
-  : let name '=' Term                 { ($2, $4) }
+  : let ParamName '=' Term            { ($2, $4) }
+  
+TypeArgs :: { [RawType] } 
+  : {- empty -}                       { [] }
+  | Type                              { [$1] }
+  | TypeArgs ',' Type                 { $1 ++ [$3] } 
+  
+ParamCall :: { ParamCall }
+  : name                              { ($1, []) }
+  | name '<' TypeArgs '>'             { ($1, $3) }
+  
+ArgNames :: { [String] }
+  : {- empty -}                       { [] }
+  | name                              { [$1] }
+  | ArgNames ',' name                 { $1 ++ [$3] }
+  
+ParamName :: { ParamName }
+  : name                              { ($1, []) }
+  | name '<' ArgNames '>'             { ($1, $3) }
   
 Equation :: { (RawTerm, RawTerm) }
-  : Term                              { ($1, TVar "True") }
+  : Term                              { ($1, TVar ("True", [])) }
   | Term '=' Term                     { ($1, $3) }
   
 PropDef :: { PropDef }
-  : prop name ':' all Bindings '->' Equation   
+  : prop ParamName ':' all Bindings '->' Equation   
                                       { ($2, $5, $7) }
-  | prop name ':' Equation
+  | prop ParamName ':' Equation
                                       { ($2, [], $4) }
 
 Program :: { RawProgram }
-  : TypeDef                           { RawProgram [$1] [] [] }
-  | TermDef                           { RawProgram [] [$1] [] }
-  | PropDef                           { RawProgram [] [] [$1] }
+  : {- empty -}                       { RawProgram [] [] [] }
   | Program TypeDef                   { modify programTypes (++ [$2]) $1 }
   | Program TermDef                   { modify programTerms (++ [$2]) $1 }
   | Program PropDef                   { modify programProps (++ [$2]) $1 }
@@ -173,7 +201,7 @@ Program :: { RawProgram }
 {
 
 withEmptyScope :: ReaderT Scope m a -> m a
-withEmptyScope = flip runReaderT (Scope mempty mempty)
+withEmptyScope = flip runReaderT (Scope mempty mempty mempty)
 
 instance Monad m => Env.Write (ReaderT Scope m) where
   bindAt at b = 
@@ -190,6 +218,17 @@ instance Err.Can m => Env.Read (ReaderT Scope m) where
   bindings = asks (get bindStack)
   
 type ParserMonad m a = (Err.Can m, Defs.Has m) => ReaderT Scope m a
+
+localTypeArgs :: ContainsTypes t => 
+  [String] -> ParserMonad m t -> ParserMonad m (Polymorphic t)
+localTypeArgs names run = 
+  polymorphicM names makePoly
+  where
+  makePoly types =
+    local (set typeArgs type_args) run
+    where
+    type_args =
+      Map.fromList (zip names types)
     
 localDef :: MonadReader Scope m => String -> Term -> m a -> m a
 localDef name term = id
@@ -212,7 +251,8 @@ _type = id
   . happyType 
   . lexer
   
-program :: forall m . (Err.Can m, Defs.Has m) => String -> m [Equation]
+program :: forall m . (Err.Can m, Defs.Has m) 
+  => String -> m [Polymorphic Equation]
 program text = 
   withEmptyScope $ do
     mapM_ defineType types
@@ -221,19 +261,21 @@ program text =
   where
   RawProgram types terms props = happyProgram (lexer text)
     
-  parseProp :: PropDef -> ParserMonad m Equation
-  parseProp (name, rbs, (rt1, rt2)) = do
-    bs <- mapM parseRawBind rbs
-    t1 <- Env.bindMany bs (parseAndCheckTerm rt1)
-    t2 <- Env.bindMany bs (parseAndCheckTerm rt2)
-    return (Equals name bs t1 t2)
+  parseProp :: PropDef -> ParserMonad m (Polymorphic Equation)
+  parseProp ((name, ty_args), rbs, (rt1, rt2)) = 
+    localTypeArgs ty_args $ do
+      bs <- mapM parseRawBind rbs
+      t1 <- Env.bindMany bs (parseAndCheckTerm rt1)
+      t2 <- Env.bindMany bs (parseAndCheckTerm rt2)
+      return (Equals name bs t1 t2)
   
   defineType :: TypeDef -> ParserMonad m ()
-  defineType (ind_name, raw_cons) = do
-    cons <- mapM mkCon raw_cons
-    let ind_ty = Type.Ind ind_name cons
-    Defs.defineType ind_name (Type.Base ind_ty)
-    mapM_ (defCon ind_ty) [0..length cons - 1]
+  defineType ((ind_name, ty_args), raw_cons) = do
+    ind_ty <- localTypeArgs ty_args $ do
+      cons <- mapM mkCon raw_cons
+      return (Type.Ind ind_name cons)
+    Defs.defineType ind_name ind_ty
+    mapM_ (defCon ind_ty) [0..length raw_cons - 1]
     where
     mkCon :: [String] -> ParserMonad m (String, [Type.ConArg])
     mkCon (con_name:ty_names) = do
@@ -243,43 +285,49 @@ program text =
       mkArg :: String -> ParserMonad m Type.ConArg
       mkArg arg_name
         | arg_name == ind_name = return Type.IndVar
-        | otherwise = liftM Type.ConArg (lookupType arg_name)
+        | otherwise = liftM ConArg (lookupType (arg_name, []))
         
-    defCon :: Type.Ind -> Int -> ParserMonad m ()
-    defCon ind_ty n =
-      Defs.defineTerm name (Con ind_ty (enum n))
+    defCon :: Polymorphic Ind -> Int -> ParserMonad m ()
+    defCon poly_ind n =
+      Defs.defineTerm name poly_con 
       where
-      cons = Type.unfold ind_ty
-      name = get Type.boundLabel (cons !! n)
+      poly_con = fmap (\ind -> Con ind (enum n)) poly_ind
+      name = head (raw_cons !! n)
   
-  defineTerm (name, raw_term) = do
-    term <- parseAndCheckTerm raw_term
-    Defs.defineTerm name (Eval.run term)
+  defineTerm ((name, ty_args), raw_term) = do
+    p_term <- localTypeArgs ty_args (parseAndCheckTerm raw_term)
+    Defs.defineTerm name (fmap Eval.run p_term)
     
-lookupTerm :: String -> ParserMonad m Term
-lookupTerm name = do
+lookupTerm :: ParamCall -> ParserMonad m Term
+lookupTerm (name, raw_ty_args) = do
   mby_bind <- asks (Map.lookup name . get bindMap)
-  if isJust mby_bind
+  if length raw_ty_args == 0 && isJust mby_bind
   then return (fromJust mby_bind)
   else do
-    mby_term <- Defs.lookupTerm name
+    ty_args <- mapM parseRawType raw_ty_args
+    mby_term <- Defs.lookupTerm name ty_args
     if isJust mby_term
     then return (fromJust mby_term)
     else Err.throw $ "Undefined term: " ++ name
     
-lookupType :: String -> ParserMonad m Type
-lookupType name = do
-  mby_ty <- Defs.lookupType name
-  if isJust mby_ty
+lookupType :: ParamCall -> ParserMonad m Type
+lookupType (name, raw_ty_args) = do
+  mby_ty <- asks (Map.lookup name . get typeArgs)
+  if length raw_ty_args == 0 && isJust mby_ty
   then return (fromJust mby_ty)
-  else Err.throw $ "Undefind type: " ++ name
+  else do
+    ty_args <- mapM parseRawType raw_ty_args
+    mby_ind <- Defs.lookupType name ty_args
+    if isJust mby_ind
+    then return (Base (fromJust mby_ind))
+    else Err.throw $ "Undefined inductive type: " ++ name
     
 parseAndCheckTerm :: RawTerm -> ParserMonad m Term
 parseAndCheckTerm = 
   Err.check Type.check . parseRawTerm
   
 parseRawType :: RawType -> ParserMonad m Type
-parseRawType (TBase name) = 
+parseRawType (TBase name) =
   lookupType name
 parseRawType (TFun t1 t2) = 
   return Type.Fun `ap` parseRawType t1 `ap` parseRawType t2
@@ -361,6 +409,9 @@ data Token
   | TokenCS
   | TokenOP
   | TokenCP
+  | TokenOA
+  | TokenCA
+  | TokenComma
   | TokenAbsurd
   | TokenMatch
   | TokenWith
@@ -402,8 +453,11 @@ lexer ('(':cs) = TokenOP : lexer cs
 lexer (')':cs) = TokenCP : lexer cs
 lexer ('[':cs) = TokenOS : lexer cs
 lexer (']':cs) = TokenCS : lexer cs
+lexer ('<':cs) = TokenOA : lexer cs
+lexer ('>':cs) = TokenCA : lexer cs
 lexer ('|':cs) = TokenBar : lexer cs
 lexer ('=':cs) = TokenEq : lexer cs
+lexer (',':cs) = TokenComma : lexer cs
 lexer ('\"':cs) = TokenName name : lexer rest
   where
   (name, '\"':rest) = span (/= '\"') cs
@@ -446,6 +500,9 @@ instance Show Token where
   show TokenCS = "]"
   show TokenOP = "("
   show TokenCP = ")"
+  show TokenOA = "<"
+  show TokenCA = ">"
+  show TokenComma = ","
   show TokenMatch = "match"
   show TokenWith = "with"
   show TokenFun = "fun"

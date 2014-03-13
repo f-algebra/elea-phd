@@ -34,10 +34,18 @@ class Indexed t where
   -- | Only modifies free indices.
   shift :: (Index -> Index) -> t -> t
   
--- I don't think this adds any speed, but it's good to know.
+  
 {-# RULES
-  "shift natural" forall f g xs . shift f (shift g xs) = shift (f . g) xs
+  "shift natural" 
+    forall f g xs . shift f (shift g xs) = shift (f . g) xs ;
+    
+  "liftMany compose" 
+    forall n m xs . liftMany n (liftMany m xs) = liftMany (n + m) xs ;
+    
+  "lowerMany compose"
+    forall n m xs . lowerMany n (lowerMany m xs) = lowerMany (n + m) xs ;
   #-}
+  
   
 -- | Functions which shift indices. A useful synonym.
 type Shift = forall a . Indexed a => a -> a

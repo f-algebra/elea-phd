@@ -11,7 +11,7 @@ module Elea.Types
 where
 
 import Prelude ()
-import Elea.Prelude hiding ( get )
+import Elea.Prelude hiding ( get, mapM )
 import Elea.Index hiding ( lift )
 import Elea.Type
 import Elea.Term

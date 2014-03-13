@@ -29,6 +29,7 @@ import Prelude ()
 import Elea.Prelude
 import Elea.Index
 import Elea.Term
+import Elea.Type ( ContainsTypes (..) )
 import Elea.Unifier ( Unifiable, Unifier )
 import Elea.Monad.Env
 import qualified Elea.Type as Type
@@ -147,6 +148,44 @@ instance Substitutable Term where
         GT -> Var var
     substVar other = 
       return other
+
+instance ContainsTypes Term where
+  mapTypesM f = runIdentityT . Fold.transformM mapTy
+    where
+    f' = IdentityT . f
+    
+    -- We use IdentityT to absorb the type bindings written by transformM.
+    -- See 'Elea.Monad.Env.Write'.
+    mapTy (Lam b t) = do
+      b' <- mapTypesM f' b
+      return (Lam b' t)
+    mapTy (Fix i b t) = do
+      b' <- mapTypesM f' b
+      return (Fix i b' t)
+    mapTy (Absurd ty) = do
+      ty' <- f' ty
+      return (Absurd ty')
+    mapTy (Con ind n) = do
+      ind' <- mapTypesM f' ind
+      return (Con ind' n)
+    mapTy (Case ind cse_t alts) = do
+      ind' <- mapTypesM f' ind
+      alts' <- mapM mapAlt alts
+      return (Case ind' cse_t alts')
+      where
+      mapAlt (Alt bs alt_t) = do
+        bs' <- mapM (mapTypesM f') bs
+        return (Alt bs' alt_t)
+    mapTy term =
+      return term
+      
+instance ContainsTypes Equation where
+  mapTypesM f (Equals name bs t1 t2) = do
+    bs' <- mapM (mapTypesM f) bs
+    t1' <- mapTypesM f t1
+    t2' <- mapTypesM f t2
+    return (Equals name bs' t1' t2')
+      
       
 -- | If you just need a simple type environment, use the reader
 -- monad over a stack of type bindings. This function will strip this
@@ -231,8 +270,8 @@ instance Fail.Can m => Fail.Can (AlsoTrack r m) where
   catch = mapAlsoTrack Fail.catch
   
 instance Defs.Read m => Defs.Read (AlsoTrack r m) where
-  lookupTerm = Trans.lift . Defs.lookupTerm
-  lookupType = Trans.lift . Defs.lookupType
+  lookupTerm n = Trans.lift . Defs.lookupTerm n
+  lookupType n = Trans.lift . Defs.lookupType n
   lookupName = Trans.lift . Defs.lookupName
 
 
@@ -298,8 +337,8 @@ instance Tracks r m => Tracks r (TrackMatches m) where
   liftTrackedMany n = mapTrackMatches (liftTrackedMany n)
   
 instance Defs.Read m => Defs.Read (TrackMatches m) where
-  lookupTerm = Trans.lift . Defs.lookupTerm
-  lookupType = Trans.lift . Defs.lookupType
+  lookupTerm n = Trans.lift . Defs.lookupTerm n
+  lookupType n = Trans.lift . Defs.lookupType n
   lookupName = Trans.lift . Defs.lookupName
 
 

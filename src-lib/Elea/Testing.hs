@@ -15,6 +15,7 @@ where
 import Prelude ()
 import Elea.Prelude hiding ( assert )
 import Elea.Term
+import Elea.Type
 import Elea.Monad.Elea ( Elea )
 import Elea.Show
 import qualified Elea.Env as Env
@@ -61,7 +62,12 @@ prelude = unsafePerformIO
   $ readFile "prelude.elea"
   
 loadFile :: Defs.Has m => String -> m [Equation]
-loadFile = Err.noneM . Parse.program . unsafePerformIO . readFile
+loadFile = id
+  . Err.noneM 
+  . liftM (map uninterpreted) 
+  . Parse.program 
+  . unsafePerformIO 
+  . readFile
 
 loadPrelude :: Defs.Has m => m ()
 loadPrelude = do

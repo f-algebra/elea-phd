@@ -239,6 +239,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
       -- Otherwise it could be a /degenerate/ instance of the context,
       -- so apply the background pattern matches and see if that is the case.
       Nothing -> do
+        Fail.here
         -- Calls to the unrolled fixpoint in the term we are replacing with
         -- and the original term
         let [repl_call] = toList (Term.collect fixpointCall replace_t)

@@ -193,6 +193,21 @@ instance ShowM m a => ShowM m [a] where
     return 
       $ "[" ++ intercalate ", " sxs ++ "]"
       
+instance (Env.Read m, Defs.Read m) => ShowM m Equation where
+  showM (Equals n bs t1 t2) = 
+    Env.bindMany bs $ do
+      t1' <- showM t1
+      t2' <- showM t2
+      return 
+        $ "prop " ++ n 
+        ++ ": forall " ++ bs' ++ " -> "
+        ++ t1' ++ " = " ++ t2'
+    where
+    bs' = intercalate " " (map show bs)
+    
+instance Show Equation where
+  show = Defs.readEmpty . Env.emptyT . showM
+    
 instance ShowM m a => ShowM m (Set a) where
   showM xs = do
     xs_s <- showM (toList xs)

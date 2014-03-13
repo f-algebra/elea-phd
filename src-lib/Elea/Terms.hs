@@ -431,5 +431,4 @@ findContext :: Fail.Can m => Term -> Term -> m Context
 findContext inner full = do
   Fail.unless (inner `isSubterm` full)
   return (Context.make (\gap -> replace inner gap full))
-  
-  
+

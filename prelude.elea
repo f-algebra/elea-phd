@@ -28,215 +28,221 @@ let 2 = Suc 1
 
 let eq_nat = 
   fix (eq_nat: nat -> nat -> bool) (x y:nat) ->
-    match x with
-    | 0 ->
-      match y with
-      | 0 -> True
-      | Suc y' -> False
-      end
-    | Suc x' ->
-      match y with
-      | 0 -> False
-      | Suc y' -> eq_nat x' y'
-      end
+  match x with
+  | 0 ->
+    match y with
+    | 0 -> True
+    | Suc y' -> False
     end
+  | Suc x' ->
+    match y with
+    | 0 -> False
+    | Suc y' -> eq_nat x' y'
+    end
+  end
     
 let leq_nat = 
   fix (leq_nat: nat -> nat -> bool) (x y: nat) -> 
-    match x with
-    | 0 -> True
-    | Suc x' ->
-      match y with
-      | 0 -> False
-      | Suc y' -> leq_nat x' y'
-      end
+  match x with
+  | 0 -> True
+  | Suc x' ->
+    match y with
+    | 0 -> False
+    | Suc y' -> leq_nat x' y'
     end
+  end
     
-let max = 
+let max =
   fix (max: nat -> nat -> nat) (x y: nat) ->
-    match x with
-    | 0 -> y
-    | Suc x' -> 
-      match y with 
-      | 0 -> x
-      | Suc y' -> Suc (max x' y')
-      end
+  match x with
+  | 0 -> y
+  | Suc x' -> 
+    match y with 
+    | 0 -> x
+    | Suc y' -> Suc (max x' y')
     end
+  end
 
 let add = 
   fix (add: nat -> nat -> nat) (x y: nat) -> 
-    match x with 
-    | 0 -> y
-    | Suc x' -> Suc (add x' y)
-    end
+  match x with 
+  | 0 -> y
+  | Suc x' -> Suc (add x' y)
+  end
    
 let mul = 
   fix (mul: nat -> nat -> nat) (x y: nat) -> 
-    match x with
-    | 0 -> 0
-    | Suc x' -> add y (mul x' y)
-    end
+  match x with
+  | 0 -> 0
+  | Suc x' -> add y (mul x' y)
+  end
 
 let minus = 
   fix (minus: nat -> nat -> nat) (x y: nat) -> 
-    match y with
-    | 0 -> x
-    | Suc y' ->
-      match x with
-      | 0 -> 0
-      | Suc x' -> minus x' y'
-      end
+  match y with
+  | 0 -> x
+  | Suc y' ->
+    match x with
+    | 0 -> 0
+    | Suc x' -> minus x' y'
     end
+  end
 
-ind nlist = Nil | Cons nat nlist
+  
+/* Lists */
 
-let length = 
-  fix (len: nlist -> nat) (xs: nlist) ->
-    match xs with
-    | Nil -> 0
-    | Cons y ys -> Suc (len ys)
-    end
-    
-let append =
-  fix (app: nlist -> nlist -> nlist) (xs zs: nlist) ->
-    match xs with
-    | Nil -> zs
-    | Cons y ys -> Cons y (app ys zs)
-    end
-    
-let reverse = 
-  fix (rev: nlist -> nlist) (xs: nlist) ->
-    match xs with
-    | Nil -> Nil
-    | Cons y ys -> append (rev ys) (Cons y Nil)
-    end
-    
-let count = 
-  fix (c: nat -> nlist -> nat) (n: nat) (xs: nlist) ->
-    match xs with
-    | Nil -> 0
-    | Cons y ys ->
-      if eq_nat n y 
-      then Suc (c n ys)
-      else c n ys
-    end
+ind list<A> = Nil | Cons A list
 
-let take =
-  fix (take: nat -> nlist -> nlist) (n: nat) (xs: nlist) ->
-    match n with
-    | 0 -> Nil
-    | Suc n' ->
-      match xs with
-      | Nil -> Nil
-      | Cons y ys -> Cons y (take n' ys)
-      end
-    end
-    
-let drop = 
-  fix (drop: nat -> nlist -> nlist) (n: nat) (xs: nlist) ->
-    match n with
-    | 0 -> xs
-    | Suc n' ->
-      match xs with
-      | Nil -> Nil
-      | Cons y ys -> drop n' ys
-      end
-    end
+let length<A> = 
+  fix (len: list<A> -> nat) (xs: list<A>) ->
+  match xs with
+  | Nil -> 0
+  | Cons y ys -> Suc (len ys)
+  end
  
-let filter = 
-  fun (p: nat -> bool) ->
-  fix (filter: nlist -> nlist) (xs: nlist) ->
-    match xs with
-    | Nil -> Nil
-    | Cons y ys -> 
-      if p y
-      then Cons y (filter ys)
-      else filter ys
-    end
+let append<A> =
+  fix (app: list<A> -> list<A> -> list<A>) (xs zs: list<A>) ->
+  match xs with
+  | Nil -> zs
+  | Cons y ys -> Cons<A> y (app ys zs)
+  end
+  
+let reverse<A> = 
+  fix (rev: list<A> -> list<A>) (xs: list<A>) ->
+  match xs with
+  | Nil -> Nil<A>
+  | Cons y ys -> append<A> (rev ys) (Cons<A> y Nil<A>)
+  end
     
-let map =
-  fun (f: nat -> nat) ->
-  fix (map: nlist -> nlist) (xs: nlist) ->
+let count_nat = 
+  fix (c: nat -> list<nat> -> nat) (n: nat) (xs: list<nat>) ->
+  match xs with
+  | Nil -> 0
+  | Cons y ys ->
+    if eq_nat n y 
+    then Suc (c n ys)
+    else c n ys
+  end
+
+let take<A> =
+  fix (take: nat -> list<A> -> list<A>) (n: nat) (xs: list<A>) ->
+  match n with
+  | 0 -> Nil<A>
+  | Suc n' ->
     match xs with
-    | Nil -> Nil
-    | Cons y ys -> Cons (f y) (map ys)
+    | Nil -> Nil<A>
+    | Cons y ys -> Cons<A> y (take n' ys)
     end
+  end
+  
+let drop<A> = 
+  fix (drop: nat -> list<A> -> list<A>) (n: nat) (xs: list<A>) ->
+  match n with
+  | 0 -> xs
+  | Suc n' ->
+    match xs with
+    | Nil -> Nil<A>
+    | Cons y ys -> drop n' ys
+    end
+  end
+
+let filter<A> = 
+  fun (p: A -> bool) ->
+  fix (filter: list<A> -> list<A>) (xs: list<A>) ->
+  match xs with
+  | Nil -> Nil<A>
+  | Cons y ys -> 
+    if p y
+    then Cons<A> y (filter ys)
+    else filter ys
+  end
+  
+let map<A, B> =
+  fun (f: A -> B) ->
+  fix (map: list<A> -> list<B>) (xs: list<A>) ->
+  match xs with
+  | Nil -> Nil<B>
+  | Cons y ys -> Cons<B> (f y) (map ys)
+  end
     
-let elem =
-  fix (elem: nat -> nlist -> bool) (n: nat) (xs: nlist) ->
-    match xs with
-    | Nil -> False
-    | Cons y ys -> or (eq_nat n y) (elem n ys)
-    end
+let elem_nat =
+  fix (elem: nat -> list<nat> -> bool) (n: nat) (xs: list<nat>) ->
+  match xs with
+  | Nil -> False
+  | Cons y ys -> or (eq_nat n y) (elem n ys)
+  end
     
-let insert = 
-  fix (ins: nat -> nlist -> nlist) (n: nat) (xs: nlist) ->
-    match xs with
-    | Nil -> Cons n Nil
-    | Cons y ys -> 
-      if leq_nat n y
-      then Cons n xs
-      else Cons y (ins n ys)
-    end
+let insert_nat = 
+  fix (ins: nat -> list<nat> -> list<nat>) (n: nat) (xs: list<nat>) ->
+  match xs with
+  | Nil -> Cons<nat> n Nil<nat>
+  | Cons y ys -> 
+    if leq_nat n y
+    then Cons<nat> n xs
+    else Cons<nat> y (ins n ys)
+  end
     
 let insertsort = 
-  fix (isort: nlist -> nlist) (xs: nlist) ->
-    match xs with
-    | Nil -> Nil
-    | Cons y ys -> insert y (isort ys)
-    end
-    
+  fix (isort: list<nat> -> list<nat>) (xs: list<nat>) ->
+  match xs with
+  | Nil -> Nil<nat>
+  | Cons y ys -> insert_nat y (isort ys)
+  end
+  
 let is_sorted = 
-  fix (srtd: nlist -> bool) (xs: nlist) ->
-    match xs with
+  fix (srtd: list<nat> -> bool) (xs: list<nat>) ->
+  match xs with
+  | Nil -> True
+  | Cons y ys ->
+    match ys with
     | Nil -> True
-    | Cons y ys ->
-      match ys with
-      | Nil -> True
-      | Cons z zs -> 
-        and (leq_nat y z) (srtd ys)
-      end
+    | Cons z zs -> 
+      and (leq_nat y z) (srtd ys)
     end
+  end
     
 
-ind ntree = Leaf | Node ntree nat ntree
+/* Binary trees */
 
-let flatten = 
-  fix (flat: ntree -> nlist) (t: ntree) ->
-    match t with
-    | Leaf -> Nil
-    | Node t1 x t2 -> append (flat t1) (Cons x (flat t2))
-    end
+ind tree<A> = Leaf | Node tree A tree
+
+let flatten<A> = 
+  fix (flat: tree<A> -> list<A>) (t: tree<A>) ->
+  match t with
+  | Leaf -> Nil<A>
+  | Node t1 x t2 -> append<A> (flat t1) (Cons<A> x (flat t2))
+  end
+  
+let height<A> = 
+  fix (height: tree<A> -> nat) (t: tree<A>) ->
+  match t with
+  | Leaf -> 0
+  | Node t1 x t2 -> Suc (max (height t1) (height t2))
+  end
     
-let height = 
-  fix (height: ntree -> nat) (t: ntree) ->
-    match t with
-    | Leaf -> 0
-    | Node t1 x t2 -> Suc (max (height t1) (height t2))
-    end
-    
-let mirror = 
-  fix (mir: ntree -> ntree) (t: ntree) ->
-    match t with
-    | Leaf -> Leaf 
-    | Node t1 x t2 -> Node (mir t2) x (mir t1)
-    end  
+let mirror<A> = 
+  fix (mir: tree<A> -> tree<A>) (t: tree<A>) ->
+  match t with
+  | Leaf -> Leaf<A>
+  | Node t1 x t2 -> Node<A> (mir t2) x (mir t1)
+  end  
     
 let tree_insert = 
-  fix (ins: nat -> ntree -> ntree) (n: nat) (t: ntree) ->
+  fix (ins: nat -> tree<nat> -> tree<nat>) (n: nat) (t: tree<nat>) ->
   match t with
-  | Leaf -> Node Leaf n Leaf
+  | Leaf -> Node<nat> Leaf<nat> n Leaf<nat>
   | Node t1 x t2 ->
     if leq_nat n x 
-    then Node (ins n t1) x t2
-    else Node t1 n (ins n t2)
+    then Node<nat> (ins n t1) x t2
+    else Node<nat> t1 n (ins n t2)
   end
   
 let build = 
-  fix (build: nlist -> ntree) (xs: nlist) ->
+  fix (build: list<nat> -> tree<nat>) (xs: list<nat>) ->
   match xs with
-  | Nil -> Leaf
+  | Nil -> Leaf<nat>
   | Cons y ys -> tree_insert y (build ys)
   end
   
-let treesort = fun (xs: nlist) -> flatten (build xs)
+let treesort = fun (xs: list<nat>) -> flatten<nat> (build xs)
+

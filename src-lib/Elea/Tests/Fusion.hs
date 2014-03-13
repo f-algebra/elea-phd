@@ -29,7 +29,7 @@ tests = Test.label "Fusion"
   Test.loadPrelude
   eqs <- Test.loadFile "src-lib/Elea/Tests/fusion.elea"
   mapM checkEquation
-    . filter ((== "max associative") . get equationName)
+    -- . filter ((== "main") . get equationName)
     $ eqs
 
 

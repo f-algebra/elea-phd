@@ -52,7 +52,16 @@ prove :: forall m . (Env.Read m, Defs.Read m, Fail.Can m)
 prove simplify t1 t2 = do
   t1' <- simplify t1
   t2' <- simplify t2
-  eq <- equal t1' t2'
+  
+  -- debug
+  debug_eq <- Term.equation t1 t2
+  eq_s <- showM debug_eq
+  let s1 = "\n[prove eq] checking:\n" ++ eq_s
+  
+  eq <- id
+    -- debug
+    . trace s1
+    $ equal t1' t2'
   resultToBool eq
   where 
   equal :: Term -> Term -> m Result
@@ -81,11 +90,11 @@ prove simplify t1 t2 = do
   -- If both sides are the application of a function
   -- we can unroll those functions and check equality inductively
   equal
-      (flattenApp -> Fix _ fix_b1 fix_t1 : args1) 
-      (flattenApp -> Fix _ fix_b2 fix_t2 : args2) = bindFixes $ do
+      (flattenApp -> Fix _ fix1_b fix1_t : args1) 
+      (flattenApp -> fix2@(Fix {}) : args2) = Env.bind fix1_b $ do
     eq <- Term.equation term1 term2
     let rewr_eq = id
-          . Env.trackIndices (rewr1, rewr2)
+          . Env.trackIndices (hyp_t, term2)
           . Fold.rewriteM applyIndHyp
           $ Simp.run eq
     if Indices.freeWithin 0 rewr_eq
@@ -97,43 +106,40 @@ prove simplify t1 t2 = do
         . trace ("\n[prove eq] failed on: " ++ eq_s) 
         $ return Unknown
     else do
-      simp_eq <- simplify rewr_eq
-      eq_s <- showM simp_eq
+      eq_s <- showM rewr_eq
       id
         . trace ("\n[prove eq] checking: "++ eq_s) 
-        $ Fold.foldM solveEquation simp_eq
+        $ Fold.foldM solveEquation rewr_eq
     where
-    args1' = map (Indices.liftMany 2) args1
-    args2' = map (Indices.liftMany 2) args2
+    args1' = Indices.lift args1
+    args2' = Indices.lift args2
     
     -- The terms on either side of the equation, with the fixpoints
     -- unwrapped (not unrolled, the fix variables will be uninterpreted)
-    term1 = app (Indices.liftAt 1 fix_t1) args1'
-    term2 = app (Indices.lift fix_t2) args2'
+    term1 = app fix1_t args1'
+    term2 = app (Indices.lift fix2) args2'
     
-    -- The terms we will be rewriting from and to when 
-    -- we apply the inductive hypothesis
-    rewr1 = app (Var 0) args1'
-    rewr2 = app (Var 1) args2'
-    
-    bindFixes :: m a -> m a
-    bindFixes = Env.bind fix_b2 . Env.bind fix_b1
+    -- The term we will be rewriting from when we apply
+    -- the inductive hypothesis
+    hyp_t = app (Var 0) args1'
     
     -- Unifies with instances of the lhs fix variable and replaces then
     -- with the rhs fix variable.
     applyIndHyp :: Term -> MaybeT (Env.TrackIndices (Term, Term)) Term
-    applyIndHyp term@(App (Var f) _) = do
-       (rewr1@(App (Var fix_f) _), rewr2) <- Env.tracked
+    applyIndHyp term1@(App (Var f) _) = do
+       (rewr1@(App (Var fix_f) _), term2) <- Env.tracked
        Fail.unless (f == fix_f)
-       uni <- Unifier.find rewr1 term
-       return (Unifier.apply uni rewr2)
+       uni <- Unifier.find rewr1 term1
+       return (Unifier.apply uni term2)
     applyIndHyp _ = 
       Fail.here
       
     solveEquation :: Term -> m Result
     solveEquation term
-      | Just (left, right) <- Term.isEquation term =
-        equal left right
+      | Just (left, right) <- Term.isEquation term = do
+        left' <- simplify left
+        right' <- simplify right
+        equal left' right'
     solveEquation _ = 
         return mempty
   
