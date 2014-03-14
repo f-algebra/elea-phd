@@ -31,7 +31,7 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
 
-type FusionM m = (Defs.Read m, Env.Read m, Discovery.Makes m)
+type FusionM m = (Defs.Read m, Env.Read m, Discovery.Tells m)
 
 run :: FusionM m => Term -> m Term
 run = runSteps (fission_steps ++ fusion_steps)

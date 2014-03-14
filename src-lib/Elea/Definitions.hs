@@ -175,9 +175,11 @@ instance Env.Write m => Env.Write (DBStateT m) where
 instance Env.Read m => Env.Read (DBStateT m) where
   bindings = Trans.lift Env.bindings
   
-instance Discovery.Makes m => Discovery.Makes (DBStateT m) where
+instance Discovery.Tells m => Discovery.Tells (DBStateT m) where
   tell = Trans.lift . Discovery.tell
 
 instance Discovery.Listens m => Discovery.Listens (DBStateT m) where
-  listen = mapDBStateT Discovery.listen
-    
+  listen = mapDBStateT (liftM swap . Discovery.listen)
+    where
+    swap :: ((a, b), c) -> ((a, c), b)
+    swap ((x, y), z) = ((x, z), y)

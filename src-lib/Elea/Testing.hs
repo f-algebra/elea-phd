@@ -23,12 +23,12 @@ import qualified Elea.Simplifier as Simp
 import qualified Elea.Equality as Equality
 import qualified Elea.Fusion as Fusion
 import qualified Elea.Definitions as Defs
-import qualified Elea.Monad.Discovery as Discovery
+import qualified Elea.Discovery as Discovery
 import qualified Elea.Monad.Error as Err
 import qualified Test.HUnit as HUnit
 
 type Test = HUnit.Test
-type M = Defs.DBStateT (ReaderT [Bind] Discovery.Ignore)
+type M = Defs.DBStateT (ReaderT [Bind] Discovery.Listener)
 
 execute :: Test -> IO ()
 execute test = do
@@ -42,7 +42,7 @@ label :: String -> Test -> Test
 label = HUnit.TestLabel
 
 run :: HUnit.Testable t => M t -> Test
-run = HUnit.test . Discovery.ignore . Env.emptyT . Defs.evalEmptyT 
+run = HUnit.test . Discovery.trace . Env.emptyT . Defs.evalEmptyT 
 
 assert :: HUnit.Assertable t => t -> Test
 assert = HUnit.TestCase . HUnit.assert

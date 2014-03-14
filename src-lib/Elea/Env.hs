@@ -275,7 +275,7 @@ instance Defs.Read m => Defs.Read (AlsoTrack r m) where
   lookupType n = Trans.lift . Defs.lookupType n
   lookupName = Trans.lift . Defs.lookupName
   
-instance Discovery.Makes m => Discovery.Makes (AlsoTrack r m) where
+instance Discovery.Tells m => Discovery.Tells (AlsoTrack r m) where
   tell = Trans.lift . Discovery.tell
 
 instance Discovery.Listens m => Discovery.Listens (AlsoTrack r m) where
@@ -348,7 +348,7 @@ instance Defs.Read m => Defs.Read (TrackMatches m) where
   lookupType n = Trans.lift . Defs.lookupType n
   lookupName = Trans.lift . Defs.lookupName
 
-instance Discovery.Makes m => Discovery.Makes (TrackMatches m) where
+instance Discovery.Tells m => Discovery.Tells (TrackMatches m) where
   tell = Trans.lift . Discovery.tell
 
 instance Discovery.Listens m => Discovery.Listens (TrackMatches m) where

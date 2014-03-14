@@ -1,60 +1,43 @@
 -- | The discovery monad classes are 'MonadWriter' for equations.
 module Elea.Monad.Discovery
 (
-  Makes (..), Listens (..), 
-  IgnoreT, Ignore,
-  ignoreT, ignore,
-  equals, run
+  Tells (..), Listens (..), 
+  equals,
 )
 where
 
 import Prelude ()
 import Elea.Prelude hiding ( tell, listen )
-import Elea.Index hiding ( lift )
 import Elea.Term
 import qualified Elea.Monad.Env as Env
 import qualified Control.Monad.Writer as Writer
 
-class Monad m => Makes m where
+class Monad m => Tells m where
   tell :: Equation -> m ()
   
-class Makes m => Listens m where
-  listen :: m a -> m (a, [Equation])
+class Tells m => Listens m where
+  listen :: m a -> m (a, [Equation]) 
 
-equals :: (Env.Read m, Makes m) => Term -> Term -> m ()
+equals :: (Env.Read m, Tells m) => Term -> Term -> m ()
 equals t1 t2 = do
   bs <- Env.bindings
   tell (Equals "" bs t1 t2)
 
-instance Makes m => Makes (MaybeT m) where
+instance Tells m => Tells (MaybeT m) where
   tell = lift . tell
   
-newtype EquationSet
-  = EqSet { runEqSet :: [Equation] }
+instance Listens m => Listens (MaybeT m) where
+  listen = mapMaybeT (liftM liftMaybe . listen)
+    where
+    liftMaybe (Nothing, _) = Nothing
+    liftMaybe (Just x, eqs) = Just (x, eqs)
+    
+instance Tells m => Tells (ReaderT r m) where
+  tell = lift . tell
   
-instance Monoid EquationSet where
-  mempty = EqSet []
-  mappend (EqSet es1) (EqSet es2) = 
-    EqSet (es1 ++ es2)
+instance Listens m => Listens (ReaderT r m) where
+  listen = mapReaderT listen
 
-instance Monad m => Makes (WriterT EquationSet m) where
-  tell eq = Writer.tell (EqSet [eq])
-  
-instance Monad m => Listens (WriterT EquationSet m) where
-  listen = liftM (second runEqSet) . Writer.listen
-  
-instance Makes Ignore where
-  tell _ = return ()
-  
-newtype IgnoreT m a 
-  = IgnoreT { ignoreT :: m a }
-  deriving ( Monad )
-  
-type Ignore = IgnoreT Identity
 
-ignore :: Ignore a -> a
-ignore = runIdentity . ignoreT
   
-run :: Monad m => WriterT EquationSet m a -> m (a, [Equation])
-run = liftM (second runEqSet) . runWriterT
 
