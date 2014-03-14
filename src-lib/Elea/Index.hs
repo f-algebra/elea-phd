@@ -16,7 +16,7 @@ import Prelude ()
 import Elea.Prelude hiding ( lift, replaceAt )
 import qualified Data.Nat as Nat
 import qualified Data.Map as Map
-import qualified Elea.Monad.Failure as Fail
+import qualified Elea.Monad.Failure.Class as Fail
 import qualified Data.Set as Set
 
 -- | A de-Bruijn index.

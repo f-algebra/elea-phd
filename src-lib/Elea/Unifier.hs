@@ -9,7 +9,7 @@ import Prelude ()
 import Elea.Prelude hiding ( union, find )
 import Elea.Index
 import qualified Elea.Index as Indices
-import qualified Elea.Monad.Failure as Fail
+import qualified Elea.Monad.Failure.Class as Fail
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 

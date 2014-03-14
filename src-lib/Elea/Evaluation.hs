@@ -14,13 +14,12 @@ import Elea.Index
 import Elea.Term
 import Elea.Context ( Context )
 import qualified Elea.Terms as Term
-import qualified Elea.Env as Env
+import qualified Elea.Monad.Env as Env
 import qualified Elea.Context as Context
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Index as Indices
-import qualified Elea.Env as Env
 import qualified Elea.Foldable as Fold
-import qualified Elea.Monad.Failure as Fail
+import qualified Elea.Monad.Failure.Class as Fail
 import qualified Data.Set as Set
 
 run :: Term -> Term                           

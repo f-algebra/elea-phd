@@ -18,7 +18,7 @@ import Elea.Context ( Context )
 import Elea.Show ( showM )
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Index as Indices
-import qualified Elea.Env as Env
+import qualified Elea.Monad.Env as Env
 import qualified Elea.Terms as Term
 import qualified Elea.Types as Type
 import qualified Elea.Evaluation as Eval
@@ -26,7 +26,7 @@ import qualified Elea.Simplifier as Simp
 import qualified Elea.Context as Context
 import qualified Elea.Constraint as Constraint
 import qualified Elea.Foldable as Fold
-import qualified Elea.Monad.Failure as Fail
+import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs
 import qualified Data.Map as Map
 import qualified Data.Set as Set

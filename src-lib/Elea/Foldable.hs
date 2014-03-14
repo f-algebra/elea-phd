@@ -20,7 +20,7 @@ import Elea.Prelude hiding ( Foldable, allM, anyM, findM, any, all, find, )
 import GHC.Prim ( Constraint )
 import Data.Functor.Foldable
 import qualified Elea.Prelude as Prelude
-import qualified Elea.Monad.Failure as Fail
+import qualified Elea.Monad.Failure.Class as Fail
 import qualified Data.Monoid as Monoid
 import qualified Control.Monad.State as State
 import qualified Data.Isomorphism as Iso

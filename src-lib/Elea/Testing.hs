@@ -17,14 +17,14 @@ import Elea.Prelude hiding ( assert )
 import Elea.Term
 import Elea.Type
 import Elea.Show
-import qualified Elea.Env as Env
+import qualified Elea.Monad.Env as Env
 import qualified Elea.Parser as Parse
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Equality as Equality
 import qualified Elea.Fusion as Fusion
-import qualified Elea.Definitions as Defs
-import qualified Elea.Discovery as Discovery
-import qualified Elea.Monad.Error as Err
+import qualified Elea.Monad.Definitions as Defs
+import qualified Elea.Monad.Discovery as Discovery
+import qualified Elea.Monad.Error.Class as Err
 import qualified Test.HUnit as HUnit
 
 type Test = HUnit.Test

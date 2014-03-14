@@ -38,7 +38,7 @@ import Elea.Index ( Index, Indexed, Substitutable, Inner )
 import Elea.Type ( Type (..), Ind (..), ConArg (..), Bind (..) )
 import qualified Elea.Type as Type
 import qualified Elea.Index as Indices
-import qualified Elea.Monad.Failure as Fail
+import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 import qualified Data.Map as Map

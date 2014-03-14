@@ -17,12 +17,12 @@ import Elea.Show ( showM )
 import qualified Elea.Terms as Term
 import qualified Elea.Types as Type
 import qualified Elea.Index as Indices
-import qualified Elea.Env as Env
+import qualified Elea.Monad.Env as Env
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Evaluation as Eval
 import qualified Elea.Foldable as Fold
-import qualified Elea.Monad.Error as Err
-import qualified Elea.Monad.Failure as Fail
+import qualified Elea.Monad.Error.Class as Err
+import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs
 import qualified Data.Monoid as Monoid
 import qualified Data.Set as Set

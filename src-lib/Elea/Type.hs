@@ -24,7 +24,7 @@ import Prelude ()
 import Elea.Prelude
 import Elea.Index
 import qualified Elea.Foldable as Fold
-import qualified Elea.Monad.Failure as Fail
+import qualified Elea.Monad.Failure.Class as Fail
 
 -- | An argument to a constructor.
 data ConArg 

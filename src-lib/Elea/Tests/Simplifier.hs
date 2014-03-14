@@ -7,9 +7,8 @@ where
 import Prelude ()
 import Elea.Prelude
 import Elea.Term
-import qualified Elea.Env as Env
+import qualified Elea.Monad.Env as Env
 import qualified Elea.Testing as Test
-import qualified Elea.Definitions as Defs
 import qualified Elea.Simplifier as Simp
 
 checkEquation :: Equation -> Test.Test

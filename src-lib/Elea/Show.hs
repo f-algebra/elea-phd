@@ -12,11 +12,11 @@ import Elea.Index
 import Elea.Term
 import Elea.Type
 import Elea.Context ( Context )
-import qualified Elea.Env as Env
+import qualified Elea.Monad.Env as Env
 import qualified Elea.Type as Type
 import qualified Elea.Context as Context
 import qualified Elea.Foldable as Fold
-import qualified Elea.Definitions as Defs
+import qualified Elea.Monad.Definitions as Defs
 import qualified Data.Map as Map
 
 -- | A monadic variant of 'show'.

@@ -17,7 +17,7 @@ import Elea.Context ( Context )
 import Elea.Show ( showM )
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Index as Indices
-import qualified Elea.Env as Env
+import qualified Elea.Monad.Env as Env
 import qualified Elea.Terms as Term
 import qualified Elea.Types as Type
 import qualified Elea.Simplifier as Simp
@@ -26,8 +26,8 @@ import qualified Elea.Equality as Equality
 import qualified Elea.Foldable as Fold
 import qualified Elea.Fixpoint as Fix
 import qualified Elea.Constraint as Constraint
-import qualified Elea.Monad.Failure as Fail
-import qualified Elea.Monad.Definitions as Defs
+import qualified Elea.Monad.Failure.Class as Fail
+import qualified Elea.Monad.Definitions.Class as Defs
 
 
 run :: forall m . (Env.Read m, Defs.Read m, Fail.Can m)

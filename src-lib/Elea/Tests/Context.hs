@@ -8,7 +8,7 @@ import Prelude ()
 import Elea.Prelude
 import qualified Elea.Context as Context
 import qualified Elea.Simplifier as Simp
-import qualified Elea.Env as Env
+import qualified Elea.Monad.Env as Env
 import qualified Elea.Testing as Test
 
 context :: String -> Test.M Context.Context

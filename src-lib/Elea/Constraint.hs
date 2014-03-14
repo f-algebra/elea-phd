@@ -29,12 +29,12 @@ import Elea.Context ( Context )
 import qualified Elea.Types as Type
 import qualified Elea.Terms as Term
 import qualified Elea.Index as Indices
-import qualified Elea.Env as Env
+import qualified Elea.Monad.Env as Env
 import qualified Elea.Context as Context
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Foldable as Fold
 import qualified Elea.Simplifier as Simp
-import qualified Elea.Monad.Failure as Fail
+import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs
 
                 
@@ -97,7 +97,7 @@ makeContext match_t ind con_n res_ty =
   toContext res_ty (make match_t ind con_n)
   
   
--- | Pattern matches from "Elea.Env" are represented as term pairs, where
+-- | Pattern matches from "Elea.Monad.Env" are represented as term pairs, where
 -- the first term has been matched to the second (which will always
 -- be a constructor applied to variables).
 fromMatch :: (Term, Term) -> Constraint

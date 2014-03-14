@@ -20,10 +20,10 @@ import qualified Elea.Prelude as Prelude
 import qualified Elea.Index as Indices
 import qualified Elea.Type as Type
 import qualified Elea.Foldable as Fold
-import qualified Elea.Env as Env
-import qualified Elea.Monad.Error as Err
+import qualified Elea.Monad.Env as Env
+import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Definitions as Defs
-import qualified Elea.Monad.Failure as Fail
+import qualified Elea.Monad.Failure.Class as Fail
 
 type TypingMonad m = (Err.Can m, Env.Read m, Defs.Read m)
 

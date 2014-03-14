@@ -1,6 +1,6 @@
 -- | This is just a renaming of 'MonadError', and with some useful
 -- new functions.
-module Elea.Monad.Error
+module Elea.Monad.Error.Class
 (
   Can (..), Err, ErrorT,
   fromEither, augment, augmentM,

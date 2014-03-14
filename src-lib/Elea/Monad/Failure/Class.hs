@@ -1,6 +1,6 @@
 -- | Constructing and using computations which can fail.
 -- Requires qualified import (usually as "Fail").
-module Elea.Monad.Failure 
+module Elea.Monad.Failure.Class
 (
   Can (..), when, unless, toMaybe, withDefault, assert, choose,
   success, successM, catchWith, fromEither, has, fromMaybe, mapLookup,

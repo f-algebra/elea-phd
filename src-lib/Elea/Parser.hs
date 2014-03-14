@@ -12,11 +12,11 @@ import Elea.Term
 import Elea.Show ( showM )
 import qualified Elea.Index as Indices
 import qualified Elea.Types as Type
-import qualified Elea.Env as Env
+import qualified Elea.Monad.Env as Env
 import qualified Elea.Foldable as Fold
 import qualified Elea.Evaluation as Eval
-import qualified Elea.Monad.Definitions as Defs      
-import qualified Elea.Monad.Error as Err
+import qualified Elea.Monad.Definitions.Class as Defs      
+import qualified Elea.Monad.Error.Class as Err
 import qualified Data.Map as Map
 
 type TypeArgs = [String]
