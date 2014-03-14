@@ -7,7 +7,6 @@ where
 import Prelude ()
 import Elea.Prelude
 import Elea.Term ( Term )
-import qualified Elea.Monad.Elea as Elea
 import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Testing as Test
 import qualified Elea.Floating as Float

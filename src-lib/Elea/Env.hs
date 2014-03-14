@@ -35,6 +35,7 @@ import Elea.Monad.Env
 import qualified Elea.Type as Type
 import qualified Elea.Monad.Failure as Fail
 import qualified Elea.Monad.Definitions as Defs
+import qualified Elea.Monad.Discovery as Discovery
 import qualified Elea.Index as Indices
 import qualified Elea.Unifier as Unifier 
 import qualified Elea.Foldable as Fold
@@ -273,6 +274,12 @@ instance Defs.Read m => Defs.Read (AlsoTrack r m) where
   lookupTerm n = Trans.lift . Defs.lookupTerm n
   lookupType n = Trans.lift . Defs.lookupType n
   lookupName = Trans.lift . Defs.lookupName
+  
+instance Discovery.Makes m => Discovery.Makes (AlsoTrack r m) where
+  tell = Trans.lift . Discovery.tell
+
+instance Discovery.Listens m => Discovery.Listens (AlsoTrack r m) where
+  listen = mapAlsoTrack Discovery.listen
 
 
 -- | To stop effects reaching the inner monad we
@@ -341,6 +348,12 @@ instance Defs.Read m => Defs.Read (TrackMatches m) where
   lookupType n = Trans.lift . Defs.lookupType n
   lookupName = Trans.lift . Defs.lookupName
 
+instance Discovery.Makes m => Discovery.Makes (TrackMatches m) where
+  tell = Trans.lift . Discovery.tell
+
+instance Discovery.Listens m => Discovery.Listens (TrackMatches m) where
+  listen = mapTrackMatches Discovery.listen
+  
 
 -- | Stores a list of terms structurally smaller than a given object.
 data Smaller a

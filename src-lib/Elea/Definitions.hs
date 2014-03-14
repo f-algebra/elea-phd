@@ -27,6 +27,7 @@ import qualified Elea.Index as Indices
 import qualified Elea.Foldable as Fold
 import qualified Elea.Env as Env
 import qualified Elea.Unifier as Unifier
+import qualified Elea.Monad.Discovery as Discovery
 import qualified Elea.Monad.Failure as Fail
 import qualified Control.Monad.State as State
 import qualified Control.Monad.Trans as Trans
@@ -174,3 +175,9 @@ instance Env.Write m => Env.Write (DBStateT m) where
 instance Env.Read m => Env.Read (DBStateT m) where
   bindings = Trans.lift Env.bindings
   
+instance Discovery.Makes m => Discovery.Makes (DBStateT m) where
+  tell = Trans.lift . Discovery.tell
+
+instance Discovery.Listens m => Discovery.Listens (DBStateT m) where
+  listen = mapDBStateT Discovery.listen
+    

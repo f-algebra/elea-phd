@@ -1,4 +1,4 @@
-/*
+
 prop "id nat":
   (fun (n: nat) -> n)
   = 
@@ -16,7 +16,7 @@ prop "add commutative": forall (x y z: nat) ->
   
 prop "max associative": forall (x y z: nat) ->
   max x (max y z) = max (max x y) z
- 
+
 let double = 
   fix (dbl: nat -> nat) (x: nat) ->
   match x with
@@ -27,7 +27,6 @@ let double =
 prop "add double": forall (x: nat) ->
   double x = add x x
 
-  */
 prop "id list"<A>:
   (fun (n: nat) (xs: list<A>) -> xs)
   =
@@ -106,6 +105,7 @@ prop "filter reverse"<A>: forall (p: A -> bool) (xs: list<A>) ->
 prop "insertsort sorted": forall (xs: list<nat>) ->
   is_sorted (insertsort xs)
 
+  /*
 prop "height mirror" <A>: forall (t: tree<A>) ->
   height<A> (mirror<A> t) = height<A> t
-
+*/

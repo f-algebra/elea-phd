@@ -16,7 +16,6 @@ import Prelude ()
 import Elea.Prelude hiding ( assert )
 import Elea.Term
 import Elea.Type
-import Elea.Monad.Elea ( Elea )
 import Elea.Show
 import qualified Elea.Env as Env
 import qualified Elea.Parser as Parse
@@ -24,11 +23,12 @@ import qualified Elea.Simplifier as Simp
 import qualified Elea.Equality as Equality
 import qualified Elea.Fusion as Fusion
 import qualified Elea.Definitions as Defs
+import qualified Elea.Monad.Discovery as Discovery
 import qualified Elea.Monad.Error as Err
 import qualified Test.HUnit as HUnit
 
 type Test = HUnit.Test
-type M = Defs.DBStateT (Reader [Bind])
+type M = Defs.DBStateT (ReaderT [Bind] Discovery.Ignore)
 
 execute :: Test -> IO ()
 execute test = do
@@ -42,7 +42,7 @@ label :: String -> Test -> Test
 label = HUnit.TestLabel
 
 run :: HUnit.Testable t => M t -> Test
-run = HUnit.test . Env.empty . Defs.evalEmptyT 
+run = HUnit.test . Discovery.ignore . Env.emptyT . Defs.evalEmptyT 
 
 assert :: HUnit.Assertable t => t -> Test
 assert = HUnit.TestCase . HUnit.assert
@@ -74,7 +74,7 @@ loadPrelude = do
   eqs <- Err.noneM (Parse.program prelude)
   return ()
   
-assertProvablyEq :: (Defs.Has m, Env.Read m) => Term -> Term -> m Test
+assertProvablyEq :: Fusion.FusionM m => Term -> Term -> m Test
 assertProvablyEq t1 t2 = do
   mby_eq <- runMaybeT (Equality.prove Fusion.run t1 t2)
   t1s <- showM t1
@@ -85,7 +85,7 @@ assertProvablyEq t1 t2 = do
     . HUnit.assertBool prop_s
     $ fromMaybe False mby_eq
   
-assertTermEq :: (Defs.Has m, Env.Read m) => Term -> Term -> m Test
+assertTermEq :: Fusion.FusionM m => Term -> Term -> m Test
 assertTermEq t1 t2 = do
   t1s <- showM t1
   t2s <- showM t2

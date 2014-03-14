@@ -1,7 +1,7 @@
 -- | Some term transformation steps that rely on fixpoint fusion.
 module Elea.Fusion
 (
-  run
+  FusionM, run
 )
 where
 
@@ -25,12 +25,15 @@ import qualified Elea.Fission as Fission
 import qualified Elea.Monad.Error as Err
 import qualified Elea.Monad.Failure as Fail
 import qualified Elea.Monad.Definitions as Defs
+import qualified Elea.Monad.Discovery as Discovery
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
 
-run :: (Defs.Read m, Env.Read m) => Term -> m Term
+type FusionM m = (Defs.Read m, Env.Read m, Discovery.Makes m)
+
+run :: FusionM m => Term -> m Term
 run = runSteps (fission_steps ++ fusion_steps)
   where
   fusion_steps =
@@ -45,7 +48,7 @@ run = runSteps (fission_steps ++ fusion_steps)
     map Fold.rewriteOnceM Fission.steps
     
     
-runSteps :: (Defs.Read m, Env.Read m) => 
+runSteps :: FusionM m => 
     [Term -> MaybeT m Term] -> Term -> m Term
 runSteps steps term = do
   -- Make sure the term has had all non-fixpoint based simplifications run
@@ -72,8 +75,7 @@ runSteps steps term = do
 
 
 -- | Uses fixpoint fusion on a fix with a fix as a decreasing argument.
-fixfix :: forall m . (Env.Read m, Fail.Can m, Defs.Read m) => 
-  Term -> m Term
+fixfix :: forall m . (FusionM m, Fail.Can m) => Term -> m Term
 
 -- ofix means "outer fixpoint", oargs is "outer arguments"
 fixfix oterm@(App ofix@(Fix {}) oargs) 
@@ -188,8 +190,7 @@ fixfix _ = Fail.here
 
 -- | If two or more decreasing arguments to a fixpoint are the same 
 -- variable, we can sometimes fuse these arguments into one.
-repeatedArg :: forall m . (Env.Read m, Fail.Can m, Defs.Read m) => 
-  Term -> m Term
+repeatedArg :: forall m . (FusionM m, Fail.Can m) => Term -> m Term
   
 repeatedArg fix_t@(App fix@(Fix {}) args) 
   | Term.inductivelyTyped fix_t = id
@@ -229,8 +230,7 @@ repeatedArg _ = Fail.here
 
 -- | Match-Fix fusion. Makes use of an environment which you can read pattern 
 -- matches from.
-matchFix :: forall m . (Env.MatchRead m, Env.Read m, Fail.Can m, Defs.Read m) => 
-  Term -> m Term
+matchFix :: forall m . (FusionM m, Fail.Can m, Env.MatchRead m) => Term -> m Term
   
 matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
   -- We don't try to fuse matches into a term which is not just a fixpoint
@@ -324,8 +324,8 @@ matchFix _ = Fail.here
 -- So to simplify @add x x@ we fuse the context @fun f -> f x x@ with
 -- the fixpoint @add@ having reexpressed the inner argument as an 
 -- argument to the fixpoint.
-decreasingFreeVars :: forall m . (Env.Read m, Fail.Can m, Defs.Read m) => 
-  Term -> m Term
+decreasingFreeVars :: forall m . (FusionM m, Fail.Can m) => Term -> m Term
+
 decreasingFreeVars orig_t@(App fix@(Fix {}) orig_args) = do
   Fail.unless (Term.inductivelyTyped orig_t)
   Fail.unless (length dec_free_args > 0)
@@ -368,8 +368,7 @@ decreasingFreeVars orig_t@(App fix@(Fix {}) orig_args) = do
         setArg :: Int -> [Term] -> [Term]
         setArg i = setAt i (Var (free_vars !! i))
       
-  simplify :: forall m . (Defs.Read m, Env.Read m) => 
-    Term -> Term -> m Term
+  simplify :: forall m . FusionM m => Term -> Term -> m Term
   simplify (Indices.lift -> fix) = id
     . Env.alsoTrack (fix, 0)
     . Fold.transformM express
