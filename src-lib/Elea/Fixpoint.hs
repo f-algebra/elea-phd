@@ -16,6 +16,7 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
 import Elea.Show ( showM )
+import Elea.Monad.Edd ( Edd, Redd )
 import qualified Elea.Unifier as Unifier
 import qualified Elea.Index as Indices
 import qualified Elea.Monad.Env as Env
@@ -30,7 +31,6 @@ import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-
 
 -- | Fixpoint fusion.
 -- > if E' = fusion C E
@@ -60,7 +60,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   
   simplified_t <- id
     -- DEBUG
-    . trace s1
+  -- . trace s1
   
     -- After simplification we replace all of the free
     -- variables within the term with fresh new ones,
@@ -83,7 +83,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   -- as this will rewrite the term we are replacing
   let reverted_t = id
         -- DEBUG
-        . trace s2
+     --   . trace s2
         . Env.trackIndices 0
         . Term.revertMatchesWhenM isInnerFixMatch
         $ simplified_t
@@ -140,8 +140,8 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   
   Fail.unless                                                      
     -- DEBUG
-    . trace s3
-   -- . trace (s1 ++ s2 ++ s3)
+  --  . trace s3
+    . trace (s1 ++ s2 ++ s3)
     $ rem_rc == 0 
  --   || new_rc >= old_rc
     
@@ -153,7 +153,9 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   -- DEBUG
   final_s <- showM new_term
   let s4 = "\nDONE:\n" ++ final_s
-  return (trace s4 new_term)
+  return   
+     . trace s4 
+    $ new_term
   
   where
   orig_t = Context.apply outer_ctx inner_fix
@@ -222,52 +224,14 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
       . Context.apply rebound_outer_ctx
       $ Var Indices.omega
     
-    -- The new function call, lifted to the correct indices
-    -- this is what we replace with if unification succeeds in some form.
+    uni <- Unifier.find replace_t term
+    
+    let mapped_to = concatMap Indices.free (Map.elems uni)
+    Fail.when (Indices.containsOmega (Map.keysSet uni))
+    Fail.when (Indices.containsOmega mapped_to)
+    
     repl_here <- Env.liftByOffset replace_with
-        
-    mby_uni <- Fail.catch (Unifier.find replace_t term)
-    case mby_uni of
-      -- If we found a unification then just check it is a valid one
-      -- and use it
-      Just uni -> do
-        let mapped_to = concatMap Indices.free (Map.elems uni)
-        Fail.when (Indices.containsOmega (Map.keysSet uni))
-        Fail.when (Indices.containsOmega mapped_to)
-        return (Unifier.apply uni repl_here)
-      
-      -- Otherwise it could be a /degenerate/ instance of the context,
-      -- so apply the background pattern matches and see if that is the case.
-      Nothing -> do
-        Fail.here
-        -- Calls to the unrolled fixpoint in the term we are replacing with
-        -- and the original term
-        let [repl_call] = toList (Term.collect fixpointCall replace_t)
-            [term_call] = toList term_calls
-        match_uni <- Env.variableMatches
-        call_uni <- Unifier.find repl_call term_call
-        -- Take the combination of unification with the fixpoint call site
-        -- variables, and the various pattern matches which have been applied,
-        -- and run evaluation to hopefully form a degenerate context.
-        let applyUnis = id
-              . Unifier.apply match_uni 
-              . Unifier.apply call_uni
-            replace_t' = id
-              . Simp.run 
-              $ applyUnis replace_t
-            
-        -- debug
-        let s1 = "\n\n!!! in: " ++ show term 
-              ++ "\nfound "  ++ show term_call 
-              ++ "\nunified with " ++ show repl_call
-              ++ "\nplus " ++ show match_uni
-              ++ "\napplied to " ++ show replace_t
-              ++ "\ngiving " ++ show replace_t'
-              ++ "\nreplaced? " ++ show (replace_t' == term) ++ "\n\n"
-              
-        -- Check for a match
-        Fail.unless (replace_t' == term)
-        return (applyUnis repl_here)
+    return (Unifier.apply uni repl_here)
     where
     -- Calls to the unrolled fixpoint within the term
     -- we are trying to replace

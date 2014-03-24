@@ -5,7 +5,7 @@ module Elea.Type
   ContainsTypes (..), mapTypes,
   
   name, constructors, boundLabel, boundType, 
-  empty, unit, pair, bool, 
+  empty, unit, tuple, bool, 
   equation, isEquation,
   returnType, argumentTypes,
   isInd, isFun, fromBase,
@@ -154,12 +154,14 @@ empty = Ind "empty" []
 unit :: Ind
 unit = Ind "unit" [("()", [])]
 
--- | Cartesian product.
-pair :: Type -> Type -> Ind
-pair a b = 
-  Ind name [("pair", [ConArg a, ConArg b])]
+-- | Cartesian n-product.
+tuple :: [Type] -> Ind
+tuple tys 
+  | length tys > 1 = 
+    Ind name [("tuple", map ConArg tys)]
   where
-  name = "(" ++ show a ++ ", " ++ show b ++ ")"
+  name = "(" ++ intercalate "," (map show tys) ++ ")"  
+
   
 -- | Just like a cartesian product, but with both parts of the same type.
 -- This also has a special display rule in "Elea.Show".

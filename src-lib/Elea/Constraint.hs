@@ -17,7 +17,9 @@ module Elea.Constraint
   fromMatch,
   removeAll,
   removeWhen,
+  apply,
   toContext,
+  matchContext,
   makeContext,
 )
 where
@@ -91,7 +93,7 @@ removeWhen p = Fold.transform remove
     | otherwise = term
       
     
--- | A function which composes 'make' and 'toContext'
+-- | Composition of 'toContext' and 'make'
 makeContext :: Term -> Type.Ind -> Nat -> Type -> Context
 makeContext match_t ind con_n res_ty = 
   toContext res_ty (make match_t ind con_n)
@@ -103,29 +105,40 @@ makeContext match_t ind con_n res_ty =
 fromMatch :: (Term, Term) -> Constraint
 fromMatch (from_t, leftmost -> Con ind con_n) = 
   make from_t ind con_n
-        
   
+  
+-- | Composition of 'toContext' and 'fromMatch'
+matchContext :: Type -> (Term, Term) -> Context
+matchContext ty = toContext ty . fromMatch
+
+
+-- | Applies the constraint to a term (with its type provided). 
+-- Will capture any variables
+-- the constraint pattern match captures.
+-- Not the same as converting to a context and applying that, as that will
+-- not capture variables.
+apply :: Constraint -> (Term, Type) -> Term
+apply (Constraint match_t ind con_n) (on_t, on_ty) =  
+  Case ind match_t alts
+  where
+  cons = Type.unfold ind
+  alts = map buildAlt [0..length cons - 1]
+  
+  buildAlt :: Int -> Alt
+  buildAlt alt_n = 
+    Alt bs alt_t
+    where
+    Bind _ con_ty = id
+      . assert (length cons > alt_n)
+      $ cons !! alt_n
+    bs = map (Bind "X") (init (Type.flatten con_ty))
+    
+    -- If we are not down the matched branch we return absurd
+    alt_t | enum alt_n /= con_n = Absurd on_ty
+          | otherwise = on_t
+
 -- | Create a context from a constraint. Requires the return type of the gap.
 toContext :: Type -> Constraint -> Context
-toContext result_ty (Constraint match_t ind con_n) =
-  Context.make makeContext
-  where
-  makeContext gap_t = 
-    Case ind match_t alts
-    where
-    cons = Type.unfold ind
-    alts = map buildAlt [0..length cons - 1]
-    
-    buildAlt :: Int -> Alt
-    buildAlt alt_n = 
-      Alt bs alt_t
-      where
-      Bind _ con_ty = id
-        . assert (length cons > alt_n)
-        $ cons !! alt_n
-      bs = map (Bind "X") (init (Type.flatten con_ty))
-      
-      -- If we are not down the matched branch we return absurd
-      alt_t | enum alt_n /= con_n = Absurd result_ty
-            | otherwise = gap_t
+toContext result_ty constr =
+  Context.make (\gap_t -> apply constr (gap_t, result_ty))
 

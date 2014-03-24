@@ -131,7 +131,9 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
       
     -- Retrieve the type of f_term and g_term
     -- so we can pass them to inventCase
-    f_ty <- trace s1 $ Type.get f_term
+    f_ty <- id
+     -- . trace s1 
+      $ Type.get f_term
     let Type.Base ind_ty@(Type.Ind _ cons) = f_ty
     g_ty <- Type.get g_term 
     
@@ -170,7 +172,8 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
       let s2 = "\nBranch: " ++ fused_eq_s
       
       -- Find a function which satisfies the equation
-      func <- trace s2
+      func <- id
+        -- . trace s2
         . Fail.fromMaybe
         . Env.trackOffset
         . Fold.findM (runMaybeT . caseFunction) 
@@ -179,7 +182,9 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
       -- DEBUG 
       func_s <- showM func
       let s3 = "\nFunction discovered: " ++ func_s
-      trace s3 (return func)
+      return
+    --    . trace s3
+        $ func
       where
       -- Constrain @f_term@ to be this particular constructor
       constraint_ctx = 

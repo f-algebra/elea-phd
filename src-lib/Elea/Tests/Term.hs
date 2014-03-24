@@ -23,14 +23,14 @@ tests = Test.label "Terms"
     $ Test.run $ do
   Test.loadPrelude
   
-  add_fix <- Test.term "add"
+  Lam _ (Lam _ (App add_fix _)) <- Test.term "add"
   
   leq_nat <- Test.term "leq_nat"
   srtd_fix <- Test.term "is_sorted"
   
   one <- Test.term "1"
-  Lam _ x_list <- Test.term "fun (x: nat) -> Cons x Nil"
-  xs_list <- liftM (\t -> app t [Var 0]) (Test.term "Cons 1")
+  Lam _ x_list <- Test.term "fun (x: nat) -> Cons<nat> x Nil<nat>"
+  xs_list <- liftM (\t -> app t [Var 0]) (Test.term "Cons<nat> 1")
    
   let dec1 = Test.assertEq [0] (decreasingArgs add_fix)
       dec2 = Test.assertEq [0, 1] (decreasingArgs leq_nat)
@@ -46,13 +46,13 @@ tests = Test.label "Terms"
     ++  "match x with | 0 -> v | Suc x' -> k (f x') end"
     
   fold_ntree_nlist <- Test.term
-    $ "fun (v: nlist) (k: nlist -> nat -> nlist -> nlist) -> "
-    ++  "fix (f: ntree -> nlist) (t: ntree) -> "
+    $ "fun (v: list<nat>) (k: list<nat> -> nat -> list<nat> -> list<nat>) -> "
+    ++  "fix (f: tree<nat> -> list<nat>) (t: tree<nat>) -> "
     ++  "match t with | Leaf -> v | Node t1 x t2 -> k (f t1) x (f t2) end"
   
   Base nat <- Test._type "nat"
-  Base ntree <- Test._type "ntree"
-  Base nlist <- Test._type "nlist"
+  Base ntree <- Test._type "tree<nat>"
+  Base nlist <- Test._type "list<nat>"
   
   let fold1 = Test.assertEq fold_nat_nat (buildFold nat (Base nat))
       fold2 = Test.assertEq fold_ntree_nlist (buildFold ntree (Base nlist))
@@ -67,7 +67,7 @@ tests = Test.label "Terms"
   let conj1 = Test.assertEq conj3_t' conj3_t
       
   eq_nat <- Test.simplifiedTerm "eq[nat]"
-  eq_ntree <- Test.simplifiedTerm "eq[ntree]"
+  eq_ntree <- Test.simplifiedTerm "eq[tree<nat>]"
   eq_bool <- Test.simplifiedTerm "eq[bool]"
   eq_unit <- Test.simplifiedTerm "eq[unit]"
   
@@ -109,7 +109,7 @@ def_eq_nat =
   ++ "| Suc x' -> match y with | 0 -> False | Suc y' -> eq x' y' end "
   ++ "end"
 def_eq_ntree =
-  "fix (eq: ntree -> ntree -> bool) (t t': ntree) -> "
+  "fix (eq: tree<nat> -> tree<nat> -> bool) (t t': tree<nat>) -> "
   ++ "match t with "
   ++ "| Leaf -> match t' with | Leaf -> True | Node t1' x' t2' -> False end "
   ++ "| Node t1 x t2 -> match t' with "

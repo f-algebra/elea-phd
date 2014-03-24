@@ -10,6 +10,7 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
 import Elea.Show ( showM )
+import Elea.Monad.Edd ( Edd, Redd )
 import qualified Elea.Fixpoint as Fix
 import qualified Elea.Inventor as Invent
 import qualified Elea.Constraint as Constraint
@@ -32,6 +33,9 @@ import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
 
 type FusionM m = (Defs.Read m, Env.Read m, Discovery.Tells m)
+ 
+{-# SPECIALISE run :: Term -> Edd Term #-}
+{-# SPECIALISE run :: Term -> Redd Term #-}
 
 run :: FusionM m => Term -> m Term
 run = runSteps (fission_steps ++ fusion_steps)
@@ -82,12 +86,14 @@ fixfix oterm@(App ofix@(Fix {}) oargs)
   -- Check this is not a partially applied fixpoint
   -- since I'm not sure what happens in this case.
   | Term.inductivelyTyped oterm = id
-    -- Pick the first one which does not fail
-    . Fail.choose
-    -- Run fixfixArg on every decreasing fixpoint argument position
-    . map fixfixArg
-    . filter (Term.isFix . Term.leftmost . (oargs !!))
-    $ Term.decreasingArgs ofix
+      -- Broadcast the discovery
+      . Discovery.equalsM oterm
+      -- Pick the first one which does not fail
+      . Fail.choose
+      -- Run fixfixArg on every decreasing fixpoint argument position
+      . map fixfixArg
+      . filter (Term.isFix . Term.leftmost . (oargs !!))
+      $ Term.decreasingArgs ofix
   where
   -- Run fixfix fusion on the argument at the given position
   fixfixArg :: Int -> m Term
@@ -194,6 +200,8 @@ repeatedArg :: forall m . (FusionM m, Fail.Can m) => Term -> m Term
   
 repeatedArg fix_t@(App fix@(Fix {}) args) 
   | Term.inductivelyTyped fix_t = id
+    -- Broadcast the discovery
+    . Discovery.equalsM fix_t
     -- Pick the first success
     . Fail.choose
     . map fuseRepeated 
@@ -254,21 +262,27 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
   Fail.when (Term.alreadyFused fix_info constraint_set outer_t)
   
   -- We apply match-fix fusion for every match
-  (fused_t, Monoid.Any any_fused) <- id
+  (fused_t, fused_matches) <- id
     . runWriterT
     $ foldrM fuseMatch outer_t matches
     
   -- Check to see whether any match-fix fusion steps succeeded.
-  Fail.unless any_fused
-  
-  -- Successful match-fix fusion will have eliminated all occurrences of
-  -- absurdity or reduced the entire term to absurdity.
-  if matchFixSuccess fused_t
-  then return (Constraint.removeAll fused_t)
+  Fail.when (fused_matches == [])
   
   -- If match-fix fusion has failed we save the list of matches we attempted
   -- to fuse in.
-  else return (Term.addFusedMatches constraint_set outer_t)
+  if not (matchFixSuccess fused_t)
+  then return (Term.addFusedMatches constraint_set outer_t)
+  else do
+    -- Express all the matches we fused in as a single constraint,
+    -- so we can show which term we fused together to make 'fused_t',
+    -- so we can output it with 'Discovery.equals'
+    let all_constraints = 
+          concatMap (Constraint.matchContext result_ty) fused_matches
+        from_t = Context.apply all_constraints outer_t 
+        fused_t' = Constraint.removeAll fused_t
+    Discovery.equals from_t fused_t'
+    return fused_t'
   where
   -- Whether a pattern match should be fused into the current fixpoint.
   -- We also check that one of the strict arguments of each term match.
@@ -294,11 +308,13 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
   -- Typed so that we can apply it using foldrM over the list of matches.
   -- If fusion fails it returns the original term.
   -- Will write 'True' if fusion ever succeeds.
-  fuseMatch :: (Term, Term) -> Term -> WriterT Monoid.Any m Term
-  fuseMatch (match_t, leftmost -> Con ind con_n) term =
+  fuseMatch :: (Term, Term) -> Term -> WriterT [(Term, Term)] m Term
+  fuseMatch (match_t, con_t) term =
     -- Generalise any uninterpreted function calls
     Term.generaliseUninterpreted (match_t, term) generalised 
     where
+    Con ind con_n = leftmost con_t
+    
     generalised _ (match_t, term) = do
       mby_fused <- id
         . lift
@@ -308,7 +324,7 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
       case mby_fused of
         Nothing -> return term
         Just fused -> do
-          tell (Monoid.Any True)
+          tell [(match_t, con_t)]
           return fused
       where 
       constr = Constraint.make match_t ind con_n
@@ -330,13 +346,9 @@ decreasingFreeVars orig_t@(App fix@(Fix {}) orig_args) = do
   Fail.unless (Term.inductivelyTyped orig_t)
   Fail.unless (length dec_free_args > 0)
   
-  -- DEBUG
-  orig_s <- showM orig_t
-  let s1 = "\n\n[decreasing-free-var] starting point:\n" ++ orig_s
-  
   -- Generalise all the arguments first, the return value of this will
   -- ungeneralise the arguments again
-  trace s1 
+  Discovery.equalsM orig_t
     $ Term.generaliseArgs orig_t generalised
   where
   -- The variable arguments we should attempt this technique on.
@@ -390,20 +402,11 @@ decreasingFreeVars orig_t@(App fix@(Fix {}) orig_args) = do
         
         -- Undo the above replacement of the fix variable with the fixpoint
         replaced <- Fold.rewriteM replace fused
-        
-        -- DEBUG
-        term_s <- showM term'
-        fused_s <- showM fused
-        repl_s <- showM replaced
-        let s1 = "\n\n[decreasing-free-var] original:\n" ++ term_s
-              ++ "\n\n[decreasing-free-var] fused:\n" ++ fused_s
-              ++ "\n\n[decreasing-free-var] replaced:\n" ++ repl_s
-        
+
         -- Make sure that we actually succeeded in the above step
         -- otherwise this fusion step will always trivially succeed
         -- at it just strips out every fix variable
-        if trace s1 
-          $ fix_f `Indices.freeWithin` replaced
+        if fix_f `Indices.freeWithin` replaced
         then return replaced
         else return term
       where
@@ -422,12 +425,7 @@ decreasingFreeVars orig_t@(App fix@(Fix {}) orig_args) = do
         -- then we can check if this fixpoint matches the given one 
         -- (since that one had its variables expressed too).
         inner_t@(App inner_fix' _) <- 
-          Term.expressFreeVariables free_vars inner_fix
-        
-        -- DEBUG 
-        inner_s <- showM inner_t
-        let s1 = "\n\n[decreasing-free-var] inner:\n" ++ inner_s
-        
+          Term.expressFreeVariables free_vars inner_fix  
         Fail.unless (inner_fix' == orig_fix)
         
         -- If it does we can replace it with the fix variable again

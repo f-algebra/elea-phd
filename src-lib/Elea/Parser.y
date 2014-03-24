@@ -11,9 +11,12 @@ import Elea.Type
 import Elea.Term
 import Elea.Show ( showM )
 import qualified Elea.Index as Indices
+import qualified Elea.Terms as Term
 import qualified Elea.Types as Type
+import qualified Elea.Constraint as Constraint
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Foldable as Fold
+import qualified Elea.Simplifier as Simp
 import qualified Elea.Evaluation as Eval
 import qualified Elea.Monad.Definitions.Class as Defs      
 import qualified Elea.Monad.Error.Class as Err
@@ -42,8 +45,9 @@ data RawProgram
                 , _programProps :: [PropDef] }
 
 data RawType 
-  = TBase ParamCall
-  | TFun RawType RawType
+  = TyBase ParamCall
+  | TyFun RawType RawType
+  | TyTuple [RawType]
 
 data RawBind 
   = TBind { _rawLabel :: String
@@ -60,6 +64,8 @@ data RawTerm
   | TLet String RawTerm RawTerm
   | TEq RawType
   | TFold RawType
+  | TTuple [RawTerm]
+  | TAssert [String] RawTerm RawTerm
   
 data RawAlt
   = TAlt [String] RawTerm
@@ -82,8 +88,9 @@ mkLabels [''Scope, ''RawBind, ''RawProgram]
   name        { TokenName $$ }
   '|'         { TokenBar }
   ':'         { TokenTypeOf }
-  '->'        { TokenArr }
-  '=>'        { TokenDArr }
+  '->'        { TokenRArr }
+  '<-'        { TokenLArr }
+  '=>'        { TokenDRArr }
   '*'         { TokenSet }
   '='         { TokenEq }
   '['         { TokenOS }
@@ -111,15 +118,17 @@ mkLabels [''Scope, ''RawBind, ''RawProgram]
   else        { TokenElse }
   'fold['     { TokenFold  }
   'eq['       { TokenEqEq  }
+  assert      { TokenAssert }
   
 %right '->'
   
 %%
 
 Type :: { RawType }
-  : ParamCall                         { TBase $1 }
+  : ParamCall                         { TyBase $1 }
   | '(' Type ')'                      { $2 }
-  | Type '->' Type                    { TFun $1 $3 }
+  | '(' Type ',' TypeList ')'         { TyTuple ($2:$4) }
+  | Type '->' Type                    { TyFun $1 $3 }
   
 Cons :: { [[String]] }
   : Pattern                           { [$1] }
@@ -128,9 +137,25 @@ Cons :: { [[String]] }
 TypeDef :: { TypeDef }
   : ind ParamName '=' Cons            { ($2, $4) }
   
-Pattern :: { [String] }
+NameSeq :: { [String] }
   : name                              { [$1] }
-  | Pattern name                      { $1 ++ [$2] }
+  | NameSeq name                      { $1 ++ [$2] }
+  
+NameList :: { [String] }
+  : name                              { [$1] }      
+  | NameList ',' name                 { $1 ++ [$3] }
+                                        
+TermList :: { [RawTerm] }
+  : Term                              { [$1] }
+  | TermList ',' Term                 { $1 ++ [$3] }
+  
+TypeList :: { [RawType] } 
+  : Type                              { [$1] }
+  | TypeList ',' Type                 { $1 ++ [$3] } 
+  
+Pattern :: { [String] }
+  : NameSeq                           { $1 }
+  | '(' name ',' NameList ')'         { "tuple":$2:$4 }
   
 Matches :: { [RawAlt] }
   : '|' Match                         { [$2] }
@@ -150,37 +175,30 @@ Term :: { RawTerm }
   : ParamCall                         { TVar $1 }
   | '_|_' Type                        { TAbsurd $2 }
   | Term ParamCall                    { TApp $1 (TVar $2) }
-  | Term '(' Term ')'                 { TApp $1 $3 }  
+  | Term '(' Term ')'                 { TApp $1 $3 }
   | '(' Term ')'                      { $2 }
+  | Term '(' Term ',' TermList ')'    { TApp $1 (TTuple ($3:$5)) }
+  | '(' Term ',' TermList ')'         { TTuple ($2:$4) }
   | fun Bindings '->' Term            { TLam $2 $4 }
   | fix Bindings '->' Term            { TFix $2 $4 }
   | let name '=' Term in Term         { TLet $2 $4 $6 }
   | 'eq[' Type ']'                    { TEq $2 }
   | 'fold[' Type ']'                  { TFold $2 }
   | match Term with Matches end       { TCase $2 $4 }
+  | assert Pattern '<-' Term in Term  { TAssert $2 $4 $6 }
   | if Term then Term else Term       { TCase $2 [ TAlt ["True"] $4
                                                  , TAlt ["False"] $6] }
-  
+
 TermDef :: { TermDef }
   : let ParamName '=' Term            { ($2, $4) }
   
-TypeArgs :: { [RawType] } 
-  : {- empty -}                       { [] }
-  | Type                              { [$1] }
-  | TypeArgs ',' Type                 { $1 ++ [$3] } 
-  
 ParamCall :: { ParamCall }
   : name                              { ($1, []) }
-  | name '<' TypeArgs '>'             { ($1, $3) }
-  
-ArgNames :: { [String] }
-  : {- empty -}                       { [] }
-  | name                              { [$1] }
-  | ArgNames ',' name                 { $1 ++ [$3] }
+  | name '<' TypeList '>'             { ($1, $3) }
   
 ParamName :: { ParamName }
   : name                              { ($1, []) }
-  | name '<' ArgNames '>'             { ($1, $3) }
+  | name '<' NameList '>'             { ($1, $3) }
   
 Equation :: { (RawTerm, RawTerm) }
   : Term                              { ($1, TVar ("True", [])) }
@@ -296,7 +314,7 @@ program text =
   
   defineTerm ((name, ty_args), raw_term) = do
     p_term <- localTypeArgs ty_args (parseAndCheckTerm raw_term)
-    Defs.defineTerm name (fmap Eval.run p_term)
+    Defs.defineTerm name (fmap Simp.run p_term)
     
 lookupTerm :: ParamCall -> ParserMonad m Term
 lookupTerm (name, raw_ty_args) = do
@@ -327,17 +345,50 @@ parseAndCheckTerm =
   Err.check Type.check . parseRawTerm
   
 parseRawType :: RawType -> ParserMonad m Type
-parseRawType (TBase name) =
+parseRawType (TyBase name) =
   lookupType name
-parseRawType (TFun t1 t2) = 
+parseRawType (TyFun t1 t2) = 
   return Type.Fun `ap` parseRawType t1 `ap` parseRawType t2
+parseRawType (TyTuple rtys) = do
+  tys <- mapM parseRawType rtys
+  return (Type.Base (Type.tuple tys))
 
 parseRawBind :: RawBind -> ParserMonad m Bind
 parseRawBind (TBind label raw_ty) = do
   ty <- parseRawType raw_ty
   return (Bind label ty)
+  
+  
+-- This logic is used by assertion parsing and pattern match parsing.
+-- It takes the list of strings which will be given as a matched pattern,
+-- and the inductive type it is matching on, and returns the constructor
+-- index and the new bindings of the pattern variables.
+parsePattern :: Ind -> [String] -> ParserMonad m (Nat, [Bind])
+parsePattern ind (con_lbl:var_lbls) 
+  | null mby_con_i = 
+    Err.throw 
+      $ "Invalid constructor \"" ++ con_lbl 
+      ++ "\" for type [" ++ show ind ++ "]"
+  | otherwise = 
+    return (enum con_i, var_bs)
+  where
+  cons = Type.unfold ind
+
+  -- Find the type of this particular constructor from looking it up
+  -- by name in the description of the inductive type.
+  mby_con_i = findIndices ((== con_lbl) . get boundLabel) cons
+  con_i = head mby_con_i
+  this_con = cons !! con_i
+  
+  -- The bindings for this constructor are the arguments for the type
+  con_tys = (init . Type.flatten . get boundType) this_con
+  var_bs = zipWith Bind var_lbls con_tys
+  
 
 parseRawTerm :: RawTerm -> ParserMonad m Term
+parseRawTerm (TTuple rts) = do
+  ts <- mapM parseRawTerm rts
+  Term.tuple ts
 parseRawTerm (TFold raw_ty) = do
   Fun (Base ind) res_ty <- parseRawType raw_ty
   return (buildFold ind res_ty)
@@ -366,44 +417,38 @@ parseRawTerm (TLam rbs rt) = do
 parseRawTerm (TLet name rt1 rt2) = do
   t1 <- parseRawTerm rt1
   localDef name t1 (parseRawTerm rt2)
+parseRawTerm (TAssert pat ron_t rin_t) = do
+  on_t <- parseRawTerm ron_t
+  on_ty@(Type.Base ind) <- Type.get on_t
+  (con_n, var_bs) <- parsePattern ind pat
+  in_t <- Env.bindMany var_bs (parseRawTerm rin_t)
+  in_ty <- Env.bindMany var_bs (Type.get in_t)
+  let assrt = Constraint.make on_t ind con_n
+  return (Constraint.apply assrt (in_t, in_ty))
 parseRawTerm (TCase rt ralts) = do
   t <- parseRawTerm rt
   ind_ty <- Type.get t
   alts <- mapM (parseRawAlt ind_ty) ralts
-  return (Case (Type.inductiveType ind_ty) t alts)
+  let alts' = map snd (sortBy (compare `on` fst) alts)
+  return (Case (Type.inductiveType ind_ty) t alts')
   where
-  parseRawAlt ind_ty (TAlt (con_lbl:var_lbls) ralt_t)
+  parseRawAlt ind_ty (TAlt pat ralt_t)
     | not (Type.isInd ind_ty) =
       Err.throw 
         $ "Pattern matching over non inductive type [" ++ show ind_ty ++ "]"
-        
-    | isNothing mby_this_con =
-      Err.throw 
-        $ "Invalid constructor \"" ++ con_lbl 
-        ++ "\" for type [" ++ show ind_ty ++ "]"
-        
     | otherwise = do
+      (con_n, var_bs) <- parsePattern (Type.inductiveType ind_ty) pat
       t <- Env.bindMany var_bs (parseRawTerm ralt_t)
-      return (Alt var_bs t)
-    where
-    cons = Type.unfold (Type.inductiveType ind_ty)
-
-    -- Find the type of this particular constructor from looking it up
-    -- by name in the description of the inductive type.
-    mby_this_con = find ((== con_lbl) . get boundLabel) cons
-    Just this_con = mby_this_con
-    
-    -- The bindings for this constructor are the arguments for the type
-    con_tys = (init . Type.flatten . get boundType) this_con
-    var_bs = zipWith Bind var_lbls con_tys
+      return (con_n, Alt var_bs t)
 
 data Token
   = TokenBar
   | TokenName String
   | TokenTypeOf
   | TokenSet
-  | TokenArr
-  | TokenDArr
+  | TokenLArr
+  | TokenRArr
+  | TokenDRArr
   | TokenEq
   | TokenOS
   | TokenCS
@@ -430,6 +475,7 @@ data Token
   | TokenElse
   | TokenFold
   | TokenEqEq
+  | TokenAssert
   
 happyError :: [Token] -> a
 happyError tokens = error $ "Parse error\n" ++ (show tokens)
@@ -446,7 +492,8 @@ lexer ('/':'*':cs) = lexer (commentEnd cs)
   commentEnd (c:cs) = commentEnd cs
 lexer (' ':cs) = lexer cs
 lexer ('\n':cs) = lexer cs
-lexer ('-':'>':cs) = TokenArr : lexer cs
+lexer ('-':'>':cs) = TokenRArr : lexer cs
+lexer ('<':'-':cs) = TokenLArr : lexer cs
 lexer ('_':'|':'_':cs) = TokenAbsurd : lexer cs
 lexer (':':cs) = TokenTypeOf : lexer cs
 lexer ('(':cs) = TokenOP : lexer cs
@@ -486,6 +533,7 @@ lexer (c:cs)
       ("forall", rest) -> TokenAll : lexer rest
       ("fold", '[':rest) -> TokenFold : lexer rest
       ("eq", '[':rest) -> TokenEqEq : lexer rest
+      ("assert", rest) -> TokenAssert : lexer rest
       (name, rest) -> TokenName name : lexer rest
 lexer cs = error $ "Unrecognized symbol " ++ take 1 cs
 
@@ -493,7 +541,8 @@ instance Show Token where
   show TokenBar = "|"
   show (TokenName x) = x
   show TokenTypeOf = ":"
-  show TokenArr = "->"
+  show TokenRArr = "->"
+  show TokenLArr = "<-"
   show TokenEq = "="
   show TokenAbsurd = "_|_"
   show TokenOS = "["
@@ -520,6 +569,7 @@ instance Show Token where
   show TokenFold = "fold["
   show TokenEqEq = "eq["
   show (TokenInj n) = "inj" ++ show n
+  show TokenAssert = "assert"
   
   showList = (++) . intercalate " " . map show
 }

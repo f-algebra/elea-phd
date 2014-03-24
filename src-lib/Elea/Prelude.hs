@@ -11,7 +11,7 @@ module Elea.Prelude
   module Control.Monad.Writer,
   module Control.Monad.Trans,
   module Control.Monad.List,
-  module Control.Monad.RWS,
+  module Control.Monad.RWS.Lazy,
   module Control.Monad.Identity,
   module Control.Monad.Trans.Identity,
   module Control.Monad.Trans.Either,
@@ -84,7 +84,7 @@ import Control.Monad.Writer ( execWriter, runWriter, execWriterT, mapWriterT,
   MonadWriter (..), Writer (..), WriterT (..), censor, listens )
 import Control.Monad.List ( ListT (..) )
 import Control.Monad.Trans.Maybe
-import Control.Monad.RWS ( RWS (..), RWST (..), execRWS, evalRWS, runRWS )
+import Control.Monad.RWS.Lazy ( RWS (..), RWST (..), execRWS, evalRWS, runRWS )
 import Control.Monad.Identity ( Identity (..) )
 import Control.Monad.Trans.Identity ( IdentityT (..), mapIdentityT )
 import Control.Monad.Trans.Either ( EitherT (..), mapEitherT )

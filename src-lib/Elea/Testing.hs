@@ -17,6 +17,8 @@ import Elea.Prelude hiding ( assert )
 import Elea.Term
 import Elea.Type
 import Elea.Show
+import Elea.Monad.Edd ( Edd )
+import qualified Elea.Monad.Edd as Edd
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Parser as Parse
 import qualified Elea.Simplifier as Simp
@@ -28,7 +30,7 @@ import qualified Elea.Monad.Error.Class as Err
 import qualified Test.HUnit as HUnit
 
 type Test = HUnit.Test
-type M = Defs.DBStateT (ReaderT [Bind] Discovery.Listener)
+type M = Edd
 
 execute :: Test -> IO ()
 execute test = do
@@ -41,8 +43,8 @@ list = HUnit.TestList
 label :: String -> Test -> Test
 label = HUnit.TestLabel
 
-run :: HUnit.Testable t => M t -> Test
-run = HUnit.test . Discovery.trace . Env.emptyT . Defs.evalEmptyT 
+run :: HUnit.Testable t => Edd t -> Test
+run = HUnit.test . Edd.eval . Discovery.trace
 
 assert :: HUnit.Assertable t => t -> Test
 assert = HUnit.TestCase . HUnit.assert

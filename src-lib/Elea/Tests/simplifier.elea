@@ -11,31 +11,31 @@ prop "1<=2":
 prop "not-not": forall (p: bool) ->
   not (not p) = p
   
-prop "expand-rev": forall (xs: nlist) (x: nat) ->
-  reverse (Cons x xs) = append (reverse xs) (Cons x Nil)
+prop "expand-rev"<A>: forall (xs: list<A>) (x: A) ->
+  reverse<A> (Cons<A> x xs) = append<A> (reverse<A> xs) (Cons<A> x Nil<A>)
   
   
-let append3 =
-  fix (app3: nlist -> nlist -> nlist -> nlist) ->
-    fun (xs: nlist) (ys: nlist) (zs: nlist) ->
+let append3<A> =
+  fix (app3: list<A> -> list<A> -> list<A> -> list<A>) ->
+    fun (xs: list<A>) (ys: list<A>) (zs: list<A>) ->
     match xs with
-    | Nil -> append ys zs
-    | Cons x xs' -> Cons x (app3 xs' ys zs)
+    | Nil -> append<A> ys zs
+    | Cons x xs' -> Cons<A> x (app3 xs' ys zs)
     end
     
-prop "append3-simp": forall (xs: nlist) (ys: nlist) (zs: nlist) ->
-  append3 xs ys zs = append xs (append ys zs) 
+prop "append3-simp"<A>: forall (xs ys zs: list<A>) ->
+  append3<A> xs ys zs = append<A> xs (append<A> ys zs) 
     
   
-let dneppa = 
-  fix (ppa: nlist -> nlist -> nlist) (zs: nlist) (xs: nlist) ->
+let dneppa<A> = 
+  fix (ppa: list<A> -> list<A> -> list<A>) (zs xs: list<A>) ->
     match xs with
     | Nil -> zs
-    | Cons y ys -> Cons y (ppa zs ys)
+    | Cons y ys -> Cons<A> y (ppa zs ys)
     end
    
-prop "non-rec first arg": forall (xs: nlist) (ys: nlist) ->
-  dneppa ys xs = append xs ys
+prop "non-rec first arg"<A>: forall (xs ys: list<A>) ->
+  dneppa<A> ys xs = append<A> xs ys
     
   
 let always_true = 
@@ -54,28 +54,28 @@ prop "always true": forall (n m: nat) ->
  
 
 let is_sorted2 = 
-  fix (srtd: nlist -> bool) (xs: nlist) ->
+  fix (srtd: list<nat> -> bool) (xs: list<nat>) ->
     match xs with
     | Nil -> True
     | Cons y ys ->
       match ys with
-      | Nil -> srtd Nil
+      | Nil -> srtd Nil<nat>
       | Cons z zs -> and (leq_nat y z) (srtd ys)
       end
     end
   
-prop "unfold within fix": forall (xs: nlist) ->
+prop "unfold within fix": forall (xs: list<nat>) ->
   is_sorted xs = is_sorted2 xs
   
-prop "unfold productive fix": forall (xs: nlist) ->
-  (match append xs (Cons 1 Nil) with
+prop "unfold productive fix": forall (xs: list<nat>) ->
+  (match append<nat> xs (Cons<nat> 1 Nil<nat>) with
    | Nil -> 0 | Cons y ys -> y end)
   =
   (match xs with
    | Nil -> 1 | Cons y ys -> y end)
    
-prop "unfold branching fix": forall (t: ntree) ->
-  (match flatten t with
+prop "unfold branching fix"<A>: forall (t: tree<A>) ->
+  (match flatten<A> t with
    | Nil -> 0 | Cons y ys -> 1 end)
   = 
   (match t with

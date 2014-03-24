@@ -8,7 +8,8 @@ module Elea.Monad.Discovery
   
   ListenerT, Listener,
   listener, listenerT,
-  traceT, trace,
+  mapListenerT,
+  trace,
 )
 where
 
@@ -17,8 +18,14 @@ import Elea.Prelude hiding ( tell, listen, trace )
 import Elea.Term
 import Elea.Show
 import Elea.Monad.Discovery.Class
+import Elea.Monad.Edd ( Edd, Redd )
+import Elea.Discoveries ( EquationSet )
+import qualified Elea.Discoveries as EqSet
 import qualified Elea.Prelude as Prelude
 import qualified Elea.Monad.Env as Env
+import qualified Elea.Monad.Edd as Edd
+import qualified Elea.Monad.Definitions.Class as Defs
+import qualified Elea.Monad.Definitions.Database as Defs
 import qualified Control.Monad.Writer as Writer
 
 -- | A monad which ignores discoveries it is passed
@@ -37,20 +44,6 @@ instance MonadTrans IgnoreT where
 instance Tells Ignore where
   tell _ = return ()
 
-  
--- | A set of equations which have been discovered.
--- Its 'Monoid' instance is important, as this decides how equations subsume
--- or combine with each other. 
--- Right now I've given it a temporary trivial definition.
-newtype EquationSet
-  = EqSet { runEqSet :: [Equation] }
-  
-instance Monoid EquationSet where
-  mempty = EqSet []
-  mappend (EqSet es1) (EqSet es2) = 
-    EqSet (es1 ++ es2)
-    
-
 -- | A monad to record discoveries
 newtype ListenerT m a 
   = ListenerT { runListenerT :: WriterT EquationSet m a }
@@ -59,25 +52,57 @@ newtype ListenerT m a
 type Listener = ListenerT Identity
   
 listenerT :: Monad m => ListenerT m a -> m (a, [Equation])
-listenerT = liftM (second runEqSet) . runWriterT . runListenerT
+listenerT = liftM (second EqSet.toList) . runWriterT . runListenerT
 
 listener :: Listener a -> (a, [Equation])
 listener = runIdentity . listenerT
 
-traceT :: Monad m => ListenerT m a -> m a
-traceT run = do
-  (x, eqs) <- listenerT run
-  traceEqs eqs (return x)
+trace :: forall m a . (MonadState Defs.Database m, Env.Read m, Listens m) 
+  => m a -> m a
+trace run = do
+  (x, eqs) <- listen run
+  if null eqs
+  then return x
+  else id
+    . Edd.readonly
+    . Prelude.trace "[Discovered Equations]"
+    $ foldrM traceEq x eqs
   where
-  traceEqs eqs = Prelude.trace
-    $ "[Discovered Equations]\n\n" 
-    ++ intercalate "\n" (map show eqs)
-
-trace :: Listener a -> a
-trace = runIdentity . traceT
+  traceEq :: Equation -> a -> Redd a
+  traceEq eq x = do
+    eq_s <- showM eq
+    Prelude.trace ("\n" ++ eq_s) (return x)
+    
+mapListenerT :: Monad m 
+  => (m (a, EquationSet) -> n (b, EquationSet)) 
+  -> ListenerT m a -> ListenerT n b
+mapListenerT f = ListenerT . mapWriterT f . runListenerT
 
 instance Monad m => Tells (ListenerT m) where
-  tell eq = ListenerT (Writer.tell (EqSet [eq]))
+  tell = id
+    . ListenerT 
+    . Writer.tell 
+    . EqSet.singleton
   
 instance Monad m => Listens (ListenerT m) where
-  listen = ListenerT . liftM (second runEqSet) . Writer.listen . runListenerT
+  listen = id
+    . ListenerT 
+    . liftM (second EqSet.toList) 
+    . Writer.listen 
+    . runListenerT
+  
+instance Env.Write m => Env.Write (ListenerT m) where
+  bindAt at b = mapListenerT (Env.bindAt at b)
+  matched t w = mapListenerT (Env.matched t w)
+ 
+instance Env.Read m => Env.Read (ListenerT m) where
+  bindings = lift Env.bindings
+
+instance Defs.Read m => Defs.Read (ListenerT m) where
+  lookupTerm n = lift . Defs.lookupTerm n
+  lookupType n = lift . Defs.lookupType n
+  lookupName = lift . Defs.lookupName
+  
+instance Defs.Write m => Defs.Write (ListenerT m) where
+  defineTerm n = lift . Defs.defineTerm n
+  defineType n = lift . Defs.defineType n

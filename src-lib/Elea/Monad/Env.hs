@@ -353,7 +353,6 @@ instance Discovery.Tells m => Discovery.Tells (TrackMatches m) where
 
 instance Discovery.Listens m => Discovery.Listens (TrackMatches m) where
   listen = mapTrackMatches Discovery.listen
-  
 
 -- | Stores a list of terms structurally smaller than a given object.
 data Smaller a

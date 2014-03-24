@@ -2,7 +2,7 @@
 -- by name, and look them up later.
 module Elea.Monad.Definitions.Class
 (
-  Has, Read (..), Write (..),
+  Has, Read (..), Write (..)
 )
 where
 
@@ -31,7 +31,6 @@ class Monad m => Read m where
 class Monad m => Write m where
   defineTerm :: String -> Polymorphic Term -> m ()
   defineType :: String -> Polymorphic Ind -> m ()
-  
 
 instance Read m => Read (ReaderT r m) where
   lookupTerm n = lift . lookupTerm n

@@ -2,7 +2,7 @@
 module Elea.Monad.Discovery.Class
 (
   Tells (..), Listens (..), 
-  equals,
+  equals, equalsM,
 )
 where
 
@@ -15,13 +15,22 @@ import qualified Control.Monad.Writer as Writer
 class Monad m => Tells m where
   tell :: Equation -> m ()
   
+  tellAll :: [Equation] -> m ()
+  tellAll = mapM_ tell
+  
 class Tells m => Listens m where
   listen :: m a -> m (a, [Equation]) 
 
 equals :: (Env.Read m, Tells m) => Term -> Term -> m ()
 equals t1 t2 = do
   bs <- Env.bindings
-  tell (Equals "" bs t1 t2)
+  tell (Equals "" (reverse bs) t1 t2)
+  
+equalsM :: (Env.Read m, Tells m) => Term -> m Term -> m Term
+equalsM t1 mt2 = do
+  t2 <- mt2
+  equals t1 t2
+  return t2
 
 instance Tells m => Tells (MaybeT m) where
   tell = lift . tell
@@ -37,7 +46,4 @@ instance Tells m => Tells (ReaderT r m) where
   
 instance Listens m => Listens (ReaderT r m) where
   listen = mapReaderT listen
-
-
-  
 

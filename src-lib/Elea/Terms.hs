@@ -13,7 +13,7 @@ module Elea.Terms
   generaliseArgs,
   generaliseTerms,
   generaliseUninterpreted,
-  pair,
+  tuple,
   equation,
   isEquation,
   isFiniteMatch,
@@ -199,13 +199,13 @@ applyCase (Case ind cse_t alts) inner_t =
 -- | Generalise all the arguments of a term to fresh variables.
 -- The first argument of the inner computation to run will lift 
 -- indices by the number of new variables.
-generaliseArgs :: (Env.Read m, Defs.Read m, Substitutable a, Inner a ~ Term) =>
+generaliseArgs :: forall m a .
+    (Env.Read m, Defs.Read m, Substitutable a, Inner a ~ Term) =>
   Term -> (Indices.Shift -> Term -> m a) -> m a
 generaliseArgs (App func args) run = do
   -- Use the type of every arguments to generate bindings for our new 
   -- generalised variables.
-  arg_tys <- mapM Type.get args
-  let gen_bs = zipWith makeBind [0..] arg_tys
+  gen_bs <- mapM makeBind [0..length args - 1] 
         
   -- Run the inner computation
   done_t <- id
@@ -220,10 +220,13 @@ generaliseArgs (App func args) run = do
   where
   new_vars = map Var [0..length args - 1]
   
-  makeBind :: Int -> Type -> Bind
-  makeBind n ty = Bind name ty
-    where
-    name = show ty ++ "_" ++ show n
+  makeBind :: Int -> m Bind
+  makeBind n
+    | Var x <- args !! n = Env.boundAt x
+  makeBind n = do
+    ty <- Type.get (args !! n)
+    let name = "_" ++ show ty
+    return (Bind name ty)
   
   liftHere :: Indexed b => b -> b
   liftHere = Indices.liftMany (length args)
@@ -231,14 +234,14 @@ generaliseArgs (App func args) run = do
   
 -- | Like 'generaliseArgs' but generalises /every/ occurrence of a set of terms
 -- within another.
-generaliseTerms :: ( Env.Read m, Defs.Read m, ContainsTerms t
-                   , Substitutable a, Inner a ~ Term ) =>
+generaliseTerms :: forall m a t . 
+    ( Env.Read m, Defs.Read m, ContainsTerms t  
+    , Substitutable a, Inner a ~ Term ) =>
   Set Term -> t -> (Indices.Shift -> t -> m a) -> m a
 generaliseTerms (toList -> terms) target run
   | length terms == 0 = run id target
   | otherwise = do
-    term_tys <- mapM Type.get terms
-    let gen_bs = zipWith makeBind [0..] term_tys
+    gen_bs <- mapM makeBind [0..length terms - 1]
           
     -- Run the inner computation
     done_t <- id
@@ -260,10 +263,13 @@ generaliseTerms (toList -> terms) target run
     terms' = map liftHere terms
     new_vars = map Var [0..length terms - 1]
     
-  makeBind :: Int -> Type -> Bind
-  makeBind n ty = Bind name ty
-    where
-    name = show ty ++ "_" ++ show n
+  makeBind :: Int -> m Bind
+  makeBind n
+    | Var x <- terms !! n = Env.boundAt x
+  makeBind n = do
+    ty <- Type.get (terms !! n)
+    let name = "_" ++ show ty
+    return (Bind name ty)
   
   liftHere :: Indexed b => b -> b
   liftHere = Indices.liftMany (length terms)
@@ -282,15 +288,16 @@ generaliseUninterpreted target =
     functionCall _ = False
     
   
--- | Construct a pair of the two given terms. Needs to read the type of the
--- two terms so it can construct the appropriate cartesian product type for
+-- | Construct an n-tuple of the given terms. Needs to read the type of the
+-- terms so it can construct the appropriate n-tuple type for
 -- the constructor.
-pair :: (Defs.Read m, Env.Read m) => Term -> Term -> m Term
-pair left right = do
-  left_ty <- Type.get left
-  right_ty <- Type.get right
-  let pair_ind = Type.pair left_ty right_ty
-  return (app (Con pair_ind 0) [left, right])
+tuple :: (Defs.Read m, Env.Read m) => [Term]-> m Term
+tuple ts
+  | length ts > 1 = do
+    ind <- id
+      . liftM Type.tuple
+      $ mapM Type.get ts
+    return (app (Con ind 0) ts)
  
 equation :: (Defs.Read m, Env.Read m) => Term -> Term -> m Term
 equation left right = do

@@ -12,6 +12,7 @@ import Elea.Index
 import Elea.Term
 import Elea.Type
 import Elea.Context ( Context )
+import qualified Elea.Index as Indices
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Type as Type
 import qualified Elea.Context as Context
@@ -199,11 +200,18 @@ instance (Env.Read m, Defs.Read m) => ShowM m Equation where
       t1' <- showM t1
       t2' <- showM t2
       return 
-        $ "prop " ++ n 
-        ++ ": forall " ++ bs' ++ " -> "
-        ++ t1' ++ " = " ++ t2'
+        $ name_s ++ vars_s ++ t1' ++ "\n=\n" ++ t2'
     where
-    bs' = intercalate " " (map show bs)
+    free_vars = Indices.free t1 ++ Indices.free t2
+    useful_bs = map ((reverse bs !!) . enum) (toList free_vars)
+    bs_s = intercalate " " (map show useful_bs)
+    
+    vars_s | bs == [] = ""
+           | otherwise = "forall " ++ bs_s ++ " ->\n"
+    
+    name_s | n == "" = ""
+           | otherwise = "prop " ++ n ++ ": "
+         
     
 instance Show Equation where
   show = Defs.readEmpty . Env.emptyT . showM

@@ -1,5 +1,8 @@
 
-prop "prop 1": forall (n: nat) (xs: nlist) ->
+prop "prop 1": forall (n: nat) (xs: list<nat>) ->
+  append (take n xs) (drop n xs) = xs
+  
+prop "prop 2": forall (n: nat) (xs ys: list<nat>) ->
   append (take n xs) (drop n xs) = xs
   
 prop "prop 3": forall (n: nat) (xs ys: nlist) ->
@@ -28,3 +31,4 @@ prop "prop 47": forall (t: ntree) ->
 
 prop "prop 66": forall (p: nat -> bool) (xs: nlist) ->
   leq_nat (length (filter p xs)) (length xs)
+  

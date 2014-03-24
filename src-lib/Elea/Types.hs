@@ -5,6 +5,7 @@
 module Elea.Types
 (
   module Elea.Type,
+  Env,
   quickGet,
   get, check, checkStep, checkTrace,
 )
@@ -25,10 +26,11 @@ import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Failure.Class as Fail
 
-type TypingMonad m = (Err.Can m, Env.Read m, Defs.Read m)
+-- A synonym for the constraints required on a monad so it can type a term
+type Env m = (Defs.Read m, Env.Read m)
 
 -- | Return the type of a term. Assumes the term is well-typed.
-get :: (Defs.Read m, Env.Read m) => Term -> m Type
+get :: Env m => Term -> m Type
 get = Err.noneM . typeOf
 
 -- | Return the type of a term if it can be found without an environment.
@@ -46,16 +48,16 @@ quickGet (App f args) = id
 
 
 -- | Throws an error if a term is not correctly typed.
-check :: TypingMonad m => Term -> m ()
+check :: (Err.Can m, Env m) => Term -> m ()
 -- Call 'typeOf' and ignore the argument
 check = liftM (const ()) . typeOf
 
-checkTrace :: (Defs.Read m, Env.Read m) => Term -> m a -> m a
+checkTrace :: Env m => Term -> m a -> m a
 checkTrace term m = Err.noneM (check term) >> m
 
 -- | Wrap this around a term transformation step @Term -> m Term@
 -- to add a check that the step preserves the type of the term.
-checkStep :: forall m . (Defs.Read m, Env.Read m, Fail.Can m) => 
+checkStep :: forall m . Env m => 
   (Term -> m Term) -> Term -> m Term
 checkStep step term = do
   result <- step term
@@ -82,7 +84,7 @@ checkStep step term = do
 -- | Returns the type of a given 'Term',
 -- within a readable type environment.
 -- Can throw type checking errors.
-typeOf :: TypingMonad m => Term -> m Type  
+typeOf :: (Err.Can m, Env m) => Term -> m Type  
 typeOf term = id
   . Err.augmentM (termErr term)
   . Fold.paraM doBoth
@@ -90,7 +92,7 @@ typeOf term = id
   where
   -- This is added to the existing error 
   -- if a type checking error is thrown.
-  termErr :: TypingMonad m => Term -> m Err.Err
+  termErr :: (Err.Can m, Env m) => Term -> m Err.Err
   termErr t = do
     t_s <- showM t
     bs <- Env.bindings
@@ -102,7 +104,7 @@ typeOf term = id
       ++ "] \n\nWithin environment \n[" ++ bs_s ++ "]\n"
       
   -- Check the term for type errors, then return the type.
-  doBoth :: TypingMonad m => Term' (Type, Term) -> m Type
+  doBoth :: (Err.Can m, Env m) => Term' (Type, Term) -> m Type
   doBoth ft = 
     Err.augmentM (termErr $ Fold.recover ft)
       $ fcheck ft >> ftype ft
@@ -114,7 +116,7 @@ typeOf term = id
   -- Checks the term for any type errors.
   -- Is combined with 'ftype' in 'doBoth'
   -- to get the full monadic Term'-algebra for typing.
-  fcheck :: TypingMonad m => Term' (Type, Term) -> m ()
+  fcheck :: (Err.Can m, Env m) => Term' (Type, Term) -> m ()
 
   -- Check that a variable has a type in the environment
   fcheck (Var' idx)
@@ -181,7 +183,7 @@ typeOf term = id
  
   
   -- | Returns the type of a term, given the type of its subterms.
-  ftype :: TypingMonad m => Term' (Type, Term) -> m Type
+  ftype :: (Err.Can m, Env m) => Term' (Type, Term) -> m Type
   ftype (Absurd' ty) =
     return ty
   ftype (Var' idx) =

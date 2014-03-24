@@ -1,7 +1,14 @@
 
 ind unit = Unit
 
+let fst<A, B> = 
+  fun (p: (A, B)) -> 
+  assert (x, y) <- p in x
 
+let snd<A, B> = 
+  fun (p: (A, B)) -> 
+  assert (x, y) <- p in y
+  
 /* Booleans */ 
 
 ind bool = True | False
@@ -31,8 +38,8 @@ let eq_nat =
   match x with
   | 0 ->
     match y with
-    | 0 -> True
     | Suc y' -> False
+    | 0 -> True
     end
   | Suc x' ->
     match y with
@@ -163,6 +170,17 @@ let map<A, B> =
   match xs with
   | Nil -> Nil<B>
   | Cons y ys -> Cons<B> (f y) (map ys)
+  end
+  
+let zip<A, B> =
+  fix (zip: list<A> -> list<B> -> list<(A, B)>) (xs: list<A>) (ys: list<B>) ->
+  match xs with 
+  | Nil -> Nil<(A, B)>
+  | Cons x xs ->
+    match ys with
+    | Nil -> Nil<(A, B)>
+    | Cons y ys -> Cons<(A, B)> (x, y) (zip xs ys)
+    end
   end
     
 let elem_nat =
