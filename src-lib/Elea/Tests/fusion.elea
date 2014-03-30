@@ -109,14 +109,20 @@ prop "take append"<A>: forall (n: nat) (xs ys: list<A>) ->
   take<A> n (append<A> xs ys) 
   = append<A> (take<A> n xs) (take<A> (minus n (length<A> xs)) ys)
  
+  /*
 prop "take drop"<A>: forall (n m: nat) (xs: list<A>) ->
-  take<A> n (drop<A> m xs) 
+  take<A> n (drop <A> m xs)
   = drop<A> m (take<A> (add n m) xs)
+  */
   
 prop "take zip"<A, B>: forall (n: nat) (xs: list<A>) (ys: list<B>) ->
   take<(A, B)> n (zip<A, B> xs ys) 
   = zip<A, B> (take<A> n xs) (take<B> n ys)
 
+prop "sorted flatten": forall (t: tree<nat>) ->
+  is_sorted (flatten<nat> t)
+  
+  
   /*
 prop "height mirror" <A>: forall (t: tree<A>) ->
   height<A> (mirror<A> t) = height<A> t

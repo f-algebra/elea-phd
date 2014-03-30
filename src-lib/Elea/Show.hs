@@ -223,4 +223,7 @@ instance ShowM m a => ShowM m (Set a) where
  
 instance ShowM m a => ShowM m (Map a a) where
   showM = showM . Map.toList
+  
+instance ShowM m a => ShowM m (Maybe a) where
+  showM = liftM show . mapM showM
       

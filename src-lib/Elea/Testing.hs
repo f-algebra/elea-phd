@@ -18,6 +18,7 @@ import Elea.Term
 import Elea.Type
 import Elea.Show
 import Elea.Monad.Edd ( Edd )
+-- import qualified Elea.Parser.Haskell as Haskell
 import qualified Elea.Monad.Edd as Edd
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Parser as Parse

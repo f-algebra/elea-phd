@@ -34,9 +34,6 @@ import qualified Data.Monoid as Monoid
 
 type FusionM m = (Defs.Read m, Env.Read m, Discovery.Tells m)
  
-{-# SPECIALISE run :: Term -> Edd Term #-}
-{-# SPECIALISE run :: Term -> Redd Term #-}
-
 run :: FusionM m => Term -> m Term
 run = runSteps (fission_steps ++ fusion_steps)
   where
@@ -48,7 +45,7 @@ run = runSteps (fission_steps ++ fusion_steps)
     , mapMaybeT Env.trackMatches . Fold.rewriteOnceM matchFix
     ]
    
-  fission_steps = 
+  fission_steps =
     map Fold.rewriteOnceM Fission.steps
     
     
@@ -74,7 +71,7 @@ runSteps steps term = do
       ts'' <- showM term''
       ts' <- showM term'
       id
-      --  . trace ("\nMAIN LOOP FROM: " ++ ts' ++ "\nINTO: " ++ ts'')
+     --   . trace ("\nMAIN LOOP FROM: " ++ ts' ++ "\nINTO: " ++ ts'')
         $ run term''
 
 
@@ -397,18 +394,16 @@ decreasingFreeVars orig_t@(App fix@(Fix {}) orig_args) = do
         -- generaliseArgs call
         let term' = Simp.removeConstArgs (App fix args)
         
-        -- Recursively run fixpoint fusion with all arguments generalised
-        fused <- Term.generaliseArgs term' (\_ -> run)
+        -- Run fixpoint fission with all arguments generalised
+        fissioned <- Term.generaliseArgs term' (\_ -> Fission.run)
         
-        -- Undo the above replacement of the fix variable with the fixpoint
-        replaced <- Fold.rewriteM replace fused
+        -- Undo the above replacement of the fix variable with the fixpoint.
+        -- Use rewriteM' to check whether the replacement was ever applied
+        -- as it will return 'Nothing' if it never was.
+        mby_replaced <- runMaybeT (Fold.rewriteM' replace fissioned)
 
-        -- Make sure that we actually succeeded in the above step
-        -- otherwise this fusion step will always trivially succeed
-        -- at it just strips out every fix variable
-        if fix_f `Indices.freeWithin` replaced
-        then return replaced
-        else return term
+        -- If replacement failed, just return the original term.
+        return (fromMaybe term mby_replaced)
       where
       -- Replace the fixpoint term with the fix variable
       -- if we can properly match it to the original fixpoint

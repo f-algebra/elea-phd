@@ -60,7 +60,7 @@ prove simplify t1 t2 = do
   
   eq <- id
     -- debug
-  --  . trace s1
+   -- . trace s1
     $ equal t1' t2'
   resultToBool eq
   where 
@@ -103,12 +103,12 @@ prove simplify t1 t2 = do
     then do
       eq_s <- showM rewr_eq
       id
-      --  . trace ("\n[prove eq] failed on: " ++ eq_s) 
+        -- . trace ("\n[prove eq] failed on: " ++ eq_s) 
         $ return Unknown
     else do
       eq_s <- showM rewr_eq
       id
-    --    . trace ("\n[prove eq] checking: "++ eq_s) 
+       -- . trace ("\n[prove eq] checking: "++ eq_s) 
         $ Fold.foldM solveEquation rewr_eq
     where
     args1' = Indices.lift args1

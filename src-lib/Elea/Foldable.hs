@@ -7,6 +7,7 @@ module Elea.Foldable
   isoFindM, isoAnyM, isoAllM, isoRewriteOnceM, isoFoldM,
   isoRewrite, isoTransform, isoFind, isoRewriteM',
   rewriteM, foldM, rewriteOnceM, collectM, isoCollectM,
+  rewriteM',
   allM, findM, anyM, any, all, isoFold, isoAny, isoAll, find,
   collect, count,
   transform, rewrite, recover,
@@ -97,6 +98,10 @@ isoRewriteM' iso f x = do
 rewriteM :: TransformableM m t =>
   (t -> MaybeT m t) -> t -> m t
 rewriteM = isoRewriteM id
+
+rewriteM' :: (Monad m, TransformableM (WriterT Monoid.Any m) t) =>
+  (t -> MaybeT m t) -> t -> MaybeT m t
+rewriteM' = isoRewriteM' id
 
 type WriterTransformableM w m t = 
   (Monad m, Monoid w, TransformableM (WriterT w m) t)

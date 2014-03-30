@@ -60,7 +60,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   
   simplified_t <- id
     -- DEBUG
-  -- . trace s1
+   . trace s1
   
     -- After simplification we replace all of the free
     -- variables within the term with fresh new ones,
@@ -141,9 +141,9 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   Fail.unless                                                      
     -- DEBUG
   --  . trace s3
-    . trace (s1 ++ s2 ++ s3)
+   -- . trace (s1 ++ s2 ++ s3)
     $ rem_rc == 0 
- --   || new_rc >= old_rc
+    || new_rc >= old_rc
     
     -- Couple of extra ad hoc reasons fusion would have succeeded.
     -- Trivially sound and terminating so why not.
@@ -154,7 +154,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   final_s <- showM new_term
   let s4 = "\nDONE:\n" ++ final_s
   return   
-     . trace s4 
+   --  . trace s4 
     $ new_term
   
   where
