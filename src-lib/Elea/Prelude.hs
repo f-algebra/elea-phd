@@ -58,7 +58,7 @@ module Elea.Prelude
   insertAt, enum, indent, indentBy, debugNth,
   arrowSum, supremum, (|>), ($>), replaceAt,
   Maximum (..), Minimum (..), sconcatMap,
-  intersects, length, liftMaybe, maybeT
+  intersects, length, liftMaybe, maybeT, nth
 )
 where
 
@@ -101,7 +101,7 @@ import Data.Monoid hiding ( Sum, All, (<>) )
 import Data.Semigroup ( Semigroup (..) )
 import Data.Map.Strict ( Map )
 import Data.Sequence ( Seq )
-import Data.Set ( Set )
+import Data.Set ( Set, (\\) )
 import qualified Data.Set as Set
 import Data.IntSet ( IntSet )
 import Data.Traversable
@@ -109,7 +109,7 @@ import Data.Foldable hiding ( concat, concatMap )
 import Data.List ( intersperse, unfoldr, partition,
   isPrefixOf, isSuffixOf, isInfixOf, sort, sortBy, findIndex,
   delete, elemIndices, intersect, union, transpose, groupBy,
-  (\\), subsequences, isSuffixOf, deleteBy, findIndices, elemIndex )
+  subsequences, isSuffixOf, deleteBy, findIndices, elemIndex )
 import Data.IORef
 import Data.Char ( isAlpha, isDigit, isAlphaNum, isSpace, chr, ord )
 import Data.IntMap ( IntMap )
@@ -359,6 +359,9 @@ debugNth :: String -> [a] -> Int -> a
 debugNth msg xs n 
   | length xs <= n = error msg
   | otherwise = xs !! n
+  
+nth :: [a] -> Int -> a
+nth = debugNth "Index too large"
   
 arrowSum :: MonadPlus m => [a -> m b] -> a -> m b
 arrowSum ms x = msum (map ($ x) ms)

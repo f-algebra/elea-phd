@@ -12,16 +12,18 @@ import Elea.Show ( showM )
 import qualified Elea.Terms as Term
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Context as Context
-import qualified Elea.Unifier as Unifier
+import qualified Elea.Unification as Unifier
 import qualified Elea.Testing as Test
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Monad.Definitions.Class as Defs
+import qualified Elea.Monad.Fusion.Class as Fusion
 import qualified Elea.Fixpoint as Fix
 import qualified Elea.Inventor as Invent
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Data.Set as Set
 
-testFixFix :: forall m . (Defs.Read m, Env.Read m) => Term -> m Test.Test
+testFixFix :: forall m . (Defs.Read m, Env.Read m, Fusion.Memo m)
+  => Term -> m Test.Test
 testFixFix term =
   Env.bindMany bs (fixFix inner_t)
   where

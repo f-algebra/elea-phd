@@ -89,6 +89,7 @@ fromMaybe :: Can m => Maybe a -> m a
 fromMaybe Nothing = here
 fromMaybe (Just x) = return x
 
+
 -- | Pick a non failing instance. If none exists then fail.
 choose :: (Can m, Foldable f) => f (m a) -> m a
 choose = join . liftM fromMaybe . firstM . map catch . toList

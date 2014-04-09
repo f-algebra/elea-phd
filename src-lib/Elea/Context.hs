@@ -15,7 +15,7 @@ import qualified Elea.Index as Indices
 import qualified Elea.Type as Type
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Foldable as Fold
-import qualified Elea.Unifier as Unifier
+import qualified Elea.Unification as Unifier
 import qualified Elea.Index as Indices
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Control.Monad.Trans as Trans

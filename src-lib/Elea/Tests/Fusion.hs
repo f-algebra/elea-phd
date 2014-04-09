@@ -7,7 +7,6 @@ where
 import Prelude()
 import Elea.Prelude
 import Elea.Term
-import qualified Elea.Monad.Edd as Edd
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Testing as Test

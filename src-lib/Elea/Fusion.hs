@@ -10,7 +10,6 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
 import Elea.Show ( showM )
-import Elea.Monad.Edd ( Edd, Redd )
 import qualified Elea.Fixpoint as Fix
 import qualified Elea.Inventor as Invent
 import qualified Elea.Constraint as Constraint
@@ -20,22 +19,23 @@ import qualified Elea.Monad.Env as Env
 import qualified Elea.Terms as Term
 import qualified Elea.Types as Type
 import qualified Elea.Context as Context
-import qualified Elea.Unifier as Unifier
+import qualified Elea.Unification as Unifier
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Fission as Fission
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Discovery.Class as Discovery
+import qualified Elea.Monad.Fusion.Class as Fusion
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
 
-type FusionM m = (Defs.Read m, Env.Read m, Discovery.Tells m)
+type FusionM m = (Defs.Read m, Env.Read m, Discovery.Tells m, Fusion.Memo m)
  
 run :: FusionM m => Term -> m Term
-run = runSteps (fission_steps ++ fusion_steps)
+run = runSteps (map Type.checkStep (fission_steps ++ fusion_steps))
   where
   fusion_steps =
     [ const Fail.here
@@ -89,7 +89,7 @@ fixfix oterm@(App ofix@(Fix {}) oargs)
       . Fail.choose
       -- Run fixfixArg on every decreasing fixpoint argument position
       . map fixfixArg
-      . filter (Term.isFix . Term.leftmost . (oargs !!))
+      . filter (Term.isFix . Term.leftmost . (oargs `nth`))
       $ Term.decreasingArgs ofix
   where
   -- Run fixfix fusion on the argument at the given position
@@ -103,7 +103,7 @@ fixfix oterm@(App ofix@(Fix {}) oargs)
       -- Generalise the arguments of the inner fixpoint
       Term.generaliseArgs ifix_t innerGeneralised 
       where
-      ifix_t = shiftOuter (oargs !! arg_i)
+      ifix_t = shiftOuter (oargs `nth` arg_i)
       
       innerGeneralised :: Indices.Shift -> Term -> m Term
       innerGeneralised shiftInner (App ifix iargs) = do 
@@ -205,9 +205,9 @@ repeatedArg fix_t@(App fix@(Fix {}) args)
     -- We only care about ones with at least a single repetition
     . filter ((> 1) . length)
     -- Group up all decreasing arguments which are equal
-    . groupBy ((==) `on` (args !!))
+    . groupBy ((==) `on` (args `nth`))
     -- We only care about variable arguments
-    . filter (Term.isVar . (args !!))
+    . filter (Term.isVar . (args `nth`))
     $ Term.decreasingArgs fix
   where
   fuseRepeated :: [Int] -> m Term
@@ -224,7 +224,7 @@ repeatedArg fix_t@(App fix@(Fix {}) args)
       mkCtx gap_f = App gap_f args''  
         where
         -- Take the argument we are repeating from the newly generalised ones.
-        rep_arg = args' !! head arg_is
+        rep_arg = args' `nth` head arg_is
         
         -- Replace every argument position from the list 
         -- of repeated args 'arg_is' with the same variable.
@@ -354,7 +354,7 @@ decreasingFreeVars orig_t@(App fix@(Fix {}) orig_args) = do
   dec_free_args = filter isFreeVar (Term.decreasingArgs fix)
     where
     isFreeVar arg_i 
-      | Var x <- orig_args !! arg_i =
+      | Var x <- orig_args `nth` arg_i =
         x `Indices.freeWithin` fix
     isFreeVar _ = False
   
@@ -366,16 +366,22 @@ decreasingFreeVars orig_t@(App fix@(Fix {}) orig_args) = do
     free_vars = id
       . shiftVars
       . map Term.fromVar 
-      . map (orig_args !!) 
+      . map (orig_args `nth`) 
       $ dec_free_args
     
     ctx = Context.make (\t -> app t args')
       where
-      -- The list of arguments with matching variables set
-      args' = map Var free_vars ++ foldr setArg args dec_free_args
+      -- The list of arguments with matching variables set.
+      -- First we take the expressed free variables, then we append to that the
+      -- original arguments (which will now be generalised) but make sure the 
+      -- ones that originally matched a free variable are set to still match.
+      args' = map Var free_vars 
+        ++ foldr setArg args (dec_free_args `zip` free_vars)
         where
-        setArg :: Int -> [Term] -> [Term]
-        setArg i = setAt i (Var (free_vars !! i))
+        -- Set the given argument position to the given free variable
+        -- in a list of argument terms
+        setArg :: (Int, Index) -> [Term] -> [Term]
+        setArg (i, free_var) = setAt i (Var free_var)
       
   simplify :: forall m . FusionM m => Term -> Term -> m Term
   simplify (Indices.lift -> fix) = id

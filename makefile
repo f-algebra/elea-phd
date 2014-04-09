@@ -8,7 +8,7 @@ ghci:
 	ghci -fobject-code $(FLAGS) $(EXTS) $(MAIN)
 
 happy:
-	happy src-lib/Elea/Parser.y -o src-lib/Elea/Parser.hs
+	happy src-lib/Elea/Parser/Calculus.y -o src-lib/Elea/Parser/Calculus.hs
 
 clean:
 	rm -rf obj/

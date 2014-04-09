@@ -18,12 +18,10 @@ import Elea.Prelude hiding ( tell, listen, trace )
 import Elea.Term
 import Elea.Show
 import Elea.Monad.Discovery.Class
-import Elea.Monad.Edd ( Edd, Redd )
 import Elea.Discoveries ( EquationSet )
 import qualified Elea.Discoveries as EqSet
 import qualified Elea.Prelude as Prelude
 import qualified Elea.Monad.Env as Env
-import qualified Elea.Monad.Edd as Edd
 import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Definitions.Database as Defs
 import qualified Control.Monad.Writer as Writer
@@ -57,18 +55,17 @@ listenerT = liftM (second EqSet.toList) . runWriterT . runListenerT
 listener :: Listener a -> (a, [Equation])
 listener = runIdentity . listenerT
 
-trace :: forall m a . (MonadState Defs.Database m, Env.Read m, Listens m) 
+trace :: forall m a . (Defs.Read m, Env.Read m, Listens m) 
   => m a -> m a
 trace run = do
   (x, eqs) <- listen run
   if null eqs
   then return x
   else id
-    . Edd.readonly
     . Prelude.trace "[Discovered Equations]"
     $ foldrM traceEq x eqs
   where
-  traceEq :: Equation -> a -> Redd a
+  traceEq :: Equation -> a -> m a
   traceEq eq x = do
     eq_s <- showM eq
     Prelude.trace ("\n" ++ eq_s) (return x)

@@ -37,7 +37,7 @@ import qualified Elea.Types as Type
 import qualified Elea.Index as Indices
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Context as Context
-import qualified Elea.Unifier as Unifier
+import qualified Elea.Unification as Unifier
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
@@ -171,7 +171,7 @@ decreasingArgs (Fix _ fix_b fix_t) =
       fix_f <- Trans.lift Env.tracked
       if fix_f /= f || arg_i >= length args
       then return True
-      else Env.isSmaller (args !! arg_i)
+      else Env.isSmaller (args `nth` arg_i)
     decreasing _ = 
       return True
       
@@ -222,9 +222,9 @@ generaliseArgs (App func args) run = do
   
   makeBind :: Int -> m Bind
   makeBind n
-    | Var x <- args !! n = Env.boundAt x
+    | Var x <- args `nth` n = Env.boundAt x
   makeBind n = do
-    ty <- Type.get (args !! n)
+    ty <- Type.get (args `nth` n)
     let name = "_" ++ show ty
     return (Bind name ty)
   
@@ -265,9 +265,9 @@ generaliseTerms (toList -> terms) target run
     
   makeBind :: Int -> m Bind
   makeBind n
-    | Var x <- terms !! n = Env.boundAt x
+    | Var x <- terms `nth` n = Env.boundAt x
   makeBind n = do
-    ty <- Type.get (terms !! n)
+    ty <- Type.get (terms `nth` n)
     let name = "_" ++ show ty
     return (Bind name ty)
   

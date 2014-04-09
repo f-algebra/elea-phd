@@ -42,10 +42,13 @@ import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 import qualified Data.Map as Map
+import qualified Algebra.Lattice as Algebra
 
 -- | The simply typed lambda calculus
 data Term
-  = Var     { varIndex :: !Index }
+  = Absurd  { resultType :: !Type } 
+  
+  | Var     { varIndex :: !Index }
 
   | App     !Term ![Term]
 
@@ -62,8 +65,6 @@ data Term
   | Case    { caseInd :: !Type.Ind
             , inner :: !Term
             , alts :: ![Alt] }
-
-  | Absurd  { resultType :: !Type }
   deriving ( Eq, Ord )
 
 data Alt
@@ -108,13 +109,13 @@ data Equation
 type instance Fold.Base Term = Term'
 
 data Term' a 
-  = Var' !Index
+  = Absurd' !Type
+  | Var' !Index
   | App' a [a]
   | Lam' !Bind a
   | Fix' !FixInfo !Bind a
   | Con' !Type.Ind !Nat
   | Case' !Type.Ind a ![Alt' a]
-  | Absurd' !Type
   deriving ( Functor, Foldable, Traversable )
   
 data Alt' a
@@ -183,6 +184,12 @@ instance Zip Term' where
   zip (Absurd' ty) (Absurd' _) = Absurd' ty
   zip (Case' ind t alts) (Case' _ t' alts') =
     Case' ind (t, t') (zipWith zip alts alts')
+    
+instance Algebra.JoinSemiLattice Term where
+  join = min
+  
+instance Algebra.BoundedJoinSemiLattice Term where
+  bottom = Absurd Algebra.bottom
   
 
 -- * Some generally helpful functions
@@ -274,7 +281,7 @@ altPattern ty@(Type.Ind _ cons) n = id
   arg_count = id
     . length
     . snd
-    $ cons !! fromEnum n
+    $ cons `nth` fromEnum n
     
     
 -- | Whether a term contains a finite amount of information, from a
@@ -284,7 +291,7 @@ isFinite :: Term -> Bool
 isFinite (Con {}) = True
 isFinite (App (Con ind n) args) = id
   . all isFinite 
-  . map (args !!)
+  . map (args `nth`)
   $ Type.recursiveArgs ind n
 isFinite _ = False
 
@@ -418,7 +425,7 @@ buildEq ind@(Ind _ cons) =
     . unflattenLam arg_bs
     $ Case ind (Var 0) alts
     where
-    (_, con_args) = cons !! case_n
+    (_, con_args) = cons `nth` case_n
     
     arg_bs = id
       . map (Bind "y")
@@ -433,7 +440,7 @@ buildEq ind@(Ind _ cons) =
       makeAlt match_n = 
         Alt alt_bs alt_t
         where
-        match_con_args = snd (cons !! match_n)
+        match_con_args = snd (cons `nth` match_n)
         
         alt_bs = map getArgBs match_con_args
           where

@@ -45,7 +45,7 @@ instance Show (Term' (String, Term)) where
     | [(Bind con_name _, Alt' bs (alt_t, _))] <- non_absurd_alts =
       let pat_s = intercalate " " ([con_name] ++ map show bs) in
       "\nassert " ++ pat_s ++ " <- " ++ cse_t ++ " in " ++ alt_t
-    where                              
+    where                    
     non_absurd_alts :: [(Bind, Alt' (String, Term))]
     non_absurd_alts = id
       . filter (not . isAbsurd . snd . get altInner' . snd) 
@@ -81,7 +81,7 @@ instance Show (Term' String) where
     "\nfun " ++ b ++ " -> " ++ t
   show (Con' (Type.Ind _ cons) idx) = id
     . assert (length cons > idx)
-    $ fst (cons !! fromEnum idx)
+    $ fst (nth cons (enum idx))
   show (Case' (Type.unfold -> cons) cse_t f_alts) =
       "\nmatch " ++ cse_t ++ " with"
     ++ concat alts_s
@@ -177,7 +177,7 @@ instance (Env.Read m, Defs.Read m) => ShowM m Constraint where
     term_s <- showM term
     return (con_name ++ " <- " ++ term_s)
     where
-    con_name = fst (cons !! enum con_n)
+    con_name = fst (nth cons (enum con_n))
     
 instance Show Constraint where
   show = Defs.readEmpty . Env.emptyT . showM
@@ -203,7 +203,7 @@ instance (Env.Read m, Defs.Read m) => ShowM m Equation where
         $ name_s ++ vars_s ++ t1' ++ "\n=\n" ++ t2'
     where
     free_vars = Indices.free t1 ++ Indices.free t2
-    useful_bs = map ((reverse bs !!) . enum) (toList free_vars)
+    useful_bs = map ((reverse bs `nth`) . enum) (toList free_vars)
     bs_s = intercalate " " (map show useful_bs)
     
     vars_s | bs == [] = ""

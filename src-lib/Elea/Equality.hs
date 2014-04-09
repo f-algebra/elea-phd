@@ -10,7 +10,7 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Show
 import qualified Elea.Index as Indices
-import qualified Elea.Unifier as Unifier
+import qualified Elea.Unification as Unifier
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Terms as Term
 import qualified Elea.Types as Type

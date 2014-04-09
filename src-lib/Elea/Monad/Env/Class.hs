@@ -20,7 +20,7 @@ import Prelude ()
 import Elea.Prelude
 import Elea.Index
 import Elea.Term
-import Elea.Unifier ( Unifier )
+import Elea.Unification ( Unifier )
 import qualified Elea.Type as Type
 import qualified Elea.Index as Indices
 import qualified Elea.Monad.Failure.Class as Fail
@@ -58,7 +58,7 @@ boundAt at = do
   then error $ "Cannot retrieve the binding for index " ++ show at
     ++ " in an environment with only " ++ show (length bs :: Int) 
     ++ " bindings."
-  else return (bs !! enum at)
+  else return (nth bs (enum at))
   
 -- | Returns the number of indices that have been bound.
 bindingDepth :: Read m => m Int

@@ -16,10 +16,11 @@ import Prelude ()
 import Elea.Prelude
 import Elea.Term
 import Elea.Type ( Polymorphic, Ind (..) )
-import Elea.Unifier ( Unifier )
+import Elea.Unification ( Unifier )
+import qualified Elea.Unification.Map as UMap
 import qualified Elea.Type as Type
 import qualified Elea.Index as Indices
-import qualified Elea.Unifier as Unifier
+import qualified Elea.Unification as Unifier
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Data.Map as Map
@@ -29,12 +30,12 @@ import qualified Control.Monad.State.Class as State
 data Database
   = Database { _dbTerms :: !(Map String (Polymorphic Term))
              , _dbTypes :: !(Map String (Polymorphic Ind))
-             , _dbTermNames :: ![(Term, String)] }
+             , _dbTermNames :: !(UMap.UMap Term String) }
 
 mkLabels [ ''Database ]
 
 empty :: Database
-empty = Database mempty mempty mempty
+empty = Database mempty mempty UMap.empty
     
 putType :: String -> Polymorphic Ind -> Database -> Database
 putType name ty =
@@ -47,8 +48,8 @@ getType name ty_args db = do
              
 putTerm :: String -> Polymorphic Term -> Database -> Database
 putTerm name pterm
-  | (not . Set.null . Indices.free) pterm =
-    error "Cannot define term containing free variables."
+ -- | (not . Set.null . Indices.free) pterm =
+   -- error "Cannot define term containing free variables."
   | otherwise =
     modify dbTerms (Map.insert name pterm)   
     
@@ -56,8 +57,8 @@ getName :: Fail.Can m => Term -> Database -> m (String, [Term])
 getName (Lam {}) _ = Fail.here
 getName term _ 
   | (not . isFix . leftmost) term = Fail.here
-getName term (get dbTermNames -> name_list) = do
-  (uni, name) <- Fail.choose (map unifiable name_list)
+getName term (get dbTermNames -> name_map) = do
+  (uni, name) <- UMap.lookup term' name_map
   
   -- Every free variable needs to have been bound, so we just check the 
   -- sorted list of indices is equal to the list of all indices
@@ -78,10 +79,6 @@ getName term (get dbTermNames -> name_list) = do
   large_number = 100000
   term' = Indices.liftMany large_number term
   
-  unifiable :: Fail.Can m => (Term, String) -> m (Unifier Term, String)
-  unifiable (inner_term, name) = do
-    uni <- Unifier.find inner_term term'
-    return (uni, name)
     
 getTerm :: (Show Term, Fail.Can m) 
   => String -> [Type] -> Database -> m (Term, Database)
@@ -96,7 +93,7 @@ getTerm name ty_args db = do
     modify dbTermNames addName
     where
     addName
-      | (isFix . leftmost) inner_term = (++ [(inner_term, name')]) 
+      | (isFix . leftmost) inner_term = UMap.insert inner_term name' 
       | otherwise = id
       
     (_, inner_term) = flattenLam term

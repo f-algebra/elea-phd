@@ -25,6 +25,7 @@ import Elea.Prelude
 import Elea.Index
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Failure.Class as Fail
+import qualified Algebra.Lattice as Algebra
 
 -- | An argument to a constructor.
 data ConArg 
@@ -113,6 +114,20 @@ instance Fold.Unfoldable Type where
   
   
 mkLabels [ ''Bind, ''Ind ]
+
+
+instance Algebra.JoinSemiLattice Type where
+  join = min
+  
+instance Algebra.BoundedJoinSemiLattice Type where
+  bottom = Base Algebra.bottom
+  
+instance Algebra.JoinSemiLattice Ind where
+  join = min
+  
+instance Algebra.BoundedJoinSemiLattice Ind where
+  bottom = empty
+
 
 -- | Anything that contains types. Will only apply the function to the very
 -- top level types within something. Does not recurse into types themselves,
@@ -230,7 +245,7 @@ recursiveArgs (Ind _ cons) n = id
   . assert (length cons > n)
   $ findIndices (== IndVar) con_args
   where
-  (_, con_args) = cons !! enum n
+  (_, con_args) = cons `nth` enum n
 
 -- | Return the de-Bruijn indices that will be bound to the recursive arguments
 -- of a given constructor within a pattern match. 
@@ -246,7 +261,7 @@ recursiveArgIndices ind@(Ind _ cons) n = id
   $ recursiveArgs ind n
   where
   -- The number of arguments this constructor has
-  arg_count = length (snd (cons !! enum n))
+  arg_count = length (snd (cons `nth` enum n))
   
 -- | Returns the opposite indices to 'recursiveArgs'
 nonRecursiveArgs :: Ind -> Nat -> [Int]
@@ -254,7 +269,7 @@ nonRecursiveArgs (Ind _ cons) n = id
   . assert (length cons > n)
   $ findIndices (/= IndVar) con_args
   where
-  (_, con_args) = cons !! enum n
+  (_, con_args) = cons `nth` enum n
   
 -- | For a given inductive type, return whether the constructor at that 
 -- index is a base case.
@@ -276,7 +291,7 @@ makeAltBindings :: Ind -> Nat -> [Bind]
 makeAltBindings ind con_n =
   zipWith Bind arg_names arg_tys
   where
-  Bind _ con_ty = unfold ind !! enum con_n
+  Bind _ con_ty = unfold ind `nth` enum con_n
   arg_tys = init (flatten con_ty)
   arg_names = map (\n -> "B" ++ show n) [0..]
   
@@ -331,7 +346,7 @@ monomorphic args poly@(Poly _ t) =
   mapTypes (Fold.transform applyArgs) t
   where
   applyArgs (Base (Ind ('$':idx) [])) = 
-    args !! read idx
+    args `nth` read idx
   applyArgs other = other
   
 -- | Make a monomorphic instance of a polymorphic object using uninterpreted

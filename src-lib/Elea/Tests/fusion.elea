@@ -119,9 +119,10 @@ prop "take zip"<A, B>: forall (n: nat) (xs: list<A>) (ys: list<B>) ->
   take<(A, B)> n (zip<A, B> xs ys) 
   = zip<A, B> (take<A> n xs) (take<B> n ys)
 
-prop "sorted flatten": forall (t: tree<nat>) ->
-  is_sorted (flatten<nat> t)
   
+prop "sorted flatten": forall (t: tree<nat>) (n: nat) ->
+  is_sorted (flatten<nat> (tree_insert n t))
+
   
   /*
 prop "height mirror" <A>: forall (t: tree<A>) ->

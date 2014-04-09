@@ -9,6 +9,7 @@ module Elea.Testing
   simplifiedTerm,
   assertProvablyEq,
   assertTermEq,
+  localVars,
 ) 
 where
 
@@ -17,11 +18,11 @@ import Elea.Prelude hiding ( assert )
 import Elea.Term
 import Elea.Type
 import Elea.Show
-import Elea.Monad.Edd ( Edd )
+import Elea.Monad.Fedd ( Fedd )
 -- import qualified Elea.Parser.Haskell as Haskell
-import qualified Elea.Monad.Edd as Edd
+import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Monad.Env as Env
-import qualified Elea.Parser as Parse
+import qualified Elea.Parser.Calculus as Parse
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Equality as Equality
 import qualified Elea.Fusion as Fusion
@@ -31,7 +32,7 @@ import qualified Elea.Monad.Error.Class as Err
 import qualified Test.HUnit as HUnit
 
 type Test = HUnit.Test
-type M = Edd
+type M = Fedd
 
 execute :: Test -> IO ()
 execute test = do
@@ -44,8 +45,8 @@ list = HUnit.TestList
 label :: String -> Test -> Test
 label = HUnit.TestLabel
 
-run :: HUnit.Testable t => Edd t -> Test
-run = HUnit.test . Edd.eval . Discovery.trace
+run :: HUnit.Testable t => Fedd t -> Test
+run = HUnit.test . Fedd.eval . Discovery.trace
 
 assert :: HUnit.Assertable t => t -> Test
 assert = HUnit.TestCase . HUnit.assert
@@ -98,12 +99,22 @@ assertTermEq t1 t2 = do
     . HUnit.assertBool prop_s 
     $ t1 == t2
 
-term :: Defs.Has m => String -> m Term
+term :: (Defs.Has m, Env.Read m) => String -> m Term
 term = Err.noneM . Parse.term
 
-simplifiedTerm :: Defs.Has m => String -> m Term
+simplifiedTerm :: (Defs.Has m, Env.Read m) => String -> m Term
 simplifiedTerm = liftM Simp.run . term
 
 _type :: Defs.Has m => String -> m Type
 _type = Err.noneM . Parse._type
 
+localVars :: (Defs.Has m, Env.Write m) => String -> m a -> m a
+localVars bs_s run = do
+  bs <- Err.noneM (Parse.bindings bs_s)
+  zipWithM defineBind [0..length bs - 1] (reverse bs)
+  Env.bindMany bs run
+  where
+  defineBind idx (Bind lbl _) =
+    Defs.defineTerm lbl p_term
+    where
+    p_term = polymorphic [] (const (Var (enum idx)))

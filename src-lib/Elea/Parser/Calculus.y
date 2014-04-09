@@ -1,7 +1,10 @@
 {
-module Elea.Parser 
+-- | A parser for Elea's raw input calculus: simply typed lambda calculus
+-- with anonymous fixpoints, anonymous inductive data types, pattern matching,
+-- and explicit absurdity.
+module Elea.Parser.Calculus
 (
-  program, term, _type
+  program, term, _type, bindings
 )
 where
 
@@ -81,6 +84,7 @@ mkLabels [''Scope, ''RawBind, ''RawProgram]
 %name happyProgram Program
 %name happyTerm Term
 %name happyType Type
+%name happyBindings Bindings
 
 %tokentype { Token }
 
@@ -201,7 +205,7 @@ ParamName :: { ParamName }
   | name '<' NameList '>'             { ($1, $3) }
   
 Equation :: { (RawTerm, RawTerm) }
-  : Term                              { ($1, TVar ("True", [])) }
+  : Term                              { (TVar ("True", []), $1) }
   | Term '=' Term                     { ($1, $3) }
   
 PropDef :: { PropDef }
@@ -254,19 +258,29 @@ localDef name term = id
   $ modify bindMap 
   $ Map.insert name term
   
-term :: (Err.Can m, Defs.Has m) => String -> m Term
-term = id
-  . withEmptyScope 
-  . liftM Eval.run
-  . parseAndCheckTerm 
-  . happyTerm 
-  . lexer
+term :: (Err.Can m, Defs.Has m, Env.Read m) => String -> m Term
+term str = do
+  bs <- Env.bindings
+  withEmptyScope
+    . liftM Eval.run
+    . Env.bindMany bs
+    . parseAndCheckTerm 
+    . happyTerm 
+    . lexer
+    $ str
   
 _type :: (Err.Can m, Defs.Has m) => String -> m Type
 _type = id
   . withEmptyScope
   . parseRawType
   . happyType 
+  . lexer
+  
+bindings :: (Err.Can m, Defs.Has m) => String -> m [Bind]
+bindings = id
+  . withEmptyScope
+  . mapM parseRawBind
+  . happyBindings
   . lexer
   
 program :: forall m . (Err.Can m, Defs.Has m) 

@@ -7,10 +7,12 @@ module Elea.Monad.Env
   module Elea.Monad.Env.Class,
   
   TrackMatches, trackMatches,
+  mapTrackMatches,
  
   AlsoTrack, alsoTrack, alsoWith,
   TrackIndices, TrackIndicesT,
   trackIndices, trackIndicesT,
+  mapAlsoTrack,
   
   TrackOffset, TrackOffsetT,
   trackOffset, trackOffsetT,
@@ -30,18 +32,21 @@ import Elea.Prelude
 import Elea.Index
 import Elea.Term
 import Elea.Type ( ContainsTypes (..) )
-import Elea.Unifier ( Unifiable, Unifier )
+import Elea.Unification ( Unifiable, Unifier )
+import Elea.Unification.Map ( Generalisable, compareGen )
 import Elea.Monad.Env.Class
 import qualified Elea.Type as Type
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Discovery.Class as Discovery
 import qualified Elea.Index as Indices
-import qualified Elea.Unifier as Unifier 
+import qualified Elea.Unification as Unifier 
+import qualified Elea.Unification.Map as UMap
 import qualified Elea.Foldable as Fold
 import qualified Control.Monad.Trans as Trans
 import qualified Data.Set as Set
 import qualified Data.Map as Map
+import qualified Algebra.Lattice as Algebra
 
 instance Write m => Fold.FoldableM m Term where
   -- To fold over a 'Term' we require that our monad implement a 'Write'
@@ -224,7 +229,7 @@ isBaseCase term = do
     Just con_term -> do
       let Con ind con_n : args = flattenApp con_term
       allM isBaseCase
-        . map (args !!)
+        . map (args `nth`)
         $ Type.recursiveArgs ind con_n
 
   
@@ -353,6 +358,7 @@ instance Discovery.Tells m => Discovery.Tells (TrackMatches m) where
 
 instance Discovery.Listens m => Discovery.Listens (TrackMatches m) where
   listen = mapTrackMatches Discovery.listen
+  
 
 -- | Stores a list of terms structurally smaller than a given object.
 data Smaller a
@@ -389,7 +395,7 @@ instance (Show Term, Write m) => Write (TrackSmallerTermsT m) where
     where
     rec_args = id
       . Set.fromList
-      . map (args !!) 
+      . map (args `nth`) 
       $ Type.recursiveArgs ind n
      
     addMatch (Smaller than set) = 
@@ -415,9 +421,6 @@ instance Unifiable Term where
     uni (Absurd ty1) (Absurd ty2) = do
       Fail.assert (ty1 == ty2)
       return mempty
-    -- TODO: Experimental concept w.r.t. unification of absurdities below.
-    -- Leads to interesting simplifications. Come back to this later.
-    -- uni _ (Absurd _) = return mempty
     uni (Var x1) (Var x2)
       | x1 == x2 = return mempty
     uni (Var idx) t2 = do
@@ -490,3 +493,39 @@ instance Unifiable Constraint where
   find (Constraint t1 ind1 n1) (Constraint t2 ind2 n2) = do
     Fail.unless (ind1 == ind2 && n1 == n2)
     Unifier.find t1 t2
+    
+
+-- | A generalised term is one for which equality implies unifiability. 
+-- So we replace all instances of free variables with absurdity, and
+-- use a special instance of 'unify'.
+instance Generalisable Term where
+  generalise term = id
+    . pure
+    . foldr (\i t -> Indices.substAt i Algebra.bottom t) term 
+    . Set.toList
+    $ Indices.free term
+    
+  -- This first line is the important one, which overestimates equality
+  -- given that each free variable has been replaced by absurdity in 'generalise'
+  compareGen (Absurd _) _ = EQ
+  compareGen _ (Absurd _) = EQ
+  compareGen (Var x1) (Var x2) = compare x1 x2
+  compareGen (Var _) _ = LT
+  compareGen _ (Var _) = GT
+  compareGen (App t1 t2) (App t1' t2') =
+    -- We use the lexicographical ordering monoid append operation.
+    compareGen t1 t1' ++ mconcat (zipWith compareGen t2 t2')
+  compareGen (App {}) _ = LT
+  compareGen _ (App {}) = GT
+  compareGen (Fix _ _ t) (Fix _ _ t') = compareGen t t'
+  compareGen (Fix {}) _ = LT
+  compareGen _ (Fix {}) = GT
+  compareGen (Lam _ t) (Lam _ t') = compareGen t t'
+  compareGen (Lam {}) _ = LT
+  compareGen _ (Lam {}) = GT
+  compareGen (Con _ n) (Con _ n') = compare n n'
+  compareGen (Con {}) _ = LT
+  compareGen _ (Con {}) = GT
+  compareGen (Case _ _ alts) (Case _ _ alts') = 
+    -- We use the lexicographical ordering monoid.
+    mconcat (zipWith (compareGen `on` get altInner) alts alts')

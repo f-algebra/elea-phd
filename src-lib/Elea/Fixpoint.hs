@@ -16,8 +16,7 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
 import Elea.Show ( showM )
-import Elea.Monad.Edd ( Edd, Redd )
-import qualified Elea.Unifier as Unifier
+import qualified Elea.Unification as Unifier
 import qualified Elea.Index as Indices
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Terms as Term
@@ -29,13 +28,14 @@ import qualified Elea.Constraint as Constraint
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs
+import qualified Elea.Monad.Fusion.Class as Fusion
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
 -- | Fixpoint fusion.
 -- > if E' = fusion C E
 -- > then C[E] = E'
-fusion :: forall m . (Fail.Can m, Env.Read m, Defs.Read m) 
+fusion :: forall m . (Fail.Can m, Env.Read m, Defs.Read m, Fusion.Memo m) 
   -- | A simplification function to be called during fusion.
   -- All indices will have been lifted by one in the supplied term,
   -- and the index of the unrolled fixpoint variable will be 0.
@@ -43,7 +43,9 @@ fusion :: forall m . (Fail.Can m, Env.Read m, Defs.Read m)
   -> Context 
   -> Term 
   -> m Term
-fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
+fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = 
+    -- Use the fusion memoisation monad to memoise this computation
+    Fusion.memoise outer_ctx inner_fix $ do
   
   -- DEBUG
   ctx_s <- showM outer_ctx
@@ -83,7 +85,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   -- as this will rewrite the term we are replacing
   let reverted_t = id
         -- DEBUG
-     --   . trace s2
+        . trace s2
         . Env.trackIndices 0
         . Term.revertMatchesWhenM isInnerFixMatch
         $ simplified_t
@@ -140,10 +142,10 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   
   Fail.unless                                                      
     -- DEBUG
-  --  . trace s3
+    . trace s3
    -- . trace (s1 ++ s2 ++ s3)
     $ rem_rc == 0 
-    || new_rc >= old_rc
+  --  || new_rc >= old_rc
     
     -- Couple of extra ad hoc reasons fusion would have succeeded.
     -- Trivially sound and terminating so why not.
@@ -154,7 +156,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = do
   final_s <- showM new_term
   let s4 = "\nDONE:\n" ++ final_s
   return   
-   --  . trace s4 
+     . trace s4 
     $ new_term
   
   where
@@ -289,7 +291,7 @@ fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
   
   simplified_t <- id
     -- DEBUG
- --   . trace s1
+   -- . trace s1
   
     -- Simplify the result
     . Env.bind fix_b
@@ -314,7 +316,8 @@ fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
   new_term_s <- showM new_term
   let s3 = "\nDONE:\n" ++ new_term_s
   id 
---    . trace s3 
+   -- . trace s3 
+    . trace (s1 ++ s3)
     $ return new_term
   
   where
@@ -364,7 +367,8 @@ fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
   
     
 -- | Uses fixpoint fusion to merge a constraint into a fixpoint.
-constraintFusion :: forall m . (Env.Read m, Defs.Read m, Fail.Can m)
+constraintFusion
+  :: forall m . (Env.Read m, Defs.Read m, Fail.Can m, Fusion.Memo m)
   => (Term -> m Term)
   -> Constraint 
   -> Term

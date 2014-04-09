@@ -58,6 +58,7 @@ library
                      ghc-prim ==0.3.*, 
                      recursion-schemes ==4.*, 
                      semigroupoids ==4.*,
+                     lattices ==1.*,
                      ghc ==7.*
                      
   exposed-modules:   Elea.Tests.All

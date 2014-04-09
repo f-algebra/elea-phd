@@ -1,4 +1,4 @@
-module Elea.Unifier 
+module Elea.Unification 
 (
   Unifier, Unifiable (..), 
   union, unions, singleton, exists

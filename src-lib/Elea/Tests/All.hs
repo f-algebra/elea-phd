@@ -12,11 +12,13 @@ import qualified Elea.Tests.Simplifier as Simplifier
 import qualified Elea.Tests.Context as Context
 import qualified Elea.Tests.Inventor as Inventor
 import qualified Elea.Tests.Fusion as Fusion
+import qualified Elea.Tests.UMap as UMap
 
 tests = Test.list
   [ Prelude.tests
   , Type.tests
   , Term.tests
+  , UMap.tests
   , Simplifier.tests
   , Context.tests
  -- , Inventor.tests

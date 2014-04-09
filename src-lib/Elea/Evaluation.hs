@@ -16,7 +16,7 @@ import Elea.Context ( Context )
 import qualified Elea.Terms as Term
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Context as Context
-import qualified Elea.Unifier as Unifier
+import qualified Elea.Unification as Unifier
 import qualified Elea.Index as Indices
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Failure.Class as Fail
@@ -99,7 +99,7 @@ eta _ = Fail.here
 caseOfCon :: Fail.Can m => Term -> m Term
 caseOfCon (Case ind cse_t alts)
   | Con _ (fromEnum -> n) : args <- flattenApp cse_t
-  , Alt bs alt_t <- alts !! n = id
+  , Alt bs alt_t <- alts `nth` n = id
     . return
     -- We fold substitute over the arguments to the constructor
     -- starting with the return value of the pattern match (alt_t).

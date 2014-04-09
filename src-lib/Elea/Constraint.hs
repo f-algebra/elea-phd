@@ -33,7 +33,7 @@ import qualified Elea.Terms as Term
 import qualified Elea.Index as Indices
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Context as Context
-import qualified Elea.Unifier as Unifier
+import qualified Elea.Unification as Unifier
 import qualified Elea.Foldable as Fold
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Monad.Failure.Class as Fail
@@ -54,7 +54,7 @@ strip (Case ind cse_t alts) = do
   where
   non_abs = findIndices (not . isAbsurd . get altInner) alts
   [con_n] = non_abs
-  Alt bs alt_t = alts !! con_n
+  Alt bs alt_t = nth alts con_n
   
   -- Revert the pattern match
   cse_t' = Indices.liftMany (length bs) cse_t
@@ -130,7 +130,7 @@ apply (Constraint match_t ind con_n) (on_t, on_ty) =
     where
     Bind _ con_ty = id
       . assert (length cons > alt_n)
-      $ cons !! alt_n
+      $ nth cons alt_n
     bs = map (Bind "X") (init (Type.flatten con_ty))
     
     -- If we are not down the matched branch we return absurd

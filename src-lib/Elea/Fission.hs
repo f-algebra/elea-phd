@@ -16,7 +16,7 @@ import qualified Elea.Monad.Env as Env
 import qualified Elea.Terms as Term
 import qualified Elea.Types as Type
 import qualified Elea.Context as Context
-import qualified Elea.Unifier as Unifier
+import qualified Elea.Unification as Unifier
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
@@ -96,7 +96,7 @@ constructorFission fix@(Fix _ fix_b fix_t) = do
   -- every branch.
   floatable :: Bool
   floatable = cons == 1
-    || (cons == 0 && suggestions == Set.singleton absurd_ctx)
+  --  || (cons == 0 && suggestions == Set.singleton absurd_ctx)
     where
     cons = Set.size (returnCons fix_t)
     
@@ -128,9 +128,6 @@ constructorFission fix@(Fix _ fix_b fix_t) = do
       suggestAlt (Alt bs alt_t) =
         Env.liftTrackedMany (length bs) (suggest alt_t)
         
-    suggest (Absurd _) = 
-      return (Set.singleton absurd_ctx)
-      
     suggest con_t@(Term.flattenApp -> Con ind con_n : args) = do
       free_limit <- Env.tracked
       -- We cannot keep an argument to the constructor if it contains
@@ -156,19 +153,10 @@ constructorFission fix@(Fix _ fix_b fix_t) = do
           . Set.singleton
           $ gapContext idx_offset arg_i
       else return
-         . Set.insert (constContext idx_offset)
          . Set.unions
          . map (Set.singleton . gapContext idx_offset) 
          $ Type.recursiveArgs ind con_n
       where
-      constContext :: Nat -> Context
-      constContext idx_offset = id
-        . Context.make
-        . const
-        . unflattenLam arg_bs
-        . Indices.lowerMany idx_offset
-        $ con_t
-        
       -- Construct a context which is the constructor term with
       -- a gap at the given argument position
       gapContext :: Nat -> Int -> Context
@@ -197,7 +185,11 @@ constructorFission fix@(Fix _ fix_b fix_t) = do
             . map (Var . toEnum) 
             $ reverse [0..length arg_bs - 1]
             
-    suggest _ = 
+    suggest term = do
+      fix_f <- liftM pred Env.offset
+      -- Fail if we've reached a return value, which is not in HNF,
+      -- and also doesn't contain the recursive function call.
+      Fail.unless (enum fix_f `Indices.freeWithin` term)
       return mempty
       
 constructorFission _ = 

@@ -18,7 +18,7 @@ import qualified Elea.Terms as Term
 import qualified Elea.Types as Type
 import qualified Elea.Index as Indices
 import qualified Elea.Monad.Env as Env
-import qualified Elea.Unifier as Unifier
+import qualified Elea.Unification as Unifier
 import qualified Elea.Evaluation as Eval
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Error.Class as Err
@@ -145,7 +145,7 @@ constArg term@(Fix fix_info (Bind fix_name fix_ty) fix_t) = do
         -- in the correct shape for this process. So we fail by saying
         -- the argument changed.
         && (length args /= arg_count
-        || arg_t /= (args !! arg_i))
+        || arg_t /= (args `nth` arg_i))
     isntConst _ = 
       return False
      
@@ -212,7 +212,7 @@ finiteArgFix term@(App fix@(Fix {}) args)
   | any isFinite dec_args = 
     return (Eval.run (app (Term.unfoldFix fix) args))
   where
-  dec_args = map (args !!) (Term.decreasingAppArgs term)
+  dec_args = map (args `nth`) (Term.decreasingAppArgs term)
 finiteArgFix _ = Fail.here
 
 
@@ -247,7 +247,7 @@ unfoldFixInj term@(App fix@(Fix _ _ fix_t) args)
   isSafeConArg arg_i =
     isCon (leftmost arg) && not any_unify
     where
-    arg = args !! arg_i
+    arg = args `nth` arg_i
     
     any_unify = id
       . Env.trackIndices 0
@@ -261,7 +261,7 @@ unfoldFixInj term@(App fix@(Fix _ _ fix_t) args)
           && length args' > arg_i 
           && uni_exists
         where
-        arg' = args' !! arg_i
+        arg' = args' `nth` arg_i
         uni_exists = Unifier.exists arg arg'
       unifies _ =
         return False

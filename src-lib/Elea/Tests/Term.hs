@@ -12,7 +12,7 @@ import Elea.Type
 import Elea.Show
 import qualified Elea.Index as Indices
 import qualified Elea.Monad.Env as Env
-import qualified Elea.Unifier as Unifier
+import qualified Elea.Unification as Unifier
 import qualified Elea.Testing as Test
 import qualified Elea.Evaluation as Eval
 import qualified Elea.Simplifier as Simp

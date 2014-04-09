@@ -15,7 +15,7 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
 import Elea.Show ( showM )
-import qualified Elea.Unifier as Unifier
+import qualified Elea.Unification as Unifier
 import qualified Elea.Index as Indices
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Terms as Term
@@ -28,9 +28,10 @@ import qualified Elea.Fixpoint as Fix
 import qualified Elea.Constraint as Constraint
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions.Class as Defs
+import qualified Elea.Monad.Fusion.Class as Fusion
 
 
-run :: forall m . (Env.Read m, Defs.Read m, Fail.Can m)
+run :: forall m . (Env.Read m, Defs.Read m, Fail.Can m, Fusion.Memo m)
   -- | A simplification function to be called within run.
   => (Term -> m Term)
   -> Term 
@@ -52,7 +53,7 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
   -- argument will contain a fixpoint.
   inventor g_term@(App g_con@(Con {}) g_args) = do
     Fail.unless (length complex_args == 1)
-    inner_ctx <- run simplify f_term (g_args !! arg_i)
+    inner_ctx <- run simplify f_term (g_args `nth` arg_i)
     return (con_ctx ++ inner_ctx)
     where
     complex_args = findIndices (not . Term.isSimple) g_args 
@@ -84,7 +85,7 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
     where
     complex_alts = findIndices (not . Term.isSimple . get altInner) alts
     [alt_i] = complex_alts
-    Alt alt_bs alt_t = alts !! alt_i
+    Alt alt_bs alt_t = alts `nth` alt_i
     
     match_ctx = Context.make
       $ \gap -> Case ind gap alts
@@ -123,7 +124,6 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
 
   -- Otherwise we need to do proper fixpoint invention
   inventor g_term@(App (Fix {}) _) = do  
-   -- Fail.here
     -- DEBUG  
     f_term_s <- showM f_term
     g_term_s <- showM g_term
@@ -232,7 +232,7 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
         Con ind' con_n' = left_f
         (_, con_args) = id
           . assert (length cons > con_n)
-          $ cons !! enum con_n
+          $ cons `nth` enum con_n
         
         -- We move through the constructor arguments backwards, building
         -- up the term one by one.
