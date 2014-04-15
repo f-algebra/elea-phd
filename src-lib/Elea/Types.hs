@@ -6,8 +6,10 @@ module Elea.Types
 (
   module Elea.Type,
   Env,
-  quickGet,
-  get, check, checkStep, checkTrace,
+  closed,
+  getClosed,
+  get, 
+  check, checkStep, checkTrace,
 )
 where
 
@@ -33,19 +35,32 @@ type Env m = (Defs.Read m, Env.Read m)
 get :: Env m => Term -> m Type
 get = Err.noneM . typeOf
 
--- | Return the type of a term if it can be found without an environment.
+
+-- | Whether we can use the 'getClosed' function to type a term.
+closed :: Term -> Bool
+closed (Fix {}) = True
+closed (Absurd _) = True
+closed (App f _) = closed f
+closed (Lam _ t) = closed t
+
+
+-- | Return the type of a term if it can be found without an environment,
+-- viz. if the type of the term does not depend on any free variables.
 -- Assumes the term is well-typed.
--- Performs no type-checking at all.
--- Requires the result type to not depend upon the type of any free variables.
--- Right now it only works on fixpoints with or without arguments applied.
-quickGet :: Term -> Type
-quickGet (Fix _ (Bind _ ty) _) = ty
-quickGet (App f args) = id
+-- Performs no type-checking.
+getClosed :: Term -> Type
+getClosed (Fix _ (Bind _ ty) _) = ty
+getClosed (Con ind n) = 
+  Prelude.get boundType (unfold ind !! n)
+getClosed (Absurd ty) = ty
+getClosed (App f args) = id
   . Type.unflatten 
   . drop (length args)
   . Type.flatten
-  $ quickGet f
-
+  $ getClosed f
+getClosed (Lam (Bind _ ty) t) = 
+  Type.Fun ty (getClosed t)
+  
 
 -- | Throws an error if a term is not correctly typed.
 check :: (Err.Can m, Env m) => Term -> m ()

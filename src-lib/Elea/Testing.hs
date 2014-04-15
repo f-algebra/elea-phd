@@ -7,6 +7,7 @@ module Elea.Testing
   loadPrelude, loadFile,
   term, _type,
   simplifiedTerm,
+  fusedTerm,
   assertProvablyEq,
   assertTermEq,
   localVars,
@@ -29,6 +30,7 @@ import qualified Elea.Fusion as Fusion
 import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Discovery as Discovery
 import qualified Elea.Monad.Error.Class as Err
+import qualified Elea.Monad.Fusion.Class as Fusion
 import qualified Test.HUnit as HUnit
 
 type Test = HUnit.Test
@@ -105,14 +107,18 @@ term = Err.noneM . Parse.term
 simplifiedTerm :: (Defs.Has m, Env.Read m) => String -> m Term
 simplifiedTerm = liftM Simp.run . term
 
+fusedTerm :: (Defs.Has m, Fusion.FusionM m) => String -> m Term
+fusedTerm = Fusion.run <=< term
+
 _type :: Defs.Has m => String -> m Type
 _type = Err.noneM . Parse._type
 
 localVars :: (Defs.Has m, Env.Write m) => String -> m a -> m a
 localVars bs_s run = do
   bs <- Err.noneM (Parse.bindings bs_s)
-  zipWithM defineBind [0..length bs - 1] (reverse bs)
-  Env.bindMany bs run
+  Env.bindMany bs $ do
+    zipWithM defineBind [0..length bs - 1] (reverse bs)
+    run
   where
   defineBind idx (Bind lbl _) =
     Defs.defineTerm lbl p_term

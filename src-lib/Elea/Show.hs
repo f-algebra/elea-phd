@@ -197,7 +197,7 @@ instance ShowM m a => ShowM m [a] where
 instance (Env.Read m, Defs.Read m) => ShowM m Equation where
   showM (Equals n bs t1 t2) = 
     Env.bindMany bs $ do
-      t1' <- showM t1
+      t1' <- liftM (dropWhile (== '\n')) (showM t1)
       t2' <- showM t2
       return 
         $ name_s ++ vars_s ++ t1' ++ "\n=\n" ++ t2'

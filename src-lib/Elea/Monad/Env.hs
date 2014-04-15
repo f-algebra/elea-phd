@@ -495,37 +495,51 @@ instance Unifiable Constraint where
     Unifier.find t1 t2
     
 
--- | A generalised term is one for which equality implies unifiability. 
--- So we replace all instances of free variables with absurdity, and
--- use a special instance of 'unify'.
+-- | A generalised term is one for which equality implies unifiability.
 instance Generalisable Term where
-  generalise term = id
-    . pure
-    . foldr (\i t -> Indices.substAt i Algebra.bottom t) term 
-    . Set.toList
-    $ Indices.free term
-    
-  -- This first line is the important one, which overestimates equality
-  -- given that each free variable has been replaced by absurdity in 'generalise'
-  compareGen (Absurd _) _ = EQ
-  compareGen _ (Absurd _) = EQ
-  compareGen (Var x1) (Var x2) = compare x1 x2
-  compareGen (Var _) _ = LT
-  compareGen _ (Var _) = GT
-  compareGen (App t1 t2) (App t1' t2') =
-    -- We use the lexicographical ordering monoid append operation.
-    compareGen t1 t1' ++ mconcat (zipWith compareGen t2 t2')
-  compareGen (App {}) _ = LT
-  compareGen _ (App {}) = GT
-  compareGen (Fix _ _ t) (Fix _ _ t') = compareGen t t'
-  compareGen (Fix {}) _ = LT
-  compareGen _ (Fix {}) = GT
-  compareGen (Lam _ t) (Lam _ t') = compareGen t t'
-  compareGen (Lam {}) _ = LT
-  compareGen _ (Lam {}) = GT
-  compareGen (Con _ n) (Con _ n') = compare n n'
-  compareGen (Con {}) _ = LT
-  compareGen _ (Con {}) = GT
-  compareGen (Case _ _ alts) (Case _ _ alts') = 
-    -- We use the lexicographical ordering monoid.
-    mconcat (zipWith (compareGen `on` get altInner) alts alts')
+
+  -- This compare function will set free variables equal to anything
+  compareGen t1 t2 = trackOffset (comp t1 t2)
+    where
+    comp :: Term -> Term -> TrackOffset Ordering
+    comp (Var x) t = do
+      free_x <- lowerableByOffset x
+      free_t <- lowerableByOffset t
+      if free_x && free_t
+      then return EQ
+      else if isVar t
+      then return (x `compare` fromVar t)
+      else return LT
+    comp t (Var y) = do
+      free_y <- lowerableByOffset y
+      free_t <- lowerableByOffset t
+      if free_y && free_t
+      then return EQ
+      else return GT
+    comp (Absurd _) (Absurd _) = return EQ
+    comp (Absurd _) _ = return LT
+    comp _ (Absurd _) = return GT
+    comp (App t1 t2) (App t1' t2') = do
+      -- We use the lexicographical ordering monoid append operation.
+      c1 <- comp t1 t1'
+      c2 <- liftM mconcat (zipWithM comp t2 t2')
+      return (c1 ++ c2)
+    comp (App {}) _ = return LT
+    comp _ (App {}) = return GT
+    comp (Fix _ _ t) (Fix _ _ t') = liftTracked (comp t t')
+    comp (Fix {}) _ = return LT
+    comp _ (Fix {}) = return GT
+    comp (Lam _ t) (Lam _ t') = liftTracked (comp t t')
+    comp (Lam {}) _ = return LT
+    comp _ (Lam {}) = return GT
+    comp (Con _ n) (Con _ n') = return (compare n n')
+    comp (Con {}) _ = return LT
+    comp _ (Con {}) = return GT
+    comp (Case _ t1 alts1) (Case _ t2 alts2) = do
+      -- We use the lexicographical ordering monoid
+      ct <- comp t1 t2
+      calts <- liftM mconcat (zipWithM compAlts alts1 alts2)
+      return (ct ++ calts)
+      where 
+      compAlts (Alt bs1 t1) (Alt bs2 t2) = 
+        liftTrackedMany (length bs1) (comp t1 t2)

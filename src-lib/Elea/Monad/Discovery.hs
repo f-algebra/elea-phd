@@ -18,8 +18,8 @@ import Elea.Prelude hiding ( tell, listen, trace )
 import Elea.Term
 import Elea.Show
 import Elea.Monad.Discovery.Class
-import Elea.Discoveries ( EquationSet )
-import qualified Elea.Discoveries as EqSet
+import Elea.Monad.Discovery.EquationSet ( EqSet )
+import qualified Elea.Monad.Discovery.EquationSet as EqSet
 import qualified Elea.Prelude as Prelude
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Monad.Definitions.Class as Defs
@@ -44,7 +44,7 @@ instance Tells Ignore where
 
 -- | A monad to record discoveries
 newtype ListenerT m a 
-  = ListenerT { runListenerT :: WriterT EquationSet m a }
+  = ListenerT { runListenerT :: WriterT EqSet m a }
   deriving ( Monad, MonadTrans )
   
 type Listener = ListenerT Identity
@@ -71,7 +71,7 @@ trace run = do
     Prelude.trace ("\n" ++ eq_s) (return x)
     
 mapListenerT :: Monad m 
-  => (m (a, EquationSet) -> n (b, EquationSet)) 
+  => (m (a, EqSet) -> n (b, EqSet)) 
   -> ListenerT m a -> ListenerT n b
 mapListenerT f = ListenerT . mapWriterT f . runListenerT
 

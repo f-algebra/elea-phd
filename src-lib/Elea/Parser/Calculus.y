@@ -263,7 +263,7 @@ term str = do
   bs <- Env.bindings
   withEmptyScope
     . liftM Eval.run
-    . Env.bindMany bs
+    . Env.bindMany (reverse bs)
     . parseAndCheckTerm 
     . happyTerm 
     . lexer

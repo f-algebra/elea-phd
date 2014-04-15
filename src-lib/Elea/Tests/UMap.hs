@@ -26,13 +26,12 @@ tests = Test.label "UMap"
     app1 <- Test.simplifiedTerm "append<nat> xs ys"
     app2 <- Test.simplifiedTerm "append<nat> xs (Cons<nat> x Nil<nat>)"
     
-    let gen1 = UMap.generalise app1
-        test1 = Test.assertEq gen1 (pure app2)
+    let test1 = Test.assertEq (pure app1 :: Generalised Term) (pure app2)
     
     let Just (uni, msg) = id
           . UMap.lookup app2
-          . UMap.insert app1 "herro" 
+          . UMap.insert app1 "hurrah" 
           $ UMap.empty
-        test2 = Test.assertEq "herro" msg
+        test2 = Test.assertEq "hurrah" msg
     
     return (Test.list [test1, test2])

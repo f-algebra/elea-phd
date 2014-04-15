@@ -43,7 +43,7 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
   inventor g_term
   where
   -- The inductive type of f_term
-  f_ty@(Type.Base f_ind) = Type.quickGet f_term
+  f_ty@(Type.Base f_ind) = Type.getClosed f_term
   
   -- We use a helper function because the first two arguments never change.
   inventor :: Term -> m Context
@@ -108,7 +108,7 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
         $ Context.make 
         $ \gap -> Case f_ind gap alts
     where
-    g_ty@(Type.Base (Type.Ind _ g_ind_cons)) = Type.quickGet g_term
+    g_ty@(Type.Base (Type.Ind _ g_ind_cons)) = Type.getClosed g_term
     
     makeAlt :: Nat -> m Alt
     makeAlt con_n = do
@@ -124,7 +124,7 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
 
   -- Otherwise we need to do proper fixpoint invention
   inventor g_term@(App (Fix {}) _) = do  
-    -- DEBUG  
+    -- DEBUG 
     f_term_s <- showM f_term
     g_term_s <- showM g_term
     let s1 = "\nInventing C s.t. C[" ++ f_term_s ++ "] is " ++ g_term_s

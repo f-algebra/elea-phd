@@ -10,6 +10,8 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
 import Elea.Show ( showM )
+import Elea.Monad.Fedd ( Fedd )
+import qualified Elea.Checker as Checker
 import qualified Elea.Fixpoint as Fix
 import qualified Elea.Inventor as Invent
 import qualified Elea.Constraint as Constraint
@@ -34,6 +36,8 @@ import qualified Data.Monoid as Monoid
 
 type FusionM m = (Defs.Read m, Env.Read m, Discovery.Tells m, Fusion.Memo m)
  
+{-# SPECIALISE run :: Term -> Fedd Term #-}
+
 run :: FusionM m => Term -> m Term
 run = runSteps (map Type.checkStep (fission_steps ++ fusion_steps))
   where
@@ -258,28 +262,45 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
   let constraint_set = Set.fromList (map Constraint.fromMatch matches)
   Fail.when (Term.alreadyFused fix_info constraint_set outer_t)
   
-  -- We apply match-fix fusion for every match
-  (fused_t, fused_matches) <- id
-    . runWriterT
-    $ foldrM fuseMatch outer_t matches
-    
-  -- Check to see whether any match-fix fusion steps succeeded.
-  Fail.when (fused_matches == [])
-  
-  -- If match-fix fusion has failed we save the list of matches we attempted
-  -- to fuse in.
-  if not (matchFixSuccess fused_t)
+  -- Use dynamic checking to see if these constraints could collapse 
+  -- the fixpoint to a constaint, and fail if they don't.
+  let mby_const = Checker.constrainedToConstant constraint_set outer_t
+  if isNothing mby_const
   then return (Term.addFusedMatches constraint_set outer_t)
   else do
-    -- Express all the matches we fused in as a single constraint,
-    -- so we can show which term we fused together to make 'fused_t',
-    -- so we can output it with 'Discovery.equals'
-    let all_constraints = 
-          concatMap (Constraint.matchContext result_ty) fused_matches
-        from_t = Context.apply all_constraints outer_t 
-        fused_t' = Constraint.removeAll fused_t
-    Discovery.equals from_t fused_t'
-    return fused_t'
+    let Just const = mby_const
+    
+    -- DEBUG
+    cons_s <- showM constraint_set
+    const_s <- showM const
+    outer_s <- showM outer_t
+    let s1 = "[match-fix fusion] Hypothesised that:\n" ++ cons_s 
+          ++ "\n\nCollapses:\n" ++ outer_s 
+          ++ "\n\nInto constant term:\n" ++ const_s
+  
+    -- We apply match-fix fusion for every match
+    (fused_t, fused_matches) <- id
+ --    . trace s1
+      . runWriterT
+      $ foldrM fuseMatch outer_t matches
+      
+    -- Check to see whether any match-fix fusion steps succeeded.
+    Fail.when (fused_matches == [])
+    
+    -- If match-fix fusion has failed we save the list of matches we attempted
+    -- to fuse in.
+    if not (matchFixSuccess fused_t)
+    then return (Term.addFusedMatches constraint_set outer_t)
+    else do
+      -- Express all the matches we fused in as a single constraint,
+      -- so we can show which term we fused together to make 'fused_t',
+      -- so we can output it with 'Discovery.equals'
+      let all_constraints = 
+            concatMap (Constraint.matchContext result_ty) fused_matches
+          from_t = Context.apply all_constraints outer_t 
+          fused_t' = Constraint.removeAll fused_t
+      Discovery.equals from_t fused_t'
+      return fused_t'
   where
   -- Whether a pattern match should be fused into the current fixpoint.
   -- We also check that one of the strict arguments of each term match.

@@ -16,6 +16,7 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
 import Elea.Show ( showM )
+import Elea.Monad.Fedd ( Fedd )
 import qualified Elea.Unification as Unifier
 import qualified Elea.Index as Indices
 import qualified Elea.Monad.Env as Env
@@ -31,6 +32,24 @@ import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Fusion.Class as Fusion
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+
+{-# SPECIALISE fusion 
+    :: (Term -> MaybeT Fedd Term)
+    -> Context 
+    -> Term  
+    -> MaybeT Fedd Term #-}
+  
+{-# SPECIALISE fission 
+  :: (Term -> MaybeT Fedd Term) 
+  -> Term 
+  -> Context 
+  -> MaybeT Fedd Term #-}
+
+{-# SPECIALISE constraintFusion
+  :: (Term -> MaybeT Fedd Term) 
+  -> Constraint 
+  -> Term
+  -> MaybeT Fedd Term #-}
 
 -- | Fixpoint fusion.
 -- > if E' = fusion C E
@@ -72,6 +91,10 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     -- Finally, run the given simplification function on it.
     . Env.bind fix_b
     . simplify
+    
+    -- Move all pattern matches on variables topmost to make sure everything
+    -- unrolls properly
+    . Eval.floatVarMatches
     
     -- Apply the context to the unwrapped function body
     $ Context.apply (Indices.lift outer_ctx) fix_t
@@ -145,10 +168,9 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     . trace s3
    -- . trace (s1 ++ s2 ++ s3)
     $ rem_rc == 0 
-  --  || new_rc >= old_rc
+    || new_rc >= old_rc 
     
     -- Couple of extra ad hoc reasons fusion would have succeeded.
-    -- Trivially sound and terminating so why not.
     || Term.isAbsurd new_term
     || Term.isSimple new_term
   
@@ -316,8 +338,8 @@ fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
   new_term_s <- showM new_term
   let s3 = "\nDONE:\n" ++ new_term_s
   id 
-   -- . trace s3 
-    . trace (s1 ++ s3)
+  --  . trace s3 
+   -- . trace (s1 ++ s3)
     $ return new_term
   
   where
@@ -380,8 +402,8 @@ constraintFusion simplify
   -- Run fixpoint fusion with our special simplification function.
   fusion simplifyAndExpress full_ctx fix
   where
-  -- We can use quickGet here because it's a fixpoint with arguments applied
-  result_ty = Type.quickGet term
+  -- We can use getClosed here because it's a fixpoint with arguments applied
+  result_ty = Type.getClosed term
   
   -- Appending contexts composes them in the natural way
   cons_ctx = Constraint.toContext result_ty cons

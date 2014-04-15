@@ -3,7 +3,6 @@
 module Elea.Monad.Error.Class
 (
   Can (..), Err, ErrorT,
-  throw,
   fromEither, augment, augmentM,
   none, noneM, wasThrown,
   when, unless, check,
@@ -20,11 +19,8 @@ type Err = String
 type ErrorT = EitherT Err
 
 class Monad m => Can m where
-  throwErr :: Err -> m a
+  throw :: Err -> m a
   catch :: m a -> (Err -> m a) -> m a
-  
-throw :: (Can m, Show e) => e -> m a
-throw = throwErr . show
   
 augmentM :: forall m a . Can m => m Err -> m a -> m a
 augmentM err_m = flip catch rethrow
@@ -77,13 +73,13 @@ mapLeftT f eth_t = EitherT $ do
     Right r -> Right r
 
 instance Can (Either Err) where
-  throwErr = Left
+  throw = Left
   
   catch (Left err) handle = handle err
   catch right _ = right
   
 instance Monad m => Can (EitherT Err m) where
-  throwErr = EitherT . return . Left
+  throw = EitherT . return . Left
   
   catch et handle = do
     e <- lift (runEitherT et)
@@ -92,11 +88,11 @@ instance Monad m => Can (EitherT Err m) where
       right -> EitherT (return right)
   
 instance Can m => Can (ReaderT r m) where
-  throwErr = lift . throw
+  throw = lift . throw
   catch = Reader.liftCatch catch
             
 instance Can m => Can (MaybeT m) where
-  throwErr = lift . throw
+  throw = lift . throw
   catch =  Maybe.liftCatch catch
 
   

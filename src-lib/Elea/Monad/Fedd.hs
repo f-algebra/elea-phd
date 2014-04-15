@@ -11,11 +11,10 @@ where
 import Prelude ()
 import Elea.Prelude
 import Elea.Term
-import Elea.Discoveries ( EquationSet )
 import Elea.Show
 import Elea.Monad.Fusion.Database ( Outcome (..) )
 import qualified Elea.Context as Context
-import qualified Elea.Discoveries as EqSet
+import qualified Elea.Monad.Discovery.EquationSet as EqSet
 import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Definitions.Database as Defs
 import qualified Elea.Monad.Fusion.Class as Fusion
@@ -23,16 +22,16 @@ import qualified Elea.Monad.Fusion.Database as FusionDB
 import qualified Elea.Monad.Discovery.Class as Disc
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Env.Class as Env
-import qualified Control.Monad.RWS.Lazy as RWS
+import qualified Control.Monad.RWS.Strict as RWS
 import qualified Control.Monad.State.Class as State
 
 newtype FeddT m a 
   = FeddT { 
-    runFeddT :: RWST [Bind] EquationSet (Defs.Database, FusionDB.Database) m a }
+    runFeddT :: RWST [Bind] EqSet.EqSet (Defs.Database, FusionDB.Database) m a }
   deriving 
   ( Monad, MonadTrans
   , MonadReader [Bind]
-  , MonadWriter EquationSet
+  , MonadWriter EqSet.EqSet
   , MonadState (Defs.Database, FusionDB.Database) )
   
 type Fedd = FeddT Identity
@@ -85,14 +84,20 @@ instance Monad m => Fusion.Memo (FeddT m) where
     case FusionDB.lookup orig_t fusion_db of
       -- If we are in the process of fusing this then we need to fail
       -- to prevent infinite loops
-      Just Pending -> trace ("[FusionDB] stopped a loop") $ return Nothing
+      Just Pending -> id
+        . trace ("[FusionDB] stopped a loop") 
+        $ return Nothing
       
       -- If fusion failed previously then it will fail again
-      Just Failure -> trace ("[FusionDB] improved efficiency (failure)") $ return Nothing
+      Just Failure -> id
+        . trace ("[FusionDB] improved efficiency (failure)") 
+        $ return Nothing
       
       -- If fusion succeeded previously then we can be efficient 
       -- and return the previous result
-      Just (Success t) -> trace ("[FusionDB] improved efficiency (success)") $ return (Just t)
+      Just (Success t) -> id
+        . trace ("[FusionDB] improved efficiency (success)") 
+        $ return (Just t)
       
       -- If we have not yet tried this fusion then...
       Nothing -> do

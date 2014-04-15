@@ -19,7 +19,7 @@ class Monad m => Tells m where
   tellAll = mapM_ tell
   
 class Tells m => Listens m where
-  listen :: m a -> m (a, [Equation]) 
+  listen :: m a -> m (a, [Equation])
 
 equals :: (Env.Read m, Tells m) => Term -> Term -> m ()
 equals t1 t2 = do

@@ -43,8 +43,7 @@ steps = Eval.steps ++
   , unfoldFixInj
   , freeCaseFix
   , propagateMatch
-  , raiseVarCase
-  , finiteCaseFix 
+  -- , finiteCaseFix   
   , unfoldWithinFix
   ]
   where
@@ -53,7 +52,6 @@ steps = Eval.steps ++
     [ const Fail.here
     , caseFun
     , constantFix
-    , absurdity
     , constArg
     , identityCase
     , uselessFix
@@ -90,21 +88,6 @@ caseFun cse@(Case ind t alts) = do
     arg = Var (toEnum (length bs))
     
 caseFun _ = Fail.here
-
-
--- | Finds terms that are absurd and sets them that way.
--- So far it detects applying arguments to an absurd function.
--- Need to add pattern matching over absurdity, but how to find the type?
-absurdity :: Fail.Can m => Term -> m Term
-absurdity (App (Absurd ty) args) = 
-  return (Absurd new_ty)
-  where
-  new_ty = id
-    . Type.unflatten 
-    . drop (length args) 
-    $ Type.flatten ty
-absurdity _ =
-  Fail.here
   
   
 -- | If an argument to a 'Fix' never changes in any recursive call
@@ -235,37 +218,53 @@ uselessFix (Fix _ _ fix_t)
 uselessFix _ = Fail.here
 
 
--- | Unfolds a 'Fix' if one of its arguments is a constructor term.
+-- | Unfolds a 'Fix' if one of its decreasing arguments is a constructor term 
+-- which is defined enough to fully reduce all matches on that argument.
 unfoldFixInj :: Fail.Can m => Term -> m Term
 unfoldFixInj term@(App fix@(Fix _ _ fix_t) args)
   | any isSafeConArg (Term.decreasingAppArgs term) = 
     return (Eval.run (app (Term.unfoldFix fix) args))
   where
-  -- Check whether an argument is a constructor, and does not unify
-  -- with any recursive calls the function itself makes.
+  -- Check whether an argument is a constructor, and will reduce all pattern 
+  -- matches upon it.
   isSafeConArg :: Int -> Bool
   isSafeConArg arg_i =
-    isCon (leftmost arg) && not any_unify
+    isCon (leftmost arg) 
+    && Set.null matched_rec_vars
     where
-    arg = args `nth` arg_i
+    arg = args !! arg_i
+    rec_vars = recursiveConArgs arg
+      
+    matched_vars = id
+      . Env.trackOffset
+      . Env.liftTracked
+      $ Fold.foldM matchedVars unwrapped_t
+      
+    matched_rec_vars = Set.intersection matched_vars rec_vars
     
-    any_unify = id
-      . Env.trackIndices 0
-      $ Fold.anyM unifies fix_t
-      where
-      unifies :: Term -> Env.TrackIndices Index Bool
-      unifies (App (Var f) args') = do
-        f_var <- Env.tracked
-        return 
-           $ f == f_var 
-          && length args' > arg_i 
-          && uni_exists
-        where
-        arg' = args' `nth` arg_i
-        uni_exists = Unifier.exists arg arg'
-      unifies _ =
-        return False
-        
+    unwrapped_t = id
+      . Eval.run 
+      . App fix_t 
+      . setAt arg_i (Indices.lift arg)
+      $ replicate (length args) (Var 0)
+      
+    recursiveConArgs :: Term -> Set Index
+    recursiveConArgs (Var x) = Set.singleton x
+    recursiveConArgs (flattenApp -> Con ind n : con_args) = id
+      . concatMap recursiveConArgs
+      . map (con_args !!)
+      $ Type.recursiveArgs ind n
+    recursiveConArgs _ = mempty
+    
+    matchedVars :: Term -> Env.TrackOffset (Set Index) 
+    matchedVars (Case _ (Var x) _) = do
+      can_lower <- Env.lowerableByOffset x
+      if can_lower
+      then liftM Set.singleton (Env.lowerByOffset x)
+      else return mempty
+    matchedVars _ = 
+      return mempty
+    
 unfoldFixInj _ = Fail.here
 
 
@@ -316,26 +315,6 @@ propagateMatch (Case ind cse_t alts)
 propagateMatch _ = Fail.here
 
 
--- | Pattern matches over variables should be above those over function
--- results.
-raiseVarCase :: forall m . Fail.Can m => Term -> m Term
-raiseVarCase outer_t@(Case _ (leftmost -> Fix {}) alts) = do
-  inner_case <- Fail.choose (map caseOfVarAlt alts)
-  return (Term.applyCase inner_case outer_t)
-  where
-  caseOfVarAlt :: Alt -> m Term
-  -- We return the inner alt case-of if it is over a variable
-  -- which is not from the pattern match, viz. it can be lowered
-  -- to outside the match.
-  caseOfVarAlt (Alt bs alt_t@(Case ind (Var x) i_alts)) = do
-    x' <- Indices.tryLowerMany (length bs) x
-    return (Case ind (Var x') i_alts)
-  caseOfVarAlt _ = 
-    Fail.here
-    
-raiseVarCase _ = Fail.here
-
-
 -- | Unfolds a 'Fix' which is being pattern matched upon if that pattern
 -- match only uses a finite amount of information from the 'Fix'.
 -- Currently only works for a single unrolling, but otherwise we'd need an 
@@ -346,6 +325,7 @@ finiteCaseFix term@(Case ind (App (Fix _ _ fix_t) args) alts) = do
   -- It's just a guess, but I can't think of a non-recursive datatype
   -- returning function which this would work on.
   Fail.unless (Type.isRecursive ind)
+  Fail.unless (and (zipWith finiteAlt [0..] alts))
   
   -- Check that unrolling the function removed recursive calls 
   Fail.when (0 `Indices.freeWithin` unrolled)
@@ -356,6 +336,13 @@ finiteCaseFix term@(Case ind (App (Fix _ _ fix_t) args) alts) = do
     . extendedEval
     . Case ind (App fix_t (Indices.lift args)) 
     $ Indices.lift alts
+    
+  -- A branch in which a recursive pattern variable is used
+  finiteAlt :: Nat -> Alt -> Bool
+  finiteAlt alt_n (Alt bs alt_t) =
+    Set.null (Indices.free alt_t `Set.intersection` rec_vars)
+    where
+    rec_vars = Set.fromList (Type.recursiveArgIndices ind alt_n)
   
 finiteCaseFix _ = Fail.here
 

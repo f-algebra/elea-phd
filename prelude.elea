@@ -196,13 +196,18 @@ let zip<A, B> =
     | Cons y ys -> Cons<(A, B)> (x, y) (zip xs ys)
     end
   end
-    
-let elem_nat =
-  fix (elem: nat -> list<nat> -> bool) (n: nat) (xs: list<nat>) ->
+
+let any<A> = 
+  fun (f: A -> bool) ->
+  fix (any: list<A> -> bool) (xs: list<A>) ->
   match xs with
   | Nil -> False
-  | Cons y ys -> or (eq_nat n y) (elem n ys)
+  | Cons y ys -> or (f y) (any ys)
   end
+
+let elem_nat = 
+  fun (x: nat) -> any<nat> (eq_nat x)
+  
     
 let insert_nat = 
   fix (ins: nat -> list<nat> -> list<nat>) (n: nat) (xs: list<nat>) ->
@@ -277,4 +282,33 @@ let build =
   end
   
 let treesort = fun (xs: list<nat>) -> flatten<nat> (build xs)
+
+let rightmost_leq = 
+  fun (n: nat) ->
+  fix (rleq: tree<nat> -> bool) (t: tree<nat>) ->
+  match t with
+  | Leaf -> True
+  | Node t1 x t2 ->
+    match t2 with
+    | Leaf -> leq_nat x n
+    | Node t1' x' t2' -> rleq t2
+    end
+  end
+  
+let leq_leftmost = fun (n: nat) (t: tree<nat>) -> 
+  match flatten<nat> t with
+  | Nil -> True
+  | Cons x xs -> leq_nat n x
+  end
+  
+let sorted_tree = 
+  fix (srtd: tree<nat> -> bool) (t: tree<nat>) ->
+  match t with
+  | Leaf -> True
+  | Node t1 x t2 ->
+    and (leq_leftmost x t2) 
+      (and (srtd t1)
+        (and (rightmost_leq x t1) (srtd t2)))
+  end
+
 

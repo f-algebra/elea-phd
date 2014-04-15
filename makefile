@@ -7,6 +7,9 @@ MAIN = src-exec/Main.hs
 ghci:
 	ghci -fobject-code $(FLAGS) $(EXTS) $(MAIN)
 
+power:
+	ghc --make -O2 $(FLAGS) $(EXTS) $(MAIN)
+
 happy:
 	happy src-lib/Elea/Parser/Calculus.y -o src-lib/Elea/Parser/Calculus.hs
 

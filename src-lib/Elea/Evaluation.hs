@@ -5,6 +5,7 @@ module Elea.Evaluation
   run, steps,
   strictTerms,
   degenerateContext,
+  floatVarMatches,
 )
 where
 
@@ -13,6 +14,7 @@ import Elea.Prelude
 import Elea.Index
 import Elea.Term
 import Elea.Context ( Context )
+import qualified Elea.Types as Type
 import qualified Elea.Terms as Term
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Context as Context
@@ -29,6 +31,7 @@ steps :: Fail.Can m => [Term -> m Term]
 steps = 
   [ normaliseApp
   , eta 
+  , absurdity
   , beta
   , caseOfCon
   , caseApp
@@ -74,7 +77,26 @@ degenerateContext ctx = id
   . strictTerms
   $ Context.apply ctx (Var Indices.omega)
     
-
+  
+-- | Finds terms that are absurd and sets them that way.
+-- So far it detects applying arguments to an absurd function.
+-- Need to add pattern matching over absurdity, but how to find the type?
+absurdity :: Fail.Can m => Term -> m Term
+absurdity (App (Absurd ty) args) = 
+  return (Absurd new_ty)
+  where
+  new_ty = id
+    . Type.unflatten 
+    . drop (length args) 
+    $ Type.flatten ty
+absurdity term@(App _ args)
+  | any Term.isAbsurd args
+  , Type.closed term = 
+    return (Absurd (Type.getClosed term))
+absurdity _ =
+  Fail.here
+  
+  
 normaliseApp :: Fail.Can m => Term -> m Term
 normaliseApp (App f []) = return f
 normaliseApp (App (App f ts1) ts2) = return (App f (ts1 ++ ts2))
@@ -155,4 +177,32 @@ constantCase (Case _ _ alts) = do
     Indices.tryLowerMany (length bs) alt_t
     
 constantCase _ = Fail.here
+
+
+-- | Moves all pattern matches over variables topmost in a term. 
+-- Be careful with this, it can cause loops if combined with all sorts 
+-- of things.
+floatVarMatches :: Term -> Term
+floatVarMatches = Fold.rewrite float . run
+  where
+  float :: forall m . Fail.Can m => Term -> m Term
+  float outer_t@(Case _ (leftmost -> Fix {}) alts) = do
+    inner_case <- Fail.choose (map caseOfVarAlt alts)
+    return  
+      . run
+      $ Term.applyCase inner_case outer_t
+    where
+    caseOfVarAlt :: Alt -> m Term
+    -- We return the inner alt case-of if it is over a variable
+    -- which is not from the pattern match, viz. it can be lowered
+    -- to outside the match.
+    caseOfVarAlt (Alt bs alt_t@(Case ind cse_t i_alts)) 
+      | isVar (leftmost cse_t) = do
+        cse_t' <- Indices.tryLowerMany (length bs) cse_t
+        return (Case ind cse_t' i_alts)
+    caseOfVarAlt _ = 
+      Fail.here
+      
+  float _ = Fail.here
+
 

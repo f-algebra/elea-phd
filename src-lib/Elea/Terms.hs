@@ -6,6 +6,7 @@ module Elea.Terms
   branches,
   replace,
   unfoldFix,
+  unwrapFix,
   collectM, collect,
   decreasingArgs,
   decreasingAppArgs,
@@ -95,6 +96,16 @@ unfoldFix fix@(Fix _ _ fix_t) =
   Indices.subst fix fix_t
   
   
+-- | Unfolds a fixpoint a given number of times and leaves the fix variable
+-- uninterpreted.
+unwrapFix :: Nat -> Term -> Term
+unwrapFix 0 (Fix _ _ fix_t) = fix_t
+unwrapFix n fix@(Fix _ _ fix_t) = 
+  -- We use 'replaceAt' here so as not to lower the indices of the unwrapped
+  -- definition, since we are leaving the fixpoint variable in.
+  Indices.replaceAt 0 (unwrapFix (n - 1) fix) fix_t
+  
+  
 -- | Collect terms which fulfil a given predicate. 
 -- The variables of these terms must be free outside the original term,
 -- and will be automatically lowered to the correct indices.
@@ -137,6 +148,8 @@ replace me with = id
 -- | A wrapped around 'decreasingArgs' which takes a fixpoint with arguments
 -- applied and removes any return indices which are greater than the length
 -- of the arguments.
+-- Helps stop 'decreasingArgs' causing errors on partially applied 
+-- fixpoints.
 decreasingAppArgs :: Term -> [Int]
 decreasingAppArgs (App fix args) = 
   filter (length args >) (decreasingArgs fix)
@@ -438,4 +451,4 @@ findContext :: Fail.Can m => Term -> Term -> m Context
 findContext inner full = do
   Fail.unless (inner `isSubterm` full)
   return (Context.make (\gap -> replace inner gap full))
-
+  

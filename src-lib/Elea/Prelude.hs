@@ -47,7 +47,7 @@ module Elea.Prelude
   module Debug.Trace,
   module System.IO.Unsafe,
   
-  (++), concat, intercalate, map, void,
+  (++), (!!), concat, intercalate, map, void,
   concatMap, concatMapM, partitionM,
   concatEndos, concatEndosM,
   fromJustT, anyM, allM, findM, sortWith, deleteIndices,
@@ -65,7 +65,7 @@ where
 import Prelude hiding ( mapM, foldl, foldl1, mapM_, minimum, 
   maximum, sequence_, zip, zipWith, Read (..), length,
   foldr, foldr1, sequence, Maybe (..), maybe, all, any, elem, product,
-  and, concat, notElem, or, concatMap, sum, (++), map, (.), id )
+  and, concat, notElem, or, concatMap, sum, (++), map, (.), id, (!!) )
 
 import Control.Category ( (.), id )
 import Control.Arrow ( Arrow (..), (>>>), (<<<), (&&&), (***), 
@@ -354,6 +354,9 @@ indentBy n = replace "\n" ("\n" ++ replicate n ' ')
 
 indent :: String -> String
 indent = indentBy 2
+
+(!!) :: Enum e => [a] -> e -> a
+xs !! e = (Pre.!!) xs (fromEnum e)
 
 debugNth :: String -> [a] -> Int -> a
 debugNth msg xs n 

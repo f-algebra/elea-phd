@@ -67,6 +67,7 @@ let is_sorted2 =
 prop "unfold within fix": forall (xs: list<nat>) ->
   is_sorted xs = is_sorted2 xs
   
+  /*
 prop "unfold productive fix": forall (xs: list<nat>) ->
   (match append<nat> xs (Cons<nat> 1 Nil<nat>) with
    | Nil -> 0 | Cons y ys -> y end)
@@ -80,4 +81,27 @@ prop "unfold branching fix"<A>: forall (t: tree<A>) ->
   = 
   (match t with
    | Leaf -> 0 | Node t1 x t2 -> 1 end)
+   
+  
+let super_loopy = fun (t: tree<nat>) (n: nat) ->
+  match t with
+  | Leaf -> False
+  | Node ta m tb -> 
+    match ta with
+    | Leaf -> False
+    | Node taa m tab ->
+      match tb with
+      | Leaf -> False
+      | Node tba m tbb -> 
+        match rightmost_leq n t with
+        | False -> False
+        | True -> sorted_tree t
+        end
+      end
+    end
+  end
+   
+prop "loopy mc looperson": forall (t: tree<nat>) (n: nat) ->
+  super_loopy t n = super_loopy t n */
+  
 

@@ -10,6 +10,7 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
 import Elea.Show ( showM )
+import Elea.Monad.Fedd ( Fedd )
 import qualified Elea.Fixpoint as Fix
 import qualified Elea.Index as Indices
 import qualified Elea.Monad.Env as Env
@@ -23,6 +24,8 @@ import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
+
+{-# SPECIALISE run :: Term -> Fedd Term #-}
 
 run :: (Defs.Read m, Env.Read m) => Term -> m Term
 run = Fold.rewriteStepsM (map Type.checkStep steps)
