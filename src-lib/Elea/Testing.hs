@@ -14,7 +14,6 @@ module Elea.Testing
 ) 
 where
 
-import Prelude ()
 import Elea.Prelude hiding ( assert )
 import Elea.Term
 import Elea.Type
@@ -27,8 +26,7 @@ import qualified Elea.Parser.Calculus as Parse
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Equality as Equality
 import qualified Elea.Fusion as Fusion
-import qualified Elea.Monad.Definitions as Defs
-import qualified Elea.Monad.Discovery as Discovery
+import qualified Elea.Monad.Parser.Class as Parser
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Fusion.Class as Fusion
 import qualified Test.HUnit as HUnit
@@ -113,7 +111,7 @@ fusedTerm = Fusion.run <=< term
 _type :: Defs.Has m => String -> m Type
 _type = Err.noneM . Parse._type
 
-localVars :: (Defs.Has m, Env.Write m) => String -> m a -> m a
+localVars :: (Parser.State m, Env.Write m) => String -> m a -> m a
 localVars bs_s run = do
   bs <- Err.noneM (Parse.bindings bs_s)
   Env.bindMany bs $ do
@@ -121,6 +119,6 @@ localVars bs_s run = do
     run
   where
   defineBind idx (Bind lbl _) =
-    Defs.defineTerm lbl p_term
+    Parser.defineTerm lbl p_term
     where
     p_term = polymorphic [] (const (Var (enum idx)))

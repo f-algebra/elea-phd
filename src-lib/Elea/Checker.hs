@@ -6,7 +6,6 @@ module Elea.Checker
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Term
 import qualified Elea.Index as Indices
@@ -67,7 +66,7 @@ constrainedToConstant constrs term@(App fix@(Fix {}) args) = do
     where
     -- Return any term which is free outside the original fixpoint
     freeTerms :: Term -> Env.TrackOffset (Set Term)
-    freeTerms (Absurd _) = 
+    freeTerms (Unr _) = 
       return mempty
     freeTerms term = do
       is_free <- Env.lowerableByOffset term

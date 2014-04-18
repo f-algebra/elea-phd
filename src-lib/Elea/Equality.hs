@@ -5,7 +5,6 @@ module Elea.Equality
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Term
 import Elea.Show
@@ -17,7 +16,7 @@ import qualified Elea.Types as Type
 import qualified Elea.Foldable as Fold
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Monad.Failure.Class as Fail
-import qualified Elea.Monad.Definitions as Defs
+import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Data.Map as Map
 
 -- | This is like 'Maybe' 'Bool' but with a distinctive monoid instance.

@@ -12,7 +12,6 @@ import qualified Elea.Simplifier as Simp
 import qualified Elea.Testing as Test
 import qualified Elea.Fusion as Fusion
 import qualified Elea.Equality as Equality
-import qualified Elea.Monad.Definitions as Defs
 
 checkEquation :: Equation -> Test.M Test.Test
 checkEquation (Equals name bs t1 t2) = id

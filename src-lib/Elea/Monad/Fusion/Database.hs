@@ -12,7 +12,6 @@ module Elea.Monad.Fusion.Database
 )
 where
 
-import Prelude ()
 import Elea.Prelude hiding ( lookup )
 import Elea.Term
 import Elea.Unification ( Unifier )

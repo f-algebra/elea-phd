@@ -4,7 +4,6 @@ module Elea.Parser.Haskell
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Term
 import qualified Elea.Monad.Error.Class as Err

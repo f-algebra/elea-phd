@@ -7,9 +7,8 @@ module Elea.Context
 )
 where
 
-import Prelude ()
 import Elea.Prelude
-import Elea.Term
+import Elea.Term hiding ( apply )
 import Elea.Type ( Type, Bind (..) )
 import qualified Elea.Index as Indices
 import qualified Elea.Type as Type
@@ -34,7 +33,7 @@ mkLabels [''Context]
 make :: (Term -> Term) -> Context
 make mk_t = id
   . Context
-  $ mk_t (Var Indices.omega)
+  $ mk_t (Var Indices.omega [])
 
 -- | This is the 'make' function backwards
 apply :: Context -> (Term -> Term)
@@ -43,14 +42,14 @@ apply (Context ctx_t) arg_t =
 
 fromLambda :: Term -> Context
 fromLambda = 
-  Context . Indices.substAt 0 (Var Indices.omega) . inner
+  Context . Indices.substAt 0 (Var Indices.omega []) . abstractedTerm
 
 -- | We can convert a context into a lambda if we assign a type to the gap  
 toLambda :: Type -> Context -> Term
 toLambda ty ctx = id
   . Lam (Bind "x" ty)
   . apply (Indices.lift ctx) 
-  $ Var 0
+  $ Var 0 []
   
 -- | Returns whether there is any gap in the given context.
 isConstant :: Context -> Bool
@@ -78,15 +77,15 @@ dropLambda (Context (Lam lam_b lam_t)) = do
   return (lam_b, Context (Indices.lower lam_t'))
   where
   -- Performs the transformation which removes instances of the variable
-  -- applied to the gap term.
+  -- applied to the gap term. Also causes failure of the entire function.
   merge :: Term -> Env.TrackIndicesT Index m Term
-  merge term@(App (Var x1) (Var x2 : xs)) 
+  merge term@(Var x1 ((Var x2 []) : xs)) 
     | x1 == Indices.omega = do
       -- Fail if we have an instance of the gap which does not
       -- have the lambda abstracted variable applied to it.
       idx <- Env.tracked
       Fail.unless (x2 == idx)
-      return (app (Var Indices.omega) xs)
+      return (Var Indices.omega xs)
   merge other = 
     return other
     
@@ -106,7 +105,7 @@ dropLambdas ctx =
 -- | If the given term is within the given context, then return
 -- the value which has filled the context gap.
 -- E.g. "remove (f [_] y) (f x y) == Just x" 
--- If this is a constant context then it returns 'Absurd' if it matches,
+-- If this is a constant context then it returns 'Unr' if it matches,
 -- because obviously there is no gap to return when the context is stripped.
 strip :: Fail.Can m => Context -> Term -> m Term
 strip (Context ctx_t) term = do
@@ -115,7 +114,7 @@ strip (Context ctx_t) term = do
   -- If the terms are equal then there is no gap,
   -- viz. we have unified with a constant context.
   if Map.size uni == 0
-  then return (Absurd (Type.Base Type.empty))
+  then return (Unr (Type.Base Type.empty))
   else do
     let [(idx, hole_term)] = Map.toList uni
     -- The only variable we should be replacing is the gap variable, 

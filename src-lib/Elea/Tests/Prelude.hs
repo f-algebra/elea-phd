@@ -4,7 +4,6 @@ module Elea.Tests.Prelude
 ) 
 where
 
-import Prelude ()
 import Elea.Prelude hiding ( assert )
 import Test.HUnit ( Test (..), assert )
 

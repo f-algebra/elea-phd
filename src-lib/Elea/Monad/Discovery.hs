@@ -13,7 +13,6 @@ module Elea.Monad.Discovery
 )
 where
 
-import Prelude ()
 import Elea.Prelude hiding ( tell, listen, trace )
 import Elea.Term
 import Elea.Show
@@ -22,8 +21,6 @@ import Elea.Monad.Discovery.EquationSet ( EqSet )
 import qualified Elea.Monad.Discovery.EquationSet as EqSet
 import qualified Elea.Prelude as Prelude
 import qualified Elea.Monad.Env as Env
-import qualified Elea.Monad.Definitions.Class as Defs
-import qualified Elea.Monad.Definitions.Database as Defs
 import qualified Control.Monad.Writer as Writer
 
 -- | A monad which ignores discoveries it is passed
@@ -95,11 +92,3 @@ instance Env.Write m => Env.Write (ListenerT m) where
 instance Env.Read m => Env.Read (ListenerT m) where
   bindings = lift Env.bindings
 
-instance Defs.Read m => Defs.Read (ListenerT m) where
-  lookupTerm n = lift . Defs.lookupTerm n
-  lookupType n = lift . Defs.lookupType n
-  lookupName = lift . Defs.lookupName
-  
-instance Defs.Write m => Defs.Write (ListenerT m) where
-  defineTerm n = lift . Defs.defineTerm n
-  defineType n = lift . Defs.defineType n

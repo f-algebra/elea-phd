@@ -5,7 +5,6 @@ module Elea.Monad.Fusion.Class
 )
 where
 
-import Prelude ()
 import Elea.Prelude hiding ( Read )
 import Elea.Term
 import Elea.Type

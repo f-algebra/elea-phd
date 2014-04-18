@@ -9,7 +9,6 @@ module Elea.Monad.Failure.Class
 )
 where
 
-import Prelude ()
 import Elea.Prelude hiding ( catch, when, unless, fromMaybe, assert )
 import Control.Monad.State hiding ( unless, when )
 import qualified Elea.Prelude as Prelude

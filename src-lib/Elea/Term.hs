@@ -1,100 +1,98 @@
 module Elea.Term
 (
   module Elea.Index,
+  
   Term (..), Alt (..),
   Term' (..), Alt' (..),
-  Type, Bind (..), 
-  Constraint (..), FixInfo (..),
+  Type, Bind (..),
+  Constraint (..),
+  Name (..),
+  
   ContainsTerms (..), mapTerms, containedTerms,
   Equation (..), equationName, equationLHS, equationRHS,
-  app,
+  
   projectAlt, embedAlt,
-  altBindings, altInner,
-  altBindings', altInner',
-  constraintOver, constraintType, constrainedTo,
-  flattenApp, leftmost, arguments,
+  altBindings, altTerm, altConstructor,
+  altBindings', altTerm', altConstructor',
+  nameId, nameType,
+  recursiveConArgs,
+  constrainedTerm, constrainedTo,
   flattenLam, unflattenLam,
-  isCon, isLam, isVar,
-  isFix, isAbsurd, isCase,
-  isAbsurd',
-  emptyInfo,
-  addFusedMatches,
-  inductivelyTyped, 
-  fromVar, 
-  conjunction, true, false,
-  altPattern, 
+  isCon, isLam, isVar, isUnr, isCase,
+  isUnr',
+  true, false,
+  constructorPattern,
+  argumentCount,
+  apply,
+  stripArgs,
   isSimple,
   isFinite,
-  lowerableAltInner,
-  loweredAltInner,
-  buildFold,
-  buildEq,
+  lowerableAltTerm,
+  loweredAltTerm,
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Index ( Index, Indexed, Substitutable, Inner )
-import Elea.Type ( Type (..), Ind (..), ConArg (..), Bind (..) )
+import Elea.Type ( Type (..), Ind (..), ConArg (..)
+                 , Bind (..), Constructor (..) )
 import qualified Elea.Type as Type
 import qualified Elea.Index as Indices
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 import qualified Data.Map as Map
-import qualified Algebra.Lattice as Algebra
 
--- | The simply typed lambda calculus
 data Term
-  = Absurd  { resultType :: !Type } 
-  
-  | Var     { varIndex :: !Index }
-
-  | App     !Term ![Term]
+  = Var     { varIndex :: !Index
+            , arguments :: ![Term] }
 
   | Lam     { binding :: !Bind 
-            , inner :: !Term }
+            , abstractedTerm :: !Term }
 
-  | Fix     { fixInfo :: !FixInfo
-            , binding :: !Bind 
-            , inner :: !Term }
+  | Def     { name :: !Name
+            , arguments :: ![Term] }
+            
+  | Con     { constructor :: !Constructor
+            , arguments :: ![Term] }
 
-  | Con     { constructorOf :: !Type.Ind
-            , constructorIndex :: !Nat }
-
-  | Case    { caseInd :: !Type.Ind
-            , inner :: !Term
-            , alts :: ![Alt] }
+  | Case    { caseTerm :: !Term
+            , caseAlts :: ![Alt] }
+            
+  | Unr     { resultType :: !Type } 
+            
   deriving ( Eq, Ord )
 
 data Alt
-  = Alt     { _altBindings :: ![Bind]
-            , _altInner :: !Term }
+  = Alt     { _altConstructor :: !Constructor
+            , _altBindings :: ![Bind]
+            , _altTerm :: !Term }
   deriving ( Eq, Ord )
+  
+  
+-- | Something for naming terms. Should be globally unique. We also store the
+-- type of the name alongside it for simplicity.
+data Name 
+  = Name    { _nameId :: !String
+            , _nameType :: !Type }
+
+instance Eq Name where
+  (==) = (==) `on` _nameId
+  
+instance Ord Name where
+  compare = compare `on` _nameId
+              
+instance Show Name where
+  show = _nameId
+  
   
 -- | A constraint is a pattern match where only one branch is non-absurd.
 -- Functions surrounding constraints can be found in "Elea.Constraint".
 data Constraint 
-  = Constraint  { _constraintOver :: !Term
-                , _constraintType :: !Type.Ind
-                , _constrainedTo :: !Nat }
+  = Constraint  { _constrainedTo :: !Constructor
+                , _constrainedTerm :: !Term }
   deriving ( Eq, Ord )
   
-  
--- | Information stored about fixpoints, to add efficiency.
-data FixInfo
-  = FixInfo { -- | The sets of pattern matches that have been unsuccessfully
-              -- fused into this fixpoint, and the value of the applied
-              -- arguments to the fixpoint itself.
-              -- Stops match-fix fusion from repeating itself.
-              _failedFusionSteps :: ![(Set Constraint, Term)] }
-              
--- Fixpoint information does not change the meaning of a fixpoint, so
--- it does not effect equality between terms.
-instance Eq FixInfo where
-  _ == _ = True
-instance Ord FixInfo where
-  _ `compare` _ = EQ
   
 -- | Equations between terms
 data Equation
@@ -109,45 +107,54 @@ data Equation
 type instance Fold.Base Term = Term'
 
 data Term' a 
-  = Absurd' !Type
-  | Var' !Index
-  | App' a [a]
-  | Lam' !Bind a
-  | Fix' !FixInfo !Bind a
-  | Con' !Type.Ind !Nat
-  | Case' !Type.Ind a ![Alt' a]
+  = Var'    { varIndex' :: !Index
+            , arguments' :: [a] }
+
+  | Lam'    { binding' :: !Bind 
+            , abstractedTerm' :: a }
+
+  | Def'    { name' :: !Name 
+            , arguments' :: [a] }
+            
+  | Con'    { constructor' :: !Constructor
+            , arguments' :: [a] }
+
+  | Case'   { caseTerm' :: a
+            , caseAlts' :: [Alt' a] }
+            
+  | Unr'    { resultType' :: !Type } 
   deriving ( Functor, Foldable, Traversable )
+  
   
 data Alt' a
-  = Alt' { _altBindings' :: ![Bind]
-         , _altInner' :: a }
+  = Alt'    { _altConstructor' :: !Constructor
+            , _altBindings' :: ![Bind]
+            , _altTerm' :: a }
   deriving ( Functor, Foldable, Traversable )
   
-mkLabels [ ''Alt, ''Alt', ''FixInfo, ''Equation, ''Constraint ]
+mkLabels [ ''Alt, ''Alt', ''Equation, ''Constraint, ''Name ]
 
 projectAlt :: Alt -> Alt' Term
-projectAlt (Alt bs t) = Alt' bs t
+projectAlt (Alt c bs t) = Alt' c bs t
 
 embedAlt :: Alt' Term -> Alt
-embedAlt (Alt' bs t) = Alt bs t
+embedAlt (Alt' c bs t) = Alt c bs t
 
 instance Fold.Foldable Term where
-  project (Var x) = Var' x
-  project (App f xs) = App' f xs
+  project (Var x ts) = Var' x ts
   project (Lam b t) = Lam' b t
-  project (Fix i b t) = Fix' i b t
-  project (Con ind n) = Con' ind n
-  project (Case ind t alts) = Case' ind t (map projectAlt alts)
-  project (Absurd ty) = Absurd' ty
+  project (Def n t) = Def' n t
+  project (Con c xs) = Con' c xs
+  project (Case t alts) = Case' t (map projectAlt alts)
+  project (Unr ty) = Unr' ty
 
 instance Fold.Unfoldable Term where
-  embed (Var' x) = Var x
-  embed (App' f xs) = App f xs
+  embed (Var' x ts) = Var x ts
   embed (Lam' b t) = Lam b t
-  embed (Fix' i b t) = Fix i b t
-  embed (Con' ind n) = Con ind n
-  embed (Case' ind t alts) = Case ind t (map embedAlt alts)
-  embed (Absurd' ty) = Absurd ty
+  embed (Def' n ts) = Def n ts
+  embed (Con' c ts) = Con c ts
+  embed (Case' t alts) = Case t (map embedAlt alts)
+  embed (Unr' ty) = Unr ty
   
 class ContainsTerms t where
   mapTermsM :: Monad m => (Term -> m Term) -> t -> m t
@@ -173,31 +180,19 @@ instance (ContainsTerms a, ContainsTerms b) => ContainsTerms (a, b) where
     return (t1', t2')
   
 instance Zip Alt' where
-  zip (Alt' bs t) (Alt' _ t') = Alt' bs (t, t')
+  zip (Alt' c bs t) (Alt' _ _ t') = Alt' c bs (t, t')
   
 instance Zip Term' where
-  zip (Var' x) (Var' _) = Var' x
-  zip (App' f xs) (App' f' xs') = App' (f, f') (zip xs xs')
+  zip (Var' f ts) (Var' _ ts') = Var' f (zip ts ts')
   zip (Lam' b t) (Lam' _ t') = Lam' b (t, t')
-  zip (Fix' i b t) (Fix' _ _ t') = Fix' i b (t, t')
-  zip (Con' ind n) (Con' {}) = Con' ind n
-  zip (Absurd' ty) (Absurd' _) = Absurd' ty
-  zip (Case' ind t alts) (Case' _ t' alts') =
-    Case' ind (t, t') (zipWith zip alts alts')
-    
-instance Algebra.JoinSemiLattice Term where
-  join = min
-  
-instance Algebra.BoundedJoinSemiLattice Term where
-  bottom = Absurd Algebra.bottom
+  zip (Def' n ts) (Def' _ ts') = Def' n (zip ts ts')
+  zip (Con' c ts) (Con' _ ts') = Con' c (zip ts ts')
+  zip (Unr' ty) (Unr' _) = Unr' ty
+  zip (Case' t alts) (Case' t' alts') =
+    Case' (t, t') (zipWith zip alts alts')
   
 
 -- * Some generally helpful functions
-
-app :: Term -> [Term] -> Term
-app f [] = f
-app (App f xs) ys = App f (xs ++ ys)
-app f xs = App f xs
 
 isCon :: Term -> Bool
 isCon (Con {}) = True
@@ -211,24 +206,21 @@ isVar :: Term -> Bool
 isVar (Var {}) = True
 isVar _ = False
 
-isFix :: Term -> Bool
-isFix (Fix {}) = True
-isFix _ = False
+isDef :: Term -> Bool
+isDef (Def {}) = True
+isDef _ = False
 
 isCase :: Term -> Bool
 isCase (Case {}) = True
 isCase _ = False
 
-isAbsurd :: Term -> Bool
-isAbsurd (Absurd {}) = True
-isAbsurd _ = False
+isUnr :: Term -> Bool
+isUnr (Unr {}) = True
+isUnr _ = False
 
-isAbsurd' :: Term' a -> Bool
-isAbsurd' (Absurd' {}) = True
-isAbsurd' _ = False
-
-fromVar :: Term -> Index
-fromVar (Var x) = x
+isUnr' :: Term' a -> Bool
+isUnr' (Unr' {}) = True
+isUnr' _ = False
 
 flattenLam :: Term -> ([Bind], Term)
 flattenLam (Lam b t) = first (b:) (flattenLam t)
@@ -237,234 +229,84 @@ flattenLam t = ([], t)
 unflattenLam :: [Bind] -> Term -> Term
 unflattenLam = flip (foldr Lam)
 
-flattenApp :: Term -> [Term]
-flattenApp (App f xs) = f:xs
-flattenApp t = [t]
-
-leftmost :: Term -> Term
-leftmost = head . flattenApp
-
-arguments :: Term -> [Term]
-arguments = tail . flattenApp
-
-emptyInfo :: FixInfo
-emptyInfo = FixInfo []
+-- | Apply arguments to the given term. Only defined if the term given
+-- takes arguments, or if no arguments are given.
+apply :: Term -> [Term] -> Term
+apply t [] = t
+apply (Var f xs) ys = Var f (xs ++ ys)
+apply (Def a xs) ys = Def a (xs ++ ys)
+apply (Con c xs) ys = Con c (xs ++ ys)
 
 
--- | This should maybe be called @fullyApplied@ but it checks whether a fixpoint
--- has every argument applied to it.
-inductivelyTyped :: Term -> Bool
-inductivelyTyped (App (Fix _ (Bind _ fix_ty) _) args) =
-  Type.argumentCount fix_ty == length args
+-- | Returns zero if the given term takes no arguments.
+argumentCount :: Term -> Nat
+argumentCount (Var _ ts) = length ts
+argumentCount (Def _ ts) = length ts
+argumentCount (Con _ ts) = length ts
+argumentCount _ = 0
+
+
+stripArgs :: Fail.Can m => Nat -> Term -> m (Term, [Term])
+stripArgs 0 t = return (t, [])
+stripArgs n t
+  | argumentCount t < n = Fail.here
+stripArgs n (Var x ts) = return (Var x (drop n ts), take n ts)
+stripArgs n (Def a ts) = return (Def a (drop n ts), take n ts)
+stripArgs n (Con c ts) = return (Con c (drop n ts), take n ts)
+
   
-  
--- | Add a set of matches we attempted to fuse into a fixpoint.
-addFusedMatches :: Set Constraint -> Term -> Term
-addFusedMatches ms term = 
-  app (Fix info' fix_b fix_t) args
-  where
-  Fix (FixInfo mss) fix_b fix_t : args = flattenApp term
-  info' = FixInfo ((ms, term) : mss)
-  
-  
--- | Given an inductive type and a constructor index this will return
--- a fully instantiated constructor term.
--- E.g. "altPattern [list] 1 == Cons _1 _0"
-altPattern :: Type.Ind -> Nat -> Term
-altPattern ty@(Type.Ind _ cons) n = id
+-- | Given a type constructor this will return a fully instantiated 
+-- constructor term as it would appear in a pattern match.
+-- E.g. @altPattern ([list], 1) == Cons _1 _0@
+constructorPattern :: Constructor -> Term
+constructorPattern con@(Constructor (Ind _ cons) n) = id
   . assert (length cons > n)
-  . app (Con ty n)
+  . Con con
   . reverse
-  . map (Var . enum)
+  . map (\i -> Var i [])
   $ [0..arg_count - 1]
   where
   arg_count = id
     . length
     . snd
-    $ cons `nth` fromEnum n
+    $ cons !! n
     
+    
+-- | The arguments to a constructor term which have the same type
+-- as the constructor itself.
+recursiveConArgs :: Term -> [Term]
+recursiveConArgs (Con con args) = 
+  map (args !!) (Type.recursiveArgs con)
+  
     
 -- | Whether a term contains a finite amount of information, from a
 -- strictness point of view. So @[x]@ is finite, even though @x@ is a variable
 -- since it is not of the same type as the overall term.
 isFinite :: Term -> Bool
-isFinite (Con {}) = True
-isFinite (App (Con ind n) args) = id
+isFinite (Con con args) = id
   . all isFinite 
-  . map (args `nth`)
-  $ Type.recursiveArgs ind n
+  . map (args !!)
+  $ Type.recursiveArgs con
 isFinite _ = False
 
 
 -- | A /simple/ term contains only contructors and variables.
 isSimple :: Term -> Bool
-isSimple (flattenApp -> Con _ _ : args) =
-  all isSimple args
-isSimple (flattenApp -> Var _ : args) = 
-  all isSimple args
+isSimple (Con _ args) = all isSimple args
+isSimple (Var _ args) = all isSimple args
 isSimple _ = False
 
 
-lowerableAltInner :: Indexed Term => Alt -> Bool
-lowerableAltInner (Alt bs alt_t) =
+lowerableAltTerm :: Indexed Term => Alt -> Bool
+lowerableAltTerm (Alt _ bs alt_t) =
   Indices.lowerableBy (length bs) alt_t
 
-loweredAltInner :: Indexed Term => Alt -> Term
-loweredAltInner (Alt bs alt_t) =
+loweredAltTerm :: Indexed Term => Alt -> Term
+loweredAltTerm (Alt _ bs alt_t) =
   Indices.lowerMany (length bs) alt_t
   
-  
--- | Build a fold function. 
-buildFold :: Indexed Term 
-  => Type.Ind  -- ^ The inductive argument type of the fold function 
-  -> Type      -- ^ The return type of the fold function
-  -> Term
-buildFold ind@(Type.Ind _ cons) result_ty = 
-  unflattenLam lam_bs fix_t
-  where
-  -- Add a fixpoint if the inductive type is recursive
-  fix_t 
-    | not (Type.isRecursive ind) = Indices.lower fold_t
-    | otherwise = Fix emptyInfo fix_b fold_t
-    where
-    fix_lbl = "fold[" ++ show ind ++ "]"
-    fix_b = Bind fix_lbl (Fun (Base ind) result_ty)
-  
-  -- Build the term that represents the fold function body
-  fold_t = id
-    . Lam (Bind ("var_" ++ show ind) (Base ind))
-    $ Case ind (Var 0) alts
-    where
-    -- Build every branch of the outer pattern match from the index of 
-    -- the function which will be applied down that branch, and the
-    -- defintion of the constructor for that branch
-    alts = zipWith buildAlt lam_idxs cons
-      where
-      -- The indices of the functions which will replace each constructor
-      lam_idxs :: [Index]
-      lam_idxs = (map enum . reverse) [2..length cons + 1]
-      
-      buildAlt :: Index -> (String, [ConArg]) -> Alt
-      buildAlt f_idx (_, con_args) = 
-        Alt alt_bs (app f f_args)
-        where
-        liftHere = Indices.liftMany (length con_args)
-        
-        -- The index of the fix variable
-        outer_f = liftHere (Var 1)
-        
-        -- The index of the parameter representing the function to be applied
-        -- down this branch
-        f = liftHere (Var f_idx)
-        
-        f_args = 
-          zipWith conArgToArg arg_idxs con_args
-          where
-          arg_idxs :: [Index]
-          arg_idxs = (map enum . reverse) [0..length con_args - 1]
-          
-          conArgToArg :: Index -> ConArg -> Term
-          conArgToArg idx IndVar = app outer_f [Var idx]
-          conArgToArg idx (ConArg _) = Var idx
-        
-        alt_bs = 
-          map conArgToBind con_args
-          where
-          conArgToBind IndVar = Bind "y" (Base ind)
-          conArgToBind (ConArg ty) = Bind "a" ty
-    
-  -- The bindings for the outer lambdas of the fold function. 
-  -- These are the lambdas which receive the functions the constructors get 
-  -- replaced with when folding.
-  lam_bs = 
-    map makeBind cons
-    where
-    -- Turn a inductive constructor definition into the type of
-    -- the corresponding fold parameter. So for nat lists you'd get,
-    -- where X is 'result_ty':
-    -- ("Nil", []) => X
-    -- ("Cons", [ConArg nat, IndVar]) => nat -> X -> X
-    makeBind :: (String, [ConArg]) -> Bind
-    makeBind (name, conargs) = id
-      . Bind ("case_" ++ name)
-      . Type.unflatten
-      $ map conArgToTy conargs ++ [result_ty]
-      where
-      conArgToTy IndVar = result_ty
-      conArgToTy (ConArg ty) = ty
    
-    
 false, true :: Term
-true = Con Type.bool 0
-false = Con Type.bool 1
-      
--- | Returns an n-argument /and/ term.
--- > conjunction 3 = fun (p q r: bool) -> and p (and q r)
-conjunction :: Indexed Term => Int -> Term
-conjunction n = id
-  . unflattenLam (replicate n (Bind "p" (Base Type.bool)))
-  . foldr and true
-  . reverse
-  $ map (Var . enum) [0..n-1]
-  where
-  and t t' = app bool_fold [t', false, t]
-  bool_fold = buildFold Type.bool (Base Type.bool)
-
-    
--- | Build an equality function for a given inductive type.
--- > buildEq nat : nat -> nat -> bool
-buildEq :: (Indexed Term, Show Term) => Type.Ind -> Term
-buildEq ind@(Ind _ cons) = 
-  app (buildFold ind fold_ty) cases
-  where
-  fold_ty = Fun (Base ind) (Base Type.bool)
-  cases = map buildCase [0..length cons - 1]
-  
-  buildCase :: Int -> Term
-  buildCase case_n = id 
-    . unflattenLam arg_bs
-    $ Case ind (Var 0) alts
-    where
-    (_, con_args) = cons `nth` case_n
-    
-    arg_bs = id
-      . map (Bind "y")
-      $ map getArgTy con_args ++ [Base ind]
-      where
-      getArgTy IndVar = fold_ty
-      getArgTy (ConArg ty) = ty
-
-    alts = map makeAlt [0..length cons - 1]
-      where 
-      makeAlt :: Int -> Alt
-      makeAlt match_n = 
-        Alt alt_bs alt_t
-        where
-        match_con_args = snd (cons `nth` match_n)
-        
-        alt_bs = map getArgBs match_con_args
-          where
-          getArgBs IndVar = Bind "r" (Base ind)
-          getArgBs (ConArg ty) = Bind "a" ty
-        
-        alt_t 
-          | case_n /= match_n = false
-          | otherwise = app (conjunction (length eq_checks)) eq_checks 
-          
-        eq_checks = 
-          zipWith getEqCheck (reverse [0..length con_args - 1]) con_args
-          where
-          getEqCheck _ (ConArg (Fun {})) = 
-            error 
-              $ "Cannot build an equality function for an inductive type "
-              ++ "which has function typed constructor arguments."
-          getEqCheck arg_i (ConArg (Base arg_ind)) = 
-            app eq_fun [Var (enum arg_i'), Var (enum arg_i)]
-            where
-            arg_i' = arg_i + 1 + length con_args
-            eq_fun = buildEq arg_ind
-          getEqCheck arg_i IndVar = 
-            app f_var [Var (enum arg_i)]
-            where
-            f_var = Var (enum (arg_i + 1 + length con_args))
+true = Con Type.true []
+false = Con Type.false []
 

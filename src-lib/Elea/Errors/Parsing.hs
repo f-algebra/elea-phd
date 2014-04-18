@@ -6,36 +6,21 @@ module Elea.Error.Parsing
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import qualified Elea.Monad.Error.Class as Err
 
-data Error
-  = VariableNotFound String
-  | LiteralNotSupported String
-  | TypeArgsNotSupported
-  | MutualRecursionNotSupported String
+parsingErr :: Err.Can m => String -> m a
+parsingErr = Err.augment "[Parsing Error]\n" . Err.throw
   
-variableNotFound = 
-  Err.throw . VariableNotFound
-literalNotSupported = 
-  Err.throw . LiteralNotSupported
+variableNotFound x = 
+  parsingErr $ "Variable not found: " ++ x
+  
+literalNotSupported x =
+  parsingErr $ "Literal not supported: " ++ x
+  
 typeArgsNotSupported = 
-  Err.throw TypeArgsNotSupported
-mutualRecursionNotSupported =
-  Err.throw . MutualRecursionNotSupported
+  parsingErr "Type arguments are not supported. Simple types only."
   
-instance Show Error where
-  show e = "[Parsing Error] " ++ err e
-    where
-    err (VariableNotFound var) = 
-      "Variable not found: " ++ var
- 
-    err (LiteralNotSupported lit) = 
-      "Literal not supported: " ++ lit
-      
-    err TypeArgsNotSupported =
-      "Type arguments not supported"
-      
-    err (MutualRecursionNotSupported s) = 
-      "Mutual recursion not supported: " ++ s
+mutualRecursionNotSupported x =
+  parsingErr $ "Mutual recursion not supported: " ++ s
+  

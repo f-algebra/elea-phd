@@ -6,7 +6,6 @@ module Elea.Monad.Discovery.Class
 )
 where
 
-import Prelude ()
 import Elea.Prelude hiding ( tell, listen )
 import Elea.Term
 import qualified Elea.Monad.Env.Class as Env
@@ -21,12 +20,12 @@ class Monad m => Tells m where
 class Tells m => Listens m where
   listen :: m a -> m (a, [Equation])
 
-equals :: (Env.Read m, Tells m) => Term -> Term -> m ()
+equals :: (Env.Bindings m, Tells m) => Term -> Term -> m ()
 equals t1 t2 = do
   bs <- Env.bindings
   tell (Equals "" (reverse bs) t1 t2)
   
-equalsM :: (Env.Read m, Tells m) => Term -> m Term -> m Term
+equalsM :: (Env.Bindings m, Tells m) => Term -> m Term -> m Term
 equalsM t1 mt2 = do
   t2 <- mt2
   equals t1 t2

@@ -21,7 +21,7 @@ import qualified Elea.Unification as Unifier
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
-import qualified Elea.Monad.Definitions as Defs
+import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 
@@ -92,7 +92,7 @@ constructorFission fix@(Fix _ fix_b fix_t) = do
     . Context.make 
     . const
     . unflattenLam arg_bs
-    $ Absurd return_ty
+    $ Unr return_ty
     
   -- A very quick check as to whether we can float a constructor out of
   -- this fixpoint. Makes sure that only one constructor is returned down

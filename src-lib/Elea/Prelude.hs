@@ -58,12 +58,12 @@ module Elea.Prelude
   insertAt, enum, indent, indentBy, debugNth,
   arrowSum, supremum, (|>), ($>), replaceAt,
   Maximum (..), Minimum (..), sconcatMap,
-  intersects, length, liftMaybe, maybeT, nth
+  intersects, length, liftMaybe, maybeT, nth, drop, take,
 )
 where
 
 import Prelude hiding ( mapM, foldl, foldl1, mapM_, minimum, 
-  maximum, sequence_, zip, zipWith, Read (..), length,
+  maximum, sequence_, zip, zipWith, Read (..), length, drop, take,
   foldr, foldr1, sequence, Maybe (..), maybe, all, any, elem, product,
   and, concat, notElem, or, concatMap, sum, (++), map, (.), id, (!!) )
 
@@ -368,6 +368,12 @@ nth = debugNth "Index too large"
   
 arrowSum :: MonadPlus m => [a -> m b] -> a -> m b
 arrowSum ms x = msum (map ($ x) ms)
+
+drop :: Enum e => e -> [a] -> [a]
+drop = Pre.drop . fromEnum
+
+take :: Enum e => e -> [a] -> [a]
+take = Pre.take . fromEnum
 
 supremum :: Enum a => Set a -> a
 supremum set 

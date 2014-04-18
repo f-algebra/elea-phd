@@ -4,12 +4,14 @@ module Data.Nat
 )
 where
 
+import Prelude
+
 -- | Natural numbers. Use 'toEnum' to construct.
 newtype Nat = Nat Int
   deriving ( Eq, Ord )
 
 -- | Co-inductive natural numbers with decidable equality.
-data CoNat = Omega | CoNat Nat
+data CoNat = Omega | CoNat !Nat
   deriving ( Eq )
   
 instance Ord CoNat where

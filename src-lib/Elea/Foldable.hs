@@ -16,7 +16,6 @@ module Elea.Foldable
 )
 where
 
-import Prelude ()
 import Elea.Prelude hiding ( Foldable, allM, anyM, findM, any, all, find, )
 import GHC.Prim ( Constraint )
 import Data.Functor.Foldable
@@ -40,16 +39,16 @@ class (Monad m, Bifoldable t) => FoldableM m t where
   cataM f = 
     join . liftM f . distM . fmap (cataM f &&& id) . project
     
-  paraM :: forall a . (Base t (a, t) -> m a) -> t -> m a
-  paraM f = liftM fst . cataM g
+  paraM :: forall a . (Base t (t, a) -> m a) -> t -> m a
+  paraM f = liftM snd . cataM g
     where
-    g :: Base t (a, t) -> m (a, t)
+    g :: Base t (t, a) -> m (t, a)
     g x = do
       a <- f x
-      return (a, recover x)
+      return (recover x, a)
       
-recover :: Unfoldable t => Base t (a, t) -> t
-recover = embed . fmap snd
+recover :: Unfoldable t => Base t (t, a) -> t
+recover = embed . fmap fst
      
 class FoldableM m t => TransformableM m t where
   transformM :: (t -> m t) -> t -> m t

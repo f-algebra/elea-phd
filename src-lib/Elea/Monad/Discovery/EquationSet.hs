@@ -6,7 +6,6 @@ module Elea.Monad.Discovery.EquationSet
 )
 where
 
-import Prelude ()
 import Elea.Prelude hiding ( toList )
 import Elea.Term
 import Elea.Monad.Env ()

@@ -1,15 +1,23 @@
 module Elea.Type
 (
-  Type (..), Ind (..), ConArg (..), Bind (..),
+  Type (..), 
+  Ind (..), 
+  ConArg (..), 
+  Bind (..),
+  Constructor (..),
   
   ContainsTypes (..), mapTypes,
   
-  name, constructors, boundLabel, boundType, 
+  name, boundLabel, boundType, 
+  constructorOf, constructorIndex,
   empty, unit, tuple, bool, 
+  true, false,
   equation, isEquation,
   returnType, argumentTypes,
   isInd, isFun, fromBase,
   unflatten, flatten, unfold, argumentCount,
+  constructors, dropArgs,
+  constructorType,
   recursiveArgs, nonRecursiveArgs, recursiveArgIndices,
   isBaseCase, isRecursive, 
   makeAltBindings,
@@ -20,12 +28,10 @@ module Elea.Type
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Index
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Failure.Class as Fail
-import qualified Algebra.Lattice as Algebra
 
 -- | An argument to a constructor.
 data ConArg 
@@ -39,7 +45,7 @@ data ConArg
 -- | @Ind@uctive type
 data Ind 
   = Ind   { _name :: !String
-          , _constructors :: ![(String, [ConArg])] }
+          , _constructorDefs :: ![(String, [ConArg])] }
   
 data Type 
   -- | Base types are inductive data types.
@@ -58,19 +64,24 @@ data Bind
   = Bind  { _boundLabel :: !String
           , _boundType :: !Type }
           
+data Constructor
+  = Constructor { _constructorOf :: !Ind
+                , _constructorIndex :: !Nat }
+  deriving ( Eq, Ord )
+          
 -- Equality ignores labels.
 instance Eq Bind where
   (==) = (==) `on` _boundType
   
 instance Eq Ind where
-  (==) = (==) `on` map snd . _constructors
+  (==) = (==) `on` _name
   
 -- Inequality ignores labels.
 instance Ord Bind where
   compare = compare `on` _boundType
   
 instance Ord Ind where
-  compare = compare `on` map snd . _constructors
+  compare = compare `on` _name
   
   
 -- | The prime type for 'Type', to allow us to use the "Elea.Foldable" code.
@@ -113,20 +124,7 @@ instance Fold.Unfoldable Type where
   embed (Fun' t1 t2) = Fun t1 t2
   
   
-mkLabels [ ''Bind, ''Ind ]
-
-
-instance Algebra.JoinSemiLattice Type where
-  join = min
-  
-instance Algebra.BoundedJoinSemiLattice Type where
-  bottom = Base Algebra.bottom
-  
-instance Algebra.JoinSemiLattice Ind where
-  join = min
-  
-instance Algebra.BoundedJoinSemiLattice Ind where
-  bottom = empty
+mkLabels [ ''Bind, ''Ind, ''Constructor ]
 
 
 -- | Anything that contains types. Will only apply the function to the very
@@ -160,6 +158,9 @@ instance ContainsTypes Ind where
     args :: [[ConArg]]
     (names, args) = unzip cons
   
+instance ContainsTypes Constructor where
+  mapTypesM f = modifyM constructorOf (mapTypesM f)
+    
 
 -- | The 'empty' type, viz. the constructorless inductive type.
 empty :: Ind
@@ -186,13 +187,17 @@ equation a =
   where
   name = "==[" ++ show a ++ "]"
   
-isEquation :: Fail.Can m => Ind -> m Type
-isEquation (Ind _ [("==", [ConArg x, ConArg y])]) 
-  | x == y = return x
-isEquation _ = Fail.here
+isEquation :: Constructor -> Bool
+isEquation (Constructor (Ind name [("==", [_, _])]) 0) = 
+  take 3 name == "==["
+isEquation _ = False
 
 bool :: Ind
 bool = Ind "bool" [("True", []), ("False", [])]
+
+true, false :: Constructor
+true = Constructor bool 0
+false = Constructor bool 1
 
   
 -- Helpful functions
@@ -224,6 +229,12 @@ argumentTypes = init . flatten
 argumentCount :: Type -> Int
 argumentCount = pred . length . flatten
 
+-- | Drops arguments from a type.
+-- > dropArgs 2 (A -> B -> C -> D) = C -> D
+dropArgs :: Nat -> Type -> Type
+dropArgs 0 ty = ty
+dropArgs n (Fun _ ty) = dropArgs (pred n) ty
+
 unfold :: Ind -> [Bind]
 unfold ind@(Ind _ cons) =
   map unfoldCon cons
@@ -239,50 +250,65 @@ unfold ind@(Ind _ cons) =
     unfoldArg IndVar = Base ind
     unfoldArg (ConArg ty) = ty
     
+    
+-- | All the constructors of an inductive type
+constructors :: Ind -> [Constructor]
+constructors ind@(Ind _ cons) = 
+  map (Constructor ind . fst) ([0..] `zip` cons)
+  
+constructorType :: Constructor -> Type
+constructorType (Constructor ind n) = id
+  . get boundType
+  . (!! n)
+  $ unfold ind
+    
+    
 -- | Return the positions of the recursive arguments of a given constructor
-recursiveArgs :: Ind -> Nat -> [Int]
-recursiveArgs (Ind _ cons) n = id
+recursiveArgs :: Constructor -> [Int]
+recursiveArgs (Constructor (Ind _ cons) n) = id
   . assert (length cons > n)
   $ findIndices (== IndVar) con_args
   where
-  (_, con_args) = cons `nth` enum n
+  (_, con_args) = cons !! n
 
+  
 -- | Return the de-Bruijn indices that will be bound to the recursive arguments
 -- of a given constructor within a pattern match. 
 -- For example, the second constructor of @ntree@ 
 -- is @Cons: nat -> nlist -> nlist@:
 -- > recursiveArgs nlist 1 == [1]
 -- > recursiveArgIndices nlist 1 == [0]
-recursiveArgIndices :: Ind -> Nat -> [Index]
-recursiveArgIndices ind@(Ind _ cons) n = id
+recursiveArgIndices :: Constructor -> [Index]
+recursiveArgIndices con@(Constructor ind@(Ind _ cons) n) = id
   . assert (length cons > n)
   . map enum
   . map (\x -> (arg_count - x) - 1)
-  $ recursiveArgs ind n
+  $ recursiveArgs con
   where
   -- The number of arguments this constructor has
-  arg_count = length (snd (cons `nth` enum n))
+  arg_count = length (snd (cons !! n))
+  
   
 -- | Returns the opposite indices to 'recursiveArgs'
-nonRecursiveArgs :: Ind -> Nat -> [Int]
-nonRecursiveArgs (Ind _ cons) n = id
+nonRecursiveArgs :: Constructor -> [Int]
+nonRecursiveArgs (Constructor (Ind _ cons) n) = id
   . assert (length cons > n)
   $ findIndices (/= IndVar) con_args
   where
   (_, con_args) = cons `nth` enum n
   
--- | For a given inductive type, return whether the constructor at that 
--- index is a base case.
-isBaseCase :: Ind -> Nat -> Bool
-isBaseCase ind n = 
+  
+-- | Whether a constructor has no recursive arguments
+isBaseCase :: Constructor -> Bool
+isBaseCase con = 
   -- A base case is one that has no recursive arguments
-  recursiveArgs ind n == []
+  recursiveArgs con == []
+  
   
 -- | Whether an inductive type has any recursive constructors.
 isRecursive :: Ind -> Bool
-isRecursive ind = id
-  . any (not . isBaseCase ind . enum)
-  $ [0..length (get constructors ind) - 1]
+isRecursive = all isBaseCase . constructors
+
   
 -- | Given a specific constructor index of an inductive type, return 
 -- appropriate bindings for a pattern match on that constructor.
@@ -382,6 +408,10 @@ instance Show Type where
 instance Show Bind where
   show (Bind name ty) =
     "(" ++ name ++ ": " ++ show ty ++ ")" 
+    
+instance Show Constructor where
+  show (Constructor (Ind _ cons) n) = 
+    fst (cons !! n)
     
 instance (ContainsTypes a, Show a) => Show (Polymorphic a) where
   show p@(Poly ns _) =

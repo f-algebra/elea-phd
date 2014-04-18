@@ -8,7 +8,6 @@ module Elea.Monad.Fedd
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Term
 import Elea.Show
@@ -16,7 +15,6 @@ import Elea.Monad.Fusion.Database ( Outcome (..) )
 import qualified Elea.Context as Context
 import qualified Elea.Monad.Discovery.EquationSet as EqSet
 import qualified Elea.Monad.Definitions.Class as Defs
-import qualified Elea.Monad.Definitions.Database as Defs
 import qualified Elea.Monad.Fusion.Class as Fusion
 import qualified Elea.Monad.Fusion.Database as FusionDB
 import qualified Elea.Monad.Discovery.Class as Disc
@@ -51,7 +49,7 @@ instance Monad m => Env.Write (FeddT m) where
   bindAt at b = local (insertAt (enum at) b)
   matched _ _ = id
   
-instance Monad m => Env.Read (FeddT m) where
+instance Monad m => Env.Bindings (FeddT m) where
   bindings = ask
   
 instance Monad m => Disc.Tells (FeddT m) where

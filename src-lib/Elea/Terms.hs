@@ -30,7 +30,6 @@ module Elea.Terms
 )
 where
 
-import Prelude ()
 import Elea.Prelude hiding ( replace )
 import Elea.Term
 import Elea.Context ( Context )
@@ -42,7 +41,7 @@ import qualified Elea.Unification as Unifier
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
-import qualified Elea.Monad.Definitions as Defs
+import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid

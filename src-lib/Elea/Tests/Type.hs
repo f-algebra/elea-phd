@@ -4,7 +4,6 @@ module Elea.Tests.Type
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Type
 import qualified Elea.Testing as Test

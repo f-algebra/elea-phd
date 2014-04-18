@@ -4,7 +4,6 @@ module Elea.Tests.Context
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import qualified Elea.Context as Context
 import qualified Elea.Simplifier as Simp

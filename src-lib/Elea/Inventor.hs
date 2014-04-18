@@ -10,7 +10,6 @@ module Elea.Inventor
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
