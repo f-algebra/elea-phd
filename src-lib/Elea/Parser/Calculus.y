@@ -37,7 +37,7 @@ type ParamName = (String, [String])
 type TypeDef = (ParamName, [[String]])
 
 -- Let bindings of terms
-type TermDef = (ParamName, RawTerm)
+type TermDef = (ParamName, [RawBind], RawTerm)
 
 -- Declarations to decide equality between terms
 type PropDef = (ParamName, [RawBind], (RawTerm, RawTerm))
@@ -59,10 +59,9 @@ data RawBind
 data RawTerm
   = TVar ParamCall
   | TApp RawTerm RawTerm
-  | TFix [RawBind] RawTerm
   | TLam [RawBind] RawTerm
   | TCon Nat RawType
-  | TAbsurd RawType
+  | TUnr RawType
   | TCase RawTerm [RawAlt]
   | TLet String RawTerm RawTerm
   | TEq RawType
@@ -177,24 +176,23 @@ Bindings :: { [RawBind] }
   
 Term :: { RawTerm }
   : ParamCall                         { TVar $1 }
-  | '_|_' Type                        { TAbsurd $2 }
   | Term ParamCall                    { TApp $1 (TVar $2) }
   | Term '(' Term ')'                 { TApp $1 $3 }
   | '(' Term ')'                      { $2 }
   | Term '(' Term ',' TermList ')'    { TApp $1 (TTuple ($3:$5)) }
   | '(' Term ',' TermList ')'         { TTuple ($2:$4) }
   | fun Bindings '->' Term            { TLam $2 $4 }
-  | fix Bindings '->' Term            { TFix $2 $4 }
   | let name '=' Term in Term         { TLet $2 $4 $6 }
   | 'eq[' Type ']'                    { TEq $2 }
   | 'fold[' Type ']'                  { TFold $2 }
+  | 'unr[' Type ']'                   { TUnr $2 }
   | match Term with Matches end       { TCase $2 $4 }
   | assert Pattern '<-' Term in Term  { TAssert $2 $4 $6 }
   | if Term then Term else Term       { TCase $2 [ TAlt ["True"] $4
                                                  , TAlt ["False"] $6] }
 
 TermDef :: { TermDef }
-  : let ParamName '=' Term            { ($2, $4) }
+  : let ParamName Bindings '=' Term   { ($2, $3, $5) }
   
 ParamCall :: { ParamCall }
   : name                              { ($1, []) }
@@ -239,7 +237,7 @@ instance Monad m => Env.Write (ReaderT Scope m) where
 instance Err.Can m => Env.Read (ReaderT Scope m) where
   bindings = asks (get bindStack)
   
-type ParserMonad m a = (Err.Can m, Defs.Has m) => ReaderT Scope m a
+type ParserMonad m a = (Err.Can m, Defs.Write m) => ReaderT Scope m a
 
 localTypeArgs :: ContainsTypes t => 
   [String] -> ParserMonad m t -> ParserMonad m (Polymorphic t)
@@ -475,7 +473,7 @@ data Token
   | TokenMatch
   | TokenWith
   | TokenFun
-  | TokenFix
+  | TokenUnr
   | TokenLet
   | TokenIn
   | TokenInd
@@ -535,7 +533,7 @@ lexer (c:cs)
       ("match", rest) -> TokenMatch : lexer rest
       ("with", rest) -> TokenWith : lexer rest
       ("let", rest) -> TokenLet : lexer rest
-      ("fix", rest) -> TokenFix : lexer rest
+      ("unr", '[':rest) -> TokenUnr : lexer rest
       ("in", rest) -> TokenIn : lexer rest
       ("if", rest) -> TokenIf : lexer rest
       ("then", rest) -> TokenThen : lexer rest
@@ -569,7 +567,6 @@ instance Show Token where
   show TokenMatch = "match"
   show TokenWith = "with"
   show TokenFun = "fun"
-  show TokenFix = "fix"
   show TokenLet = "let"
   show TokenIn = "in"
   show TokenInd = "ind"
@@ -582,6 +579,7 @@ instance Show Token where
   show TokenElse = "else"
   show TokenFold = "fold["
   show TokenEqEq = "eq["
+  show TokenUnr = "unr["
   show (TokenInj n) = "inj" ++ show n
   show TokenAssert = "assert"
   

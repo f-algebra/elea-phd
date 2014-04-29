@@ -140,7 +140,7 @@ instance Substitutable Term where
       (at, with) <- tracked
       return $ case at `compare` x of
         -- Substitution occurs
-        EQ -> with
+        EQ -> apply with args
         -- Substitution does not occur
         LT -> Var (pred x) args
         GT -> Var x args

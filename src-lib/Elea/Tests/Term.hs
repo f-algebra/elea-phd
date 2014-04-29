@@ -81,7 +81,7 @@ tests = Test.label "Terms"
       eq4 = Test.assertEq eq_unit' eq_unit 
       
   Lam bind_y add_simp <- Test.simplifiedTerm def_add_raw
-  add_raw <- Test.term def_add_raw
+  add_raw <- Test.term def_add_raw  
   express1 <- Env.bind bind_y $ do
     App add_raw' [_] <- expressFreeVariable 0 add_simp
     Test.assertTermEq add_raw add_raw'

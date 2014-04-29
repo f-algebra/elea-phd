@@ -19,13 +19,12 @@ import Elea.Term
 import Elea.Type
 import Elea.Show
 import Elea.Monad.Fedd ( Fedd )
--- import qualified Elea.Parser.Haskell as Haskell
 import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Parser.Calculus as Parse
-import qualified Elea.Simplifier as Simp
-import qualified Elea.Equality as Equality
-import qualified Elea.Fusion as Fusion
+-- import qualified Elea.Simplifier as Simp
+-- import qualified Elea.Equality as Equality
+-- import qualified Elea.Fusion as Fusion
 import qualified Elea.Monad.Parser.Class as Parser
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Fusion.Class as Fusion
@@ -57,10 +56,6 @@ assertNot = assert . not
 assertEq :: (Show a, Eq a) => a -> a -> Test
 assertEq = (HUnit.TestCase .) . HUnit.assertEqual ""
 
-assertSimpEq :: Term -> Term -> Test
-assertSimpEq (Simp.run -> t1) (Simp.run -> t2) = 
-  assertEq t1 t2
-
 prelude :: String
 prelude = unsafePerformIO
   $ readFile "prelude.elea"
@@ -77,7 +72,36 @@ loadPrelude :: Defs.Has m => m ()
 loadPrelude = do
   eqs <- Err.noneM (Parse.program prelude)
   return ()
+
+term :: (Defs.Has m, Env.Read m) => String -> m Term
+term = Err.noneM . Parse.term
+
+_type :: Defs.Has m => String -> m Type
+_type = Err.noneM . Parse._type
+
+localVars :: (Parser.State m, Env.Write m) => String -> m a -> m a
+localVars bs_s run = do
+  bs <- Err.noneM (Parse.bindings bs_s)
+  Env.bindMany bs $ do
+    zipWithM defineBind [0..length bs - 1] (reverse bs)
+    run
+  where
+  defineBind idx (Bind lbl _) =
+    Parser.defineTerm lbl p_term
+    where
+    p_term = polymorphic [] (const (Var (enum idx)))
+    
+{-
+assertSimpEq :: Term -> Term -> Test
+assertSimpEq (Simp.run -> t1) (Simp.run -> t2) = 
+  assertEq t1 t2
   
+simplifiedTerm :: (Defs.Has m, Env.Read m) => String -> m Term
+simplifiedTerm = liftM Simp.run . term
+
+fusedTerm :: (Defs.Has m, Fusion.FusionM m) => String -> m Term
+fusedTerm = Fusion.run <=< term
+
 assertProvablyEq :: Fusion.FusionM m => Term -> Term -> m Test
 assertProvablyEq t1 t2 = do
   mby_eq <- runMaybeT (Equality.prove Fusion.run t1 t2)
@@ -98,27 +122,4 @@ assertTermEq t1 t2 = do
     . HUnit.TestCase
     . HUnit.assertBool prop_s 
     $ t1 == t2
-
-term :: (Defs.Has m, Env.Read m) => String -> m Term
-term = Err.noneM . Parse.term
-
-simplifiedTerm :: (Defs.Has m, Env.Read m) => String -> m Term
-simplifiedTerm = liftM Simp.run . term
-
-fusedTerm :: (Defs.Has m, Fusion.FusionM m) => String -> m Term
-fusedTerm = Fusion.run <=< term
-
-_type :: Defs.Has m => String -> m Type
-_type = Err.noneM . Parse._type
-
-localVars :: (Parser.State m, Env.Write m) => String -> m a -> m a
-localVars bs_s run = do
-  bs <- Err.noneM (Parse.bindings bs_s)
-  Env.bindMany bs $ do
-    zipWithM defineBind [0..length bs - 1] (reverse bs)
-    run
-  where
-  defineBind idx (Bind lbl _) =
-    Parser.defineTerm lbl p_term
-    where
-    p_term = polymorphic [] (const (Var (enum idx)))
+-}

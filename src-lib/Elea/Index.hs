@@ -5,7 +5,8 @@ module Elea.Index
   Indexed (..), 
   Substitutable (..),
   Shift,
-  lift, liftAt, liftManyAt, liftMany, subst, 
+  lift, liftAt, liftManyAt, liftMany, 
+  subst, substMany,
   lowerAt, lower, lowerMany, lowerableBy,
   freeWithin, replaceAt, tryLowerMany,
   omega, containsOmega,
@@ -128,6 +129,9 @@ instance (Ord t, Substitutable t) => Substitutable (Set t) where
   
 subst :: Substitutable t => Inner t -> t -> t
 subst = substAt 0
+
+substMany :: Substitutable t => [Inner t] -> t -> t
+substMany = flip (foldr subst)
 
 -- | Performs substitution without the accompanying lowering of indices.
 replaceAt :: Substitutable t => Index -> Inner t -> t -> t

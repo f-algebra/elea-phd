@@ -2,11 +2,7 @@
 -- not involve fixpoint fusion.
 module Elea.Simplifier
 (
-  run,
-  steps, removeConstArgs,
-  
-  -- | These two steps are useful for fixpoint fusion
-  finiteCaseFix, finiteArgFix,
+
 )
 where
 
@@ -25,6 +21,7 @@ import qualified Data.Monoid as Monoid
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Control.Monad.Trans as Trans
+{-
 
 run :: Term -> Term
 run = Fold.rewriteSteps steps
@@ -32,7 +29,9 @@ run = Fold.rewriteSteps steps
 steps :: Fail.Can m => [Term -> m Term]
 steps = Eval.steps ++
   [ const Fail.here
-  , Fail.concatTransforms transformSteps
+  , caseFun
+  , constantFix
+  , identityCase
   , finiteArgFix
   , unfoldFixInj
   , freeCaseFix
@@ -40,21 +39,6 @@ steps = Eval.steps ++
   -- , finiteCaseFix   
   , unfoldWithinFix
   ]
-  where
-  -- Transformation steps do not require sub terms to be rewritten upon success.
-  transformSteps = 
-    [ const Fail.here
-    , caseFun
-    , constantFix
-    , constArg
-    , identityCase
-    , uselessFix
-    ] 
-
--- | Remove arguments to a fixpoint if they never change in 
--- any recursive calls.
-removeConstArgs :: Term -> Term
-removeConstArgs = Eval.run . Fold.rewrite constArg
 
   
 -- | We do not want pattern matches to return function typed values,
@@ -82,104 +66,6 @@ caseFun cse@(Case ind t alts) = do
     arg = Var (toEnum (length bs))
     
 caseFun _ = Fail.here
-  
-  
--- | If an argument to a 'Fix' never changes in any recursive call
--- then we should float that lambda abstraction outside the 'Fix'.
-constArg :: Fail.Can m => Term -> m Term
-constArg term@(Fix fix_info (Bind fix_name fix_ty) fix_t) = do
-  -- Find if any arguments never change in any recursive calls
-  pos <- Fail.fromMaybe (find isConstArg [0..length arg_bs - 1])
-  
-  -- Then we run the 'removeConstArg' function on that position
-  return (Eval.run (removeConstArg pos))
-  where
-  -- Strip off the preceding lambdas of the function
-  (arg_bs, fix_body) = flattenLam fix_t
-  arg_count = length (Type.flatten fix_ty) - 1
-  
-  -- The index of the recursive call to the function within 'fix_body'
-  fix_f = length arg_bs :: Index
-  
-  -- Does the given argument position never change in any recursive call?
-  isConstArg :: Int -> Bool
-  isConstArg arg_i = id
-    . not
-    . Env.trackIndices (fix_f, Var arg_x)
-    $ Fold.anyM isntConst fix_body
-    where
-    -- The index of the argument we are tracking as it was bound
-    -- by the lambdas of the function
-    arg_x = enum (length arg_bs - (arg_i + 1))
-    
-    -- Whether this given argument changes at a recursive call site
-    isntConst :: Term -> Env.TrackIndices (Index, Term) Bool
-    isntConst (App (Var f) args) = do
-      (fix_f, arg_t) <- Env.tracked
-      return 
-        $ fix_f == f
-        -- If the number of arguments differs then this function is not
-        -- in the correct shape for this process. So we fail by saying
-        -- the argument changed.
-        && (length args /= arg_count
-        || arg_t /= (args `nth` arg_i))
-    isntConst _ = 
-      return False
-     
-      
-  -- Remove an argument to the function at the given position.
-  removeConstArg :: Int -> Term
-  removeConstArg arg_i = id
-    -- Add new outer lambdas to keep the type of the term the same
-    . unflattenLam (left_bs ++ [dropped_b])
-    . flip app outer_args
-    
-    -- Need to make sure no variables are captured by these new outer lambdas
-    . Indices.liftManyAt (length left_bs) 1 
-    
-    -- The fixpoint information is lifted by one to take into account the 
-    -- removed argument index (which is 0 at this point).
-    . Fix (Indices.lift fix_info) fix_b'
-    
-    -- Remove the argument everywhere it appears
-    . Env.trackIndices 0
-    . Fold.transformM removeArg
-    
-    -- Remove the lambda, and replace all occurrences of that variable
-    -- with index 1 (here index 0 will be the fix variable)
-    . Indices.substAt Indices.omega (Var 1)
-    . Indices.liftAt 1
-    . unflattenLam left_bs
-    . Indices.substAt 0 (Var Indices.omega)
-    . unflattenLam right_bs
-    $ fix_body
-    where
-    -- Lambdas to the left and right of the removed lambda
-    (left_bs, dropped_b:right_bs) = splitAt arg_i arg_bs
-    
-    -- The arguments that will be applied outside the fix
-    outer_args = id
-      . map (Var . enum)
-      $ reverse [1..arg_i]
-    
-    -- The new type binding for the fix, with the given argument removed
-    fix_b' = Bind fix_name fix_ty'
-      where
-      fix_ty' = id
-        . Type.unflatten
-        . removeAt arg_i
-        $ Type.flatten fix_ty
-    
-    removeArg :: Term -> Env.TrackIndices Index Term
-    removeArg term@(App (Var f) args) = do   
-      fix_f <- Env.tracked
-      if fix_f == f
-      then return (App (Var f) (removeAt arg_i args))
-      else return term
-    removeArg term = 
-      return term
-      
-constArg _ = Fail.here
 
 
 -- | If a fixpoint has a finite input to one of its decreasing arguments
@@ -202,14 +88,6 @@ identityCase (Case ind cse_t alts)
   isIdAlt n (Alt _ alt_t) = alt_t == altPattern ind n
 identityCase _ = Fail.here
 
-
--- | Dunno if this ever comes up but if we have a fix without any occurrence
--- of the fix variable in the body we can just drop it.
-uselessFix :: Fail.Can m => Term -> m Term
-uselessFix (Fix _ _ fix_t)
-  | not (0 `Set.member` Indices.free fix_t) = 
-    return (Indices.lower fix_t)
-uselessFix _ = Fail.here
 
 
 -- | Unfolds a 'Fix' if one of its decreasing arguments is a constructor term 
@@ -422,3 +300,4 @@ unfoldWithinFix fix@(Fix fix_i fix_b fix_t) = do
     return other
   
 unfoldWithinFix _ = Fail.here
+-}

@@ -14,7 +14,6 @@ module Elea.Term
   projectAlt, embedAlt,
   altBindings, altTerm, altConstructor,
   altBindings', altTerm', altConstructor',
-  nameId, nameType,
   recursiveConArgs,
   constrainedTerm, constrainedTo,
   flattenLam, unflattenLam,
@@ -29,19 +28,24 @@ module Elea.Term
   isFinite,
   lowerableAltTerm,
   loweredAltTerm,
+  stripPrefix,
 )
 where
 
 import Elea.Prelude
+import Elea.Name ( Name )
 import Elea.Index ( Index, Indexed, Substitutable, Inner )
-import Elea.Type ( Type (..), Ind (..), ConArg (..)
+import Elea.Type ( Type, Ind (..), ConArg (..)
                  , Bind (..), Constructor (..) )
 import qualified Elea.Type as Type
+import qualified Elea.Name as Name
 import qualified Elea.Index as Indices
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 import qualified Data.Map as Map
+import qualified Data.List as List
+
 
 data Term
   = Var     { varIndex :: !Index
@@ -62,28 +66,13 @@ data Term
   | Unr     { resultType :: !Type } 
             
   deriving ( Eq, Ord )
+  
 
 data Alt
   = Alt     { _altConstructor :: !Constructor
             , _altBindings :: ![Bind]
             , _altTerm :: !Term }
   deriving ( Eq, Ord )
-  
-  
--- | Something for naming terms. Should be globally unique. We also store the
--- type of the name alongside it for simplicity.
-data Name 
-  = Name    { _nameId :: !String
-            , _nameType :: !Type }
-
-instance Eq Name where
-  (==) = (==) `on` _nameId
-  
-instance Ord Name where
-  compare = compare `on` _nameId
-              
-instance Show Name where
-  show = _nameId
   
   
 -- | A constraint is a pattern match where only one branch is non-absurd.
@@ -101,7 +90,7 @@ data Equation
             , _equationLHS :: Term
             , _equationRHS :: Term }
 
- 
+
 -- * Base types for generalised cata/para morphisms.
   
 type instance Fold.Base Term = Term'
@@ -113,7 +102,7 @@ data Term' a
   | Lam'    { binding' :: !Bind 
             , abstractedTerm' :: a }
 
-  | Def'    { name' :: !Name 
+  | Def'    { name' :: !Name
             , arguments' :: [a] }
             
   | Con'    { constructor' :: !Constructor
@@ -132,7 +121,7 @@ data Alt' a
             , _altTerm' :: a }
   deriving ( Functor, Foldable, Traversable )
   
-mkLabels [ ''Alt, ''Alt', ''Equation, ''Constraint, ''Name ]
+mkLabels [ ''Alt, ''Alt', ''Equation, ''Constraint ]
 
 projectAlt :: Alt -> Alt' Term
 projectAlt (Alt c bs t) = Alt' c bs t
@@ -231,11 +220,32 @@ unflattenLam = flip (foldr Lam)
 
 -- | Apply arguments to the given term. Only defined if the term given
 -- takes arguments, or if no arguments are given.
-apply :: Term -> [Term] -> Term
+apply :: (Substitutable Term, Inner Term ~ Term) => Term -> [Term] -> Term
 apply t [] = t
+-- Beta-reduction built in
+apply (Lam _ t) (x:xs) = apply (Indices.substAt 0 x t) xs
 apply (Var f xs) ys = Var f (xs ++ ys)
 apply (Def a xs) ys = Def a (xs ++ ys)
 apply (Con c xs) ys = Con c (xs ++ ys)
+
+
+-- | Returns the arguments that can be applied to the first term
+-- to yield the second.
+-- More formally:
+-- > Just xs = stripPrefix t t' <=> apply t xs == t'
+stripPrefix :: Fail.Can m => Term -> Term -> m [Term]
+stripPrefix t1 t2 
+  | t1 == t2 = return []
+stripPrefix (Def n1 xs1) (Def n2 xs2) 
+  | n1 == n2, xs1 `isPrefixOf` xs2 =
+    return (drop (nlength xs1) xs2)
+stripPrefix (Con c1 xs1) (Con c2 xs2)
+  | c1 == c2, xs1 `isPrefixOf` xs2 =
+    return (drop (nlength xs1) xs2)
+stripPrefix (Var x1 xs1) (Var x2 xs2) 
+  | x1 == x2, xs1 `isPrefixOf` xs2 = 
+    return (drop (nlength xs1) xs2)
+stripPrefix _ _ = Fail.here
 
 
 -- | Returns zero if the given term takes no arguments.
@@ -259,7 +269,7 @@ stripArgs n (Con c ts) = return (Con c (drop n ts), take n ts)
 -- constructor term as it would appear in a pattern match.
 -- E.g. @altPattern ([list], 1) == Cons _1 _0@
 constructorPattern :: Constructor -> Term
-constructorPattern con@(Constructor (Ind _ cons) n) = id
+constructorPattern con@(Constructor (Ind _ _ cons) n) = id
   . assert (length cons > n)
   . Con con
   . reverse

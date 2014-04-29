@@ -8,7 +8,7 @@ where
 import Elea.Prelude
 import Elea.Index
 import Elea.Term
-import Elea.Type
+import Elea.Type hiding ( showWithArgs )
 import Elea.Context ( Context )
 import Elea.Show.Class
 import qualified Elea.Index as Indices

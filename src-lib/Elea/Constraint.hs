@@ -9,6 +9,7 @@
 -- less-than-or-equal-to the value of @y@.
 module Elea.Constraint
 (
+{-
   make,
   strip,
   target,
@@ -20,7 +21,8 @@ module Elea.Constraint
   apply,
   toContext,
   matchContext,
-  makeContext,
+  makeContext
+  -}
 )
 where
 
@@ -37,7 +39,7 @@ import qualified Elea.Foldable as Fold
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Monad.Failure.Class as Fail
 
-                
+                {-
 make :: Term -> Type.Ind -> Nat -> Constraint
 make = Constraint
 
@@ -139,4 +141,4 @@ apply (Constraint match_t ind con_n) (on_t, on_ty) =
 toContext :: Type -> Constraint -> Context
 toContext result_ty constr =
   Context.make (\gap_t -> apply constr (gap_t, result_ty))
-
+-}
