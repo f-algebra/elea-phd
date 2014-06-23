@@ -25,11 +25,10 @@ import qualified Control.Monad.State.Class as State
 
 newtype FeddT m a 
   = FeddT { 
-    runFeddT :: RWST [Bind] EqSet.EqSet (Defs.Database, FusionDB.Database) m a }
+    runFeddT :: RWST [Bind] () (Defs.Database, FusionDB.Database) m a }
   deriving 
   ( Monad, MonadTrans
   , MonadReader [Bind]
-  , MonadWriter EqSet.EqSet
   , MonadState (Defs.Database, FusionDB.Database) )
   
 type Fedd = FeddT Identity
@@ -51,12 +50,6 @@ instance Monad m => Env.Write (FeddT m) where
   
 instance Monad m => Env.Bindings (FeddT m) where
   bindings = ask
-  
-instance Monad m => Disc.Tells (FeddT m) where
-  tell = tell . EqSet.singleton
-  
-instance Monad m => Disc.Listens (FeddT m) where
-  listen = liftM (second EqSet.toList) . listen
   
 instance Monad m => Defs.Write (FeddT m) where
   defineTerm n t = State.modify (first (Defs.putTerm n t))

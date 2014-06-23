@@ -9,7 +9,7 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
 import Elea.Show ( showM )
-import Elea.Monad.Fedd ( Fedd )
+import Elea.Monad.Edd ( Edd )
 import qualified Elea.Checker as Checker
 import qualified Elea.Fixpoint as Fix
 import qualified Elea.Inventor as Invent
@@ -35,7 +35,7 @@ import qualified Data.Monoid as Monoid
 
 type FusionM m = (Defs.Read m, Env.Full m, Discovery.Tells m, Fusion.Memo m)
  
-{-# SPECIALISE run :: Term -> Fedd Term #-}
+{-# SPECIALISE run :: Term -> Edd Term #-}
 
 run :: FusionM m => Term -> m Term
 run = runSteps (map Type.checkStep (fission_steps ++ fusion_steps))

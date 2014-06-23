@@ -55,7 +55,7 @@ instance Env.Bindings m => ShowM m (Term' (Term, String)) where
       let same_lbl_count = id
             . length
             . filter (== lbl)
-            . map (get Type.boundLabel)
+            . map Type.bindLabel
             $ take (fromEnum idx) bs
             
       -- Append this count to the end of the variable label, so we know
@@ -84,7 +84,7 @@ instance Show (Term' (Term, String)) where
     where
     non_absurd_alts :: [Alt' (Term, String)]
     non_absurd_alts = 
-      filter (not . isUnr . fst . get altTerm') f_alts
+      filter (not . isUnr . fst . altTerm') f_alts
 
   -- Special case for showing equation pairs
   show (Con' eq_con [(_, left_s), (_, right_s)])
@@ -126,10 +126,10 @@ instance Show (Term' String) where
       pat_s = showWithArgs (show con) (map show bs)
           
 instance Env.Bindings m => ShowM m Context where
-  showM = showM . get Context.term
+  showM = showM . Context.term
 
 instance Show Context where
-  show = show . get Context.term
+  show = show . Context.term
   
 instance Env.Bindings m => ShowM m Constraint where
   showM (Constraint con term) = do
@@ -140,7 +140,7 @@ instance Show Constraint where
   show = Env.empty . showM
       
 instance Env.Bindings m => ShowM m Equation where
-  showM (Equals n bs t1 t2) = 
+  showM (Equals n xs bs t1 t2) = 
     Env.bindMany bs $ do
       t1' <- liftM (dropWhile (== '\n')) (showM t1)
       t2' <- showM t2
@@ -155,11 +155,12 @@ instance Env.Bindings m => ShowM m Equation where
            | otherwise = "forall " ++ bs_s ++ " ->\n"
     
     name_s | n == "" = ""
-           | otherwise = "prop " ++ n ++ ": "
-         
+           | otherwise = "prop " ++ n_s ++ ": "
+           
+    n_s | xs == [] = show n
+        | otherwise = show n ++ "<" ++ intercalate ", " xs ++ ">"
+           
     
 instance Show Equation where
   show = Env.empty . showM
-    
 
-      

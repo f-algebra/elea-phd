@@ -5,6 +5,7 @@ module Elea.Terms
   module Elea.Term,
   branches,
   replaceName,
+  replace,
   applyCase,
 )
 where
@@ -71,13 +72,13 @@ instance Env.Write m => Fold.TransformableM m BranchesOnly where
       
 
 -- | Replace all instances of a function name with the given variable index.
-replaceName :: Name -> Index -> Term -> Term
-replaceName name var = 
+replaceName :: Inst Name -> Index -> Term -> Term
+replaceName iname var = 
   Env.trackOffset . Fold.transformM replace
   where
   replace :: Term -> Env.TrackOffset Term
-  replace (Def name' args) 
-    | name == name' = do
+  replace (Def ty_name args) 
+    | fmap typedObj ty_name == iname = do
       var' <- Env.liftByOffset var
       return (Var var' args)
   replace term =
@@ -120,4 +121,5 @@ applyCase (Case cse_t alts) inner_t =
     -- to down this branch.
     pat = Term.constructorPattern con
     alt_t = replace (liftHere cse_t) pat (liftHere inner_t)
+    
 

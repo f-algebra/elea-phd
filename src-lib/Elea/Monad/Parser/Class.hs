@@ -1,6 +1,7 @@
 module Elea.Monad.Parser.Class
 (
-  State (..)
+  State (..),
+  DefinedTerm (..),
 )
 where
 
@@ -8,12 +9,22 @@ import Elea.Prelude hiding ( State )
 import Elea.Term
 import Elea.Type
 import qualified Elea.Monad.Env.Class as Env
+import qualified Elea.Monad.Error.Class as Err
+
+data DefinedTerm
+  = DefinedName (Poly (Typed Name))
+  | DefinedCon (Poly Constructor)
 
 class Env.Bindings m => State m where
-  defineTerm :: String -> Polymorphic Term -> m ()
-  defineInd :: String -> Polymorphic Ind -> m ()
+  defineName :: String -> Poly (Typed Name) -> m ()
+  defineName l n = defineTerm l (DefinedName n)
   
-  lookupTerm :: String -> MaybeT m (Polymorphic Term)
-  lookupInd :: String -> MaybeT m (Polymorphic Ind)
+  defineCon :: String -> Poly Constructor -> m ()
+  defineCon l c = defineTerm l (DefinedCon c)
   
+  defineTerm :: String -> DefinedTerm -> m ()
+  defineInd :: String -> Poly Ind -> m ()
+  
+  lookupTerm :: String -> m (Maybe DefinedTerm)
+  lookupInd :: String -> m (Maybe (Poly Ind))
 

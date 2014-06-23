@@ -21,12 +21,11 @@ import qualified Control.Monad.Trans as Trans
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
--- | A single hole term context 
+-- | A single hole term context
 newtype Context
-  = Context { _term :: Term }
+  = Context { term :: Term }
   deriving ( Eq, Ord )
   
-mkLabels [''Context]
 
 -- | Should be fairly obvious how contexts are equivalent to @Term -> Term@
 -- but I can't think of a nice explanation to put here.
@@ -54,7 +53,7 @@ toLambda ty ctx = id
 -- | Returns whether there is any gap in the given context.
 isConstant :: Context -> Bool
 isConstant =
-  not . Indices.containsOmega . get term
+  not . Indices.containsOmega . term
   
   
 -- | Takes a context which has a lambda topmost
@@ -122,22 +121,22 @@ strip (Context ctx_t) term = do
     Fail.when (idx /= Indices.omega)
     return hole_term
 
+instance ContainsTerms Context where
+  mapTermsM f (Context t) = 
+    return Context `ap` f t
   
 instance Indexed Context where
-  free = Indices.free . get term
-  shift f = modify term (Indices.shift f)
+  free = Set.delete Indices.omega . Indices.free . term
+  shift f = mapTerms (Indices.shift f)
 
 instance Substitutable Context where
   type Inner Context = Term
-  substAt at with = modify term (Indices.substAt at with)
-  
-instance ContainsTerms Context where
-  mapTermsM f = modifyM term f
+  substAt at with = mapTerms (Indices.substAt at with)
 
 -- Contexts form a monoid under composition
 -- e.g. @C[_] . C'[_] == C[C'[_]]@
 instance Monoid Context where
   mempty = make id
   ctx1 `mappend` ctx2 =
-    Context (apply ctx1 (get term ctx2))
+    Context (apply ctx1 (term ctx2))
 

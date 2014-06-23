@@ -5,19 +5,19 @@
 module Elea.Types
 (
   module Elea.Type,
+  HasTypeM (..),
   typeOf,
   isClosed,
-  getClosed,
-  get, 
   check,
 )
 where
 
 import Elea.Prelude hiding ( get, mapM )
 import Elea.Index hiding ( lift )
-import Elea.Type
+import Elea.Type hiding ( Var, Var' )
 import Elea.Term
 import Elea.Show ( showM )
+import qualified Elea.Term as Term
 import qualified Elea.Prelude as Prelude
 import qualified Elea.Index as Indices
 import qualified Elea.Type as Type
@@ -28,16 +28,14 @@ import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
 
 
--- | Return the type of a term. Assumes the term is well-typed.
-get :: Env.Bindings m => Term -> m Type
-get = Fold.paraM get'
+-- | Return the type of something given a type environment. 
+class HasTypeM a where
+  getM :: Env.Bindings m => a -> m Type
+  
+instance HasTypeM Term where
+  getM = Fold.paraM getM
 
--- | Gets the type of a term whose type does not depend upon the type of
--- free variables. Assumes the term is well-typed.
-getClosed :: Term -> Type
-getClosed = Env.empty . get
-
--- | Whether we can use the 'getClosed' function to type a term.
+-- | Whether we can use the 'get' function from 'HasType' to type a term.
 isClosed :: Term -> Bool
 isClosed = Env.trackOffset . clsd
   where
@@ -48,6 +46,28 @@ isClosed = Env.trackOffset . clsd
   clsd (Lam _ t) = Env.liftTracked (clsd t)
   clsd (Case _ (Alt _ bs t : _)) = 
     Env.liftTrackedMany (length bs) (clsd t)
+    
+
+-- | I know I said that terms shouldn't have a 'HasType' instance, but
+-- we should only call this on closed terms that we know
+-- are well typed.
+instance HasType Term where
+  get = Env.empty . getM
+  
+instance HasType (Term' (Term, Type)) where 
+  get (Unr' ty) = ty
+  get (Lam' (Bind _ a) (_, b)) = Type.Fun a b
+  get (Def' iname xs) = 
+    dropArgs (length xs) (get iname)
+  get (Con' con xs) = 
+    dropArgs (length xs) (get con)
+  get (Case' _ (Alt' _ _ (_, ty) : _)) = ty
+  
+instance HasTypeM (Term' (Term, Type)) where
+  getM (Var' x xs) =
+    liftM (Type.dropArgs (length xs) . Type.get) (Env.boundAt x)
+  getM other =
+    return (get other)
   
 
 -- | Throws an error if a term is not correctly typed.
@@ -63,7 +83,7 @@ typeOf = Fold.paraM getAndCheck
   getAndCheck t = do
     t_s <- showM (Fold.recover t)
     Err.whileChecking t_s (check' t)
-    get' t
+    getM t
     
     
 -- | Throw an error if the arguments of a given type do not match.
@@ -94,12 +114,12 @@ check' (Var' x xs) = do
   then Err.unboundIndex (show x)
   else do
     x_b <- Env.boundAt x
-    checkArgs (Prelude.get boundType x_b) (map snd xs)
+    checkArgs (Type.get x_b) (map snd xs)
     
 check' (Def' name xs) = 
-  checkArgs (Prelude.get nameType name) (map snd xs)
+  checkArgs (get name) (map snd xs)
 check' (Con' con xs) = 
-  checkArgs (Type.constructorType con) (map snd xs)
+  checkArgs (get con) (map snd xs)
   
 check' (Case' (_, ind_ty) _)
   | not (Type.isInd ind_ty) = 
@@ -108,40 +128,25 @@ check' (Case' (_, ind_ty) _)
 check' (Case' (_, Base cse_ind) falts) =
   zipWithM_ checkAlt' [0..] falts
   where
-  return_ty = snd (Prelude.get altTerm' (head falts))
+  return_ty = snd (altTerm' (head falts))
   
   checkAlt' :: Nat -> Alt' (Term, Type) -> m ()
-  checkAlt' alt_n (Alt' con@(Constructor ind con_n) bs (_, alt_ty))
-    | ind /= cse_ind = Err.incorrectPattern (show con)
+  checkAlt' alt_n (Alt' con bs (_, alt_ty))
+    | con_ind /= cse_ind = Err.incorrectPattern (show con)
     | alt_n /= con_n = Err.patternsOutOfOrder
     | alt_ty /= return_ty = Err.incorrectAltType (show return_ty) (show alt_ty)
-    | (length bs_tys :: Int) /= length arg_tys = Err.incorrectPattern (show con)
+    | nlength bs_tys /= length arg_tys = Err.incorrectPattern (show con)
     | or (zipWith (/=) arg_tys bs_tys) = Err.incorrectPattern (show con)
     where
     (arg_tys, ind') = id
       . splitAt (length bs) 
       . Type.flatten
-      $ Type.constructorType con
-    bs_tys = map (Prelude.get boundType) bs
+      $ get con
+    bs_tys = map Type.get bs
+    con_ind = fmap constructorOf con
+    con_n = constructorIndex (instObj con)
     
 check' _ = 
   return ()
-  
-    
--- | Returns the type of a term, given the type of its subterms.
--- Assumes well-typedness.
-get' :: Env.Bindings m => Term' (Term, Type) -> m Type
-get' (Var' x xs) =
-  liftM (Type.dropArgs (length xs) . Prelude.get boundType) (Env.boundAt x)
-get' other =
-  return (getClosed' other)
-  
--- | Returns the type of a term, given the type of its subterms, without
--- appealing to a type environment. Cannot type variables.
-getClosed' :: Term' (Term, Type) -> Type
-getClosed' (Unr' ty) = ty
-getClosed' (Lam' (Bind _ a) (_, b)) = Type.Fun a b
-getClosed' (Def' name xs) = dropArgs (length xs) (Prelude.get nameType name)
-getClosed' (Con' con xs) = dropArgs (length xs) (Type.constructorType con)
-getClosed' (Case' _ (Alt' _ _ (_, ty) : _)) = ty
+
 

@@ -8,7 +8,7 @@ module Elea.Index
   lift, liftAt, liftManyAt, liftMany, 
   subst, substMany,
   lowerAt, lower, lowerMany, lowerableBy,
-  freeWithin, replaceAt, tryLowerMany,
+  freeWithin, closed, replaceAt, tryLowerMany,
   omega, containsOmega,
 )
 where
@@ -52,6 +52,9 @@ type Shift = forall a . Indexed a => a -> a
   
 freeWithin :: Indexed a => Index -> a -> Bool
 freeWithin x = Set.member x . free
+
+closed :: Indexed a => a -> Bool
+closed = Set.null . free
 
 liftManyAt :: Indexed a => Nat -> Index -> a -> a
 liftManyAt n at = shift lift

@@ -15,7 +15,7 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
 import Elea.Show ( showM )
-import Elea.Monad.Fedd ( Fedd )
+import Elea.Monad.Edd ( Edd )
 import qualified Elea.Unification as Unifier
 import qualified Elea.Index as Indices
 import qualified Elea.Monad.Env as Env

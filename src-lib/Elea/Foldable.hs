@@ -1,7 +1,7 @@
 module Elea.Foldable
 (
   module Data.Functor.Foldable,
-  Bifoldable, FoldableM (..), TransformableM (..), 
+  Refoldable, FoldableM (..), TransformableM (..), 
   Iso, iso, 
   isoTransformM, isoRewriteM, isoRewriteStepsM,
   isoFindM, isoAnyM, isoAllM, isoRewriteOnceM, isoFoldM,
@@ -26,10 +26,10 @@ import qualified Control.Monad.State as State
 import qualified Data.Isomorphism as Iso
 import qualified Data.Set as Set
 
-type Bifoldable t = (Foldable t, Unfoldable t)
+type Refoldable t = (Foldable t, Unfoldable t)
 
 -- | Monadic cata- and para-morphisms for a provided monadic constraint.
-class (Monad m, Bifoldable t) => FoldableM m t where
+class (Monad m, Refoldable t) => FoldableM m t where
 
   -- We can implement all of these transformations purely in terms
   -- of this distributivity law. Sexy.
@@ -53,7 +53,8 @@ recover = embed . fmap fst
 class FoldableM m t => TransformableM m t where
   transformM :: (t -> m t) -> t -> m t
   transformM f = cataM (f . embed)
- 
+
+  
 -- | I was fed up of having to rewrite the 'transform', 'rewrite', 'any', etc.
 -- functions for isomorphisms of an existing datatype.
 type Iso = Iso.Iso (->) 
@@ -214,13 +215,13 @@ rewriteStepsM :: (Monad m, TransformableM m t) =>
   [t -> MaybeT m t] -> t -> m t
 rewriteStepsM = isoRewriteStepsM id
     
-isoTransform :: Bifoldable t => Iso a t -> (a -> a) -> a -> a
+isoTransform :: Refoldable t => Iso a t -> (a -> a) -> a -> a
 isoTransform iso f = id
   . Iso.project iso
   . cata (Iso.embed iso . f . Iso.project iso . embed)
   . Iso.embed iso
 
-isoRewrite :: Bifoldable t => Iso a t -> (a -> Maybe a) -> a -> a
+isoRewrite :: Refoldable t => Iso a t -> (a -> Maybe a) -> a -> a
 isoRewrite iso f = Iso.project iso . transform rrwt . Iso.embed iso
   where
   f' = fmap (Iso.embed iso) . f . Iso.project iso
@@ -235,13 +236,13 @@ isoAny, isoAll :: WriterTransformableM Monoid.All Identity t =>
 isoAll iso p = runIdentity . isoAllM iso (return . p)
 isoAny iso p = not . isoAll iso (not . p)
   
-transform :: Bifoldable t => (t -> t) -> t -> t
+transform :: Refoldable t => (t -> t) -> t -> t
 transform = isoTransform id
 
-rewrite :: Bifoldable t => (t -> Maybe t) -> t -> t
+rewrite :: Refoldable t => (t -> Maybe t) -> t -> t
 rewrite = isoRewrite id
 
-rewriteSteps :: Bifoldable t => [t -> Maybe t] -> t -> t
+rewriteSteps :: Refoldable t => [t -> Maybe t] -> t -> t
 rewriteSteps steps = rewrite step
   where
   step t = Monoid.getFirst (concatMap (Monoid.First . ($ t)) steps)

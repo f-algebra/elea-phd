@@ -1,26 +1,41 @@
-module Elea.Error.Parsing
+module Elea.Errors.Parsing
 (
-  variableNotFound,
+  termNotFound,
   literalNotSupported,
-  typeArgsNotSupported
+  typeNotFound,
+  invalidConstructor,
+  invalidTypeArgs,
+  nonInductiveMatch,
 )
 where
 
 import Elea.Prelude
 import qualified Elea.Monad.Error.Class as Err
 
-parsingErr :: Err.Can m => String -> m a
+parsingErr :: Err.Throws m => String -> m a
 parsingErr = Err.augment "[Parsing Error]\n" . Err.throw
   
-variableNotFound x = 
-  parsingErr $ "Variable not found: " ++ x
+brkt x = " [" ++ x ++ "] "
+
+termNotFound x = 
+  parsingErr $ "Undefined term" ++ brkt x
+  
+typeNotFound x = 
+  parsingErr $ "Undefined inductive type" ++ brkt x
   
 literalNotSupported x =
-  parsingErr $ "Literal not supported: " ++ x
+  parsingErr $ "Literal not supported" ++ brkt x
   
-typeArgsNotSupported = 
-  parsingErr "Type arguments are not supported. Simple types only."
+invalidConstructor ind con = 
+  parsingErr 
+    $ "The name" ++ brkt con 
+    ++ "is not a constructor of type" ++ brkt ind
   
-mutualRecursionNotSupported x =
-  parsingErr $ "Mutual recursion not supported: " ++ s
-  
+invalidTypeArgs x tys = 
+  parsingErr 
+    $ "The type arguments" ++ brkt (intercalate ", " tys)
+    ++ "are invalid for the name" ++ brkt x
+    
+nonInductiveMatch non_ind = 
+  parsingErr
+    $ "Cannot pattern match over a non-inductive type" ++ brkt non_ind

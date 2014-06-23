@@ -175,3 +175,7 @@ instance Tracks r m => Tracks r (MaybeT m) where
 instance (Monoid w, Tracks r m) => Tracks r (WriterT w m) where
   tracked = Trans.lift tracked
   liftTrackedMany n = mapWriterT (liftTrackedMany n)
+  
+instance Write Identity where
+  bindAt _ _ = id
+  matched _ _ = id

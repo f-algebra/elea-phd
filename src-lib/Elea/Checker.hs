@@ -2,7 +2,7 @@
 -- help reject pointless potential simplifications.
 module Elea.Checker
 (
-  constrainedToConstant
+  -- constrainedToConstant
 )
 where
 
@@ -24,6 +24,7 @@ import qualified Data.Set as Set
 unwrapDepth :: Nat
 unwrapDepth = 1
 
+{-
 -- | Checks whether a set of constraints reduces the given recursive function
 -- call to a constant.
 -- No point running match-fix fusion if they don't.
@@ -73,4 +74,4 @@ constrainedToConstant constrs term@(App fix@(Fix {}) args) = do
       if is_free
       then liftM Set.singleton (Env.lowerByOffset term)
       else return mempty
-
+-}

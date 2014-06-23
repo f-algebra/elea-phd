@@ -1,7 +1,5 @@
 {
--- | A parser for Elea's raw input calculus: simply typed lambda calculus
--- with anonymous fixpoints, anonymous inductive data types, pattern matching,
--- and explicit absurdity.
+-- | A parser for Elea's raw input calculus.
 module Elea.Parser.Calculus
 (
   program, term, _type, bindings
@@ -10,7 +8,6 @@ where
 
 import Prelude ()
 import Elea.Prelude
-import Elea.Type
 import Elea.Term
 import Elea.Show ( showM )
 import qualified Elea.Index as Indices
@@ -21,26 +18,28 @@ import qualified Elea.Monad.Env as Env
 import qualified Elea.Foldable as Fold
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Evaluation as Eval
-import qualified Elea.Monad.Definitions.Class as Defs      
+import qualified Elea.Monad.Parser.Class as Parser
+import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Error.Class as Err
+import qualified Elea.Errors.Parsing as Err
 import qualified Data.Map as Map
 
 type TypeArgs = [String]
 
 -- A parameterised variable call can have type arguments.
 -- > append<list<nat>>
-type ParamCall = (String, [RawType])
+type InstName = (String, [RawType])
 
-type ParamName = (String, [String])
+type PolyName = (String, [String])
 
 -- Inductive data types
-type TypeDef = (ParamName, [[String]])
+type TypeDef = (PolyName, [[String]])
 
 -- Let bindings of terms
-type TermDef = (ParamName, [RawBind], RawTerm)
+type TermDef = (PolyName, [RawBind], RawType, RawTerm)
 
 -- Declarations to decide equality between terms
-type PropDef = (ParamName, [RawBind], (RawTerm, RawTerm))
+type PropDef = (PolyName, [RawBind], (RawTerm, RawTerm))
 
 data RawProgram 
   = RawProgram  { _programTypes :: [TypeDef]
@@ -48,7 +47,7 @@ data RawProgram
                 , _programProps :: [PropDef] }
 
 data RawType 
-  = TyBase ParamCall
+  = TyBase InstName
   | TyFun RawType RawType
   | TyTuple [RawType]
 
@@ -57,25 +56,18 @@ data RawBind
           , _rawType :: RawType }
 
 data RawTerm
-  = TVar ParamCall
-  | TApp RawTerm RawTerm
+  = TApp InstName [RawTerm]
   | TLam [RawBind] RawTerm
-  | TCon Nat RawType
   | TUnr RawType
   | TCase RawTerm [RawAlt]
-  | TLet String RawTerm RawTerm
-  | TEq RawType
-  | TFold RawType
-  | TTuple [RawTerm]
   | TAssert [String] RawTerm RawTerm
   
 data RawAlt
   = TAlt [String] RawTerm
   
 data Scope 
-  = Scope { _bindMap :: Map String Term
-          , _bindStack :: [Bind]
-          , _typeArgs :: Map String Type }
+  = Scope { _bindMap :: Map String Index
+          , _bindStack :: [Bind] }
   
 mkLabels [''Scope, ''RawBind, ''RawProgram]
 }
@@ -103,11 +95,10 @@ mkLabels [''Scope, ''RawBind, ''RawProgram]
   '<'         { TokenOA }
   '>'         { TokenCA }
   ','         { TokenComma }
-  '_|_'       { TokenAbsurd }
   match       { TokenMatch }
   with        { TokenWith }
   fun         { TokenFun }
-  fix         { TokenFix }
+  'unr['      { TokenUnr }
   let         { TokenLet }
   in          { TokenIn }
   type        { TokenType }
@@ -123,22 +114,19 @@ mkLabels [''Scope, ''RawBind, ''RawProgram]
   'eq['       { TokenEqEq  }
   assert      { TokenAssert }
   
-%right '->'
-  
 %%
 
 Type :: { RawType }
-  : ParamCall                         { TyBase $1 }
-  | '(' Type ')'                      { $2 }
-  | '(' Type ',' TypeList ')'         { TyTuple ($2:$4) }
-  | Type '->' Type                    { TyFun $1 $3 }
+  : InstName                          { TyBase $1 }
+  | InstName '->' Type                { TyFun (TyBase $1) $3 }
+  | '(' Type ')' '->' Type            { TyFun $2 $5 }
   
 Cons :: { [[String]] }
   : Pattern                           { [$1] }
   | Cons '|' Pattern                  { $1 ++ [$3] }
   
 TypeDef :: { TypeDef }
-  : ind ParamName '=' Cons            { ($2, $4) }
+  : ind PolyName '=' Cons             { ($2, $4) }
   
 NameSeq :: { [String] }
   : name                              { [$1] }
@@ -175,41 +163,39 @@ Bindings :: { [RawBind] }
   | Bindings Bind                     { $1 ++ $2 }
   
 Term :: { RawTerm }
-  : ParamCall                         { TVar $1 }
-  | Term ParamCall                    { TApp $1 (TVar $2) }
-  | Term '(' Term ')'                 { TApp $1 $3 }
+  : InstName Args                     { TApp $1 $2 }
   | '(' Term ')'                      { $2 }
-  | Term '(' Term ',' TermList ')'    { TApp $1 (TTuple ($3:$5)) }
-  | '(' Term ',' TermList ')'         { TTuple ($2:$4) }
   | fun Bindings '->' Term            { TLam $2 $4 }
-  | let name '=' Term in Term         { TLet $2 $4 $6 }
-  | 'eq[' Type ']'                    { TEq $2 }
-  | 'fold[' Type ']'                  { TFold $2 }
   | 'unr[' Type ']'                   { TUnr $2 }
   | match Term with Matches end       { TCase $2 $4 }
   | assert Pattern '<-' Term in Term  { TAssert $2 $4 $6 }
   | if Term then Term else Term       { TCase $2 [ TAlt ["True"] $4
                                                  , TAlt ["False"] $6] }
+                                                 
+Args :: { [RawTerm] }
+  : {- empty -}                       { [] }
+  | Args Term                         { $1 ++ [$2] }
 
 TermDef :: { TermDef }
-  : let ParamName Bindings '=' Term   { ($2, $3, $5) }
+  : let PolyName Bindings ':' Type '=' Term    
+                                      { ($2, $3, $5, $7) }
   
-ParamCall :: { ParamCall }
+InstName :: { InstName }
   : name                              { ($1, []) }
   | name '<' TypeList '>'             { ($1, $3) }
   
-ParamName :: { ParamName }
+PolyName :: { PolyName }
   : name                              { ($1, []) }
   | name '<' NameList '>'             { ($1, $3) }
   
 Equation :: { (RawTerm, RawTerm) }
-  : Term                              { (TVar ("True", []), $1) }
+  : Term                              { (TApp ("True", []) [], $1) }
   | Term '=' Term                     { ($1, $3) }
   
 PropDef :: { PropDef }
-  : prop ParamName ':' all Bindings '->' Equation   
+  : prop PolyName ':' all Bindings '->' Equation   
                                       { ($2, $5, $7) }
-  | prop ParamName ':' Equation
+  | prop PolyName ':' Equation
                                       { ($2, [], $4) }
 
 Program :: { RawProgram }
@@ -221,42 +207,29 @@ Program :: { RawProgram }
 {
 
 withEmptyScope :: ReaderT Scope m a -> m a
-withEmptyScope = flip runReaderT (Scope mempty mempty mempty)
+withEmptyScope = flip runReaderT (Scope mempty mempty)
 
 instance Monad m => Env.Write (ReaderT Scope m) where
   bindAt at b = 
       local
-    $ modify bindMap (addToMap . map (Indices.liftAt at))
-    . modify bindStack addToStack
-    where
-    addToStack = insertAt (enum at) b
-    addToMap = Map.insert (get boundLabel b) (Var at)
+    $ modify bindMap (Map.insert (bindLabel b) at . map (Indices.liftAt at))
+    . modify bindStack (insertAt (enum at) b)
     
   matched _ _ = id
   
-instance Err.Can m => Env.Read (ReaderT Scope m) where
+instance Err.Throws m => Env.Bindings (ReaderT Scope m) where
   bindings = asks (get bindStack)
   
-type ParserMonad m a = (Err.Can m, Defs.Write m) => ReaderT Scope m a
-
-localTypeArgs :: ContainsTypes t => 
-  [String] -> ParserMonad m t -> ParserMonad m (Polymorphic t)
-localTypeArgs names run = 
-  polymorphicM names makePoly
-  where
-  makePoly types =
-    local (set typeArgs type_args) run
-    where
-    type_args =
-      Map.fromList (zip names types)
-    
-localDef :: MonadReader Scope m => String -> Term -> m a -> m a
-localDef name term = id
-  . local 
-  $ modify bindMap 
-  $ Map.insert name term
+instance (Err.Throws m, Parser.State m) => Parser.State (ReaderT Scope m) where
+  defineTerm n = lift . Parser.defineTerm n
+  defineInd n = lift . Parser.defineInd n
+  lookupTerm = lift . Parser.lookupTerm
+  lookupInd = lift . Parser.lookupInd
   
-term :: (Err.Can m, Defs.Has m, Env.Read m) => String -> m Term
+type ParserMonad m = (Err.Throws m, Defs.Write m, Parser.State m)
+type Parse m a = ParserMonad m => ReaderT Scope m a
+  
+term :: ParserMonad m => String -> m Term
 term str = do
   bs <- Env.bindings
   withEmptyScope
@@ -267,22 +240,22 @@ term str = do
     . lexer
     $ str
   
-_type :: (Err.Can m, Defs.Has m) => String -> m Type
+_type :: ParserMonad m => String -> m Type
 _type = id
   . withEmptyScope
   . parseRawType
   . happyType 
   . lexer
   
-bindings :: (Err.Can m, Defs.Has m) => String -> m [Bind]
+bindings :: ParserMonad m => String -> m [Bind]
 bindings = id
   . withEmptyScope
   . mapM parseRawBind
   . happyBindings
   . lexer
   
-program :: forall m . (Err.Can m, Defs.Has m) 
-  => String -> m [Polymorphic Equation]
+program :: forall m . ParserMonad m
+  => String -> m [Equation]
 program text = 
   withEmptyScope $ do
     mapM_ defineType types
@@ -291,81 +264,67 @@ program text =
   where
   RawProgram types terms props = happyProgram (lexer text)
     
-  parseProp :: PropDef -> ParserMonad m (Polymorphic Equation)
-  parseProp ((name, ty_args), rbs, (rt1, rt2)) = 
-    localTypeArgs ty_args $ do
-      bs <- mapM parseRawBind rbs
-      t1 <- Env.bindMany bs (parseAndCheckTerm rt1)
-      t2 <- Env.bindMany bs (parseAndCheckTerm rt2)
-      return (Equals name bs t1 t2)
+  parseProp :: PropDef -> Parse m Equation
+  parseProp ((name, ty_vars), rbs, (rt1, rt2)) = do
+    bs <- mapM parseRawBind rbs
+    t1 <- Env.bindMany bs (parseAndCheckTerm rt1)
+    t2 <- Env.bindMany bs (parseAndCheckTerm rt2)
+    return (Equals name ty_vars bs t1 t2)
   
-  defineType :: TypeDef -> ParserMonad m ()
-  defineType ((ind_name, ty_args), raw_cons) = do
-    ind_ty <- localTypeArgs ty_args $ do
-      cons <- mapM mkCon raw_cons
-      return (Type.Ind ind_name cons)
-    Defs.defineType ind_name ind_ty
-    mapM_ (defCon ind_ty) [0..length raw_cons - 1]
+  defineType :: TypeDef -> Parse m ()
+  defineType ((ind_name, ty_vars), raw_cons) = do
+    cons <- mapM mkCon raw_cons
+    let p_ind = Type.Forall ty_vars (Type.Ind ind_name cons)
+    Parser.defineInd ind_name p_ind
+    mapM_ (defCon p_ind) [0..nlength raw_cons - 1]
     where
-    mkCon :: [String] -> ParserMonad m (String, [Type.ConArg])
+    mkCon :: [String] -> Parse m (String, [Type.ConArg])
     mkCon (con_name:ty_names) = do
       args <- mapM mkArg ty_names
       return (con_name, args)
       where
-      mkArg :: String -> ParserMonad m Type.ConArg
+      mkArg :: String -> Parse m Type.ConArg
       mkArg arg_name
         | arg_name == ind_name = return Type.IndVar
-        | otherwise = liftM ConArg (lookupType (arg_name, []))
+        | otherwise = liftM Type.ConArg (lookupType (arg_name, []))
         
-    defCon :: Polymorphic Ind -> Int -> ParserMonad m ()
-    defCon poly_ind n =
-      Defs.defineTerm name poly_con 
+    defCon :: Type.Poly Ind -> Nat -> Parse m ()
+    defCon p_ind con_n =
+      Parser.defineCon name p_con 
       where
-      poly_con = fmap (\ind -> Con ind (enum n)) poly_ind
-      name = head (raw_cons !! n)
+      p_con = fmap (\i -> Constructor i con_n) p_ind
+      name = head (raw_cons !! con_n)
   
-  defineTerm ((name, ty_args), raw_term) = do
-    p_term <- localTypeArgs ty_args (parseAndCheckTerm raw_term)
-    Defs.defineTerm name (fmap Simp.run p_term)
+  defineTerm ((lbl, ty_vars), raw_bs, raw_ret_ty, raw_term) = do
+    bs <- mapM parseRawBind raw_bs
+    ret_ty <- parseRawType raw_ret_ty
+    let full_ty = Type.unflatten (map Type.get bs ++ [ret_ty])
+        p_name = Type.Forall ty_vars (Typed (Name lbl) full_ty) 
+    Parser.defineName lbl p_name
+    term <- parseAndCheckTerm raw_term
+    Defs.put (fmap typedObj p_name) bs term
+
     
-lookupTerm :: ParamCall -> ParserMonad m Term
-lookupTerm (name, raw_ty_args) = do
-  mby_bind <- asks (Map.lookup name . get bindMap)
-  if length raw_ty_args == 0 && isJust mby_bind
-  then return (fromJust mby_bind)
-  else do
-    ty_args <- mapM parseRawType raw_ty_args
-    mby_term <- Defs.lookupTerm name ty_args
-    if isJust mby_term
-    then return (fromJust mby_term)
-    else Err.throw $ "Undefined term: " ++ name
-    
-lookupType :: ParamCall -> ParserMonad m Type
+lookupType :: InstName -> Parse m Type
 lookupType (name, raw_ty_args) = do
-  mby_ty <- asks (Map.lookup name . get typeArgs)
-  if length raw_ty_args == 0 && isJust mby_ty
-  then return (fromJust mby_ty)
-  else do
-    ty_args <- mapM parseRawType raw_ty_args
-    mby_ind <- Defs.lookupType name ty_args
-    if isJust mby_ind
-    then return (Base (fromJust mby_ind))
-    else Err.throw $ "Undefined inductive type: " ++ name
+  mby_ind <- Parser.lookupInd name
+  case mby_ind of
+    Nothing -> Err.typeNotFound name
+    Just p_ind -> do
+      ty_args <- mapM parseRawType raw_ty_args
+      return (Type.Base (Type.instantiate ty_args p_ind))
     
-parseAndCheckTerm :: RawTerm -> ParserMonad m Term
+parseAndCheckTerm :: RawTerm -> Parse m Term
 parseAndCheckTerm = 
   Err.check Type.check . parseRawTerm
   
-parseRawType :: RawType -> ParserMonad m Type
+parseRawType :: RawType -> Parse m Type
 parseRawType (TyBase name) =
   lookupType name
 parseRawType (TyFun t1 t2) = 
   return Type.Fun `ap` parseRawType t1 `ap` parseRawType t2
-parseRawType (TyTuple rtys) = do
-  tys <- mapM parseRawType rtys
-  return (Type.Base (Type.tuple tys))
 
-parseRawBind :: RawBind -> ParserMonad m Bind
+parseRawBind :: RawBind -> Parse m Bind
 parseRawBind (TBind label raw_ty) = do
   ty <- parseRawType raw_ty
   return (Bind label ty)
@@ -375,12 +334,10 @@ parseRawBind (TBind label raw_ty) = do
 -- It takes the list of strings which will be given as a matched pattern,
 -- and the inductive type it is matching on, and returns the constructor
 -- index and the new bindings of the pattern variables.
-parsePattern :: Ind -> [String] -> ParserMonad m (Nat, [Bind])
+parsePattern :: Inst Ind -> [String] -> Parse m (Nat, [Bind])
 parsePattern ind (con_lbl:var_lbls) 
   | null mby_con_i = 
-    Err.throw 
-      $ "Invalid constructor \"" ++ con_lbl 
-      ++ "\" for type [" ++ show ind ++ "]"
+    Err.invalidConstructor (show ind) con_lbl
   | otherwise = 
     return (enum con_i, var_bs)
   where
@@ -388,71 +345,72 @@ parsePattern ind (con_lbl:var_lbls)
 
   -- Find the type of this particular constructor from looking it up
   -- by name in the description of the inductive type.
-  mby_con_i = findIndices ((== con_lbl) . get boundLabel) cons
+  mby_con_i = findIndices ((== con_lbl) . bindLabel) cons
   con_i = head mby_con_i
   this_con = cons !! con_i
   
   -- The bindings for this constructor are the arguments for the type
-  con_tys = (init . Type.flatten . get boundType) this_con
+  con_tys = (init . Type.flatten . Type.get) this_con
   var_bs = zipWith Bind var_lbls con_tys
   
 
-parseRawTerm :: RawTerm -> ParserMonad m Term
-parseRawTerm (TTuple rts) = do
-  ts <- mapM parseRawTerm rts
-  Term.tuple ts
-parseRawTerm (TFold raw_ty) = do
-  Fun (Base ind) res_ty <- parseRawType raw_ty
-  return (buildFold ind res_ty)
-parseRawTerm (TEq raw_ty) = do
-  Base ind <- parseRawType raw_ty
-  return (buildEq ind)
-parseRawTerm (TVar var) = 
-  lookupTerm var
-parseRawTerm (TAbsurd rty) = do
+parseRawTerm :: RawTerm -> Parse m Term
+
+parseRawTerm (TUnr rty) = do
   ty <- parseRawType rty
-  return (Absurd ty)
-parseRawTerm (TApp rt1 rt2) = do
-  t1 <- parseRawTerm rt1 
-  t2 <- parseRawTerm rt2
-  return (app t1 [t2])
-parseRawTerm (TFix rbs rt) = do
-  bs <- mapM parseRawBind rbs
-  t <- Env.bindMany bs (parseRawTerm rt)
-  return 
-    $ Fix emptyInfo (head bs) 
-    $ unflattenLam (tail bs) t 
+  return (Unr ty)
 parseRawTerm (TLam rbs rt) = do
   bs <- mapM parseRawBind rbs
   t <- Env.bindMany bs (parseRawTerm rt)
-  return (unflattenLam bs t)
-parseRawTerm (TLet name rt1 rt2) = do
-  t1 <- parseRawTerm rt1
-  localDef name t1 (parseRawTerm rt2)
+  return (Term.unflattenLam bs t)
+
+parseRawTerm (TApp (name, raw_ty_args) raw_args) = do
+  args <- mapM parseRawTerm raw_args
+  ty_args <- mapM parseRawType raw_ty_args
+  mby_x <- asks (Map.lookup name . get bindMap)
+  case mby_x of
+    Just x -> do
+      -- Variables take no type arguments
+      when (length ty_args > 0) 
+        $ Err.invalidTypeArgs name (map show ty_args)
+      return (Var x args)
+    Nothing -> do
+      mby_def <- Parser.lookupTerm name
+      case mby_def of
+        Just (Parser.DefinedName p_name) -> 
+          return (Def (Type.instantiate ty_args p_name) args)
+        Just (Parser.DefinedCon p_con) -> 
+          return (Con (Type.instantiate ty_args p_con) args)
+        Nothing ->
+          Err.termNotFound name
+          
 parseRawTerm (TAssert pat ron_t rin_t) = do
   on_t <- parseRawTerm ron_t
-  on_ty@(Type.Base ind) <- Type.get on_t
-  (con_n, var_bs) <- parsePattern ind pat
+  on_ty@(Type.Base iind) <- Type.getM on_t
+  (con_n, var_bs) <- parsePattern iind pat
   in_t <- Env.bindMany var_bs (parseRawTerm rin_t)
-  in_ty <- Env.bindMany var_bs (Type.get in_t)
-  let assrt = Constraint.make on_t ind con_n
-  return (Constraint.apply assrt (in_t, in_ty))
+  in_ty <- Env.bindMany var_bs (Type.getM in_t)
+  let con = fmap (\i -> Constructor i con_n) iind
+      assrt = Constraint.make con on_t 
+  return (Constraint.apply assrt (Type.specify in_t in_ty))
+  
 parseRawTerm (TCase rt ralts) = do
   t <- parseRawTerm rt
-  ind_ty <- Type.get t
-  alts <- mapM (parseRawAlt ind_ty) ralts
+  ind_ty <- Type.getM t
+  unless (Type.isInd ind_ty)
+    $ Err.nonInductiveMatch (show ind_ty)
+  let ind = Type.inductiveType ind_ty
+  alts <- mapM (parseRawAlt ind) ralts
   let alts' = map snd (sortBy (compare `on` fst) alts)
-  return (Case (Type.inductiveType ind_ty) t alts')
+  return (Case t alts')
   where
-  parseRawAlt ind_ty (TAlt pat ralt_t)
-    | not (Type.isInd ind_ty) =
-      Err.throw 
-        $ "Pattern matching over non inductive type [" ++ show ind_ty ++ "]"
-    | otherwise = do
-      (con_n, var_bs) <- parsePattern (Type.inductiveType ind_ty) pat
-      t <- Env.bindMany var_bs (parseRawTerm ralt_t)
-      return (con_n, Alt var_bs t)
-
+  parseRawAlt ind (TAlt pat ralt_t) = do
+    (con_n, var_bs) <- parsePattern ind pat
+    let con = fmap (\i -> Constructor i con_n) ind
+    t <- Env.bindMany var_bs (parseRawTerm ralt_t)
+    return (con_n, Alt con var_bs t)
+    
+    
 data Token
   = TokenBar
   | TokenName String

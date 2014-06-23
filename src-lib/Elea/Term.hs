@@ -1,21 +1,18 @@
 module Elea.Term
 (
   module Elea.Index,
+  module Elea.Type,
   
   Term (..), Alt (..),
   Term' (..), Alt' (..),
-  Type, Bind (..),
-  Constraint (..),
-  Name (..),
+  Constraint (..), Name (..),
   
-  ContainsTerms (..), mapTerms, containedTerms,
-  Equation (..), equationName, equationLHS, equationRHS,
+  ContainsTerms (..), 
+  mapTerms, containedTerms,
+  Equation (..),
   
   projectAlt, embedAlt,
-  altBindings, altTerm, altConstructor,
-  altBindings', altTerm', altConstructor',
   recursiveConArgs,
-  constrainedTerm, constrainedTo,
   flattenLam, unflattenLam,
   isCon, isLam, isVar, isUnr, isCase,
   isUnr',
@@ -33,18 +30,21 @@ module Elea.Term
 where
 
 import Elea.Prelude
-import Elea.Name ( Name )
 import Elea.Index ( Index, Indexed, Substitutable, Inner )
-import Elea.Type ( Type, Ind (..), ConArg (..)
-                 , Bind (..), Constructor (..) )
+import Elea.Type ( Type, Ind (..), ConArg (..), TyVar
+                 , HasType, Typed (..)
+                 , Bind (..), Constructor (..), Inst (..), Poly (..) )
 import qualified Elea.Type as Type
-import qualified Elea.Name as Name
 import qualified Elea.Index as Indices
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.List as List
+
+-- | Globally unique identifiers for term definitions.
+newtype Name = Name { label :: String }
+  deriving ( Eq, Ord )
 
 
 data Term
@@ -54,10 +54,10 @@ data Term
   | Lam     { binding :: !Bind 
             , abstractedTerm :: !Term }
 
-  | Def     { name :: !Name
+  | Def     { name :: !(Inst (Typed Name))
             , arguments :: ![Term] }
             
-  | Con     { constructor :: !Constructor
+  | Con     { constructor :: !(Inst Constructor)
             , arguments :: ![Term] }
 
   | Case    { caseTerm :: !Term
@@ -69,26 +69,27 @@ data Term
   
 
 data Alt
-  = Alt     { _altConstructor :: !Constructor
-            , _altBindings :: ![Bind]
-            , _altTerm :: !Term }
+  = Alt     { altConstructor :: !(Inst Constructor)
+            , altBindings :: ![Bind]
+            , altTerm :: !Term }
   deriving ( Eq, Ord )
   
   
 -- | A constraint is a pattern match where only one branch is non-absurd.
 -- Functions surrounding constraints can be found in "Elea.Constraint".
 data Constraint 
-  = Constraint  { _constrainedTo :: !Constructor
-                , _constrainedTerm :: !Term }
+  = Constraint  { constrainedTo :: !(Inst Constructor)
+                , constrainedTerm :: !Term }
   deriving ( Eq, Ord )
   
   
 -- | Equations between terms
 data Equation
-  = Equals  { _equationName :: String
-            , _equationVars :: [Bind]
-            , _equationLHS :: Term
-            , _equationRHS :: Term }
+  = Equals  { equationName :: String
+            , equationTyVars :: [TyVar]
+            , equationVars :: [Bind]
+            , equationLHS :: Term
+            , equationRHS :: Term }
 
 
 -- * Base types for generalised cata/para morphisms.
@@ -102,27 +103,27 @@ data Term' a
   | Lam'    { binding' :: !Bind 
             , abstractedTerm' :: a }
 
-  | Def'    { name' :: !Name
+  | Def'    { name' :: !(Inst (Typed Name))
             , arguments' :: [a] }
             
-  | Con'    { constructor' :: !Constructor
+  | Con'    { constructor' :: !(Inst Constructor)
             , arguments' :: [a] }
 
   | Case'   { caseTerm' :: a
             , caseAlts' :: [Alt' a] }
             
   | Unr'    { resultType' :: !Type } 
+  
   deriving ( Functor, Foldable, Traversable )
   
   
 data Alt' a
-  = Alt'    { _altConstructor' :: !Constructor
-            , _altBindings' :: ![Bind]
-            , _altTerm' :: a }
+  = Alt'    { altConstructor' :: !(Inst Constructor)
+            , altBindings' :: ![Bind]
+            , altTerm' :: a }
+            
   deriving ( Functor, Foldable, Traversable )
   
-mkLabels [ ''Alt, ''Alt', ''Equation, ''Constraint ]
-
 projectAlt :: Alt -> Alt' Term
 projectAlt (Alt c bs t) = Alt' c bs t
 
@@ -160,13 +161,21 @@ instance ContainsTerms Term where
   mapTermsM = ($)
   
 instance ContainsTerms Equation where
-  mapTermsM f = modifyM equationLHS f <=< modifyM equationRHS f
+  mapTermsM f 
+      eq@(Equals { equationLHS = lhs, equationRHS = rhs }) = do
+    lhs' <- f lhs
+    rhs' <- f rhs
+    return (eq { equationLHS = lhs', equationRHS = rhs' })
   
 instance (ContainsTerms a, ContainsTerms b) => ContainsTerms (a, b) where
   mapTermsM f (t1, t2) = do
     t1' <- mapTermsM f t1
     t2' <- mapTermsM f t2
     return (t1', t2')
+    
+instance ContainsTerms Constraint where
+  mapTermsM f (Constraint con t) = 
+    return (Constraint con) `ap` f t
   
 instance Zip Alt' where
   zip (Alt' c bs t) (Alt' _ _ t') = Alt' c bs (t, t')
@@ -268,24 +277,18 @@ stripArgs n (Con c ts) = return (Con c (drop n ts), take n ts)
 -- | Given a type constructor this will return a fully instantiated 
 -- constructor term as it would appear in a pattern match.
 -- E.g. @altPattern ([list], 1) == Cons _1 _0@
-constructorPattern :: Constructor -> Term
-constructorPattern con@(Constructor (Ind _ _ cons) n) = id
-  . assert (length cons > n)
-  . Con con
+constructorPattern :: Inst Constructor -> Term
+constructorPattern icon@(Inst _ con) = id
+  . Con icon
   . reverse
-  . map (\i -> Var i [])
-  $ [0..arg_count - 1]
-  where
-  arg_count = id
-    . length
-    . snd
-    $ cons !! n
+  . map (\i -> Var (enum i) [])
+  $ [0..Type.constructorArgCount con - 1]
     
     
 -- | The arguments to a constructor term which have the same type
 -- as the constructor itself.
 recursiveConArgs :: Term -> [Term]
-recursiveConArgs (Con con args) = 
+recursiveConArgs (Con (Inst _ con) args) = 
   map (args !!) (Type.recursiveArgs con)
   
     
@@ -293,7 +296,7 @@ recursiveConArgs (Con con args) =
 -- strictness point of view. So @[x]@ is finite, even though @x@ is a variable
 -- since it is not of the same type as the overall term.
 isFinite :: Term -> Bool
-isFinite (Con con args) = id
+isFinite (Con (Inst _ con) args) = id
   . all isFinite 
   . map (args !!)
   $ Type.recursiveArgs con
@@ -315,8 +318,14 @@ loweredAltTerm :: Indexed Term => Alt -> Term
 loweredAltTerm (Alt _ bs alt_t) =
   Indices.lowerMany (length bs) alt_t
   
-   
+  
 false, true :: Term
 true = Con Type.true []
 false = Con Type.false []
+
+instance Show Name where
+  show = label
+  
+instance Show (Inst (Typed Name)) where
+  show = show . fmap (show . typedObj)
 

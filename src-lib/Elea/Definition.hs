@@ -1,13 +1,12 @@
 module Elea.Definition
 (
-  Definition,
-  name, body, bindings, isRecursive, argumentRecursion,
+  Definition (..)
 )
 where
 
 import Elea.Prelude
-import Elea.Term hiding ( name )
-import qualified Elea.Name as Name
+import Elea.Term
+import Elea.Monad.Env ()
 import qualified Elea.Type as Type
 
 data ArgRecursion 
@@ -17,32 +16,21 @@ data ArgRecursion
   -- | If the argument structurally decreases at every recursive call
   | Decreasing 
   
-  -- | If neither of the above hold
   | Accumulating
-
   
-data Definition = Definition    
-  { _name :: Name
-  , _body :: Term 
-  , _bindings :: [Bind]
-  , _isRecursive :: Bool
-  , _argumentRecursion :: [ArgRecursion] 
-  }
-  
-mkLabels [ ''Definition ]
+  | Unknown
 
-dtype :: Definition :-> Type
-dtype = Name.typeOf . name
 
--- | Some assertions about the structure of definitions.
-valid :: Definition -> Bool
-valid def = arg_tys == arg_tys'
-  where
-  arg_tys = id
-    . init
-    . Type.flatten 
-    $ get dtype def
-    
-  arg_tys' = 
-    map (get Type.boundType) (get bindings def)
+data Definition = 
+  Definition  { name :: Name
+              , body :: Term 
+              , bindings :: [Bind]
+              , isRecursive :: Bool
+              , argRecursion :: [ArgRecursion] }
+
+instance Type.ContainsTypes Definition where
+  mapTypesM f def@(Definition { body = body, bindings = bs }) = do
+    body' <- Type.mapTypesM f body
+    bs' <- Type.mapTypesM f bs
+    return (def { body = body', bindings = bs' })
 

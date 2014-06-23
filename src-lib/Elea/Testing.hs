@@ -18,8 +18,8 @@ import Elea.Prelude hiding ( assert )
 import Elea.Term
 import Elea.Type
 import Elea.Show
-import Elea.Monad.Fedd ( Fedd )
-import qualified Elea.Monad.Fedd as Fedd
+import Elea.Monad.Edd ( Edd )
+import qualified Elea.Monad.Edd as Edd
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Parser.Calculus as Parse
 -- import qualified Elea.Simplifier as Simp
@@ -31,7 +31,7 @@ import qualified Elea.Monad.Fusion.Class as Fusion
 import qualified Test.HUnit as HUnit
 
 type Test = HUnit.Test
-type M = Fedd
+type M = Edd
 
 execute :: Test -> IO ()
 execute test = do
@@ -44,8 +44,8 @@ list = HUnit.TestList
 label :: String -> Test -> Test
 label = HUnit.TestLabel
 
-run :: HUnit.Testable t => Fedd t -> Test
-run = HUnit.test . Fedd.eval . Discovery.trace
+run :: HUnit.Testable t => Edd t -> Test
+run = HUnit.test . Edd.eval . Discovery.trace
 
 assert :: HUnit.Assertable t => t -> Test
 assert = HUnit.TestCase . HUnit.assert

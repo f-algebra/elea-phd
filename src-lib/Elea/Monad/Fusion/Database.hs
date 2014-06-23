@@ -24,35 +24,32 @@ import qualified Elea.Unification.Map as UMap
 import qualified Elea.Monad.Failure.Class as Fail
 
 data Outcome
-  = Pending
-  | Failure
+  = Failure
+  | Running !Name
   | Success !Term
   deriving ( Eq, Ord, Show )
 
-data Database
-  = Database { _dbFusions :: UMap.UMap Term Outcome }
-  deriving ( Show )
-
-mkLabels [ ''Database ]
+type Database = UMap.UMap Term Outcome 
 
 empty :: Database
-empty = Database UMap.empty
+empty = UMap.empty
   
 lookup :: Fail.Can m => Term -> Database -> m Outcome
 lookup term db = do
-  (uni, outcome) <- UMap.lookup term (get dbFusions db)
+  (uni, outcome) <- UMap.lookup term db
   return (mapTerms (Unifier.apply uni) outcome)
 
 insert :: Term -> Outcome -> Database -> Database
-insert term outcome = modify dbFusions (UMap.insert term outcome)
+insert = UMap.insert
 
 maybeToOutcome :: Maybe Term -> Outcome
 maybeToOutcome Nothing = Failure
 maybeToOutcome (Just t) = Success t
 
 instance ContainsTerms Outcome where
-  mapTermsM _ Pending = return Pending
   mapTermsM _ Failure = return Failure
+  mapTermsM f (Running t) = 
+    return Running `ap` f t
   mapTermsM f (Success t) =
-    liftM Success (f t)
+    return Success `ap` f t
 

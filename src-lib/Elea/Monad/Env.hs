@@ -175,11 +175,11 @@ instance ContainsTypes Term where
       return term
       
 instance ContainsTypes Equation where
-  mapTypesM f (Equals name bs t1 t2) = do
-    bs' <- mapM (mapTypesM f) bs
+  mapTypesM f (Equals name tys bs t1 t2) = do
+    bs' <- mapTypesM f bs
     t1' <- mapTypesM f t1
     t2' <- mapTypesM f t2
-    return (Equals name bs' t1' t2')
+    return (Equals name tys bs' t1' t2')
     
     
 -- | The writable type environment which ignores everything written to it.
@@ -521,18 +521,16 @@ instance Unifiable Term where
         return (c1 `compare` c2 ++ ct)
       
 instance Indexed Constraint where
-  free = free . get constrainedTerm
-  shift f = modify constrainedTerm (shift f)
+  free = free . constrainedTerm
+  shift f = mapTerms (shift f)
       
 instance Substitutable Constraint where 
   type Inner Constraint = Term
-  substAt x t = 
-    modify constrainedTerm (substAt x t)
+  substAt x t = mapTerms (substAt x t)
   
 instance Unifiable Constraint where
-  apply uni =
-    modify constrainedTerm (Unifier.apply uni)
-    
+  apply uni = mapTerms (Unifier.apply uni)
+  
   find (Constraint con1 t1) (Constraint con2 t2) = do
     Fail.unless (con1 == con2)
     Unifier.find t1 t2

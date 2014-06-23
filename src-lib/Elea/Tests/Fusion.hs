@@ -11,7 +11,6 @@ import qualified Elea.Monad.Env as Env
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Testing as Test
 import qualified Elea.Fusion as Fusion
-import qualified Elea.Equality as Equality
 
 checkEquation :: Equation -> Test.M Test.Test
 checkEquation (Equals name bs t1 t2) = id
@@ -19,7 +18,7 @@ checkEquation (Equals name bs t1 t2) = id
   . Env.bindMany bs $ do
     t1' <- Fusion.run t1
     t2' <- Fusion.run t2
-    Test.assertProvablyEq t1' t2'
+    Test.assertEq t1' t2'
 
   
 tests = Test.label "Fusion"

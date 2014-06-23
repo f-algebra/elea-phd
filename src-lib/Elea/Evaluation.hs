@@ -40,16 +40,18 @@ steps =
 strictTerms :: Defs.Read m => Term -> m (Set Term)
 strictTerms (Case cse_t@(Def {}) _) = 
   strictTerms cse_t
-strictTerms (Def name args) = do
-  fun_t <- Defs.unfold name args
+strictTerms (Def ty_name args) = do
+  fun_t <- Defs.unfold inst_name args
   return
     . collectTerms
     . run
     -- We replace this name with omega within its definition,
     -- to stop it getting unrolled again
-    . Term.replaceName name Indices.omega
+    . Term.replaceName inst_name Indices.omega
     $ fun_t
   where
+  inst_name = fmap typedObj ty_name
+  
   collectTerms (Case cse_t alts)
     | isVar cse_t = 
       Set.insert cse_t (concatMap altVars alts)
@@ -80,7 +82,7 @@ degenerateContext ctx = do
 unreachable :: Fail.Can m => Term -> m Term
 unreachable term 
   | isUnr term && Type.isClosed term = 
-    return (Unr (Type.getClosed term))
+    return (Unr (Type.get term))
   where
   isUnr (Unr {}) = True
   isUnr (Case (Unr {}) _) = True
@@ -111,7 +113,7 @@ caseOfCon (Case (Con con args) alts) = id
   $ zipWith liftMany [0..] args
   where
   Alt alt_c alt_bs alt_t = 
-    alts !! get Type.constructorIndex con
+    alts !! Type.constructorIndex (instObj con)
 
 caseOfCon _ = Fail.here
 

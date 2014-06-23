@@ -21,7 +21,6 @@ import qualified Elea.Terms as Term
 import qualified Elea.Types as Type
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Context as Context
-import qualified Elea.Equality as Equality
 import qualified Elea.Foldable as Fold
 import qualified Elea.Fixpoint as Fix
 import qualified Elea.Constraint as Constraint
@@ -149,8 +148,8 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
     -- answer using our equation solver
     
     let ctx_f_term = Context.apply ctx f_term
-    eq <- Equality.prove simplify ctx_f_term g_term
-    Fail.unless eq
+--    eq <- Equality.prove simplify ctx_f_term g_term
+--    Fail.unless eq
     
     return ctx
     where
