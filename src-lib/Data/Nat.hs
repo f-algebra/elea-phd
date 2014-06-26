@@ -4,6 +4,8 @@ module Data.Nat
 )
 where
 
+import Prelude 
+
 -- | Natural numbers. Use 'toEnum' to construct.
 newtype Nat = Nat Int
   deriving ( Eq, Ord )

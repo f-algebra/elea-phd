@@ -74,7 +74,7 @@ instance Env.Write m => Env.Write (DBStateT m) where
   bindAt at b = mapDBStateT (Env.bindAt at b)
   matched t w = mapDBStateT (Env.matched t w)
   
-instance Env.Read m => Env.Read (DBStateT m) where
+instance Env.Bindings m => Env.Bindings (DBStateT m) where
   bindings = Trans.lift Env.bindings
   
 instance Discovery.Tells m => Discovery.Tells (DBStateT m) where

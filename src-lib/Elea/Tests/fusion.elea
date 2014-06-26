@@ -120,10 +120,10 @@ prop "take zip"<A, B>: forall (n: nat) (xs: list<A>) (ys: list<B>) ->
   = zip<A, B> (take<A> n xs) (take<B> n ys)
 
 
-  
+  /*
 prop "sorted flatten": forall (t t2: tree<nat>) (f: tree<nat> -> list<nat>) (n: nat) (xs: list<nat>) ->
   is_sorted (flatten<nat> t)
-
+*/
   
   /*
 prop "height mirror" <A>: forall (t: tree<A>) ->

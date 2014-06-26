@@ -4,7 +4,6 @@ module Elea.Tests.Simplifier
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Term
 import qualified Elea.Monad.Env as Env

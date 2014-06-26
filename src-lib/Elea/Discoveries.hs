@@ -7,7 +7,6 @@ module Elea.Discoveries
 )
 where
 
-import Prelude ()
 import Elea.Prelude hiding ( toList )
 import Elea.Term
 

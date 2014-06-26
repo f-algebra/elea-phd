@@ -55,7 +55,7 @@ listenerT = liftM (second EqSet.toList) . runWriterT . runListenerT
 listener :: Listener a -> (a, [Equation])
 listener = runIdentity . listenerT
 
-trace :: forall m a . (Defs.Read m, Env.Read m, Listens m) 
+trace :: forall m a . (Defs.Read m, Env.Bindings m, Listens m) 
   => m a -> m a
 trace run = do
   (x, eqs) <- listen run
@@ -92,7 +92,7 @@ instance Env.Write m => Env.Write (ListenerT m) where
   bindAt at b = mapListenerT (Env.bindAt at b)
   matched t w = mapListenerT (Env.matched t w)
  
-instance Env.Read m => Env.Read (ListenerT m) where
+instance Env.Bindings m => Env.Bindings (ListenerT m) where
   bindings = lift Env.bindings
 
 instance Defs.Read m => Defs.Read (ListenerT m) where

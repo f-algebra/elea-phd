@@ -5,7 +5,6 @@ module Elea.Fusion
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
@@ -34,7 +33,7 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
 
-type FusionM m = (Defs.Read m, Env.Read m, Discovery.Tells m, Fusion.Memo m)
+type FusionM m = (Defs.Read m, Env.Bindings m, Discovery.Tells m, Fusion.Memo m)
  
 {-# SPECIALISE run :: Term -> Fedd Term #-}
 

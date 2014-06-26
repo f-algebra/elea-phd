@@ -5,7 +5,6 @@ module Elea.Fission
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
@@ -92,7 +91,7 @@ constructorFission fix@(Fix _ fix_b fix_t) = do
     . Context.make 
     . const
     . unflattenLam arg_bs
-    $ Absurd return_ty
+    $ Unr return_ty
     
   -- A very quick check as to whether we can float a constructor out of
   -- this fixpoint. Makes sure that only one constructor is returned down

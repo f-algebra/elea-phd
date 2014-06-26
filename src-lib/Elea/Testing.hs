@@ -14,7 +14,6 @@ module Elea.Testing
 ) 
 where
 
-import Prelude ()
 import Elea.Prelude hiding ( assert )
 import Elea.Term
 import Elea.Type

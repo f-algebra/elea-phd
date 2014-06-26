@@ -51,7 +51,7 @@ instance Monad m => Env.Write (FeddT m) where
   bindAt at b = local (insertAt (enum at) b)
   matched _ _ = id
   
-instance Monad m => Env.Read (FeddT m) where
+instance Monad m => Env.Bindings (FeddT m) where
   bindings = ask
   
 instance Monad m => Disc.Tells (FeddT m) where

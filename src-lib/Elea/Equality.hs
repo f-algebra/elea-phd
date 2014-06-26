@@ -5,7 +5,6 @@ module Elea.Equality
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Term
 import Elea.Show
@@ -43,7 +42,7 @@ resultToBool Disproven = return False
   
       
 -- | Checks (using induction) whether two terms are equal.
-prove :: forall m . (Env.Read m, Defs.Read m, Fail.Can m)
+prove :: forall m . (Env.Bindings m, Defs.Read m, Fail.Can m)
   -- | A simplification function to be called within proving.
   => (Term -> m Term)
   -> Term

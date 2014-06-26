@@ -57,13 +57,13 @@ module Elea.Prelude
   isLeft, isRight, modifyM', modifyM, removeAt,
   insertAt, enum, indent, indentBy, debugNth,
   arrowSum, supremum, (|>), ($>), replaceAt,
-  Maximum (..), Minimum (..), sconcatMap,
-  intersects, length, liftMaybe, maybeT, nth
+  Maximum (..), Minimum (..), sconcatMap, nlength,
+  intersects, length, liftMaybe, maybeT, nth, drop, take,
 )
 where
 
 import Prelude hiding ( mapM, foldl, foldl1, mapM_, minimum, 
-  maximum, sequence_, zip, zipWith, Read (..), length,
+  maximum, sequence_, zip, zipWith, Read (..), length, drop, take,
   foldr, foldr1, sequence, Maybe (..), maybe, all, any, elem, product,
   and, concat, notElem, or, concatMap, sum, (++), map, (.), id, (!!) )
 
@@ -172,6 +172,9 @@ intercalate x = concat . intersperse x
 -- | A more usefully typed 'length' function.
 length :: (Foldable f, Enum n) => f a -> n
 length = enum . Pre.length . toList
+
+nlength :: Foldable f => f a -> Nat
+nlength = length
 
 partitionM :: Monad m => (a -> m Bool) -> [a] -> m ([a], [a])
 partitionM f = foldrM f' ([], [])  
@@ -369,6 +372,12 @@ nth = debugNth "Index too large"
 arrowSum :: MonadPlus m => [a -> m b] -> a -> m b
 arrowSum ms x = msum (map ($ x) ms)
 
+drop :: Enum e => e -> [a] -> [a]
+drop = Pre.drop . fromEnum
+
+take :: Enum e => e -> [a] -> [a]
+take = Pre.take . fromEnum
+
 supremum :: Enum a => Set a -> a
 supremum set 
   | Set.null set = toEnum 0
@@ -398,4 +407,3 @@ instance Monoid (Minimum CoNat) where
   
 intersects :: Ord a => Set a -> Set a -> Bool
 intersects x = not . Set.null . Set.intersection x
-

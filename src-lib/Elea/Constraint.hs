@@ -24,7 +24,6 @@ module Elea.Constraint
 )
 where
 
-import Prelude ()
 import Elea.Prelude hiding ( replace )
 import Elea.Term
 import Elea.Context ( Context )
@@ -52,7 +51,7 @@ strip (Case ind cse_t alts) = do
   inner_t <- Indices.tryLowerMany (length bs) alt_t'
   return (make cse_t ind (enum con_n), inner_t)
   where
-  non_abs = findIndices (not . isAbsurd . get altInner) alts
+  non_abs = findIndices (not . isUnr . get altInner) alts
   [con_n] = non_abs
   Alt bs alt_t = nth alts con_n
   
@@ -134,7 +133,7 @@ apply (Constraint match_t ind con_n) (on_t, on_ty) =
     bs = map (Bind "X") (init (Type.flatten con_ty))
     
     -- If we are not down the matched branch we return absurd
-    alt_t | enum alt_n /= con_n = Absurd on_ty
+    alt_t | enum alt_n /= con_n = Unr on_ty
           | otherwise = on_t
 
 -- | Create a context from a constraint. Requires the return type of the gap.

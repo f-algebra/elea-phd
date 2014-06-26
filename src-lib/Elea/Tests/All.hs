@@ -20,11 +20,11 @@ tests = Test.list
   , Type.tests
   , Term.tests
   , UMap.tests
-  , Checker.tests 
+ -- , Checker.tests 
   , Simplifier.tests
   , Context.tests
  -- , Inventor.tests
- -- , Fusion.tests  
+  , Fusion.tests  
   ]
   
 runTests :: IO ()

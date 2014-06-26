@@ -4,7 +4,6 @@ module Elea.Tests.Floating
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Term ( Term )
 import qualified Elea.Monad.Definitions as Defs

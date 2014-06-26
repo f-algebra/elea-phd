@@ -11,7 +11,6 @@ module Elea.Fixpoint
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
@@ -171,7 +170,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     || new_rc >= old_rc 
     
     -- Couple of extra ad hoc reasons fusion would have succeeded.
-    || Term.isAbsurd new_term
+    || Term.isUnr new_term
     || Term.isSimple new_term
   
   -- DEBUG
@@ -379,7 +378,7 @@ fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
       floatAlt :: Alt -> MaybeT (Env.TrackIndices Context) Alt
       floatAlt alt
         -- If a branch is absurd we can float any context out of it
-        | Term.isAbsurd (get Term.altInner alt) = return alt
+        | Term.isUnr (get Term.altInner alt) = return alt
       floatAlt (Alt bs alt_t) = do
         ctx <- Env.trackeds (Indices.liftMany (length bs))
         alt_t' <- Context.strip ctx alt_t

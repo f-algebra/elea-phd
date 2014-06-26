@@ -10,7 +10,6 @@ module Elea.Simplifier
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Term
 import Elea.Show ( showM )
@@ -352,7 +351,7 @@ finiteCaseFix _ = Fail.here
 constantFix :: forall m . Fail.Can m => Term -> m Term
 constantFix (Fix _ fix_b fix_t)
   | Just [result] <- mby_results = guessConstant result
-  | Just [] <- mby_results = guessConstant (Absurd result_ty)
+  | Just [] <- mby_results = guessConstant (Unr result_ty)
   where
   (arg_bs, _) = flattenLam fix_t
   result_ty = Type.returnType (get Type.boundType fix_b)
@@ -366,7 +365,7 @@ constantFix (Fix _ fix_b fix_t)
     . Fold.isoFoldM Term.branches resultTerm
     where
     resultTerm :: Term -> MaybeT (Env.TrackIndices Index) (Set Term)
-    resultTerm (Absurd _) = return mempty
+    resultTerm (Unr _) = return mempty
     resultTerm term = do
       fix_f <- Env.tracked
       if leftmost term == Var fix_f

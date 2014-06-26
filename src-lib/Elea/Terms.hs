@@ -30,7 +30,6 @@ module Elea.Terms
 )
 where
 
-import Prelude ()
 import Elea.Prelude hiding ( replace )
 import Elea.Term
 import Elea.Context ( Context )
@@ -158,7 +157,7 @@ decreasingAppArgs (App fix args) =
 -- | Returns the indices of the strictly decreasing arguments for
 -- a given function. Undefined if not given a 'Fix'.
 decreasingArgs :: Term -> [Int]
-decreasingArgs (Fix _ fix_b fix_t) = 
+decreasingArgs (Fix _ fix_b fix_t xs) = 
   filter isDecreasing [0..length arg_bs - 1]
   where
   (arg_bs, fix_body) = flattenLam fix_t
@@ -213,7 +212,7 @@ applyCase (Case ind cse_t alts) inner_t =
 -- The first argument of the inner computation to run will lift 
 -- indices by the number of new variables.
 generaliseArgs :: forall m a .
-    (Env.Read m, Defs.Read m, Substitutable a, Inner a ~ Term) =>
+    (Env.Bindings m, Defs.Read m, Substitutable a, Inner a ~ Term) =>
   Term -> (Indices.Shift -> Term -> m a) -> m a
 generaliseArgs (App func args) run = do
   -- Use the type of every arguments to generate bindings for our new 
@@ -248,7 +247,7 @@ generaliseArgs (App func args) run = do
 -- | Like 'generaliseArgs' but generalises /every/ occurrence of a set of terms
 -- within another.
 generaliseTerms :: forall m a t . 
-    ( Env.Read m, Defs.Read m, ContainsTerms t  
+    ( Env.Bindings m, Defs.Read m, ContainsTerms t  
     , Substitutable a, Inner a ~ Term ) =>
   Set Term -> t -> (Indices.Shift -> t -> m a) -> m a
 generaliseTerms (toList -> terms) target run
@@ -289,7 +288,7 @@ generaliseTerms (toList -> terms) target run
   
   
 -- | Finds uninterpreted function calls and generalises them.
-generaliseUninterpreted :: ( Env.Read m, Defs.Read m, ContainsTerms t
+generaliseUninterpreted :: ( Env.Bindings m, Defs.Read m, ContainsTerms t
                            , Substitutable a, Inner a ~ Term ) =>
   t -> (Indices.Shift -> t -> m a) -> m a
 generaliseUninterpreted target =
@@ -304,7 +303,7 @@ generaliseUninterpreted target =
 -- | Construct an n-tuple of the given terms. Needs to read the type of the
 -- terms so it can construct the appropriate n-tuple type for
 -- the constructor.
-tuple :: (Defs.Read m, Env.Read m) => [Term]-> m Term
+tuple :: (Defs.Read m, Env.Bindings m) => [Term]-> m Term
 tuple ts
   | length ts > 1 = do
     ind <- id
@@ -312,7 +311,7 @@ tuple ts
       $ mapM Type.get ts
     return (app (Con ind 0) ts)
  
-equation :: (Defs.Read m, Env.Read m) => Term -> Term -> m Term
+equation :: (Defs.Read m, Env.Bindings m) => Term -> Term -> m Term
 equation left right = do
   ty <- Type.get left
   let eq_ind = Type.equation ty
@@ -328,10 +327,10 @@ isEquation _ = Fail.here
 -- of that fixpoint.
 -- It can reverse the @constArg@ step from "Elea.Simplifier".
 -- Necessary for then @freeDecreasingArg@ step from "Elea.Fusion".
-expressFreeVariable :: Env.Read m => Index -> Term -> m Term
+expressFreeVariable :: Env.Bindings m => Index -> Term -> m Term
 expressFreeVariable free_var (Fix fix_i (Bind fix_n fix_ty) fix_t) = do
   var_b <- Env.boundAt free_var
-  let fix_ty' = Type.Fun (get Type.boundType var_b) fix_ty
+  let fix_ty' = Type.Fun (get Type.bindType var_b) fix_ty
   return
     . (\t -> app t [Var free_var])
     . Fix fix_i (Bind fix_n fix_ty')
@@ -360,7 +359,7 @@ expressFreeVariable free_var (Fix fix_i (Bind fix_n fix_ty) fix_t) = do
 -- The order of the new variables applied to the output term will match
 -- the order of the indices input.
 -- > expressFreeVariables [x, y, z] (fix F) = (fix G) x y z
-expressFreeVariables :: forall m . Env.Read m => [Index] -> Term -> m Term
+expressFreeVariables :: forall m . Env.Bindings m => [Index] -> Term -> m Term
 expressFreeVariables = flip (foldrM express) 
   where
   express :: Index -> Term -> m Term

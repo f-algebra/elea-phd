@@ -9,7 +9,6 @@ module Elea.Evaluation
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Index
 import Elea.Term
@@ -82,17 +81,17 @@ degenerateContext ctx = id
 -- So far it detects applying arguments to an absurd function.
 -- Need to add pattern matching over absurdity, but how to find the type?
 absurdity :: Fail.Can m => Term -> m Term
-absurdity (App (Absurd ty) args) = 
-  return (Absurd new_ty)
+absurdity (App (Unr ty) args) = 
+  return (Unr new_ty)
   where
   new_ty = id
     . Type.unflatten 
     . drop (length args) 
     $ Type.flatten ty
 absurdity term@(App _ args)
-  | any Term.isAbsurd args
+  | any Term.isUnr args
   , Type.closed term = 
-    return (Absurd (Type.getClosed term))
+    return (Unr (Type.getClosed term))
 absurdity _ =
   Fail.here
   
