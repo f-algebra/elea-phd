@@ -12,7 +12,6 @@ module Elea.Monad.Definitions.Database
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Term
 import Elea.Type ( Polymorphic, Ind (..) )
@@ -56,7 +55,7 @@ putTerm name pterm
 getName :: Fail.Can m => Term -> Database -> m (String, [Term])
 getName (Lam {}) _ = Fail.here
 getName term _ 
-  | (not . isFix . leftmost) term = Fail.here
+  | (not . isFix) term = Fail.here
 getName term (get dbTermNames -> name_map) = do
   (uni, name) <- UMap.lookup term' name_map
   
@@ -93,7 +92,7 @@ getTerm name ty_args db = do
     modify dbTermNames addName
     where
     addName
-      | (isFix . leftmost) inner_term = UMap.insert inner_term name' 
+      | isFix inner_term = UMap.insert inner_term name' 
       | otherwise = id
       
     (_, inner_term) = flattenLam term

@@ -4,6 +4,7 @@ module Elea.Tests.All
 )
 where
 
+import Elea.Prelude
 import qualified Elea.Testing as Test
 import qualified Elea.Tests.Prelude as Prelude
 import qualified Elea.Tests.Type as Type
@@ -20,11 +21,11 @@ tests = Test.list
   , Type.tests
   , Term.tests
   , UMap.tests
-  , Checker.tests 
+ -- , Checker.tests 
   , Simplifier.tests
   , Context.tests
  -- , Inventor.tests
- -- , Fusion.tests  
+  , Fusion.tests  
   ]
   
 runTests :: IO ()

@@ -5,7 +5,6 @@ module Elea.Fission
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
@@ -28,7 +27,7 @@ import qualified Data.Set as Set
 {-# SPECIALISE run :: Term -> Fedd Term #-}
 
 run :: (Defs.Read m, Env.Read m) => Term -> m Term
-run = Fold.rewriteStepsM (map Type.checkStep steps)
+run = Fold.rewriteStepsM steps
 
 steps :: (Env.Read m, Fail.Can m, Defs.Read m) => [Term -> m Term]
 steps = Simp.steps ++ 
@@ -86,13 +85,13 @@ constructorFission fix@(Fix _ fix_b fix_t) = do
     . map (Fix.fission (return . Simp.run) fix)
     $ toList suggestions
   where 
-  return_ty = Type.returnType (get Type.boundType fix_b)
+  return_ty = Type.returnType (get Type.bindType fix_b)
   (arg_bs, _) = Term.flattenLam fix_t
   absurd_ctx = id
     . Context.make 
     . const
     . unflattenLam arg_bs
-    $ Absurd return_ty
+    $ Unr return_ty
     
   -- A very quick check as to whether we can float a constructor out of
   -- this fixpoint. Makes sure that only one constructor is returned down
@@ -106,9 +105,10 @@ constructorFission fix@(Fix _ fix_b fix_t) = do
     -- Return the index of every constructor returned
     -- by this term.
     returnCons :: Term -> Set Nat
-    returnCons (leftmost -> Con _ n) = Set.singleton n
+    returnCons (leftmost -> Con con) =
+      Set.singleton (get Type.constructorIndex con)
     returnCons (Lam _ t) = returnCons t
-    returnCons (Case _ _ alts) = 
+    returnCons (Case _ alts) = 
       Set.unions (map (returnCons . get altInner) alts)
     returnCons _ = mempty
 
@@ -124,14 +124,14 @@ constructorFission fix@(Fix _ fix_b fix_t) = do
     suggest :: Term -> MaybeT Env.TrackOffset (Set Context)
     suggest (Lam _ t) = 
       Env.liftTracked (suggest t)
-    suggest (Case ind _ alts) =
+    suggest (Case _ alts) =
       concatMapM suggestAlt alts
       where
       suggestAlt :: Alt -> MaybeT Env.TrackOffset (Set Context)
-      suggestAlt (Alt bs alt_t) =
+      suggestAlt (Alt _ bs alt_t) =
         Env.liftTrackedMany (length bs) (suggest alt_t)
         
-    suggest con_t@(Term.flattenApp -> Con ind con_n : args) = do
+    suggest con_t@(Term.flattenApp -> Con con : args) = do
       free_limit <- Env.tracked
       -- We cannot keep an argument to the constructor if it contains
       -- variables which are not free outside the fixpoint,
@@ -151,14 +151,14 @@ constructorFission fix@(Fix _ fix_b fix_t) = do
         -- use this argument for the gap
         let arg_i = head not_keepable
         -- But this cannot be the gap if it's not recursive
-        Fail.when (arg_i `elem` Type.nonRecursiveArgs ind con_n)
+        Fail.when (arg_i `elem` Type.nonRecursiveArgs con)
         return
           . Set.singleton
           $ gapContext idx_offset arg_i
       else return
          . Set.unions
          . map (Set.singleton . gapContext idx_offset) 
-         $ Type.recursiveArgs ind con_n
+         $ Type.recursiveArgs con
       where
       -- Construct a context which is the constructor term with
       -- a gap at the given argument position
@@ -178,7 +178,7 @@ constructorFission fix@(Fix _ fix_b fix_t) = do
           . app con'
           $ left' ++ [gap_t] ++ right'
           where
-          con' = Indices.lowerMany idx_offset (Con ind con_n)
+          con' = Indices.lowerMany idx_offset (Con con)
           left' = map (Indices.lowerMany idx_offset) left
           right' = map (Indices.lowerMany idx_offset) right
           -- Apply the arguments we lambda'd at the top of the context

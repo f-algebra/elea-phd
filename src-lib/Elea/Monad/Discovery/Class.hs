@@ -6,7 +6,6 @@ module Elea.Monad.Discovery.Class
 )
 where
 
-import Prelude ()
 import Elea.Prelude hiding ( tell, listen )
 import Elea.Term
 import qualified Elea.Monad.Env.Class as Env

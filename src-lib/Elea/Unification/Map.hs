@@ -1,12 +1,11 @@
 -- | A dictionary with unifiable objects as keys, where lookup will find any 
 -- keys unifiable with the one provided, returning both the stored value and
 -- the unifier.
--- Requires that the key be 'Generalisable' for fast lookup.
+-- Uses the 'gcompare' function for fast lookup.
 module Elea.Unification.Map
 (
-  Generalised, Generalisable (..),
-  
   UMap,
+  Generalised (..),
   empty, 
   singleton,
   lookup, 
@@ -16,7 +15,6 @@ module Elea.Unification.Map
 )
 where
 
-import Prelude ()
 import Elea.Prelude hiding ( find, lookup, toList )
 import Elea.Index
 import Elea.Unification hiding ( singleton, toList )
@@ -32,26 +30,15 @@ newtype Generalised a = Generalised a
 instance Applicative Generalised where
   pure = Generalised
   Generalised f <*> Generalised a = Generalised (f a)
-
--- | A generalised object is one for which inequality implies non-unifiability. 
--- Think of it like a unifiability hash, in that inequality of hashed values
--- implies inequality of original values.
--- We use this for fast lookup of potentially unifiable terms in 'UMap', in the
--- same way as a hash gives fast lookup in a hash-map - by screening out
--- non-equal, and hence non-unifiable, variables.
-class Unifiable a => Generalisable a where
-  -- | The special comparison function for which 
-  -- inequality implies non-unifiability.
-  compareGen :: a -> a -> Ordering
   
   
--- | The instance of 'Eq' induced by 'compareGen'
-instance Generalisable a => Eq (Generalised a) where
-  Generalised x == Generalised y = compareGen x y == EQ
+-- | The instance of 'Eq' induced by 'gcompare'
+instance Unifiable a => Eq (Generalised a) where
+  Generalised x == Generalised y = gcompare x y == EQ
   
--- | The instance of 'Ord' induced by 'compareGen'
-instance Generalisable a => Ord (Generalised a) where
-  Generalised x `compare` Generalised y = compareGen x y
+-- | The instance of 'Ord' induced by 'gcompare'
+instance Unifiable a => Ord (Generalised a) where
+  Generalised x `compare` Generalised y = gcompare x y
 
   
 newtype UMap k a = UMap { getMap :: Map (Generalised k) [(k, a)] }
@@ -60,7 +47,7 @@ newtype UMap k a = UMap { getMap :: Map (Generalised k) [(k, a)] }
 empty :: UMap k a
 empty = UMap Map.empty
 
-singleton :: forall k a . (Ord k, Generalisable k) => k -> a -> UMap k a
+singleton :: forall k a . (Ord k, Unifiable k) => k -> a -> UMap k a
 singleton k a = insert k a empty
 
 -- | The insertion operation favours the more general key w.r.t unification.
@@ -70,7 +57,7 @@ singleton k a = insert k a empty
 --   2. If @Unifier.exists k2 k1@ then we remove @k1 -> a1@ 
 --      and insert @k2 -> a2@.
 --   3. Otherwise we just insert @k2 -> a2@ and keep @k1 -> a1@.
-insert :: forall k a . (Ord k, Generalisable k) 
+insert :: forall k a . (Ord k, Unifiable k) 
   => k -> a -> UMap k a -> UMap k a
 insert k a = UMap . Map.alter ins (pure k) . getMap
   where
@@ -83,7 +70,7 @@ insert k a = UMap . Map.alter ins (pure k) . getMap
     subsumes :: k -> k -> Bool
     subsumes = exists
   
-lookup :: forall m k a . (Fail.Can m, Generalisable k) 
+lookup :: forall m k a . (Fail.Can m, Unifiable k) 
   => k -> UMap k a -> m (Unifier (Inner k), a)
 lookup k (UMap dmap) = do
   kas <- Fail.mapLookup (pure k) dmap
@@ -100,6 +87,6 @@ toList = concat . Map.elems . getMap
 elems :: UMap k a -> [a]
 elems = map snd . toList
     
-instance (Ord k, Generalisable k) => Monoid (UMap k a) where
+instance (Ord k, Unifiable k) => Monoid (UMap k a) where
   mempty = empty
   mappend map1 = foldr (uncurry insert) map1 . toList

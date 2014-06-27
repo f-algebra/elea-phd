@@ -4,9 +4,8 @@ module Elea.Tests.Type
 )
 where
 
-import Prelude ()
 import Elea.Prelude
-import Elea.Type
+import Elea.Type hiding ( get )
 import qualified Elea.Testing as Test
 
 tests = Test.label "Types"
@@ -16,9 +15,13 @@ tests = Test.label "Types"
   Base nat <- Test._type "nat"
   Base bool <- Test._type "bool"
   
-  let t1 = Test.assert (isBaseCase bool 0)
-      t2 = Test.assert (isBaseCase nat 0)
-      t3 = Test.assertEq [0] (recursiveArgs nat 1)
+  let true = Constructor bool 0
+      zero = Constructor nat 0
+      succ = Constructor nat 1
+  
+  let t1 = Test.assert (isBaseCase true)
+      t2 = Test.assert (isBaseCase zero)
+      t3 = Test.assertEq [0] (recursiveArgs succ)
       t4 = Test.assert (isRecursive nat)
   
   return $ Test.list

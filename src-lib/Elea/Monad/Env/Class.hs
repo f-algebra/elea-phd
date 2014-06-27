@@ -3,7 +3,7 @@
 module Elea.Monad.Env.Class
 (
   Write (..), Read (..), 
-  bind, bindMany,
+  bind, bindMany, isBound,
   boundAt, bindingDepth,
   
   MatchRead (..), 
@@ -16,7 +16,6 @@ module Elea.Monad.Env.Class
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Index
 import Elea.Term
@@ -63,6 +62,12 @@ boundAt at = do
 -- | Returns the number of indices that have been bound.
 bindingDepth :: Read m => m Int
 bindingDepth = liftM length bindings
+
+-- | Is a given index bound within this environment.
+isBound :: Read m => Index -> m Bool
+isBound at = do
+  bs <- bindings
+  return (at < length bs)
  
 
 -- | Whether you can read locally bound pattern matches from

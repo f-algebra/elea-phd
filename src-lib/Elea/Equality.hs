@@ -5,7 +5,6 @@ module Elea.Equality
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Term
 import Elea.Show
@@ -69,9 +68,9 @@ prove simplify t1 t2 = do
   -- If both sides are constructors check they are the same constructor and that
   -- every argument is equal
   equal 
-      (flattenApp -> Con _ n : l_args) 
-      (flattenApp -> Con _ m : r_args) = do
-    if n /= m
+      (flattenApp -> Con c1 : l_args) 
+      (flattenApp -> Con c2 : r_args) = do
+    if c1 /= c2
     then return Disproven
     else do
       args_eq <- zipWithM equal l_args r_args

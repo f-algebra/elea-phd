@@ -13,7 +13,6 @@ module Elea.Monad.Discovery
 )
 where
 
-import Prelude ()
 import Elea.Prelude hiding ( tell, listen, trace )
 import Elea.Term
 import Elea.Show

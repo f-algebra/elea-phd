@@ -5,7 +5,6 @@ module Elea.Unification
 )
 where
 
-import Prelude ()
 import Elea.Prelude hiding ( union, find )
 import Elea.Index
 import qualified Elea.Index as Indices
@@ -22,6 +21,14 @@ class (Eq (Inner t), Substitutable t) => Unifiable t where
   
   -- | Apply a unifier, so @apply (find t1 t2) t1 ==> t2@.
   apply :: Unifier (Inner t) -> t -> t
+  
+  -- | A special comparison function for which
+  -- inequality implies non-unifiability.
+  -- We can use this for fast lookup of potentially unifiable terms, in the
+  -- same way that a hash allows us to do fast lookup, since 
+  -- inequality of hashes implies inequality of orignals.
+  gcompare :: t -> t -> Ordering
+  
 
 singleton :: Index -> a -> Unifier a
 singleton = Map.singleton
@@ -54,7 +61,11 @@ instance Unifiable t => Unifiable [t] where
     
   apply uni = 
     map (apply uni)
+    
+  gcompare xs = 
+    mconcat . zipWith gcompare xs
 
+    
 instance (Ord t, Unifiable t) => Unifiable (Set t) where
   find xs ys = 
     find (Set.toAscList xs) (Set.toAscList ys)
@@ -62,3 +73,5 @@ instance (Ord t, Unifiable t) => Unifiable (Set t) where
   apply uni = 
     Set.map (apply uni)
     
+  gcompare xs ys = 
+    mconcat $ zipWith gcompare (toList xs) (toList ys)

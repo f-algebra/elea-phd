@@ -9,7 +9,6 @@ module Elea.Evaluation
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Index
 import Elea.Term
@@ -44,7 +43,7 @@ steps =
 -- | The variables or uninterpreted function application terms
 -- whose value must be known in order to evaluate the given term.
 strictTerms :: Term -> Set Term
-strictTerms (Case _ cse_t@(App (Fix {}) _) _) = 
+strictTerms (Case cse_t@(App (Fix {}) _) _) = 
   strictTerms cse_t
 strictTerms (App (Fix _ _ fix_t) args) = id
   . collectTerms 
@@ -52,11 +51,11 @@ strictTerms (App (Fix _ _ fix_t) args) = id
   where
   fix_t' = substAt 0 (Var Indices.omega) fix_t
 
-  collectTerms (Case _ cse_t alts)
+  collectTerms (Case cse_t alts)
     | isVar (leftmost cse_t) = 
       Set.insert cse_t (concatMap altVars alts)
     where
-    altVars (Alt bs alt_t) = id
+    altVars (Alt _ bs alt_t) = id
       . Set.map (Indices.lowerMany (length bs))
       . Set.filter (Indices.lowerableBy (length bs))
       $ collectTerms alt_t 
@@ -82,17 +81,17 @@ degenerateContext ctx = id
 -- So far it detects applying arguments to an absurd function.
 -- Need to add pattern matching over absurdity, but how to find the type?
 absurdity :: Fail.Can m => Term -> m Term
-absurdity (App (Absurd ty) args) = 
-  return (Absurd new_ty)
+absurdity (App (Unr ty) args) = 
+  return (Unr new_ty)
   where
   new_ty = id
     . Type.unflatten 
-    . drop (length args) 
+    . drop (nlength args) 
     $ Type.flatten ty
 absurdity term@(App _ args)
-  | any Term.isAbsurd args
-  , Type.closed term = 
-    return (Absurd (Type.getClosed term))
+  | any Term.isUnr args
+  , Type.isClosed term = 
+    return (Unr (Type.get term))
 absurdity _ =
   Fail.here
   
@@ -119,9 +118,9 @@ eta _ = Fail.here
 
 
 caseOfCon :: Fail.Can m => Term -> m Term
-caseOfCon (Case ind cse_t alts)
-  | Con _ (fromEnum -> n) : args <- flattenApp cse_t
-  , Alt bs alt_t <- alts `nth` n = id
+caseOfCon (Case cse_t alts)
+  | Con con : args <- flattenApp cse_t
+  , Alt _ bs alt_t <- alts !! get Type.constructorIndex con = id
     . return
     -- We fold substitute over the arguments to the constructor
     -- starting with the return value of the pattern match (alt_t).
@@ -139,11 +138,11 @@ caseOfCon _ = Fail.here
 -- | If we have a case statement on the left of term 'App'lication
 -- then float it out.
 caseApp :: Fail.Can m => Term -> m Term
-caseApp (App (Case ind t alts) args) =
-  return (Case ind t (map appArg alts))
+caseApp (App (Case t alts) args) =
+  return (Case t (map appArg alts))
   where
-  appArg (Alt bs alt_t) =
-    Alt bs (app alt_t (Indices.liftMany (length bs) args))
+  appArg (Alt con bs alt_t) =
+    Alt con bs (app alt_t (Indices.liftMany (length bs) args))
     
 caseApp _ = Fail.here
 
@@ -160,20 +159,20 @@ appCase _ = Fail.here
 -- | If we are pattern matching on a pattern match then remove this 
 -- using distributivity.
 caseCase :: Fail.Can m => Term -> m Term
-caseCase outer_cse@(Case _ inner_cse@(Case {}) _) =
+caseCase outer_cse@(Case inner_cse@(Case {}) _) =
   return (Term.applyCase inner_cse outer_cse)
 caseCase _ = Fail.here
 
 
 -- | Removes a pattern match if every branch returns the same value.
 constantCase :: forall m . Fail.Can m => Term -> m Term
-constantCase (Case _ _ alts) = do
+constantCase (Case _ alts) = do
   (alt_t:alt_ts) <- mapM loweredAltTerm alts
   Fail.unless (all (== alt_t) alt_ts)
   return alt_t
   where
   loweredAltTerm :: Alt -> m Term
-  loweredAltTerm (Alt bs alt_t) = 
+  loweredAltTerm (Alt _ bs alt_t) = 
     Indices.tryLowerMany (length bs) alt_t
     
 constantCase _ = Fail.here
@@ -186,7 +185,7 @@ floatVarMatches :: Term -> Term
 floatVarMatches = Fold.rewrite float . run
   where
   float :: forall m . Fail.Can m => Term -> m Term
-  float outer_t@(Case _ (leftmost -> Fix {}) alts) = do
+  float outer_t@(Case (leftmost -> Fix {}) alts) = do
     inner_case <- Fail.choose (map caseOfVarAlt alts)
     return  
       . run
@@ -196,10 +195,10 @@ floatVarMatches = Fold.rewrite float . run
     -- We return the inner alt case-of if it is over a variable
     -- which is not from the pattern match, viz. it can be lowered
     -- to outside the match.
-    caseOfVarAlt (Alt bs alt_t@(Case ind cse_t i_alts)) 
+    caseOfVarAlt (Alt _ bs alt_t@(Case cse_t i_alts)) 
       | isVar (leftmost cse_t) = do
         cse_t' <- Indices.tryLowerMany (length bs) cse_t
-        return (Case ind cse_t' i_alts)
+        return (Case cse_t' i_alts)
     caseOfVarAlt _ = 
       Fail.here
       

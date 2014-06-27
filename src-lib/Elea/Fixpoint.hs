@@ -11,7 +11,6 @@ module Elea.Fixpoint
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
@@ -72,11 +71,11 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   let s1 = "\nFUSING:\n" ++ ctx_s ++ "\nWITH\n" ++ t_s
 
   -- Make the type of the new fixpoint we are creating
-  result_ty <- Type.get orig_t
+  result_ty <- Type.getM orig_t
   free_var_bs <- mapM Env.boundAt free_vars
-  let free_var_tys = map (get Type.boundType) free_var_bs
+  let free_var_tys = map (get Type.bindType) free_var_bs
       new_fix_ty = Type.unflatten (reverse (result_ty:free_var_tys))
-      new_lbl = "[" ++ get Type.boundLabel fix_b ++ "]"
+      new_lbl = "[" ++ get Type.bindLabel fix_b ++ "]"
       new_fix_b = Bind new_lbl new_fix_ty
   
   simplified_t <- id
@@ -171,7 +170,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     || new_rc >= old_rc 
     
     -- Couple of extra ad hoc reasons fusion would have succeeded.
-    || Term.isAbsurd new_term
+    || Term.isUnr new_term
     || Term.isSimple new_term
   
   -- DEBUG
@@ -279,10 +278,10 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     . Fold.rewriteM expand
     where
     expand :: Term -> MaybeT (Env.TrackIndices (Index, Term)) Term
-    expand (Case ind (App (Var f) args) alts) = do
+    expand (Case (App (Var f) args) alts) = do
       (fix_f, inner_fix) <- Env.tracked
       Fail.unless (f == fix_f)
-      Simp.finiteCaseFix (Case ind (App inner_fix args) alts)
+      Simp.finiteCaseFix (Case (App inner_fix args) alts)
     expand (App (Var f) args) = do
       (fix_f, inner_fix) <- Env.tracked
       Fail.unless (f == fix_f)
@@ -369,21 +368,21 @@ fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
     ctx_inside_lam = Indices.liftMany (length lam_bs) dropped_ctx
     
     floatCtxUp :: Term -> MaybeT (Env.TrackIndices Context) Term
-    floatCtxUp cse@(Case ind t alts) = do
+    floatCtxUp cse@(Case t alts) = do
       ctx <- Env.tracked
       alts' <- mapM floatAlt alts
       return
         . Context.apply ctx
-        $ Case ind t alts'
+        $ Case t alts'
       where
       floatAlt :: Alt -> MaybeT (Env.TrackIndices Context) Alt
       floatAlt alt
         -- If a branch is absurd we can float any context out of it
-        | Term.isAbsurd (get Term.altInner alt) = return alt
-      floatAlt (Alt bs alt_t) = do
+        | Term.isUnr (get Term.altInner alt) = return alt
+      floatAlt (Alt con bs alt_t) = do
         ctx <- Env.trackeds (Indices.liftMany (length bs))
         alt_t' <- Context.strip ctx alt_t
-        return (Alt bs alt_t')
+        return (Alt con bs alt_t')
         
     floatCtxUp _ = mzero
   
@@ -396,14 +395,14 @@ constraintFusion
   -> Term
   -> m Term
 constraintFusion simplify
-     cons@(Constraint match_t ind con_n) 
+     cons@(Constraint cons_con match_t) 
      term@(App fix@(Fix {}) args) = do
      
   -- Run fixpoint fusion with our special simplification function.
   fusion simplifyAndExpress full_ctx fix
   where
-  -- We can use getClosed here because it's a fixpoint with arguments applied
-  result_ty = Type.getClosed term
+  -- We can use just get here because it's a fixpoint with arguments applied
+  result_ty = Type.get term
   
   -- Appending contexts composes them in the natural way
   cons_ctx = Constraint.toContext result_ty cons
@@ -423,7 +422,7 @@ constraintFusion simplify
     orig_term = Context.apply ctx (Var fix_f)
     
     expressPattern :: Term -> Env.TrackIndices Index Term
-    expressPattern (Case ind cse_t alts) 
+    expressPattern (Case cse_t alts) 
       -- If we have found a pattern match which unifies with the original
       -- match context then we should express it at recursive calls to the
       -- function
@@ -433,15 +432,16 @@ constraintFusion simplify
               . Env.trackIndices (fix_f, cse_t)
               . Env.liftTrackedMany (length alt_bs)
               $ Fold.transformM express alt_t
-            alts' = l_alts ++ (Alt alt_bs alt_t' : r_alts)
-        return (Case ind cse_t alts')
+            alts' = l_alts ++ (Alt alt_con alt_bs alt_t' : r_alts)
+        return (Case cse_t alts')
       where
-      (l_alts, Alt alt_bs alt_t : r_alts) = splitAt (enum con_n) alts
+      con_n = get Type.constructorIndex cons_con
+      (l_alts, Alt alt_con alt_bs alt_t : r_alts) = splitAt (enum con_n) alts
       
       express :: Term -> Env.TrackIndices (Index, Term) Term
       express term@(App (Var f) args) = do
         (fix_f, cse_t) <- Env.tracked
-        let cse_ctx = Constraint.makeContext cse_t ind con_n result_ty
+        let cse_ctx = Constraint.makeContext cons_con cse_t result_ty
             term' = Context.apply cse_ctx term
         -- We only need to express the constraint if it can be unified with
         -- the original constraint, and hence could be replaced by fusion.

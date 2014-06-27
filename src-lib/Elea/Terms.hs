@@ -30,7 +30,6 @@ module Elea.Terms
 )
 where
 
-import Prelude ()
 import Elea.Prelude hiding ( replace )
 import Elea.Term
 import Elea.Context ( Context )
@@ -81,10 +80,10 @@ instance Env.Write m => Fold.TransformableM m BranchesOnly where
     f' = liftM notBranchesOnly . f . BranchesOnly
     
     branches :: Term -> (Bool, Term' Bool)
-    branches (Case ind cse_t alts) =
-      (False, Case' ind False (map descAlt alts))
+    branches (Case cse_t alts) =
+      (False, Case' False (map descAlt alts))
       where 
-      descAlt (Alt bs alt_t) = Alt' bs True
+      descAlt (Alt con bs alt_t) = Alt' con bs True
     branches (Lam b t) = 
       (False, Lam' b True)
     branches term = 
@@ -192,11 +191,11 @@ decreasingArgs (Fix _ fix_b fix_t) =
 -- | Take a case-of term and replace the result term down each branch
 -- with the second term argument.
 applyCase :: Term -> Term -> Term
-applyCase (Case ind cse_t alts) inner_t = 
-  Case ind cse_t (zipWith mkAlt [0..] alts)
+applyCase (Case cse_t alts) inner_t = 
+  Case cse_t (map mkAlt alts)
   where
-  mkAlt :: Int -> Alt -> Alt
-  mkAlt n (Alt bs _) = Alt bs alt_t
+  mkAlt :: Alt -> Alt
+  mkAlt (Alt con bs _) = Alt con bs alt_t
     where
     -- Takes a term from outside the pattern match and lifts the 
     -- indices to what they should be within this branch
@@ -205,7 +204,7 @@ applyCase (Case ind cse_t alts) inner_t =
     -- The new alt-term is the given inner_t, with all occurrences of
     -- the pattern matched term replaced with the pattern it is matched
     -- to down this branch.
-    pat = altPattern ind (enum n)
+    pat = altPattern con
     alt_t = replace (liftHere cse_t) pat (liftHere inner_t)
 
  
@@ -237,7 +236,7 @@ generaliseArgs (App func args) run = do
   makeBind n
     | Var x <- args `nth` n = Env.boundAt x
   makeBind n = do
-    ty <- Type.get (args `nth` n)
+    ty <- Type.getM (args `nth` n)
     let name = "_" ++ show ty
     return (Bind name ty)
   
@@ -280,7 +279,7 @@ generaliseTerms (toList -> terms) target run
   makeBind n
     | Var x <- terms `nth` n = Env.boundAt x
   makeBind n = do
-    ty <- Type.get (terms `nth` n)
+    ty <- Type.getM (terms `nth` n)
     let name = "_" ++ show ty
     return (Bind name ty)
   
@@ -309,18 +308,18 @@ tuple ts
   | length ts > 1 = do
     ind <- id
       . liftM Type.tuple
-      $ mapM Type.get ts
-    return (app (Con ind 0) ts)
+      $ mapM Type.getM ts
+    return (app (Con (Type.Constructor ind 0)) ts)
  
 equation :: (Defs.Read m, Env.Read m) => Term -> Term -> m Term
 equation left right = do
-  ty <- Type.get left
-  let eq_ind = Type.equation ty
-  return (app (Con eq_ind 0) [left, right])
+  ty <- Type.getM left
+  let eq_con = Type.equation ty
+  return (app (Con eq_con) [left, right])
   
 isEquation :: Fail.Can m => Term -> m (Term, Term)
-isEquation (App (Con ind 0) [left, right]) 
-  | isJust (Type.isEquation ind) = return (left, right)
+isEquation (App (Con eq_con) [left, right]) 
+  | isJust (Type.isEquation eq_con) = return (left, right)
 isEquation _ = Fail.here
           
             
@@ -331,7 +330,7 @@ isEquation _ = Fail.here
 expressFreeVariable :: Env.Read m => Index -> Term -> m Term
 expressFreeVariable free_var (Fix fix_i (Bind fix_n fix_ty) fix_t) = do
   var_b <- Env.boundAt free_var
-  let fix_ty' = Type.Fun (get Type.boundType var_b) fix_ty
+  let fix_ty' = Type.Fun (get Type.bindType var_b) fix_ty
   return
     . (\t -> app t [Var free_var])
     . Fix fix_i (Bind fix_n fix_ty')
@@ -374,14 +373,14 @@ expressFreeVariables = flip (foldrM express)
 -- does not reference the sub-list.
 -- Could be extended to depth greater than one, viz. matching over a list
 -- will only analyse a finite portion of the list.
-isFiniteMatch :: Type.Ind -> [Alt] -> Bool
-isFiniteMatch ind = and . zipWith recArgsUsed [0..]
+isFiniteMatch :: [Alt] -> Bool
+isFiniteMatch = all recArgsUsed
   where
-  recArgsUsed :: Nat -> Alt -> Bool
-  recArgsUsed n (Alt _ alt_t) = 
+  recArgsUsed :: Alt -> Bool
+  recArgsUsed (Alt con _ alt_t) = 
     Set.null (Set.intersection (Indices.free alt_t) rec_args)
     where
-    rec_args = Set.fromList (Type.recursiveArgIndices ind n)
+    rec_args = Set.fromList (Type.recursiveArgIndices con)
     
 
 -- | Reverting a pattern match is to replace the pattern it was matched to
@@ -398,21 +397,19 @@ revertMatchesWhenM :: forall m . Env.Write m
   -> m Term
 revertMatchesWhenM when = Fold.transformM revert
   where
-  revert term@(Case ind cse_t alts) = do
+  revert term@(Case cse_t alts) = do
     here <- when cse_t
     if not here
     then return term
-    else do
-      let alts' = zipWith revertAlt [0..] alts
-      return (Case ind cse_t alts')
+    else return (Case cse_t (map revertAlt alts))
     where
-    revertAlt n alt
-      | Type.isBaseCase ind n = alt
-    revertAlt n (Alt bs alt_t) = 
-      Alt bs alt_t'
+    revertAlt alt
+      | Type.isBaseCase (get altConstructor alt) = alt
+    revertAlt (Alt con bs alt_t) = 
+      Alt con bs alt_t'
       where
       cse_t' = Indices.liftMany (length bs) cse_t
-      alt_t' = replace (altPattern ind n) cse_t' alt_t
+      alt_t' = replace (altPattern con) cse_t' alt_t
   revert other = 
     return other
     
@@ -433,7 +430,7 @@ isSubterm t = Env.trackIndices t . Fold.anyM (\t -> Env.trackeds (== t))
 -- | Whether we have already attempted to fuse this set of terms into
 -- this fixpoint.
 alreadyFused :: FixInfo -> Set Constraint -> Term -> Bool
-alreadyFused (FixInfo fused) matched fix_term = 
+alreadyFused (FixInfo fused _ _) matched fix_term = 
   any unifiable fused
   where
   unifiable :: (Set Constraint, Term) -> Bool

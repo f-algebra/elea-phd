@@ -1,7 +1,7 @@
 module Elea.Foldable
 (
   module Data.Functor.Foldable,
-  Bifoldable, FoldableM (..), TransformableM (..), 
+  Refoldable, FoldableM (..), TransformableM (..), 
   Iso, iso, 
   isoTransformM, isoRewriteM, isoRewriteStepsM,
   isoFindM, isoAnyM, isoAllM, isoRewriteOnceM, isoFoldM,
@@ -16,7 +16,6 @@ module Elea.Foldable
 )
 where
 
-import Prelude ()
 import Elea.Prelude hiding ( Foldable, allM, anyM, findM, any, all, find, )
 import GHC.Prim ( Constraint )
 import Data.Functor.Foldable
@@ -27,10 +26,10 @@ import qualified Control.Monad.State as State
 import qualified Data.Isomorphism as Iso
 import qualified Data.Set as Set
 
-type Bifoldable t = (Foldable t, Unfoldable t)
+type Refoldable t = (Foldable t, Unfoldable t)
 
 -- | Monadic cata- and para-morphisms for a provided monadic constraint.
-class (Monad m, Bifoldable t) => FoldableM m t where
+class (Monad m, Refoldable t) => FoldableM m t where
 
   -- We can implement all of these transformations purely in terms
   -- of this distributivity law. Sexy.
@@ -40,21 +39,22 @@ class (Monad m, Bifoldable t) => FoldableM m t where
   cataM f = 
     join . liftM f . distM . fmap (cataM f &&& id) . project
     
-  paraM :: forall a . (Base t (a, t) -> m a) -> t -> m a
-  paraM f = liftM fst . cataM g
+  paraM :: forall a . (Base t (t, a) -> m a) -> t -> m a
+  paraM f = liftM snd . cataM g
     where
-    g :: Base t (a, t) -> m (a, t)
+    g :: Base t (t, a) -> m (t, a)
     g x = do
       a <- f x
-      return (a, recover x)
+      return (recover x, a)
       
-recover :: Unfoldable t => Base t (a, t) -> t
-recover = embed . fmap snd
+recover :: Unfoldable t => Base t (t, a) -> t
+recover = embed . fmap fst
      
 class FoldableM m t => TransformableM m t where
   transformM :: (t -> m t) -> t -> m t
   transformM f = cataM (f . embed)
- 
+
+  
 -- | I was fed up of having to rewrite the 'transform', 'rewrite', 'any', etc.
 -- functions for isomorphisms of an existing datatype.
 type Iso = Iso.Iso (->) 
@@ -215,13 +215,13 @@ rewriteStepsM :: (Monad m, TransformableM m t) =>
   [t -> MaybeT m t] -> t -> m t
 rewriteStepsM = isoRewriteStepsM id
     
-isoTransform :: Bifoldable t => Iso a t -> (a -> a) -> a -> a
+isoTransform :: Refoldable t => Iso a t -> (a -> a) -> a -> a
 isoTransform iso f = id
   . Iso.project iso
   . cata (Iso.embed iso . f . Iso.project iso . embed)
   . Iso.embed iso
 
-isoRewrite :: Bifoldable t => Iso a t -> (a -> Maybe a) -> a -> a
+isoRewrite :: Refoldable t => Iso a t -> (a -> Maybe a) -> a -> a
 isoRewrite iso f = Iso.project iso . transform rrwt . Iso.embed iso
   where
   f' = fmap (Iso.embed iso) . f . Iso.project iso
@@ -236,13 +236,13 @@ isoAny, isoAll :: WriterTransformableM Monoid.All Identity t =>
 isoAll iso p = runIdentity . isoAllM iso (return . p)
 isoAny iso p = not . isoAll iso (not . p)
   
-transform :: Bifoldable t => (t -> t) -> t -> t
+transform :: Refoldable t => (t -> t) -> t -> t
 transform = isoTransform id
 
-rewrite :: Bifoldable t => (t -> Maybe t) -> t -> t
+rewrite :: Refoldable t => (t -> Maybe t) -> t -> t
 rewrite = isoRewrite id
 
-rewriteSteps :: Bifoldable t => [t -> Maybe t] -> t -> t
+rewriteSteps :: Refoldable t => [t -> Maybe t] -> t -> t
 rewriteSteps steps = rewrite step
   where
   step t = Monoid.getFirst (concatMap (Monoid.First . ($ t)) steps)
@@ -276,4 +276,3 @@ selectiveTransformM p f t = do
   descent :: (Bool, t) -> (m t, t)
   descent (True, t) = (selectiveTransformM p f t, t)
   descent (False, t) = (return t, t)
-

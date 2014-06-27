@@ -2,16 +2,16 @@
 -- out bits. But show being a monadic paramorphism over terms is kinda cool.
 module Elea.Show 
 ( 
-  ShowM (..)
+  module Elea.Show.Class
 ) 
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Index
 import Elea.Term
-import Elea.Type
+import Elea.Type hiding ( get )
 import Elea.Context ( Context )
+import Elea.Show.Class
 import qualified Elea.Index as Indices
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Type as Type
@@ -20,10 +20,6 @@ import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Definitions as Defs
 import qualified Data.Map as Map
 
--- | A monadic variant of 'show'.
-class Monad m => ShowM m a where
-  showM :: a -> m String
-    
 instance Show Term where
   show = emptyEnv . showM
     where
@@ -38,38 +34,39 @@ bracketIfNeeded s
 instance (Env.Read m, Defs.Read m) => ShowM m Term where
   showM = Fold.paraM showM
   
-instance Show (Term' (String, Term)) where
+instance Show (Term' (Term, String)) where
   -- Special case for displaying constraints
-  show (Case' (Type.unfold -> cons) (cse_t, _) f_alts)
+  show (Case' (_, cse_t) f_alts)
     -- A constraint is a match with only one non-absurd branch
-    | [(Bind con_name _, Alt' bs (alt_t, _))] <- non_absurd_alts =
-      let pat_s = intercalate " " ([con_name] ++ map show bs) in
+    | [Alt' con bs (_, alt_t)] <- non_absurd_alts =
+      let pat_s = intercalate " " ([show con] ++ map show bs) in
       "\nassert " ++ pat_s ++ " <- " ++ cse_t ++ " in " ++ alt_t
     where                    
-    non_absurd_alts :: [(Bind, Alt' (String, Term))]
-    non_absurd_alts = id
-      . filter (not . isAbsurd . snd . get altInner' . snd) 
-      $ zip cons f_alts
+    non_absurd_alts :: [Alt' (Term, String)]
+    non_absurd_alts =
+      filter (not . isUnr . fst . get altInner') f_alts
       
       
   -- Special case for showing equation pairs
-  show (App' (_, Con (Ind _ [("==", _)]) 0) [(left_t, _), (right_t, _)]) = 
+  show (App' (Con (Constructor (Ind _ [("==", _)]) 0), _) 
+                  [(_, left_t), (_, right_t)]) = 
     "(" ++ left_t ++ " == " ++ right_t ++ ")"
     
   -- Special case for showing /if/ expressions
-  show (Case' (Ind "bool" _) (cse_t, _) 
-          [Alt' [] (true_t, _), Alt' [] (false_t, _)]) =
-    "\nif " ++ indent cse_t 
-    ++ "\nthen "++ indent true_t 
-    ++ "\nelse " ++ indent false_t
+  show (Case' (_, cse_t) 
+          [Alt' con_t [] (_, true_t), Alt' con_f [] (_, false_t)]) 
+    | con_t == Type.true && con_f == Type.false =
+      "\nif " ++ indent cse_t 
+      ++ "\nthen "++ indent true_t 
+      ++ "\nelse " ++ indent false_t
       
   -- If these don't work then try the @Show (Term' String)@ instance.
   show term' =
-    show (fmap fst term')
+    show (fmap snd term')
 
 
 instance Show (Term' String) where
-  show (Absurd' ty) = "_|_ " ++ show ty
+  show (Unr' ty) = "UNR"
   show (App' f xs) = f' ++ " " ++ xs'
     where 
     xs' = intercalate " " (map bracketIfNeeded xs)
@@ -79,23 +76,19 @@ instance Show (Term' String) where
     "\nfix " ++ b ++ " -> " ++ indent t
   show (Lam' (show -> b) t) =
     "\nfun " ++ b ++ " -> " ++ t
-  show (Con' (Type.Ind _ cons) idx) = id
-    . assert (length cons > idx)
-    $ fst (nth cons (enum idx))
-  show (Case' (Type.unfold -> cons) cse_t f_alts) =
+  show (Con' con) = show con
+  show (Case' cse_t f_alts) =
       "\nmatch " ++ cse_t ++ " with"
-    ++ concat alts_s
+    ++ concatMap show f_alts 
     ++ "\nend"
-    where
-    alts_s = zipWith showAlt cons f_alts
-    
-    showAlt :: Bind -> Alt' String -> String
-    showAlt (Bind con_name _) (Alt' alt_bs alt_t) =
-      "\n| " ++ pat_s ++ " -> " ++ indent alt_t
-      where
-      pat_s = intercalate " " ([con_name] ++ map show alt_bs)
       
-instance (Env.Read m, Defs.Read m) => ShowM m (Term' (String, Term)) where
+instance Show (Alt' String) where
+  show (Alt' con bs t) = 
+    "\n| " ++ pat_s ++ " -> " ++ indent t
+    where
+    pat_s = intercalate " " ([show con] ++ map show bs)
+      
+instance (Env.Read m, Defs.Read m) => ShowM m (Term' (Term, String)) where
   showM (Var' idx) = do
     bs <- Env.bindings
     if idx >= length bs
@@ -112,7 +105,7 @@ instance (Env.Read m, Defs.Read m) => ShowM m (Term' (String, Term)) where
       let same_lbl_count = id
             . length
             . filter (== lbl)
-            . map (get Type.boundLabel)
+            . map (get Type.bindLabel)
             $ take (fromEnum idx) bs
             
       -- Append this count to the end of the variable label, so we know
@@ -136,29 +129,20 @@ instance (Env.Read m, Defs.Read m) => ShowM m (Term' (String, Term)) where
       Just (name, args) -> do
         args' <- mapM showM args
         let args_s = concatMap ((" " ++) . bracketIfNeeded) args'
-        inf <- info
-        return ("$" ++ name ++ inf ++ args_s) 
+        return ("$" ++ name ++ args_s) 
         
       Nothing -> 
         -- If we can't find an alias, then default to the normal show instance
         return (show term')
-    where
-    info
-      | Fix' inf@(FixInfo ms) _ _ <- term'
-      , not (null ms)
-      , False = do
-          ms_s <- showM inf 
-          return (" " ++ ms_s)
-      | otherwise = return ""
           
 instance (Env.Read m, Defs.Read m) => ShowM m Context where
   showM = showM . get Context.term
     
 instance Show FixInfo where
-  show (FixInfo ms) = show ms
+  show (FixInfo ms _ _) = show ms
   
 instance (Env.Read m, Defs.Read m) => ShowM m FixInfo where
-  showM (FixInfo ms) = do
+  showM (FixInfo ms _ _) = do
     ms_s <- mapM showFused ms
     let ms_s' = "[" ++ intercalate ", " ms_s ++ "]"
     return ("fused@" ++ ms_s')
@@ -173,26 +157,12 @@ instance Show Context where
   show = show . get Context.term
   
 instance (Env.Read m, Defs.Read m) => ShowM m Constraint where
-  showM (Constraint term (Type.Ind _ cons) con_n) = do
+  showM (Constraint con term) = do
     term_s <- showM term
-    return (con_name ++ " <- " ++ term_s)
-    where
-    con_name = fst (nth cons (enum con_n))
+    return (show con ++ " <- " ++ term_s)
     
 instance Show Constraint where
   show = Defs.readEmpty . Env.emptyT . showM
-  
-instance (ShowM m a, ShowM m b) => ShowM m (a, b) where
-  showM (x, y) = do
-    sx <- showM x
-    sy <- showM y
-    return ("(" ++ sx ++ ", " ++ sy ++ ")")
-    
-instance ShowM m a => ShowM m [a] where
-  showM xs = do
-    sxs <- mapM showM xs
-    return 
-      $ "[" ++ intercalate ", " sxs ++ "]"
       
 instance (Env.Read m, Defs.Read m) => ShowM m Equation where
   showM (Equals n bs t1 t2) = 
@@ -216,14 +186,3 @@ instance (Env.Read m, Defs.Read m) => ShowM m Equation where
 instance Show Equation where
   show = Defs.readEmpty . Env.emptyT . showM
     
-instance ShowM m a => ShowM m (Set a) where
-  showM xs = do
-    xs_s <- showM (toList xs)
-    return ("Set" ++ xs_s)
- 
-instance ShowM m a => ShowM m (Map a a) where
-  showM = showM . Map.toList
-  
-instance ShowM m a => ShowM m (Maybe a) where
-  showM = liftM show . mapM showM
-      

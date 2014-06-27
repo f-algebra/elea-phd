@@ -10,7 +10,6 @@ module Elea.Inventor
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
@@ -43,7 +42,7 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
   inventor g_term
   where
   -- The inductive type of f_term
-  f_ty@(Type.Base f_ind) = Type.getClosed f_term
+  f_ty@(Type.Base f_ind) = Type.get f_term
   
   -- We use a helper function because the first two arguments never change.
   inventor :: Term -> m Context
@@ -68,7 +67,7 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
   -- If g_term has a pattern match topmost, we use that as the outer context
   -- and run run on one of the branches, or the matched term, provided
   -- only one is non-simple.
-  inventor g_term@(Case ind cse_t alts)
+  inventor g_term@(Case cse_t alts)
     -- If every branch is simple, use the match as a context 
     -- around the matched term
     | length complex_alts == 0 = do
@@ -85,13 +84,13 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
     where
     complex_alts = findIndices (not . Term.isSimple . get altInner) alts
     [alt_i] = complex_alts
-    Alt alt_bs alt_t = alts `nth` alt_i
+    Alt alt_con alt_bs alt_t = alts `nth` alt_i
     
     match_ctx = Context.make
-      $ \gap -> Case ind gap alts
+      $ \gap -> Case gap alts
       
     alt_ctx = Context.make 
-      $ \gap -> Case ind cse_t (setAt alt_i (Alt alt_bs gap) alts)
+      $ \gap -> Case cse_t (setAt alt_i (Alt alt_con alt_bs gap) alts)
     
       
   -- If the two terms are just equal, we can return the identity context
@@ -106,20 +105,21 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
       alts <- mapM makeAlt [0..length g_ind_cons - 1]
       return 
         $ Context.make 
-        $ \gap -> Case f_ind gap alts
+        $ \gap -> Case gap alts
     where
-    g_ty@(Type.Base (Type.Ind _ g_ind_cons)) = Type.getClosed g_term
+    g_ty@(Type.Base (Type.Ind _ g_ind_cons)) = Type.get g_term
     
     makeAlt :: Nat -> m Alt
     makeAlt con_n = do
       alt_t <- Fix.constraintFusion simplify constr g_term
       return 
-        . Alt alt_bs
+        . Alt con alt_bs
         . Indices.liftMany (length alt_bs) 
         $ Constraint.removeAll alt_t
       where
-      constr = Constraint.make f_term f_ind con_n
+      constr = Constraint.make con f_term
       alt_bs = Type.makeAltBindings f_ind con_n
+      con = Constructor f_ind con_n
     
 
   -- Otherwise we need to do proper fixpoint invention
@@ -133,9 +133,9 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
     -- so we can pass them to inventCase
     f_ty <- id
      -- . trace s1 
-      $ Type.get f_term
+      $ Type.getM f_term
     let Type.Base ind_ty@(Type.Ind _ cons) = f_ty
-    g_ty <- Type.get g_term 
+    g_ty <- Type.getM g_term 
     
     -- We are inventing a fold function and inventCase discovers each of
     -- the fold parameters
@@ -187,33 +187,35 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
         $ func
       where
       -- Constrain @f_term@ to be this particular constructor
+      cons_con = Constructor (Type.inductiveType f_ty) con_n
       constraint_ctx = 
-        Constraint.makeContext f_term (Type.inductiveType f_ty) con_n eq_ty
+        Constraint.makeContext cons_con f_term eq_ty
       
       -- We represent the equation using a new inductive type.
       eq_ind = Type.Ind "__EQ" [("==", [Type.ConArg f_ty, Type.ConArg g_ty])]
       eq_ty = Type.Base eq_ind
+      eq_con = Constructor eq_ind 0
       
       -- Build a context which is an equation between f_term and g_term
       -- where the fixpoint in f_term has been replaced by the gap.
       eq_ctx = Context.make makeEqCtx
         where
         makeEqCtx gap_f = 
-          app (Con eq_ind 0) [app gap_f f_args, g_term]
+          app (Con eq_con) [app gap_f f_args, g_term]
           
       -- Compose the constraint with the equation context 
       -- using the context monoid
       full_ctx = constraint_ctx ++ eq_ctx
           
       caseFunction :: Term -> MaybeT Env.TrackOffset Term
-      caseFunction t@(App (Con eq_ind' 0) [left_t, right_t])
+      caseFunction t@(App (Con eq_con') [left_t, right_t])
         -- Make sure this is actually an equation
-        | eq_ind' == eq_ind
-        , get Type.name eq_ind' == "__EQ" = do
+        | eq_con' == eq_con
+        , get (Type.indName . Type.constructorOf) eq_con' == "__EQ" = do
           -- Check the shape of the left side of the equation is
           -- the constructor we are finding the case for
           Fail.unless (isCon left_f)
-          Fail.unless (ind == ind' && con_n == con_n')
+          Fail.unless (Constructor ind con_n == con')
           
           -- Try to invent a function which satisfies the equation at this point.
           func <- id
@@ -229,7 +231,7 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
         where
         Type.Base ind@(Type.Ind _ cons) = f_ty
         left_f:left_args = Term.flattenApp left_t
-        Con ind' con_n' = left_f
+        Con con' = left_f
         (_, con_args) = id
           . assert (length cons > con_n)
           $ cons `nth` enum con_n

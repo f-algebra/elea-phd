@@ -5,7 +5,6 @@ module Elea.Fusion
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
@@ -171,7 +170,7 @@ fixfix oterm@(App ofix@(Fix {}) oargs)
               . Term.replace (Indices.lift rec_call) (Var 0)
               $ Indices.lift orig_term
               
-        f_ty <- Type.get f_term
+        f_ty <- Type.getM f_term
                                                                        
         invented_ctx <- id
           . Env.bind (Bind "extrX" f_ty)
@@ -253,7 +252,7 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
   Fail.unless (Term.inductivelyTyped outer_t)
   
   matches <- Env.findMatches usefulMatch
-  result_ty <- Type.get outer_t
+  result_ty <- Type.getM outer_t
   
   Fail.when (null matches)
   
@@ -331,7 +330,7 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
     -- Generalise any uninterpreted function calls
     Term.generaliseUninterpreted (match_t, term) generalised 
     where
-    Con ind con_n = leftmost con_t
+    Con con = leftmost con_t
     
     generalised _ (match_t, term) = do
       mby_fused <- id
@@ -345,7 +344,7 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
           tell [(match_t, con_t)]
           return fused
       where 
-      constr = Constraint.make match_t ind con_n
+      constr = Constraint.make con match_t 
         
 matchFix _ = Fail.here
 

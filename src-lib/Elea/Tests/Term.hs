@@ -4,12 +4,12 @@ module Elea.Tests.Term
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Term
 import Elea.Terms
 import Elea.Type
 import Elea.Show
+import qualified Elea.Type as Type
 import qualified Elea.Index as Indices
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Unification as Unifier
@@ -59,7 +59,8 @@ tests = Test.label "Terms"
       
   -- A weird problem I had at one point
   let eq_ind = Ind "__EQ" [("==", [ConArg (Base nat), ConArg (Base nat)])]
-      weird_free = Indices.free (Alt [] (App (Con eq_ind 0) [Var 0, Var 1]))
+      eq_con = Constructor eq_ind 0
+      weird_free = Indices.free (Alt Type.true [] (App (Con eq_con) [Var 0, Var 1]))
       weird1 = Test.assertEq (Set.fromList [0, 1]) weird_free
       
   let conj3_t = Simp.run (conjunction 3)

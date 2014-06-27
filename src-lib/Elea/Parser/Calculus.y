@@ -8,9 +8,8 @@ module Elea.Parser.Calculus
 )
 where
 
-import Prelude ()
 import Elea.Prelude
-import Elea.Type
+import Elea.Type hiding ( get )
 import Elea.Term
 import Elea.Show ( showM )
 import qualified Elea.Index as Indices
@@ -62,7 +61,7 @@ data RawTerm
   | TFix [RawBind] RawTerm
   | TLam [RawBind] RawTerm
   | TCon Nat RawType
-  | TAbsurd RawType
+  | TUnr RawType
   | TCase RawTerm [RawAlt]
   | TLet String RawTerm RawTerm
   | TEq RawType
@@ -104,7 +103,7 @@ mkLabels [''Scope, ''RawBind, ''RawProgram]
   '<'         { TokenOA }
   '>'         { TokenCA }
   ','         { TokenComma }
-  '_|_'       { TokenAbsurd }
+  '_|_'       { TokenUnr }
   match       { TokenMatch }
   with        { TokenWith }
   fun         { TokenFun }
@@ -177,7 +176,7 @@ Bindings :: { [RawBind] }
   
 Term :: { RawTerm }
   : ParamCall                         { TVar $1 }
-  | '_|_' Type                        { TAbsurd $2 }
+  | '_|_' Type                        { TUnr $2 }
   | Term ParamCall                    { TApp $1 (TVar $2) }
   | Term '(' Term ')'                 { TApp $1 $3 }
   | '(' Term ')'                      { $2 }
@@ -232,14 +231,14 @@ instance Monad m => Env.Write (ReaderT Scope m) where
     . modify bindStack addToStack
     where
     addToStack = insertAt (enum at) b
-    addToMap = Map.insert (get boundLabel b) (Var at)
+    addToMap = Map.insert (get bindLabel b) (Var at)
     
   matched _ _ = id
   
-instance Err.Can m => Env.Read (ReaderT Scope m) where
+instance Err.Throws m => Env.Read (ReaderT Scope m) where
   bindings = asks (get bindStack)
   
-type ParserMonad m a = (Err.Can m, Defs.Has m) => ReaderT Scope m a
+type ParserMonad m a = (Err.Throws m, Defs.Has m) => ReaderT Scope m a
 
 localTypeArgs :: ContainsTypes t => 
   [String] -> ParserMonad m t -> ParserMonad m (Polymorphic t)
@@ -258,7 +257,7 @@ localDef name term = id
   $ modify bindMap 
   $ Map.insert name term
   
-term :: (Err.Can m, Defs.Has m, Env.Read m) => String -> m Term
+term :: (Err.Throws m, Defs.Has m, Env.Read m) => String -> m Term
 term str = do
   bs <- Env.bindings
   withEmptyScope
@@ -269,21 +268,21 @@ term str = do
     . lexer
     $ str
   
-_type :: (Err.Can m, Defs.Has m) => String -> m Type
+_type :: (Err.Throws m, Defs.Has m) => String -> m Type
 _type = id
   . withEmptyScope
   . parseRawType
   . happyType 
   . lexer
   
-bindings :: (Err.Can m, Defs.Has m) => String -> m [Bind]
+bindings :: (Err.Throws m, Defs.Has m) => String -> m [Bind]
 bindings = id
   . withEmptyScope
   . mapM parseRawBind
   . happyBindings
   . lexer
   
-program :: forall m . (Err.Can m, Defs.Has m) 
+program :: forall m . (Err.Throws m, Defs.Has m) 
   => String -> m [Polymorphic Equation]
 program text = 
   withEmptyScope $ do
@@ -323,7 +322,7 @@ program text =
     defCon poly_ind n =
       Defs.defineTerm name poly_con 
       where
-      poly_con = fmap (\ind -> Con ind (enum n)) poly_ind
+      poly_con = fmap (\ind -> Con (Constructor ind (enum n))) poly_ind
       name = head (raw_cons !! n)
   
   defineTerm ((name, ty_args), raw_term) = do
@@ -390,12 +389,12 @@ parsePattern ind (con_lbl:var_lbls)
 
   -- Find the type of this particular constructor from looking it up
   -- by name in the description of the inductive type.
-  mby_con_i = findIndices ((== con_lbl) . get boundLabel) cons
+  mby_con_i = findIndices ((== con_lbl) . get bindLabel) cons
   con_i = head mby_con_i
   this_con = cons !! con_i
   
   -- The bindings for this constructor are the arguments for the type
-  con_tys = (init . Type.flatten . get boundType) this_con
+  con_tys = (init . Type.flatten . get bindType) this_con
   var_bs = zipWith Bind var_lbls con_tys
   
 
@@ -411,9 +410,9 @@ parseRawTerm (TEq raw_ty) = do
   return (buildEq ind)
 parseRawTerm (TVar var) = 
   lookupTerm var
-parseRawTerm (TAbsurd rty) = do
+parseRawTerm (TUnr rty) = do
   ty <- parseRawType rty
-  return (Absurd ty)
+  return (Unr ty)
 parseRawTerm (TApp rt1 rt2) = do
   t1 <- parseRawTerm rt1 
   t2 <- parseRawTerm rt2
@@ -433,28 +432,31 @@ parseRawTerm (TLet name rt1 rt2) = do
   localDef name t1 (parseRawTerm rt2)
 parseRawTerm (TAssert pat ron_t rin_t) = do
   on_t <- parseRawTerm ron_t
-  on_ty@(Type.Base ind) <- Type.get on_t
+  on_ty@(Type.Base ind) <- Type.getM on_t
   (con_n, var_bs) <- parsePattern ind pat
   in_t <- Env.bindMany var_bs (parseRawTerm rin_t)
-  in_ty <- Env.bindMany var_bs (Type.get in_t)
-  let assrt = Constraint.make on_t ind con_n
+  in_ty <- Env.bindMany var_bs (Type.getM in_t)
+  let assrt = Constraint.make (Constructor ind con_n) on_t
   return (Constraint.apply assrt (in_t, in_ty))
 parseRawTerm (TCase rt ralts) = do
   t <- parseRawTerm rt
-  ind_ty <- Type.get t
+  ind_ty <- Type.getM t
   alts <- mapM (parseRawAlt ind_ty) ralts
   let alts' = map snd (sortBy (compare `on` fst) alts)
-  return (Case (Type.inductiveType ind_ty) t alts')
+  return (Case t alts')
   where
   parseRawAlt ind_ty (TAlt pat ralt_t)
     | not (Type.isInd ind_ty) =
       Err.throw 
         $ "Pattern matching over non inductive type [" ++ show ind_ty ++ "]"
     | otherwise = do
-      (con_n, var_bs) <- parsePattern (Type.inductiveType ind_ty) pat
+      (con_n, var_bs) <- parsePattern ind pat
       t <- Env.bindMany var_bs (parseRawTerm ralt_t)
-      return (con_n, Alt var_bs t)
-
+      let con = Constructor ind con_n
+      return (con_n, Alt con var_bs t)
+    where 
+    Type.Base ind = ind_ty
+      
 data Token
   = TokenBar
   | TokenName String
@@ -471,7 +473,7 @@ data Token
   | TokenOA
   | TokenCA
   | TokenComma
-  | TokenAbsurd
+  | TokenUnr
   | TokenMatch
   | TokenWith
   | TokenFun
@@ -508,7 +510,7 @@ lexer (' ':cs) = lexer cs
 lexer ('\n':cs) = lexer cs
 lexer ('-':'>':cs) = TokenRArr : lexer cs
 lexer ('<':'-':cs) = TokenLArr : lexer cs
-lexer ('_':'|':'_':cs) = TokenAbsurd : lexer cs
+lexer ('_':'|':'_':cs) = TokenUnr : lexer cs
 lexer (':':cs) = TokenTypeOf : lexer cs
 lexer ('(':cs) = TokenOP : lexer cs
 lexer (')':cs) = TokenCP : lexer cs
@@ -558,7 +560,7 @@ instance Show Token where
   show TokenRArr = "->"
   show TokenLArr = "<-"
   show TokenEq = "="
-  show TokenAbsurd = "_|_"
+  show TokenUnr = "_|_"
   show TokenOS = "["
   show TokenCS = "]"
   show TokenOP = "("

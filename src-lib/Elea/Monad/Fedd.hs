@@ -8,7 +8,6 @@ module Elea.Monad.Fedd
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Term
 import Elea.Show

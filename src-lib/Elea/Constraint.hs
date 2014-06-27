@@ -24,7 +24,6 @@ module Elea.Constraint
 )
 where
 
-import Prelude ()
 import Elea.Prelude hiding ( replace )
 import Elea.Term
 import Elea.Context ( Context )
@@ -40,25 +39,25 @@ import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs
 
                 
-make :: Term -> Type.Ind -> Nat -> Constraint
+make :: Constructor -> Term -> Constraint
 make = Constraint
 
 
 -- | Remove a constraint from a term, returning the constraint, and the term
 -- it was applied to.
 strip :: Fail.Can m => Term -> m (Constraint, Term)
-strip (Case ind cse_t alts) = do
+strip (Case cse_t alts) = do
   Fail.unless (length non_abs == 1)
   inner_t <- Indices.tryLowerMany (length bs) alt_t'
-  return (make cse_t ind (enum con_n), inner_t)
-  where
-  non_abs = findIndices (not . isAbsurd . get altInner) alts
+  return (make con cse_t, inner_t)
+  where           
+  non_abs = findIndices (not . isUnr . get altInner) alts
   [con_n] = non_abs
-  Alt bs alt_t = nth alts con_n
+  Alt con bs alt_t = alts !! con_n
   
   -- Revert the pattern match
   cse_t' = Indices.liftMany (length bs) cse_t
-  pat_t = Term.altPattern ind (enum con_n)
+  pat_t = Term.altPattern con
   alt_t' = Term.replace pat_t cse_t' alt_t
     
 strip _ = 
@@ -94,17 +93,17 @@ removeWhen p = Fold.transform remove
       
     
 -- | Composition of 'toContext' and 'make'
-makeContext :: Term -> Type.Ind -> Nat -> Type -> Context
-makeContext match_t ind con_n res_ty = 
-  toContext res_ty (make match_t ind con_n)
+makeContext :: Constructor -> Term -> Type -> Context
+makeContext con match_t res_ty = 
+  toContext res_ty (make con match_t)
   
   
 -- | Pattern matches from "Elea.Monad.Env" are represented as term pairs, where
 -- the first term has been matched to the second (which will always
 -- be a constructor applied to variables).
 fromMatch :: (Term, Term) -> Constraint
-fromMatch (from_t, leftmost -> Con ind con_n) = 
-  make from_t ind con_n
+fromMatch (from_t, leftmost -> Con con) = 
+  make con from_t
   
   
 -- | Composition of 'toContext' and 'fromMatch'
@@ -118,23 +117,25 @@ matchContext ty = toContext ty . fromMatch
 -- Not the same as converting to a context and applying that, as that will
 -- not capture variables.
 apply :: Constraint -> (Term, Type) -> Term
-apply (Constraint match_t ind con_n) (on_t, on_ty) =  
-  Case ind match_t alts
+apply (Constraint con match_t) (on_t, on_ty) =  
+  Case match_t alts
   where
+  Constructor ind con_n = con
   cons = Type.unfold ind
   alts = map buildAlt [0..length cons - 1]
   
   buildAlt :: Int -> Alt
   buildAlt alt_n = 
-    Alt bs alt_t
+    Alt con bs alt_t
     where
     Bind _ con_ty = id
       . assert (length cons > alt_n)
-      $ nth cons alt_n
+      $ cons !! alt_n
     bs = map (Bind "X") (init (Type.flatten con_ty))
+    con = Constructor ind (enum alt_n)
     
     -- If we are not down the matched branch we return absurd
-    alt_t | enum alt_n /= con_n = Absurd on_ty
+    alt_t | enum alt_n /= con_n = Unr on_ty
           | otherwise = on_t
 
 -- | Create a context from a constraint. Requires the return type of the gap.

@@ -4,7 +4,6 @@ module Elea.Tests.Checker
 )
 where
 
-import Prelude ()
 import Elea.Prelude
 import Elea.Term
 import Elea.Type
