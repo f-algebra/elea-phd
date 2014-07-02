@@ -3,7 +3,7 @@ module Elea.Foldable
   module Data.Functor.Foldable,
   Refoldable, FoldableM (..), TransformableM (..), 
   Iso, iso, 
-  isoTransformM, isoRewriteM, isoRewriteStepsM,
+  isoTransformM, isoRewriteM, isoRewriteStepsM, isoRewriteSteps,
   isoFindM, isoAnyM, isoAllM, isoRewriteOnceM, isoFoldM,
   isoRewrite, isoTransform, isoFind, isoRewriteM',
   rewriteM, foldM, rewriteOnceM, collectM, isoCollectM,
@@ -214,6 +214,7 @@ isoRewriteStepsM iso steps =
 rewriteStepsM :: (Monad m, TransformableM m t) =>
   [t -> MaybeT m t] -> t -> m t
 rewriteStepsM = isoRewriteStepsM id
+
     
 isoTransform :: Refoldable t => Iso a t -> (a -> a) -> a -> a
 isoTransform iso f = id
@@ -243,11 +244,20 @@ rewrite :: Refoldable t => (t -> Maybe t) -> t -> t
 rewrite = isoRewrite id
 
 rewriteSteps :: Refoldable t => [t -> Maybe t] -> t -> t
-rewriteSteps steps = rewrite step
+rewriteSteps = isoRewriteSteps id
+
+isoRewriteSteps :: forall a t . Refoldable t
+  => Iso a t -> [a -> Maybe a] -> a -> a
+isoRewriteSteps iso steps = 
+  isoRewrite iso step
   where
-  step t = Monoid.getFirst (concatMap (Monoid.First . ($ t)) steps)
-
-
+  step :: a -> Maybe a
+  step a = id
+    . Monoid.getFirst 
+    . concatMap (Monoid.First . ($ a))
+    $ steps
+  
+  
 -- | This "selector" restricts how you transform something recursively. 
 -- The outermost boolean tells you when to apply the transformation. 
 -- The inner boolean tells you when to recurse.

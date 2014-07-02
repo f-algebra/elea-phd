@@ -17,6 +17,7 @@ module Elea.Monad.Env
   TrackOffset, TrackOffsetT,
   trackOffset, trackOffsetT,
   
+  ignoreClosed,
   isoFree, isoShift,
   empty, emptyT,
   variableMatches,
@@ -69,7 +70,6 @@ instance Write m => Fold.FoldableM m Term where
     sequence (fmap fst other)
     
 instance Write m => Fold.TransformableM m Term where
-  -- Use the default instance for transformM
     
 isoFree :: 
     (Fold.TransformableM (WriterT (Set Index) (TrackIndices Index)) t) =>
@@ -101,6 +101,40 @@ isoShift iso f = id
     return (Var x')
   shiftVar other = 
     return other
+    
+-- | A wrapper around 'Term' for the 'ignoreClosed' isomorphism.
+newtype IgnoreClosed = IgnoreClosed { notIgnoreClosed :: Term }
+  deriving ( Eq, Ord )
+
+  
+ignoreClosed :: Fold.Iso Term IgnoreClosed
+ignoreClosed = Fold.iso IgnoreClosed notIgnoreClosed
+
+type instance Fold.Base IgnoreClosed = Term'
+  
+instance Fold.Foldable IgnoreClosed where
+  project = fmap IgnoreClosed . Fold.project . notIgnoreClosed
+  
+instance Fold.Unfoldable IgnoreClosed where
+  embed = IgnoreClosed . Fold.embed . fmap notIgnoreClosed
+  
+instance Write m => Fold.FoldableM m IgnoreClosed where
+  distM = Fold.distM . fmap (second notIgnoreClosed)
+
+instance Write m => Fold.TransformableM m IgnoreClosed where
+  transformM f = id
+    . liftM IgnoreClosed 
+    . Fold.selectiveTransformM ignore f'
+    . notIgnoreClosed
+    where
+    f' = liftM notIgnoreClosed . f . IgnoreClosed
+    
+    ignore :: Term -> m (Bool, Term' Bool)
+    ignore (Fix fix_i fix_b _) 
+      | get fixClosed fix_i = 
+        return (True, Fix' fix_i fix_b False)
+    ignore other = 
+      Fold.selectAll other
   
 instance Indexed Term where
   free = isoFree id

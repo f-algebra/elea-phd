@@ -20,10 +20,10 @@ tests = Test.list
   [ Prelude.tests
   , Type.tests
   , Term.tests
-  , UMap.tests
- -- , Checker.tests 
-  , Simplifier.tests
-  , Context.tests
+ -- , UMap.tests
+  , Checker.tests 
+ -- , Simplifier.tests
+ -- , Context.tests
  -- , Inventor.tests
   , Fusion.tests  
   ]

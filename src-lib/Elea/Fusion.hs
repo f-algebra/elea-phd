@@ -265,7 +265,14 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
   -- the fixpoint to a constaint, and fail if they don't.
   let mby_const = Checker.constrainedToConstant constraint_set outer_t
   if isNothing mby_const
-  then return (Term.addFusedMatches constraint_set outer_t)
+  then do
+    outer_s <- showM outer_t
+    cons_s <- showM constraint_set
+    let s1 = "\n[match-fix fusion] rejected fusing:\n" 
+            ++ cons_s ++ "\ninto:\n" ++ outer_s
+    return 
+      . trace s1
+      $ Term.addFusedMatches constraint_set outer_t
   else do
     let Just const = mby_const
     
@@ -273,18 +280,19 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
     cons_s <- showM constraint_set
     const_s <- showM const
     outer_s <- showM outer_t
-    let s1 = "[match-fix fusion] Hypothesised that:\n" ++ cons_s 
-          ++ "\n\nCollapses:\n" ++ outer_s 
-          ++ "\n\nInto constant term:\n" ++ const_s
+    let s1 = "\n[match-fix fusion] hypothesised that:\n" ++ cons_s 
+          ++ "\n\ncollapses:\n" ++ outer_s 
+          ++ "\n\ninto constant term:\n" ++ const_s
   
     -- We apply match-fix fusion for every match
     (fused_t, fused_matches) <- id
- --    . trace s1
+      . trace s1
       . runWriterT
       $ foldrM fuseMatch outer_t matches
       
     -- Check to see whether any match-fix fusion steps succeeded.
-    Fail.when (fused_matches == [])
+    Fail.when 
+      $ fused_matches == []
     
     -- If match-fix fusion has failed we save the list of matches we attempted
     -- to fuse in.

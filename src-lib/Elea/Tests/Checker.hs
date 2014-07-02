@@ -22,7 +22,7 @@ tests = Test.label "Checker"
     y_leq_z <- Test.simplifiedTerm "leq_nat y z"
     x_leq_z <- Test.simplifiedTerm "leq_nat x z"
     true <- Test.term "True"
-    
+   
     Base bool <- Test._type "bool"
     let xleqy_c = Constraint.fromMatch (x_leq_y, true)
         yleqz_c = Constraint.fromMatch (y_leq_z, true)
@@ -36,14 +36,19 @@ tests = Test.label "Checker"
     x_eq_y <- Test.simplifiedTerm "eq_nat x y"
     let not_elem_c = Constraint.fromMatch (not_elem_x_xs, true)
         elem_constrs = Set.fromList [not_elem_c]
-        Just x_eq_y' = Checker.constrainedToConstant elem_constrs elem_xs_cons
-        test_elem = Test.assertEq x_eq_y x_eq_y'
-    
-    rightleq_x <- Test.simplifiedTerm "rightmost_leq x t"
+        mby_x_eq_y = Checker.constrainedToConstant elem_constrs elem_xs_cons
+        test_elem = Test.assertEq (Just x_eq_y) mby_x_eq_y
+   
+    rightleq_x <- Test.simplifiedTerm "rightmost_leq t y"
     sorted_t <- Test.simplifiedTerm "sorted_tree t"
     let srtd_con = Set.fromList [Constraint.fromMatch (sorted_t, true)]
         mby_rightleq_const = Checker.constrainedToConstant srtd_con rightleq_x
         test_tree = Test.assertEq Nothing mby_rightleq_const
+   
+    let mby_srtd_srtd = Checker.constrainedToConstant srtd_con sorted_t
+        test_tree2 = Test.assertEq (Just true) mby_srtd_srtd
       
-    return (Test.list [ test_leq, test_elem, test_tree ])
+    return (Test.list 
+      [ test_elem, test_leq
+      , test_tree, test_tree2 ])
 

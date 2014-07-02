@@ -87,8 +87,22 @@ tests = Test.label "Terms"
   express1 <- Env.bind bind_y $ do
     App add_raw' [_] <- expressFreeVariable 0 add_simp
     Test.assertTermEq add_raw add_raw'
-      
-  return $ Test.list $
+  
+  subterms1 <- Test.localVars "(x y: nat)" $ do
+    x_plus_1 <- Test.term "add x 1"
+    x <- Test.term "x"
+    one <- Test.term "1"
+    two <- Test.term "2"
+    y <- Test.term "y"
+    
+    let free_ts = freeSubtermsOf x_plus_1
+        removed_ts = removeSubterms [x_plus_1, one, two, y]
+        test1 = Test.assertEq free_ts (Set.fromList [x])
+        test2 = Test.assertEq removed_ts [x_plus_1, two, y]
+        
+    return (Test.list [test1, test2])
+        
+  return $ Test.list $  
     [ dec1, dec2, dec3
     , fin1, fin2, fin3 
     , fold1, fold2
@@ -96,6 +110,7 @@ tests = Test.label "Terms"
     , conj1
     , eq1, eq2, eq3, eq4
     , express1
+    , subterms1
     ]
 
 def_eq_unit, def_eq_bool, def_eq_nat, def_eq_ntree :: String

@@ -27,6 +27,8 @@ module Elea.Terms
   isSubterm,
   alreadyFused,
   findContext,
+  removeSubterms,
+  freeSubtermsOf,
 )
 where
 
@@ -449,3 +451,28 @@ findContext inner full = do
   Fail.unless (inner `isSubterm` full)
   return (Context.make (\gap -> replace inner gap full))
   
+-- | Removes all elements which are subterms of other elements in the list
+removeSubterms :: [Term] -> [Term]
+removeSubterms = foldr remove []
+  where
+  remove t ts
+    | any (isSubterm t) ts = ts
+    | otherwise = t : filter (not . (`isSubterm` t)) ts
+  
+
+-- | Returns all the subterms of a term which contain free variables and nothing
+-- but free variables.
+freeSubtermsOf :: Term -> Set Term
+freeSubtermsOf term = id
+  . Set.fromList
+  -- Remove any terms which are subterms of another term in the set
+  . removeSubterms
+  -- Make sure they actually contain free variables
+  . filter (not . Set.null . Indices.free)
+  . Set.toList
+  -- We only want strict subterms
+  . Set.delete term
+  -- Collect all free subterms
+  . collect (const True)
+  $ term
+    

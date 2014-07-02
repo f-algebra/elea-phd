@@ -24,7 +24,7 @@ import qualified Elea.Monad.Failure.Class as Fail
 import qualified Data.Set as Set
 
 run :: Term -> Term                           
-run = Fold.rewriteSteps steps
+run = Fold.isoRewriteSteps Env.ignoreClosed steps
 
 steps :: Fail.Can m => [Term -> m Term]
 steps = 
@@ -81,17 +81,15 @@ degenerateContext ctx = id
 -- So far it detects applying arguments to an absurd function.
 -- Need to add pattern matching over absurdity, but how to find the type?
 absurdity :: Fail.Can m => Term -> m Term
-absurdity (App (Unr ty) args) = 
-  return (Unr new_ty)
-  where
-  new_ty = id
-    . Type.unflatten 
-    . drop (nlength args) 
-    $ Type.flatten ty
-absurdity term@(App _ args)
-  | any Term.isUnr args
-  , Type.isClosed term = 
+absurdity term
+  | Type.isClosed term
+  , absurd term = 
     return (Unr (Type.get term))
+  where 
+  absurd (App (Unr _) _) = True
+  absurd (App _ args) = any Term.isUnr args
+  absurd (Case (Unr _) _) = True
+  absurd _ = False
 absurdity _ =
   Fail.here
   

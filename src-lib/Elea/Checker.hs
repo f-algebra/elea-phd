@@ -21,56 +21,60 @@ import qualified Elea.Monad.Failure.Class as Fail
 import qualified Data.Monoid as Monoid
 import qualified Data.Set as Set
 
-unwrapDepth :: Nat
-unwrapDepth = 1
 
 -- | Checks whether a set of constraints reduces the given recursive function
 -- call to a constant.
 -- No point running match-fix fusion if they don't.
-constrainedToConstant :: Fail.Can m => Set Constraint -> Term -> m Term
-constrainedToConstant constrs term@(App fix@(Fix {}) args) = do
+constrainedToConstant :: Fail.Can m =>
+  Set Constraint -> Term -> m Term
+constrainedToConstant constrs term@(App fix@(Fix _ _ fix_t) args) = do
   Fail.unless (length free_terms == 1)
   return (head free_terms)
-  where
+  where    
   result_ty = Type.get term
   
   -- Uses the context composition monoid from "Elea.Context"
   constr_ctx = id
-    -- Lift the indices by 1 to take into account the unwrapped fix variable
-    . Indices.lift
     . concatMap (Constraint.toContext result_ty) 
     $ toList constrs
   
   -- Unwrap the fixpoint, apply the constraints and simplify the term
   simp_t = id
   --  . 
-  --  . traceMe "after"
-    . Simp.run
-   -- . traceMe "before"
+   -- . traceMe "after"
+    . Simp.quick
+  --  . traceMe "before"
     -- Bring all pattern matches on variables topmost, so we unroll 
     -- functions based on the unwrapped fixpoint recursion scheme.
     . Eval.floatVarMatches
     -- Apply the constraints around the unwrapped fixpoint
     . Context.apply constr_ctx
-    . App (Term.unwrapFix unwrapDepth fix) 
-    -- Lift the indices by 1 to take into account the unwrapped fix variable
-    $ map Indices.lift args
+    -- Unwrap the fixpoint and replace the recursive call with
+    -- unreachable, since we don't care about any value which 
+    -- depends upon a recursive call to the fixpoint
+    $ app (Indices.subst (Unr (Type.get fix)) fix_t) args
 
-  -- Collect the possible free return terms
+  -- Collect the possible free return terms.
+  -- This list will be empty if there are possible non-free return terms.
   free_terms = id
     . Set.toList
+    . fromMaybe Set.empty
     . Env.trackOffset
-    -- Lift by one to take into account the free fix variable
-    . Env.liftTracked
+    . runMaybeT
     $ Fold.isoFoldM Term.branches freeTerms simp_t
     where
-    -- Return any term which is free outside the original fixpoint
-    freeTerms :: Term -> Env.TrackOffset (Set Term)
+    -- Return all terms which are free outside the original fixpoint,
+    -- provided all other terms are recursive calls to the fixpoint.
+    freeTerms :: Term -> MaybeT Env.TrackOffset (Set Term)
     freeTerms (Unr _) = 
       return mempty
     freeTerms term = do
-      is_free <- Env.lowerableByOffset term
-      if is_free
-      then liftM Set.singleton (Env.lowerByOffset term)
-      else return mempty
+      offset <- Env.offset
+      if not (Indices.lowerableBy offset term)
+      then Fail.here -- trace ("\n\n\nfailed on:\n" ++ show term) $ Fail.here
+      else 
+     -- Fail.unless (Indices.lowerableBy offset term)
+        return
+          . Set.singleton 
+          $ Indices.lowerMany offset term
 

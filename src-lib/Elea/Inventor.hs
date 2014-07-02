@@ -24,10 +24,12 @@ import qualified Elea.Context as Context
 import qualified Elea.Equality as Equality
 import qualified Elea.Foldable as Fold
 import qualified Elea.Fixpoint as Fix
+import qualified Elea.Checker as Checker
 import qualified Elea.Constraint as Constraint
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Fusion.Class as Fusion
+import qualified Data.Set as Set
 
 
 run :: forall m . (Env.Read m, Defs.Read m, Fail.Can m, Fusion.Memo m)
@@ -111,11 +113,16 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
     
     makeAlt :: Nat -> m Alt
     makeAlt con_n = do
-      alt_t <- Fix.constraintFusion simplify constr g_term
-      return 
-        . Alt con alt_bs
-        . Indices.liftMany (length alt_bs) 
-        $ Constraint.removeAll alt_t
+      -- Make sure this constraint fusion will be successful
+      if isNothing (Checker.constrainedToConstant (Set.singleton constr) g_term)
+      then 
+        trace ("[meep] failed on " ++ show constr ++ " for " ++ show g_term) Fail.here
+      else do
+        alt_t <- Fix.constraintFusion simplify constr g_term
+        return 
+          . Alt con alt_bs
+          . Indices.liftMany (length alt_bs) 
+          $ Constraint.apply constr (g_term, g_ty)
       where
       constr = Constraint.make con f_term
       alt_bs = Type.makeAltBindings f_ind con_n

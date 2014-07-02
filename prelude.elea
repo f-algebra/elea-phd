@@ -237,6 +237,17 @@ let is_sorted =
       and (leq_nat y z) (srtd ys)
     end
   end
+  
+let last<A> = 
+  fix (last: list<A> -> A) (xs: list<A>) ->
+  match xs with
+  | Nil -> _|_ A
+  | Cons y ys ->
+    match ys with
+    | Nil -> y
+    | Cons z zs -> last ys
+    end
+  end
     
 
 /* Binary trees */
@@ -284,21 +295,37 @@ let build =
 let treesort = fun (xs: list<nat>) -> flatten<nat> (build xs)
 
 let rightmost_leq = 
-  fun (n: nat) ->
-  fix (rleq: tree<nat> -> bool) (t: tree<nat>) ->
+  fix (rleq: tree<nat> -> nat -> bool) (t: tree<nat>) (n: nat) ->
   match t with
   | Leaf -> True
   | Node t1 x t2 ->
     match t2 with
     | Leaf -> leq_nat x n
-    | Node t1' x' t2' -> rleq t2
+    | Node t1' x' t2' -> rleq t2 n
     end
   end
   
-let leq_leftmost = fun (n: nat) (t: tree<nat>) -> 
-  match flatten<nat> t with
-  | Nil -> True
-  | Cons x xs -> leq_nat n x
+let leq_leftmost =
+  fix (leql: nat -> tree<nat> -> bool) (n: nat) (t: tree<nat>)  ->
+  match t with
+  | Leaf -> True
+  | Node t1 x t2 ->
+    match t1 with
+    | Leaf -> leq_nat n x
+    | Node t1' x' t2' -> leql n t1
+    end
+  end 
+  
+let rightmost<A> = 
+  fix (rm: tree<A> -> A) (t: tree<A>) ->
+  match t with
+  | Leaf -> _|_ A
+  | Node t1 x t2 ->
+    match t2 with
+    | Leaf -> x
+    | Node t1' y t2' ->
+      rm t2
+    end
   end
   
 let sorted_tree = 
@@ -308,7 +335,16 @@ let sorted_tree =
   | Node t1 x t2 ->
     and (leq_leftmost x t2) 
       (and (srtd t1)
-        (and (rightmost_leq x t1) (srtd t2)))
+        (and (rightmost_leq t1 x) (srtd t2)))
   end
-
-
+/*
+let sorted_tree_ins = 
+  fix (srtd_tree_ins: nat -> tree<nat> -> bool) (n: nat) (t: tree<nat>) ->
+  match t with
+  | Leaf -> True
+  | Node t1 x t2 ->
+    if leq_nat n x
+    then 
+    else
+  end
+*/

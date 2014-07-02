@@ -43,6 +43,7 @@ isClosed = Env.trackOffset . clsd
   where
   clsd :: Term -> Env.TrackOffset Bool
   clsd (Var x) = Env.lowerableByOffset x
+  clsd (Unr _) = return True
   clsd (App f _) = clsd f
   clsd (Fix {}) = return True
   clsd (Con {}) = return True

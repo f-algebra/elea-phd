@@ -2,7 +2,7 @@
 -- | Type and pattern match environment monad constraints
 module Elea.Monad.Env.Class
 (
-  Write (..), Read (..), 
+  Write (..), Read (..), All,
   bind, bindMany, isBound,
   boundAt, bindingDepth,
   
@@ -26,6 +26,8 @@ import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Control.Monad.Trans as Trans
 import qualified Data.Map as Map
+
+type All m = (Read m, MatchRead m)
 
 
 -- | A writable type and pattern match environment.

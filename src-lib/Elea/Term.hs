@@ -11,6 +11,7 @@ module Elea.Term
   projectAlt, embedAlt,
   altBindings, altInner, altConstructor,
   altBindings', altInner', altConstructor',
+  fixClosed, fixName, fixFailedConstraints,
   constrainedTerm, constrainedTo,
   flattenApp, leftmost, arguments,
   flattenLam, unflattenLam,
