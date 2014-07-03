@@ -21,13 +21,15 @@ import qualified Elea.Monad.Failure.Class as Fail
 import qualified Data.Monoid as Monoid
 import qualified Data.Set as Set
 
+unwrapDepth :: Nat
+unwrapDepth = 1
 
 -- | Checks whether a set of constraints reduces the given recursive function
 -- call to a constant.
 -- No point running match-fix fusion if they don't.
 constrainedToConstant :: Fail.Can m =>
   Set Constraint -> Term -> m Term
-constrainedToConstant constrs term@(App fix@(Fix _ _ fix_t) args) = do
+constrainedToConstant constrs term@(App fix@(Fix {}) args) = do
   Fail.unless (length free_terms == 1)
   return (head free_terms)
   where    
@@ -40,8 +42,7 @@ constrainedToConstant constrs term@(App fix@(Fix _ _ fix_t) args) = do
   
   -- Unwrap the fixpoint, apply the constraints and simplify the term
   simp_t = id
-  --  . 
-   -- . traceMe "after"
+  --  . traceMe "after"
     . Simp.quick
   --  . traceMe "before"
     -- Bring all pattern matches on variables topmost, so we unroll 
@@ -52,7 +53,7 @@ constrainedToConstant constrs term@(App fix@(Fix _ _ fix_t) args) = do
     -- Unwrap the fixpoint and replace the recursive call with
     -- unreachable, since we don't care about any value which 
     -- depends upon a recursive call to the fixpoint
-    $ app (Indices.subst (Unr (Type.get fix)) fix_t) args
+    $ app (Term.unwrapFix unwrapDepth fix) args
 
   -- Collect the possible free return terms.
   -- This list will be empty if there are possible non-free return terms.

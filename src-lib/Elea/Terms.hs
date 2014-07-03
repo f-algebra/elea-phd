@@ -97,14 +97,15 @@ unfoldFix fix@(Fix _ _ fix_t) =
   Indices.subst fix fix_t
   
   
--- | Unfolds a fixpoint a given number of times and leaves the fix variable
--- uninterpreted.
+-- | Unfolds a fixpoint a given number of times and replaced the fix variable
+-- with 'Unr'eachable.
 unwrapFix :: Nat -> Term -> Term
-unwrapFix 0 (Fix _ _ fix_t) = fix_t
+unwrapFix 0 fix@(Fix _ _ fix_t) = 
+  Indices.subst (Unr (Type.get fix)) fix_t
 unwrapFix n fix@(Fix _ _ fix_t) = 
   -- We use 'replaceAt' here so as not to lower the indices of the unwrapped
   -- definition, since we are leaving the fixpoint variable in.
-  Indices.replaceAt 0 (unwrapFix (n - 1) fix) fix_t
+  Indices.subst (unwrapFix (n - 1) fix) fix_t
   
   
 -- | Collect terms which fulfil a given predicate. 
