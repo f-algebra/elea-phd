@@ -3,7 +3,7 @@
 module Elea.Monad.Definitions
 (
   module Elea.Monad.Definitions.Class,
-  module Elea.Monad.Definitions.Database,
+  module Elea.Monad.Definitions.Data,
 
   DBReaderT, DBReader,
   readEmptyT, readEmpty,
@@ -17,19 +17,19 @@ import Prelude ()
 import Elea.Prelude hiding ( Read )
 import Elea.Term
 import Elea.Monad.Definitions.Class
-import Elea.Monad.Definitions.Database ( Database )
+import Elea.Monad.Definitions.Data ( Data )
 import qualified Elea.Type as Type
 import qualified Elea.Index as Indices
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Monad.Discovery.Class as Discovery
-import qualified Elea.Monad.Definitions.Database as DB
+import qualified Elea.Monad.Definitions.Data as DB
 import qualified Control.Monad.State.Class as State
 import qualified Control.Monad.Trans.Class as Trans
 
 newtype DBReaderT m a 
-  = DBReaderT { runDBReaderT :: ReaderT Database m a }
-  deriving ( Monad, MonadTrans, MonadReader Database )
+  = DBReaderT { runDBReaderT :: ReaderT Data m a }
+  deriving ( Monad, MonadTrans, MonadReader Data )
   
 type DBReader = DBReaderT Identity
 
@@ -45,8 +45,8 @@ instance (Show Term, Monad m) => Read (DBReaderT m) where
   lookupName = asks . DB.getName
   
 newtype DBStateT m a 
-  = DBStateT { runDBStateT :: StateT Database m a }
-  deriving ( Monad, MonadTrans, MonadState Database )
+  = DBStateT { runDBStateT :: StateT Data m a }
+  deriving ( Monad, MonadTrans, MonadState Data )
   
 type DBState = DBStateT Identity
   
@@ -57,7 +57,7 @@ evalEmpty :: DBState a -> a
 evalEmpty = runIdentity . evalEmptyT
 
 mapDBStateT :: ()
-  => (m (a, Database) -> n (b, Database)) 
+  => (m (a, Data) -> n (b, Data)) 
   -> (DBStateT m a -> DBStateT n b)
 mapDBStateT f = DBStateT . mapStateT f . runDBStateT
 

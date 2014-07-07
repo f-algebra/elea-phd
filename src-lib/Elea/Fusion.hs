@@ -33,7 +33,7 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
 
-type FusionM m = (Defs.Read m, Env.Read m, Discovery.Tells m, Fusion.Memo m)
+type FusionM m = (Defs.Read m, Env.All m, Discovery.Tells m, Fusion.Memo m)
  
 {-# SPECIALISE run :: Term -> Fedd Term #-}
 
@@ -45,7 +45,7 @@ run = runSteps (map Type.checkStep (fission_steps ++ fusion_steps))
     , Fold.rewriteOnceM repeatedArg
     , Fold.rewriteOnceM fixfix
     , Fold.rewriteOnceM decreasingFreeVars
-    , mapMaybeT Env.trackMatches . Fold.rewriteOnceM matchFix
+    , Fold.rewriteOnceM matchFix
     ]
    
   fission_steps =
@@ -344,7 +344,7 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
       mby_fused <- id
         . lift
         . Fail.catch 
-        $ Fix.constraintFusion (return . Simp.run) constr term
+        $ Fix.constraintFusion run constr term
         
       case mby_fused of
         Nothing -> return term

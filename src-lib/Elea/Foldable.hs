@@ -9,9 +9,10 @@ module Elea.Foldable
   rewriteM, foldM, rewriteOnceM, collectM, isoCollectM,
   rewriteM',
   allM, findM, anyM, any, all, isoFold, isoAny, isoAll, find,
-  collect, count,
+  collect, isoCollect,
   transform, rewrite, recover,
-  rewriteStepsM, rewriteSteps, countM,
+  rewriteStepsM, rewriteSteps,
+  isoCountM, isoCount, countM, count,
   SelectorM, selectiveTransformM, selectAll,
 )
 where
@@ -122,9 +123,15 @@ collectM :: (Ord b, WriterTransformableM (Set b) m t) =>
   (t -> MaybeT m b) -> t -> m (Set b)
 collectM = isoCollectM id
 
+isoCollect :: (Ord b, WriterTransformableM (Set b) Identity t) =>
+  Iso a t -> (a -> Maybe b) -> a -> Set b
+isoCollect iso f = id
+  . runIdentity 
+  . isoCollectM iso (MaybeT . Identity . f)
+
 collect :: (Ord b, WriterTransformableM (Set b) Identity t) =>
   (t -> Maybe b) -> t -> Set b
-collect f = runIdentity . collectM (MaybeT . Identity . f)
+collect = isoCollect id 
 
 all, any :: WriterTransformableM Monoid.All Identity t =>
   (t -> Bool) -> t -> Bool
@@ -164,18 +171,30 @@ isoCollectM :: (Ord b, WriterTransformableM (Set b) m t) =>
   Iso a t -> (a -> MaybeT m b) -> a -> m (Set b)
 isoCollectM iso f = 
   isoFoldM iso (liftM (maybe mempty Set.singleton) . runMaybeT . f)
-
-countM :: WriterTransformableM (Monoid.Sum Int) m t => 
-  (t -> m Bool) -> t -> m Int
-countM p = liftM Monoid.getSum . foldM (liftM (Monoid.Sum . found) . p)
+  
+isoCountM :: WriterTransformableM (Monoid.Sum Int) m t => 
+  Iso a t -> (a -> m Bool) -> a -> m Int
+isoCountM iso p = id
+  . liftM Monoid.getSum 
+  . isoFoldM iso (liftM (Monoid.Sum . found) . p)
   where
   found :: Bool -> Int
   found False = 0
   found True = 1
   
+countM :: WriterTransformableM (Monoid.Sum Int) m t => 
+  (t -> m Bool) -> t -> m Int
+countM = isoCountM id
+
+isoCount :: WriterTransformableM (Monoid.Sum Int) Identity t => 
+  Iso a t -> (a -> Bool) -> a -> Int
+isoCount iso p = id
+  . runIdentity
+  . isoCountM iso (Identity . p)
+  
 count :: WriterTransformableM (Monoid.Sum Int) Identity t => 
   (t -> Bool) -> t -> Int
-count p = runIdentity . countM (Identity . p)
+count = isoCount id
 
 -- | Apply a given transformation exactly once. If it is never applied
 -- then this returns 'Nothing'.

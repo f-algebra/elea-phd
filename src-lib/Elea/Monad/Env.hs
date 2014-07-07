@@ -301,6 +301,9 @@ instance (Write m, Indexed r) => Write (AlsoTrack r m) where
 instance (Read m, Indexed r) => Read (AlsoTrack r m) where
   bindings = Trans.lift bindings
     
+instance (Indexed r, MatchRead m) => MatchRead (AlsoTrack r m) where
+  matches = Trans.lift matches
+  
 instance Fail.Can m => Fail.Can (AlsoTrack r m) where
   here = Trans.lift Fail.here
   catch = mapAlsoTrack Fail.catch

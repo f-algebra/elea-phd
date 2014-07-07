@@ -4,6 +4,7 @@ module Elea.Terms
 (
   module Elea.Term,
   branches,
+  recursionScheme,
   replace,
   unfoldFix,
   unwrapFix,
@@ -92,19 +93,57 @@ instance Env.Write m => Fold.TransformableM m BranchesOnly where
       (True, fmap (const False) (Fold.project term))
       
       
+-- | A wrapper around 'Term' for the 'recursionScheme' isomorphism.
+newtype RecursionScheme = RecursionScheme { notRecursionScheme :: Term }
+  deriving ( Eq, Ord, Show )
+
+-- | A 'Term' isomorphism whose 'Fold.Transformable' instance 
+-- only runs on the pattern matches and nested pattern matches, until
+-- we reach the end of a branch, when it stops.
+recursionScheme :: Fold.Iso Term RecursionScheme
+recursionScheme = Fold.iso RecursionScheme notRecursionScheme
+
+type instance Fold.Base RecursionScheme = Term'
+  
+instance Fold.Foldable RecursionScheme where
+  project = fmap RecursionScheme . Fold.project . notRecursionScheme
+  
+instance Fold.Unfoldable RecursionScheme where
+  embed = RecursionScheme . Fold.embed . fmap notRecursionScheme
+  
+instance Env.Write m => Fold.FoldableM m RecursionScheme where
+  distM = Fold.distM . fmap (second notRecursionScheme)
+
+instance Env.Write m => Fold.TransformableM m RecursionScheme where
+  transformM f = id
+    . liftM RecursionScheme 
+    . Fold.selectiveTransformM (return . scheme) f'
+    . notRecursionScheme
+    where
+    f' = liftM notRecursionScheme . f . RecursionScheme
+    
+    scheme :: Term -> (Bool, Term' Bool)
+    scheme (Case cse_t alts) =
+      (True, Case' False (map descAlt alts))
+      where 
+      descAlt (Alt con bs alt_t) = 
+        Alt' con bs True
+    scheme (Lam b t) =
+      (False, Lam' b True)
+    scheme term = 
+      (False, fmap (const False) (Fold.project term))
+      
+      
 unfoldFix :: Term -> Term
 unfoldFix fix@(Fix _ _ fix_t) = 
   Indices.subst fix fix_t
   
   
--- | Unfolds a fixpoint a given number of times and replaced the fix variable
+-- | Unfolds a fixpoint a given number of times and replace the fix variable
 -- with 'Unr'eachable.
 unwrapFix :: Nat -> Term -> Term
-unwrapFix 0 fix@(Fix _ _ fix_t) = 
-  Indices.subst (Unr (Type.get fix)) fix_t
-unwrapFix n fix@(Fix _ _ fix_t) = 
-  -- We use 'replaceAt' here so as not to lower the indices of the unwrapped
-  -- definition, since we are leaving the fixpoint variable in.
+unwrapFix 0 fix@(Fix {}) = Unr (Type.get fix)
+unwrapFix n fix@(Fix _ _ fix_t) =
   Indices.subst (unwrapFix (n - 1) fix) fix_t
   
   

@@ -282,7 +282,7 @@ let tree_insert =
   | Node t1 x t2 ->
     if leq_nat n x 
     then Node<nat> (ins n t1) x t2
-    else Node<nat> t1 n (ins n t2)
+    else Node<nat> t1 x (ins n t2)
   end
   
 let build = 
@@ -337,14 +337,3 @@ let sorted_tree =
       (and (srtd t1)
         (and (rightmost_leq t1 x) (srtd t2)))
   end
-/*
-let sorted_tree_ins = 
-  fix (srtd_tree_ins: nat -> tree<nat> -> bool) (n: nat) (t: tree<nat>) ->
-  match t with
-  | Leaf -> True
-  | Node t1 x t2 ->
-    if leq_nat n x
-    then 
-    else
-  end
-*/

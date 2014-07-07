@@ -28,6 +28,6 @@ tests = Test.label "Fusion"
   Test.loadPrelude
   eqs <- Test.loadFile "src-lib/Elea/Tests/fusion.elea"
   mapM checkEquation
-    . filter ((/= "sorted flatten") . get equationName)
+    . filter ((== "sorted flatten") . get equationName)
     $ eqs
 

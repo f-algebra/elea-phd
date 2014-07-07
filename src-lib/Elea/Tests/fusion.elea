@@ -101,10 +101,10 @@ prop "drop add"<A>: forall (n: nat) (m: nat) (xs: list<A>) ->
   
 prop "filter reverse"<A>: forall (p: A -> bool) (xs: list<A>) ->
   reverse<A> (filter<A> p xs) = filter<A> p (reverse<A> xs)
-/*
+
 prop "insertsort sorted": forall (xs: list<nat>) ->
   is_sorted (insertsort xs)
-  
+/*  
 prop "take append"<A>: forall (n: nat) (xs ys: list<A>) ->
   take<A> n (append<A> xs ys) 
   = append<A> (take<A> n xs) (take<A> (minus n (length<A> xs)) ys)
@@ -118,9 +118,27 @@ prop "take drop"<A>: forall (n m: nat) (xs: list<A>) ->
 prop "take zip"<A, B>: forall (n: nat) (xs: list<A>) (ys: list<B>) ->
   take<(A, B)> n (zip<A, B> xs ys) 
   = zip<A, B> (take<A> n xs) (take<B> n ys)
-  
+
+let srtd_tree_ins = 
+  fix (srtd_ins: nat -> tree<nat> -> bool) (n: nat) (t: tree<nat>) ->
+  match t with
+  | Leaf -> True
+  | Node t1 x t2 ->
+    if leq_nat n x
+    then 
+      and (srtd_ins n t1) 
+        (and (leq_leftmost x t2)
+        (and (rightmost_leq (tree_insert n t1) x)
+        (sorted_tree t2)))
+    else 
+      and (sorted_tree t1)
+        (and (leq_leftmost x (tree_insert n t2))
+        (and (rightmost_leq t1 x)
+        (srtd_ins n t2)))
+  end
+      
 prop "sorted flatten": forall (t: tree<nat>) (n: nat) (xs: list<nat>) ->
-  sorted_tree (tree_insert n t)
+  implies (sorted_tree t) (srtd_tree_ins n t)
 
 prop "rightmost ins": forall (t: tree<nat>) (n: nat) (x: nat) ->
   implies (and (leq_nat x n) (rightmost_leq t n)) 
@@ -128,11 +146,11 @@ prop "rightmost ins": forall (t: tree<nat>) (n: nat) (x: nat) ->
   
 prop "rightmost leq": forall (t: tree<nat>) (n: nat) ->
   leq_nat (rightmost<nat> t) n = rightmost_leq t n
-/*
+
 prop "leftmost ins": forall (t: tree<nat>) (n x: nat) ->
   implies (and (leq_nat n x) (leq_leftmost n t)) 
     (leq_leftmost n (tree_insert x t))
- */
+
 prop "last flatten"<A>: forall (t: tree<A>) ->
   last<A> (flatten<A> t) = rightmost<A> t
   

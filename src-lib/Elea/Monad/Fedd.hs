@@ -11,34 +11,35 @@ where
 import Elea.Prelude
 import Elea.Term
 import Elea.Show
-import Elea.Monad.Fusion.Database ( Outcome (..) )
+import Elea.Monad.Fusion.Data ( Outcome (..) )
 import qualified Elea.Context as Context
 import qualified Elea.Monad.Discovery.EquationSet as EqSet
 import qualified Elea.Monad.Definitions.Class as Defs
-import qualified Elea.Monad.Definitions.Database as Defs
+import qualified Elea.Monad.Definitions.Data as Defs
 import qualified Elea.Monad.Fusion.Class as Fusion
-import qualified Elea.Monad.Fusion.Database as FusionDB
+import qualified Elea.Monad.Fusion.Data as FusionDB
 import qualified Elea.Monad.Discovery.Class as Disc
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Env.Class as Env
+import qualified Elea.Monad.Env.Data as EnvDB
 import qualified Control.Monad.RWS.Strict as RWS
 import qualified Control.Monad.State.Class as State
 
 newtype FeddT m a 
   = FeddT { 
-    runFeddT :: RWST [Bind] EqSet.EqSet (Defs.Database, FusionDB.Database) m a }
+    runFeddT :: RWST EnvDB.Data EqSet.EqSet (Defs.Data, FusionDB.Data) m a }
   deriving 
   ( Monad, MonadTrans
-  , MonadReader [Bind]
+  , MonadReader EnvDB.Data
   , MonadWriter EqSet.EqSet
-  , MonadState (Defs.Database, FusionDB.Database) )
+  , MonadState (Defs.Data, FusionDB.Data) )
   
 type Fedd = FeddT Identity
 
 evalT :: Monad m => FeddT m a -> m a
 evalT = id
   . liftM fst3
-  . (\rwst -> runRWST rwst [] (Defs.empty, FusionDB.empty))
+  . (\rwst -> runRWST rwst EnvDB.empty (Defs.empty, FusionDB.empty))
   . runFeddT
   where
   fst3 (x, _, _) = x
@@ -47,11 +48,14 @@ eval :: Fedd a -> a
 eval = runIdentity . evalT
   
 instance Monad m => Env.Write (FeddT m) where
-  bindAt at b = local (insertAt (enum at) b)
-  matched _ _ = id
+  bindAt at b = local (EnvDB.bindAt at b)
+  matched t1 t2 = local (EnvDB.matched t1 t2)
   
 instance Monad m => Env.Read (FeddT m) where
-  bindings = ask
+  bindings = asks EnvDB.bindings
+  
+instance Monad m => Env.MatchRead (FeddT m) where
+  matches = asks EnvDB.matches
   
 instance Monad m => Disc.Tells (FeddT m) where
   tell = tell . EqSet.singleton

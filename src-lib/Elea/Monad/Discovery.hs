@@ -22,7 +22,7 @@ import qualified Elea.Monad.Discovery.EquationSet as EqSet
 import qualified Elea.Prelude as Prelude
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Monad.Definitions.Class as Defs
-import qualified Elea.Monad.Definitions.Database as Defs
+import qualified Elea.Monad.Definitions.Data as Defs
 import qualified Control.Monad.Writer as Writer
 
 -- | A monad which ignores discoveries it is passed

@@ -180,7 +180,13 @@ constantCase _ = Fail.here
 -- Be careful with this, it can cause loops if combined with all sorts 
 -- of things.
 floatVarMatches :: Term -> Term
-floatVarMatches = Fold.rewrite float . run
+floatVarMatches = id
+  -- Then, we recurse down the top level of pattern matches,
+  -- which the 'Term.recursionScheme' isomorphism restricts us to,
+  -- and we float all matches over variables to the top
+  . Fold.isoRewrite Term.recursionScheme float 
+  -- First we run evaluation
+  . run
   where
   float :: forall m . Fail.Can m => Term -> m Term
   float outer_t@(Case (leftmost -> Fix {}) alts) = do
@@ -194,7 +200,7 @@ floatVarMatches = Fold.rewrite float . run
     -- which is not from the pattern match, viz. it can be lowered
     -- to outside the match.
     caseOfVarAlt (Alt _ bs alt_t@(Case cse_t i_alts)) 
-      | isVar (leftmost cse_t) = do
+      | isVar cse_t = do
         cse_t' <- Indices.tryLowerMany (length bs) cse_t
         return (Case cse_t' i_alts)
     caseOfVarAlt _ = 

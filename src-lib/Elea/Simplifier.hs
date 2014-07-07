@@ -57,7 +57,6 @@ steps = Eval.steps ++
     , constArg
     , identityCase
     , uselessFix
-    , closeFix
     ] 
 
 -- | Remove arguments to a fixpoint if they never change in 
@@ -431,24 +430,3 @@ unfoldWithinFix fix@(Fix fix_i fix_b fix_t) = do
   
 unfoldWithinFix _ = Fail.here
 
-
--- | Turns the free variables within a fixpoint into arguments to the fixpoint.
-closeFix :: Fail.Can m => Term -> m Term
-closeFix fix@(Fix fix_i fix_b fix_t) 
-  -- Stop if this is already closed
-  | get fixClosed fix_i = Fail.here
-  
-  -- If there are no more free subterms then we can declare the fixpoint
-  -- to be closed
-  | Set.null free_subterms =
-    if (not . Set.null . Indices.free) fix
-    then error "Unclosable fixpoint!"
-    else
-      let fix_i' = set fixClosed True fix_i in
-      return (Fix fix_i' fix_b fix_t)
-    
-  where
-  free_subterms = Term.freeSubtermsOf fix
-  
-closeFix _ = Fail.here
-  

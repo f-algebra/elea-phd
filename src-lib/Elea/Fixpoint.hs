@@ -412,15 +412,52 @@ constraintFusion simplify
   -- The inner simplification used in match fix fusion
   simplifyAndExpress :: Term -> m Term
   simplifyAndExpress term = do
+    -- First we simplify the term
     term' <- simplify term
+    t_s <- showM term
+    t_s' <- showM term'
+    orig_s <- showM orig_term
     return
+    --  . trace ("before:\n" ++ t_s ++ "\nafter:\n" ++ t_s' ++ "\noriginal:\n" ++ orig_s)
+      -- Then we take any pattern matches which unify with the constraint and
+      -- express them at the site of any recursive calls to the function
       . Env.trackIndices fix_f
-      $ Fold.transformM expressPattern term'
-    where
+      . Fold.transformM expressPattern
+      -- We float all potential matches to the constraint as high as they
+      -- can go, so they reach the furthest into the term
+      . Env.trackIndices fix_f
+      . Fold.rewriteM floatMatchUp
+      $ term'
+    where    
     fix_f = 0
     ctx = Indices.lift full_ctx
     orig_term = Context.apply ctx (Var fix_f)
     
+    floatMatchUp :: Term -> MaybeT (Env.TrackIndices Index) Term
+    floatMatchUp orig_t@(Case fix_t@(App (Var g) _) _) = do
+      fix_f <- Env.tracked
+      Fail.unless (g == fix_f)
+      let inner_cses = id
+            . Env.trackIndices fix_t
+            $ Term.collectM floatable orig_t
+      Fail.when (Set.null inner_cses)
+      let inner_cse = head (Set.toList inner_cses)
+      return 
+        . error ("\n\n[constraint fusion] floating:\n" ++ show (caseOf inner_cse) ++ "\nabove:\n" ++ show fix_t ++ "\n\n")
+        $ Eval.run (Term.applyCase inner_cse orig_t)
+      where
+      floatable :: Term -> Env.TrackIndices Term Bool
+      floatable (Case inner_t@(App fix@(Fix {}) _) _) = do
+        fix_t <- Env.tracked
+        let cse_ctx = Constraint.makeContext cons_con inner_t result_ty
+            term = Context.apply cse_ctx fix_t
+        return
+          $ Unifier.exists orig_term term
+      floatable _ = 
+        return False
+    floatMatchUp _ =
+      Fail.here
+
     expressPattern :: Term -> Env.TrackIndices Index Term
     expressPattern (Case cse_t alts) 
       -- If we have found a pattern match which unifies with the original

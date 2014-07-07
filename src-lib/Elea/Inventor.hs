@@ -114,15 +114,14 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
     makeAlt :: Nat -> m Alt
     makeAlt con_n = do
       -- Make sure this constraint fusion will be successful
-      if isNothing (Checker.constrainedToConstant (Set.singleton constr) g_term)
+      if False --isNothing (Checker.constrainedToConstant (Set.singleton constr) g_term)
       then 
         trace ("[meep] failed on " ++ show constr ++ " for " ++ show g_term) Fail.here
       else do
         alt_t <- Fix.constraintFusion simplify constr g_term
         return 
           . Alt con alt_bs
-          . Indices.liftMany (length alt_bs) 
-          $ Constraint.apply constr (g_term, g_ty)
+          $ Indices.liftMany (length alt_bs) alt_t
       where
       constr = Constraint.make con f_term
       alt_bs = Type.makeAltBindings f_ind con_n

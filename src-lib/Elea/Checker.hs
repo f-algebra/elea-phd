@@ -21,6 +21,8 @@ import qualified Elea.Monad.Failure.Class as Fail
 import qualified Data.Monoid as Monoid
 import qualified Data.Set as Set
 
+-- If you increase this beyond 1 it will not guess constants for
+-- certain properties relying on the transitivity of (<=)
 unwrapDepth :: Nat
 unwrapDepth = 1
 
@@ -30,21 +32,40 @@ unwrapDepth = 1
 constrainedToConstant :: Fail.Can m =>
   Set Constraint -> Term -> m Term
 constrainedToConstant constrs term@(App fix@(Fix {}) args) = do
-  Fail.unless (length free_terms == 1)
-  return (head free_terms)
+  if (length free_terms /= 1)
+  then id
+   -- . trace ("\n\n[checker] failed with: " ++ show free_terms) 
+    $ Fail.here
+  else return (head free_terms)
   where    
   result_ty = Type.get term
   
   -- Uses the context composition monoid from "Elea.Context"
   constr_ctx = id
-    . concatMap (Constraint.toContext result_ty) 
+    . concatMap (Constraint.toContext result_ty)                      
     $ toList constrs
   
   -- Unwrap the fixpoint, apply the constraints and simplify the term
   simp_t = id
-  --  . traceMe "after"
+  --  . 
+--   . traceMe "[checker] after second simplification:\n"
+
+    -- This bit is a teensy bit hacky but it seems to work. 
+    -- Some unreachable branches were not being properly removed
+    -- due to functions not being unrolled enough
+    -- to know they were unreachable. So, we just manually unroll
+    -- every remaining function call which does not exist outside of the 
+    -- original term (contains a bound variable). 
+    -- This last bit stops us from excluding potential function
+    -- call constants from being return values.
     . Simp.quick
-  --  . traceMe "before"
+    . Eval.floatVarMatches
+    . Env.trackOffset
+    . Fold.rewriteM unwrapNonFreeFix
+    
+  --  . traceMe "[checker] before second simplification:\n"
+  
+    . Simp.quick
     -- Bring all pattern matches on variables topmost, so we unroll 
     -- functions based on the unwrapped fixpoint recursion scheme.
     . Eval.floatVarMatches
@@ -78,4 +99,11 @@ constrainedToConstant constrs term@(App fix@(Fix {}) args) = do
         return
           . Set.singleton 
           $ Indices.lowerMany offset term
+
+  unwrapNonFreeFix :: Term -> MaybeT Env.TrackOffset Term
+  unwrapNonFreeFix term@(App fix@(Fix {}) args) = do
+    Fail.whenM (Env.lowerableByOffset term)
+    return (app (Term.unwrapFix unwrapDepth fix) args)
+  unwrapNonFreeFix _ = 
+    Fail.here
 
