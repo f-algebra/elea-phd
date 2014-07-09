@@ -59,7 +59,7 @@ prove simplify t1 t2 = do
   
   eq <- id
     -- debug
-    . trace s1
+  --  . trace s1
     $ equal t1' t2'
   resultToBool eq
   where 

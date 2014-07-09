@@ -151,11 +151,9 @@ prop "leftmost ins": forall (t: tree<nat>) (n x: nat) ->
   implies (and (leq_nat n x) (leq_leftmost n t)) 
     (leq_leftmost n (tree_insert x t))
     
-    /*
 prop "leftmost impl": forall (t1 t2: tree<nat>) (x n: nat) ->
-  leftmost<nat> (Node<nat> t1 x t2) 
-  = leftmost<nat> (Node<nat> t1 x (tree_insert n t2))
-*/
+  implies (leq_leftmost n (Node<nat> t1 x t2))
+    (leq_leftmost n (Node<nat> t1 x (tree_insert n t2)))
 
 prop "last flatten"<A>: forall (t: tree<A>) ->
   last<A> (flatten<A> t) = rightmost<A> t

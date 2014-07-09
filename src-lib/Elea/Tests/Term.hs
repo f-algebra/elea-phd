@@ -102,18 +102,25 @@ tests = Test.label "Terms"
         test2 = Test.assertEq removed_ts [x_plus_1, two, y]
         
     return (Test.list [test1, test2])
-   {- 
+    
   -- Testing out some restricted transformation term isomorphisms
   iso1 <- Test.localVars "(n: nat) (t: tree<nat>)" $ do
     App is_sorted [App ins_n [xs]] <- 
       Test.simplifiedTerm "sorted_tree (tree_insert n t)"
     let new_t = id
           . Eval.run
-          $ App is_sorted [App (unwrapFix 1 ins_n) [xs]]
+          $ App is_sorted [App (unwrapFix 2 ins_n) [xs]]
         counted_terms = 
-          Fold.isoCollect recursionScheme Just new_t
-    return (Test.assertEq mempty counted_terms)
-  -}
+          Fold.isoCount recursionScheme (const True) new_t
+    return (Test.assertEq 4 counted_terms)
+    
+  strict1 <- Test.localVars "(t1 t2: tree<nat>) (x n: nat)" $ do
+    leftmost_t <- Test.simplifiedTerm 
+        "leq_leftmost n (Node<nat> t1 x (tree_insert n t2))"
+    t1 <- Test.term "t1"
+    let strict_ts = Eval.strictTerms leftmost_t
+    return (Test.assertEq (Set.singleton t1) strict_ts)
+  
   return $ Test.list $  
     [ dec1, dec2, dec3
     , fin1, fin2, fin3 
@@ -123,7 +130,8 @@ tests = Test.label "Terms"
     , eq1, eq2, eq3, eq4
     , express1
     , subterms1
- --   , iso1
+    , iso1
+    , strict1
     ]
 
 def_eq_unit, def_eq_bool, def_eq_nat, def_eq_ntree :: String

@@ -335,12 +335,18 @@ let leq_leftmost =
   | Cons x xs -> leq_nat n x
   end
   */
+  
 let leq_leftmost =
   fun (n: nat) (t: tree<nat>) ->
   match t with
   | Leaf -> True
   | Node t1 x t2 ->
-    leq_nat n (leftmost<nat> t1)
+    (fix (lm: tree<nat> -> bool) (t: tree<nat>) ->
+      assert Node t1 x t2 <- t in
+      match t1 with
+      | Leaf -> leq_nat n x
+      | Node t1' y t2' -> lm t1
+      end) t
   end
   
 let sorted_tree = 

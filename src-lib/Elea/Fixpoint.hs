@@ -150,9 +150,6 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
         . map Var 
         $ reverse free_vars
   
-  rep_s <- showM new_term
-  let s3 = "\nREPLACED:" ++ rep_s
-  
   -- Fusion has failed if we do not recurse as much as the original function,
   -- or all recursive occurrences have been removed.
   -- Seems to be a good heuristic, but this is just evidence based.
@@ -162,7 +159,10 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
         . Env.trackOffset
         . Env.trackMatches
         $ Fold.countM fixpointCall replaced_t
-  
+ 
+  rep_s <- showM new_term
+  let s3 = "\nREPLACED:" ++ rep_s 
+        
   Fail.unless                                                      
     -- DEBUG
     . trace s3

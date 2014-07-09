@@ -367,7 +367,8 @@ debugNth msg xs n
   | otherwise = xs !! n
   
 nth :: [a] -> Int -> a
-nth = debugNth "Index too large"
+nth xs n = 
+  debugNth ("Index too large: " ++ show (nlength xs) ++ " > " ++ show n) xs n
   
 arrowSum :: MonadPlus m => [a -> m b] -> a -> m b
 arrowSum ms x = msum (map ($ x) ms)
