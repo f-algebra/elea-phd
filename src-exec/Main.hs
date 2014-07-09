@@ -1,4 +1,10 @@
-module Main where
+module Main
+(
+  module Elea.Prelude,
+  main,
+  test
+)
+where
 
 import Elea.Prelude
 import Elea.Tests.All ( runTests )

@@ -150,9 +150,35 @@ prop "rightmost leq": forall (t: tree<nat>) (n: nat) ->
 prop "leftmost ins": forall (t: tree<nat>) (n x: nat) ->
   implies (and (leq_nat n x) (leq_leftmost n t)) 
     (leq_leftmost n (tree_insert x t))
+    
+    /*
+prop "leftmost impl": forall (t1 t2: tree<nat>) (x n: nat) ->
+  leftmost<nat> (Node<nat> t1 x t2) 
+  = leftmost<nat> (Node<nat> t1 x (tree_insert n t2))
+*/
 
 prop "last flatten"<A>: forall (t: tree<A>) ->
   last<A> (flatten<A> t) = rightmost<A> t
+ 
+prop "prop 27": forall (x: nat) (xs ys: list<nat>) ->
+  implies (elem_nat x ys) (elem_nat x (append<nat> xs ys))
+
+prop "prop 30": forall (x: nat) (xs: list<nat>) ->
+  elem_nat x (insert_nat x xs)
+  /*
+prop "prop 66": forall (p: nat -> bool) (xs: list<nat>) ->
+  leq_nat (length<nat> (filter<nat> p xs)) (length<nat> xs)
+  */
+  /*
+prop "prop 3": forall (n: nat) (xs ys: list<nat>) ->
+  leq_nat (count_nat n xs) (count_nat n (append<nat> xs ys))
+*/
+
+prop "prop 6": forall (n m: nat) ->
+  minus n (add n m) = 0 
+  
+prop "prop 9": forall (i j k: nat) ->
+  minus (minus i j) k = minus i (add j k)
   
   /*
 prop "height mirror" <A>: forall (t: tree<A>) ->

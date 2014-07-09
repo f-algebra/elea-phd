@@ -5,7 +5,8 @@ module Elea.Monad.Failure.Class
   Can (..), when, unless, toMaybe, withDefault, assert, choose,
   success, successM, catchWith, fromEither, has, fromMaybe, mapLookup,
   concatTransforms,
-  whenM, unlessM, hasM
+  whenM, unlessM, hasM,
+  joinMaybe,
 )
 where
 
@@ -89,6 +90,12 @@ fromMaybe :: Can m => Maybe a -> m a
 fromMaybe Nothing = here
 fromMaybe (Just x) = return x
 
+joinMaybe :: Can m => m (Maybe a) -> m a
+joinMaybe m = do
+  a <- m
+  when (isNothing a)
+  return (fromJust a)
+  
 
 -- | Pick a non failing instance. If none exists then fail.
 choose :: (Can m, Foldable f) => f (m a) -> m a

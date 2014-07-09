@@ -7,7 +7,6 @@ module Elea.Types
   module Elea.Type,
   HasTypeM (..),
   typeOf,
-  isClosed,
   check,
   checkStep,
 )
@@ -33,32 +32,46 @@ import qualified Elea.Monad.Failure.Class as Fail
 -- | Return the type of something given a type environment. 
 class HasTypeM a where
   getM :: (Defs.Read m, Env.Read m) => a -> m Type
+  hasM :: (Defs.Read m, Env.Read m) => a -> m Bool
   
 instance HasTypeM Term where
-  getM = Fold.paraM getM
-
--- | Whether we can use the 'get' function from 'HasType' to type a term.
-isClosed :: Term -> Bool
-isClosed = Env.trackOffset . clsd
-  where
-  clsd :: Term -> Env.TrackOffset Bool
-  clsd (Var x) = Env.lowerableByOffset x
-  clsd (Unr _) = return True
-  clsd (App f _) = clsd f
-  clsd (Fix {}) = return True
-  clsd (Con {}) = return True
-  clsd (Lam _ t) = Env.liftTracked (clsd t)
-  clsd (Case _ (Alt _ bs t : _)) = 
-    Env.liftTrackedMany (length bs) (clsd t)
+  getM t = do
+    can_type <- hasM t
+    if can_type
+    then Fold.paraM getM t
+    else do
+      t_s <- showM t
+      error ("[typing] Cannot type:\n" ++ t_s)
+      
+  hasM t = do
+    offset <- Env.bindingDepth
+    return 
+      . Env.trackIndices (enum offset)
+      $ closed t
+    where
+    closed :: Term -> Env.TrackIndices Index Bool
+    closed (Var x) = do
+      offset <- Env.tracked
+      return (x < offset)
+    closed (Unr _) = return True
+    closed (App f _) = closed f
+    closed (Fix {}) = return True
+    closed (Con {}) = return True
+    closed (Lam _ t) = Env.liftTracked (closed t)
+    closed (Case _ (Alt _ bs t : _)) = 
+      Env.liftTrackedMany (length bs) (closed t)
     
 
 -- | I know I said that terms shouldn't have a 'HasType' instance, but
 -- we should only call this on closed terms that we know
 -- are well typed.
 instance HasType Term where
-  get = Defs.readEmpty . Env.emptyT . getM
+  get t | has t = (Defs.readEmpty . Env.emptyT . getM) t
+  has = Defs.readEmpty . Env.emptyT . hasM
   
 instance HasType (Term' (Term, Type)) where 
+  has = undefined
+
   get (Unr' ty) = ty
   get (Lam' (Bind _ a) (_, b)) = Type.Fun a b
   get (App' (_, ty) xs) = Type.dropArgs (length xs) ty
@@ -67,8 +80,13 @@ instance HasType (Term' (Term, Type)) where
   get (Case' _ (Alt' _ _ (_, ty) : _)) = ty
   
 instance HasTypeM (Term' (Term, Type)) where
-  getM (Var' x) = 
-    liftM get (Env.boundAt x)
+  hasM = undefined
+
+  getM (Var' x) = do
+    is <- Env.isBound x
+    if not is
+    then error "here"
+    else liftM get (Env.boundAt x)
   getM other =
     return (get other)
   

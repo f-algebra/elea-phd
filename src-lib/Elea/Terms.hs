@@ -465,7 +465,7 @@ revertMatches = revertMatchesWhen (const True)
 occurrences :: Term -> Term -> Int
 occurrences t = Env.trackIndices t . Fold.countM (\t -> Env.trackeds (== t))
 
--- | Whether the first argument is a subterm of the first
+-- | Whether the first argument is a subterm of the second
 isSubterm :: Term -> Term -> Bool
 isSubterm t = Env.trackIndices t . Fold.anyM (\t -> Env.trackeds (== t))
   

@@ -28,7 +28,7 @@ import qualified Elea.Constraint as Constraint
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs
-import qualified Elea.Monad.Fusion.Class as Fusion
+import qualified Elea.Monad.Memo.Class as Memo
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
@@ -53,7 +53,7 @@ import qualified Data.Set as Set
 -- | Fixpoint fusion.
 -- > if E' = fusion C E
 -- > then C[E] = E'
-fusion :: forall m . (Fail.Can m, Env.Read m, Defs.Read m, Fusion.Memo m) 
+fusion :: forall m . (Fail.Can m, Env.Read m, Defs.Read m, Memo.Can m) 
   -- | A simplification function to be called during fusion.
   -- All indices will have been lifted by one in the supplied term,
   -- and the index of the unrolled fixpoint variable will be 0.
@@ -63,7 +63,7 @@ fusion :: forall m . (Fail.Can m, Env.Read m, Defs.Read m, Fusion.Memo m)
   -> m Term
 fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = 
     -- Use the fusion memoisation monad to memoise this computation
-    Fusion.memoise outer_ctx inner_fix $ do
+    Memo.fusion outer_ctx inner_fix $ do
   
   -- DEBUG
   ctx_s <- showM outer_ctx
@@ -93,8 +93,9 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     
     -- Move all pattern matches on variables topmost to make sure everything
     -- unrolls properly
+  --  . traceMe "\n\n!!!!!! YIELDED"
     . Eval.floatVarMatches
-    
+  --  . traceMe "\n\n?????? FLOATING VARS FROM"
     -- Apply the context to the unwrapped function body
     $ Context.apply (Indices.lift outer_ctx) fix_t
     
@@ -389,7 +390,7 @@ fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
     
 -- | Uses fixpoint fusion to merge a constraint into a fixpoint.
 constraintFusion
-  :: forall m . (Env.Read m, Defs.Read m, Fail.Can m, Fusion.Memo m)
+  :: forall m . (Env.Read m, Defs.Read m, Fail.Can m, Memo.Can m)
   => (Term -> m Term)
   -> Constraint 
   -> Term
@@ -409,7 +410,7 @@ constraintFusion simplify
   args_ctx = Context.make (\t -> app t args)
   full_ctx = cons_ctx ++ args_ctx
 
-  -- The inner simplification used in match fix fusion
+  -- The inner simplification used in constraint fusion
   simplifyAndExpress :: Term -> m Term
   simplifyAndExpress term = do
     -- First we simplify the term
@@ -443,7 +444,7 @@ constraintFusion simplify
       Fail.when (Set.null inner_cses)
       let inner_cse = head (Set.toList inner_cses)
       return 
-        . error ("\n\n[constraint fusion] floating:\n" ++ show (caseOf inner_cse) ++ "\nabove:\n" ++ show fix_t ++ "\n\n")
+       -- . trace ("\n\n[constraint fusion] floating:\n" ++ show (caseOf inner_cse) ++ "\nabove:\n" ++ show fix_t ++ "\n\n")
         $ Eval.run (Term.applyCase inner_cse orig_t)
       where
       floatable :: Term -> Env.TrackIndices Term Bool

@@ -21,6 +21,7 @@ module Elea.Constraint
   toContext,
   matchContext,
   makeContext,
+  manyToContext,
 )
 where
 
@@ -37,6 +38,7 @@ import qualified Elea.Foldable as Fold
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs
+import qualified Data.Set as Set
 
                 
 make :: Constructor -> Term -> Constraint
@@ -142,4 +144,8 @@ apply (Constraint con match_t) (on_t, on_ty) =
 toContext :: Type -> Constraint -> Context
 toContext result_ty constr =
   Context.make (\gap_t -> apply constr (gap_t, result_ty))
+  
+manyToContext :: Type -> Set Constraint -> Context
+manyToContext ty = 
+  concatMap (toContext ty) . Set.toAscList
 

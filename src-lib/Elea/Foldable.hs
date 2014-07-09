@@ -72,13 +72,10 @@ isoTransformM iso f = id
   
 isoRewriteM :: TransformableM m t =>
   Iso a t -> (a -> MaybeT m a) -> a -> m a
-isoRewriteM iso f = id
-  . liftM (Iso.project iso)
-  . transformM rrwt 
-  . Iso.embed iso
+isoRewriteM iso f = 
+  isoTransformM iso rrwt
   where
-  f' = liftM (Iso.embed iso) . f . Iso.project iso
-  rrwt t = maybeT (return t) (rewriteM f') (f' t)
+  rrwt t = maybeT (return t) (isoRewriteM iso f) (f t)
   
 -- | A version of 'isoRewriteM' which checks whether any rewrites 
 -- were actually performed; returning 'Nothing' if none were.

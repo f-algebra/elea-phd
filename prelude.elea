@@ -294,28 +294,6 @@ let build =
   
 let treesort = fun (xs: list<nat>) -> flatten<nat> (build xs)
 
-let rightmost_leq = 
-  fix (rleq: tree<nat> -> nat -> bool) (t: tree<nat>) (n: nat) ->
-  match t with
-  | Leaf -> True
-  | Node t1 x t2 ->
-    match t2 with
-    | Leaf -> leq_nat x n
-    | Node t1' x' t2' -> rleq t2 n
-    end
-  end
-  
-let leq_leftmost =
-  fix (leql: nat -> tree<nat> -> bool) (n: nat) (t: tree<nat>)  ->
-  match t with
-  | Leaf -> True
-  | Node t1 x t2 ->
-    match t1 with
-    | Leaf -> leq_nat n x
-    | Node t1' x' t2' -> leql n t1
-    end
-  end 
-  
 let rightmost<A> = 
   fix (rm: tree<A> -> A) (t: tree<A>) ->
   match t with
@@ -326,6 +304,43 @@ let rightmost<A> =
     | Node t1' y t2' ->
       rm t2
     end
+  end
+  
+let leftmost<A> = 
+  fix (lm: tree<A> -> A) (t: tree<A>) ->
+  match t with
+  | Leaf -> _|_ A
+  | Node t1 x t2 ->
+    match t1 with
+    | Leaf -> x
+    | Node t1' y t2' -> lm t1
+    end
+  end
+
+let rightmost_leq = 
+  fix (rleq: tree<nat> -> nat -> bool) (t: tree<nat>) (n: nat) ->
+  match t with
+  | Leaf -> True
+  | Node t1 x t2 ->
+    match t2 with
+    | Leaf -> leq_nat x n
+    | Node t1' x' t2' -> rleq t2 n
+    end
+  end
+  /*
+let leq_leftmost =
+  fun (n: nat) (t: tree<nat>) ->
+  match flatten<nat> t with
+  | Nil -> True
+  | Cons x xs -> leq_nat n x
+  end
+  */
+let leq_leftmost =
+  fun (n: nat) (t: tree<nat>) ->
+  match t with
+  | Leaf -> True
+  | Node t1 x t2 ->
+    leq_nat n (leftmost<nat> t1)
   end
   
 let sorted_tree = 

@@ -82,7 +82,7 @@ degenerateContext ctx = id
 -- Need to add pattern matching over absurdity, but how to find the type?
 absurdity :: Fail.Can m => Term -> m Term
 absurdity term
-  | Type.isClosed term
+  | Type.has term
   , absurd term = 
     return (Unr (Type.get term))
   where 

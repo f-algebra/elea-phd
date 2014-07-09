@@ -32,7 +32,7 @@ unwrapDepth = 1
 constrainedToConstant :: Fail.Can m =>
   Set Constraint -> Term -> m Term
 constrainedToConstant constrs term@(App fix@(Fix {}) args) = do
-  if (length free_terms /= 1)
+  if (length free_terms /= 1) -- || not (isCon (leftmost (head free_terms)))
   then id
    -- . trace ("\n\n[checker] failed with: " ++ show free_terms) 
     $ Fail.here

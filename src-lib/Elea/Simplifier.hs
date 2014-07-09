@@ -236,6 +236,9 @@ unfoldFixInj term@(App fix@(Fix _ _ fix_t) args)
     && Set.null matched_rec_vars
     where
     arg = args !! arg_i
+    -- All the recursive arguments to the constructor
+    -- at the given argument position, and all the recursive arguments to
+    -- those arguments, and so on...
     rec_vars = recursiveConArgs arg
       
     matched_vars = id
@@ -259,10 +262,14 @@ unfoldFixInj term@(App fix@(Fix _ _ fix_t) args)
       $ Type.recursiveArgs con
     recursiveConArgs _ = mempty
     
+    -- Free variables pattern matched upon in the given term
     matchedVars :: Term -> Env.TrackOffset (Set Index) 
-    matchedVars (Case (Var x) _) = do
+    matchedVars (Case (Var x) alts) = do
       can_lower <- Env.lowerableByOffset x
-      if can_lower
+      -- Variable must be free outside the original term,
+      -- and must be recursed upon (so the match cannot be finite)
+      if can_lower 
+        && not (Term.isFiniteMatch alts)
       then liftM Set.singleton (Env.lowerByOffset x)
       else return mempty
     matchedVars _ = 
@@ -300,7 +307,7 @@ freeCaseFix _ = Fail.here
 -- | Replace all instances of a term with the pattern it is matched to.
 propagateMatch :: Fail.Can m => Term -> m Term
 propagateMatch (Case cse_t alts) 
-  | any altSubterm alts =
+  | any altSubterm alts = id
     return (Case cse_t (map propagateAlt alts))
   where
   altSubterm (Alt _ bs alt_t) = 
@@ -356,31 +363,32 @@ constantFix (Fix _ fix_b fix_t)
   | Just [] <- mby_results = guessConstant (Unr result_ty)
   where
   (arg_bs, _) = flattenLam fix_t
-  result_ty = Type.returnType (get Type.bindType fix_b)
-  mby_results = potentialResults fix_t
-
+  fix_ty = get Type.bindType fix_b
+  result_ty = Type.returnType fix_ty
+  
+  mby_results = id
+    . potentialResults
+    . Eval.run
+    $ Term.replace (Var 0) (Unr fix_ty) fix_t
+  
   potentialResults :: Term -> Maybe [Term]
   potentialResults = id
     . map toList
-    . Env.trackIndices 0
+    . Env.trackOffset
     . runMaybeT
     . Fold.isoFoldM Term.branches resultTerm
     where
-    resultTerm :: Term -> MaybeT (Env.TrackIndices Index) (Set Term)
+    resultTerm :: Term -> MaybeT Env.TrackOffset (Set Term)
     resultTerm (Unr _) = return mempty
     resultTerm term = do
-      fix_f <- Env.tracked
-      if leftmost term == Var fix_f
-      then return mempty
-      else do
-        let depth = enum fix_f
-        -- Checking we can lower by one extra makes sure there is no
-        -- occurrence of the 'fix'ed variable itself.
-        guard (Indices.lowerableBy (depth + 1) term)
-        return
-          . Set.singleton
-          $ Indices.lowerMany depth term
-        
+      depth <- Env.offset
+      -- Checking we can lower by one extra makes sure there is no
+      -- occurrence of the 'fix'ed variable itself.
+      Fail.unless (Indices.lowerableBy (depth + 1) term)
+      return
+        . Set.singleton
+        $ Indices.lowerMany depth term
+      
   guessConstant :: Term -> m Term
   guessConstant guess_t 
     | Just [] <- mby_results' = return const_t

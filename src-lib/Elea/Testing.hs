@@ -29,7 +29,7 @@ import qualified Elea.Fusion as Fusion
 import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Discovery as Discovery
 import qualified Elea.Monad.Error.Class as Err
-import qualified Elea.Monad.Fusion.Class as Fusion
+import qualified Elea.Monad.Memo.Class as Memo
 import qualified Test.HUnit as HUnit
 
 type Test = HUnit.Test

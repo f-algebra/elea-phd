@@ -78,6 +78,6 @@ tests = Test.label "Checker"
     -- Also leaving out test_tree4 because the fusion step takes aaaages.
         
     return (Test.list 
-      [ test_elem, test_leq, test_tree3 -- test_tree5,
+      [ test_elem, test_leq, test_tree3 --, test_tree5
       , test_tree, test_tree2, test_srtd ]) 
 

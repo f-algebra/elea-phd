@@ -28,11 +28,11 @@ import qualified Elea.Checker as Checker
 import qualified Elea.Constraint as Constraint
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions.Class as Defs
-import qualified Elea.Monad.Fusion.Class as Fusion
+import qualified Elea.Monad.Memo.Class as Memo
 import qualified Data.Set as Set
 
 
-run :: forall m . (Env.Read m, Defs.Read m, Fail.Can m, Fusion.Memo m)
+run :: forall m . (Env.Read m, Defs.Read m, Fail.Can m, Memo.Can m)
   -- | A simplification function to be called within run.
   => (Term -> m Term)
   -> Term 

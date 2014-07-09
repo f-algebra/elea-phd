@@ -59,7 +59,7 @@ prove simplify t1 t2 = do
   
   eq <- id
     -- debug
-   -- . trace s1
+    . trace s1
     $ equal t1' t2'
   resultToBool eq
   where 
@@ -77,11 +77,6 @@ prove simplify t1 t2 = do
       -- Because constructors are injective we can use the concatenate
       -- of our injective equality to conjoin the equality of each argument.
       return (mconcat args_eq)
-  
-  -- If one side is constructor shaped and the other isn't
-  -- then we cannot decide equality.
-  equal (leftmost -> Con {}) _ = return Unknown
-  equal _ (leftmost -> Con {}) = return Unknown
   
   equal t1 t2
     | t1 == t2 = return Proven
@@ -142,6 +137,32 @@ prove simplify t1 t2 = do
     solveEquation _ = 
         return mempty
   
+  -- If we reach a pattern match then do case analysis (elimination)
+  equal (Case cse_t alts) with_t = do
+    cse_s <- showM cse_t 
+    id
+    --  . trace ("[prove eq] splitting on: " ++ cse_s)
+      . concatMapM equalAlt 
+      $ filter (not . isUnr . get altInner) alts
+    where
+    equalAlt :: Alt -> m Result
+    equalAlt (Alt con bs alt_t) = id
+      . Env.bindMany bs
+      . Env.matched cse_t' pat
+      . equal with_t 
+      $ Term.replace cse_t' pat alt_t
+      where
+      cse_t' = Indices.liftMany (length bs) cse_t
+      pat = altPattern con
+    
+  equal t1 t2@(Case {}) = 
+    equal t2 t1
+        
+  -- If one side is constructor shaped and the other isn't
+  -- then we cannot decide equality.
+  equal (leftmost -> Con {}) _ = return Unknown
+  equal _ (leftmost -> Con {}) = return Unknown
+    
   equal _ _ =
     return Unknown
     

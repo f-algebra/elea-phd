@@ -70,7 +70,6 @@ isBound :: Read m => Index -> m Bool
 isBound at = do
   bs <- bindings
   return (at < length bs)
- 
 
 -- | Whether you can read locally bound pattern matches from
 -- an environment monad

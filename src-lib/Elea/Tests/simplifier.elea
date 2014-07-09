@@ -67,6 +67,28 @@ let is_sorted2 =
 prop "unfold within fix": forall (xs: list<nat>) ->
   is_sorted xs = is_sorted2 xs
   
+prop "propagate match 1": forall (xs: list<nat>) (x y: nat) ->
+  match is_sorted xs with
+  | True -> True
+  | False -> not (is_sorted xs)
+  end
+  
+prop "constant fix 1": forall (n m x: nat) ->
+  (fix (f: nat -> bool) (x: nat) ->
+  match x with
+  | 0 -> eq_nat n m
+  | Suc x' -> f x'
+  end) x 
+  = eq_nat n m
+  
+prop "constant fix 2": forall (xs: list<nat>) ->
+  (fix (f: list<nat> -> bool) (xs: list<nat>) ->
+  match xs with
+  | Nil -> True
+  | Cons y ys ->
+    or (f ys) (eq_nat 1 y)
+  end) xs
+  
   /*
 prop "unfold productive fix": forall (xs: list<nat>) ->
   (match append<nat> xs (Cons<nat> 1 Nil<nat>) with

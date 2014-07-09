@@ -163,12 +163,15 @@ instance ContainsTypes Constructor where
 -- to be typeable. This is for things like constructors, or names.
 class HasType a where
   get :: a -> Type
+  has :: a -> Bool
   
 instance HasType Constructor where
+  has = const True
   get = get . constructorBind
   
 instance HasType Bind where
   get = _bindType
+  has = const True
   
 
 -- | The 'empty' type, viz. the constructorless inductive type.

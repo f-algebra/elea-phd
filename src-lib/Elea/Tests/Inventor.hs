@@ -15,13 +15,13 @@ import qualified Elea.Unification as Unifier
 import qualified Elea.Testing as Test
 import qualified Elea.Simplifier as Simp
 import qualified Elea.Monad.Definitions.Class as Defs
-import qualified Elea.Monad.Fusion.Class as Fusion
+import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Fixpoint as Fix
 import qualified Elea.Inventor as Invent
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Data.Set as Set
 
-testFixFix :: forall m . (Defs.Read m, Env.Read m, Fusion.Memo m)
+testFixFix :: forall m . (Defs.Read m, Env.Read m, Memo.Can m)
   => Term -> m Test.Test
 testFixFix term =
   Env.bindMany bs (fixFix inner_t)

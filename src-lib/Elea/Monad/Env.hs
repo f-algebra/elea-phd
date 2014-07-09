@@ -57,10 +57,10 @@ instance Write m => Fold.FoldableM m Term where
     return (Fix' i b) `ap` bind b mt
   distM (Case' (mt, cse_t) malts) = do
     t <- mt
-    alts <- zipWithM distAltM malts [0..]
+    alts <- mapM distAltM malts
     return (Case' t alts)
     where
-    distAltM (Alt' con bs (mt, _)) alt_n = do
+    distAltM (Alt' con bs (mt, _)) = do
       t <- id
         . bindMany bs
         . matched (Indices.liftMany (length bs) cse_t) (altPattern con)
