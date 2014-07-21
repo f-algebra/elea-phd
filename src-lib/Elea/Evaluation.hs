@@ -51,13 +51,15 @@ strictTerms (App (Fix _ _ fix_t) args) = id
   fix_t' = substAt 0 (Var Indices.omega) fix_t
 
   collectTerms (Case cse_t alts)
-    | isVar (leftmost cse_t) = 
-      Set.insert cse_t (concatMap altVars alts)
+    | isVar (leftmost cse_t) = Set.insert cse_t alt_terms
+    | otherwise = alt_terms
     where
-    altVars (Alt _ bs alt_t) = id
-      . Set.map (Indices.lowerMany (length bs))
-      . Set.filter (Indices.lowerableBy (length bs))
-      $ collectTerms alt_t 
+    alt_terms = concatMap altVars alts
+      where
+      altVars (Alt _ bs alt_t) = id
+        . Set.map (Indices.lowerMany (length bs))
+        . Set.filter (Indices.lowerableBy (length bs))
+        $ collectTerms alt_t 
   collectTerms _ = Set.empty
   
 strictTerms _ = 

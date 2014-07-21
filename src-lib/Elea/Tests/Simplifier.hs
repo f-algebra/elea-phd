@@ -15,8 +15,9 @@ checkEquation (Equals name bs t1 t2) = id
   . Test.label name
   $ Test.assertSimpEq t1 t2
   
-tests = Test.label "Simplifier"
-    $ Test.run $ do
+tests = id
+    . Test.label "Simplifier"
+    . Test.run $ do
   Test.loadPrelude
   eqs <- Test.loadFile "src-lib/Elea/Tests/simplifier.elea"
   return (map checkEquation eqs)

@@ -331,21 +331,25 @@ propagateMatch _ = Fail.here
 -- Currently only works for a single unrolling, but otherwise we'd need an 
 -- arbitrary amount of unrolling, which seems difficult.
 finiteCaseFix :: Fail.Can m => Term -> m Term
-finiteCaseFix term@(Case (App (Fix _ _ fix_t) args) alts) = do
+finiteCaseFix term@(Case (App fix@(Fix _ _ fix_t) args) alts) = do
   -- I don't think this will ever apply to non-recursive data types...
   Fail.when (all Type.isBaseCase (map (get altConstructor) alts))
   Fail.unless (all finiteAlt alts)
   
   -- Check that unrolling the function removed recursive calls 
-  Fail.when (0 `Indices.freeWithin` unrolled)
-  return (Indices.lower unrolled)
+  Fail.when (0 `Indices.freeWithin` simp_t)
+ 
+  return  
+    $ Case (App (Term.unfoldFix fix) args) alts
   where
-  extendedEval = Fold.rewriteSteps (Eval.steps ++ [constantCase, finiteCaseFix])
-  unrolled = id
+  simp_t = id
     . extendedEval
-   -- . traceMe "[finite case fix]"
-    . Case (App fix_t (Indices.lift args)) 
-    $ Indices.lift alts
+    . Case (App fix_t (Indices.lift args))
+    $ map simplifyAlt alts
+    
+  extendedEval :: Term -> Term
+  extendedEval = 
+    Fold.rewriteSteps (Eval.steps ++ [constantCase, finiteCaseFix])
     
   -- A branch in which a recursive pattern variable is used
   finiteAlt :: Alt -> Bool
@@ -353,12 +357,22 @@ finiteCaseFix term@(Case (App (Fix _ _ fix_t) args) alts) = do
     Set.null (Indices.free alt_t `Set.intersection` rec_vars)
     where
     rec_vars = Set.fromList (Type.recursiveArgIndices con)
-    {-
+    
   simplifyAlt :: Alt -> Alt
-  simplifyAlt (Alt con bs alt_t) = 
+  simplifyAlt (Alt con bs alt_t) =
+    Alt con bs (app (Con con) p_args)
     where
-    containsBind :: (Bind, Nat) -> Bool
-    -}
+    free_vars = Indices.free alt_t
+    
+    p_args = id
+      . map removeUnused
+      . Term.arguments 
+      $ Term.altPattern con
+      where
+      removeUnused (Var x)
+        | Set.member x free_vars = Var x
+        | otherwise = Var Indices.omega
+    
   
 finiteCaseFix _ = Fail.here
 
@@ -450,7 +464,7 @@ unfoldWithinFix _ = Fail.here
 -- | Removes a pattern match if every branch returns the same value.
 constantCase :: forall m . Fail.Can m => Term -> m Term
 constantCase (Case _ alts) = do
-  Fail.when (any (isCase . get altInner) alts)
+  -- Fail.when (any (isCase . get altInner) alts)
   (alt_t:alt_ts) <- mapM loweredAltTerm alts
   Fail.unless (all (== alt_t) alt_ts)
   return alt_t

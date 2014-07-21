@@ -261,13 +261,6 @@ matchFix :: forall m . (FusionM m, Fail.Can m, Env.MatchRead m)
   => Term -> m Term
   
 matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
-  -- We don't try to fuse matches into a term which is not just a fixpoint
-  -- with variable or constructor arguments. 
-  -- I haven't investigated the behaviour of this
-  -- thoroughly enough.
-  -- Removed for test "leftmost impl"
-  -- Fail.unless (all Term.isSimple args)
-  
   -- Check that we don't have a partially applied fixpoint.
   -- Could mess things up, and not a case worth considering I think.
   Fail.unless (Term.inductivelyTyped outer_t)
@@ -303,7 +296,7 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
           ++ "\n\ncollapses:\n" ++ outer_s 
           ++ "\n\ninto constant term:\n" ++ const_s
           
-    when (isNothing mby_const) Fail.here -- fusionFailed
+    when (isNothing mby_const) fusionFailed
     let Just const_t = mby_const
   
     -- We apply match-fix fusion for every match
@@ -311,7 +304,7 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
       . trace msg1
       $ fuseMatches matches outer_t
       
-    when (fused_t /= const_t) fusionFailed
+    when (fused_t /= const_t) Fail.here --fusionFailed
     
     -- Express all the matches we fused in as a single constraint,
     -- so we can show which term we fused together to make 'fused_t',
@@ -328,8 +321,7 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
   -- We also check that one of the strict arguments of each term match.
   usefulMatch :: (Term, Term) -> Bool
   usefulMatch (match_t@(App (Fix {}) m_args), _) =
-    True -- all Term.isSimple m_args 
-    && not (Set.null shared_terms)
+    not (Set.null shared_terms)
     where
     shared_terms = 
       (Set.intersection `on` Eval.strictTerms) outer_t match_t
