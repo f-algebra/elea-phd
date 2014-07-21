@@ -24,7 +24,7 @@ import qualified Elea.Monad.Failure.Class as Fail
 import qualified Data.Set as Set
 
 run :: Term -> Term                           
-run = Fold.isoRewriteSteps Env.ignoreClosed steps
+run = Fold.rewriteSteps steps
 
 steps :: Fail.Can m => [Term -> m Term]
 steps = 
@@ -36,7 +36,6 @@ steps =
   , caseApp
   , appCase
   , caseCase
-  , constantCase
   ]
   
   
@@ -160,20 +159,6 @@ caseCase :: Fail.Can m => Term -> m Term
 caseCase outer_cse@(Case inner_cse@(Case {}) _) =
   return (Term.applyCase inner_cse outer_cse)
 caseCase _ = Fail.here
-
-
--- | Removes a pattern match if every branch returns the same value.
-constantCase :: forall m . Fail.Can m => Term -> m Term
-constantCase (Case _ alts) = do
-  (alt_t:alt_ts) <- mapM loweredAltTerm alts
-  Fail.unless (all (== alt_t) alt_ts)
-  return alt_t
-  where
-  loweredAltTerm :: Alt -> m Term
-  loweredAltTerm (Alt _ bs alt_t) = 
-    Indices.tryLowerMany (length bs) alt_t
-    
-constantCase _ = Fail.here
 
 
 -- | Moves all pattern matches over variables topmost in a term. 

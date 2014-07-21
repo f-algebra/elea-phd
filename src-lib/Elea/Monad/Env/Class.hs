@@ -29,7 +29,6 @@ import qualified Data.Map as Map
 
 type All m = (Read m, MatchRead m)
 
-
 -- | A writable type and pattern match environment.
 class Monad m => Write m where
   -- | Bind a variable index to a type within the environment
@@ -76,8 +75,8 @@ isBound at = do
 class Write m => MatchRead m where
   matches :: m [(Term, Term)]
   
-findMatches :: MatchRead m => (Term -> Bool) -> m [(Term, Term)]
-findMatches p = liftM (filter (p . fst)) matches
+findMatches :: MatchRead m => ((Term, Term) -> Bool) -> m [(Term, Term)]
+findMatches p = liftM (filter p) matches
 
 
 -- | Anything that tracks indices as we move within something that binds

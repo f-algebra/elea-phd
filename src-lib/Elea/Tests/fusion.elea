@@ -136,9 +136,15 @@ let srtd_tree_ins =
         (and (rightmost_leq t1 x)
         (srtd_ins n t2)))
   end
-      
+
 prop "sorted flatten": forall (t: tree<nat>) (n: nat) (xs: list<nat>) ->
-  implies (sorted_tree t) (srtd_tree_ins n t)
+  sorted_tree (tree_insert n t)
+  
+prop "infer leftmost": forall (t: tree<nat>) (n: nat) ->
+  match flatten<nat> t with
+  | Nil -> True
+  | Cons x xs -> leq_nat x n
+  end
 
 prop "rightmost ins": forall (t: tree<nat>) (n: nat) (x: nat) ->
   implies (and (leq_nat x n) (rightmost_leq t n)) 
@@ -153,8 +159,8 @@ prop "leftmost ins": forall (t: tree<nat>) (n x: nat) ->
     
 prop "leftmost impl": forall (t1 t2: tree<nat>) (x n: nat) ->
   implies (leq_leftmost n (Node<nat> t1 x t2))
-    (leq_leftmost n (Node<nat> t1 x (tree_insert n t2)))
-
+    (leq_leftmost n (tree_insert n t1))
+    
 prop "last flatten"<A>: forall (t: tree<A>) ->
   last<A> (flatten<A> t) = rightmost<A> t
  

@@ -104,18 +104,18 @@ memoise lens term run = do
     -- If we are in the process of fusing this then we need to fail
     -- to prevent infinite loops
     Just Pending -> id
-      . trace ("[memo] stopped a loop") 
+     -- . trace ("[memo] stopped a loop") 
       $ return Nothing
     
     -- If fusion failed previously then it will fail again
     Just Failure -> id
-      . trace ("[memo] improved efficiency (failure)") 
+    --  . trace ("[memo] improved efficiency (failure)") 
       $ return Nothing
     
     -- If fusion succeeded previously then we can be efficient 
     -- and return the previous result
     Just (Success t) -> id
-      . trace ("[memo] improved efficiency (success)")
+     -- . trace ("[memo] improved efficiency (success)")
       $ return (Just t)
     
     -- If we have not yet tried this fusion then...

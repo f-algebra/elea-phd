@@ -30,6 +30,7 @@ module Elea.Terms
   findContext,
   removeSubterms,
   freeSubtermsOf,
+  revertEnvMatches,
 )
 where
 
@@ -516,3 +517,30 @@ freeSubtermsOf term = id
   . collect (const True)
   $ term
     
+
+-- | I wrote this after 'revertMatchesWhenM' and associated methods. I think
+-- this way would be cleaner for that's use case as well, but for now I'll
+-- keep both functions.
+revertEnvMatches :: Env.MatchRead m => Term -> m Term
+revertEnvMatches term = id
+  . liftM (foldl (\t (m, k) -> replace k m t) term)
+  . liftM (sortBy revertOrd)
+  . liftM (filter revertMe)
+  $ Env.matches
+  where
+  -- Only revert matches whose constructors have arguments
+  -- otherwise we cannot tell them apart
+  revertMe :: (Term, Term) -> Bool
+  revertMe = not . null . arguments . snd
+  
+  -- We sort the matches such that any that will rewrite the thing rewritten
+  -- by another match will go before that other match... 
+  -- An awful explanantion but that's all you get
+  revertOrd :: (Term, Term) -> (Term, Term) -> Ordering
+  revertOrd (Var x, _) (_, k) 
+    | x `Indices.freeWithin` k = LT
+  revertOrd (_, k) (_, Var x) 
+    | x `Indices.freeWithin` k = GT
+  revertOrd p1 p2 = 
+    compare p1 p2 
+  

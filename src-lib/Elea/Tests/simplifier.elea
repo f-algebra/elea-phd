@@ -89,7 +89,7 @@ prop "constant fix 2": forall (xs: list<nat>) ->
     or (f ys) (eq_nat 1 y)
   end) xs
   
-  /*
+  
 prop "unfold productive fix": forall (xs: list<nat>) ->
   (match append<nat> xs (Cons<nat> 1 Nil<nat>) with
    | Nil -> 0 | Cons y ys -> y end)
@@ -104,7 +104,13 @@ prop "unfold branching fix"<A>: forall (t: tree<A>) ->
   (match t with
    | Leaf -> 0 | Node t1 x t2 -> 1 end)
    
-  
+prop "unfold branching fix 2": forall (t: tree<nat>) (n: nat) ->
+  (match tree_insert n t with
+    | Leaf -> 1
+    | Node t1 x t2 -> 2 
+    end) = 2
+    
+   /*
 let super_loopy = fun (t: tree<nat>) (n: nat) ->
   match t with
   | Leaf -> False
@@ -115,7 +121,7 @@ let super_loopy = fun (t: tree<nat>) (n: nat) ->
       match tb with
       | Leaf -> False
       | Node tba m tbb -> 
-        match rightmost_leq n t with
+        match rightmost_leq t n with
         | False -> False
         | True -> sorted_tree t
         end
@@ -124,6 +130,6 @@ let super_loopy = fun (t: tree<nat>) (n: nat) ->
   end
    
 prop "loopy mc looperson": forall (t: tree<nat>) (n: nat) ->
-  super_loopy t n = super_loopy t n */
-  
+  super_loopy t n = super_loopy t n
+  */
 

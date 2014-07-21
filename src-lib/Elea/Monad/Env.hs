@@ -17,6 +17,9 @@ module Elea.Monad.Env
   TrackOffset, TrackOffsetT,
   trackOffset, trackOffsetT,
   
+  TrackAllT, trackAllT,
+  TrackAll, trackAll,
+  
   ignoreClosed,
   isoFree, isoShift,
   empty, emptyT,
@@ -322,6 +325,8 @@ instance Discovery.Listens m => Discovery.Listens (AlsoTrack r m) where
 
 -- | To stop effects reaching the inner monad we
 -- just wrap it in an 'IdentityT'.
+-- TODO change this to a new IgnoreT monad, the current behaviour is 
+-- a bit unexpected
 type TrackIndicesT r m = AlsoTrack r (IdentityT m)
 type TrackIndices r = TrackIndicesT r Identity
 
@@ -391,6 +396,65 @@ instance Discovery.Tells m => Discovery.Tells (TrackMatches m) where
 
 instance Discovery.Listens m => Discovery.Listens (TrackMatches m) where
   listen = mapTrackMatches Discovery.listen
+  
+  
+-- | Like 'TrackIndicesT' but which also reads variable pattern matches 
+-- and applies them as rewrites to the tracked object.
+-- Matches and bindings are (necessarily) NOT written to the inner monad.
+newtype TrackAllT r m a
+  = TrackAllT { runTrackAllT :: ReaderT r m a }
+  deriving ( Monad, MonadTrans )
+  
+type TrackAll r = TrackAllT r Identity
+
+runTrackAll :: TrackAll r a -> Reader r a
+runTrackAll = runTrackAllT
+  
+instance (Indexed r, Monad m) => Tracks r (TrackAllT r m) where
+  tracked = TrackAllT ask
+  liftTrackedMany n =
+    TrackAllT . local (Indices.liftMany n) . runTrackAllT
+
+mapTrackAllT :: Monad m => (m a -> n b) -> 
+  (TrackAllT r m a -> TrackAllT r n b)
+mapTrackAllT f = TrackAllT . mapReaderT f . runTrackAllT
+
+trackAllT :: r -> TrackAllT r m a -> m a
+trackAllT r = flip runReaderT r . runTrackAllT
+
+trackAll :: r -> TrackAll r a -> a
+trackAll r = runIdentity . trackAllT r
+
+-- Instances for 'TrackAllT'
+instance (Monad m, Substitutable r, Inner r ~ Term) 
+    => Write (TrackAllT r m) where
+  bindAt at b = id
+    . TrackAllT 
+    . local (liftAt at)
+    . runTrackAllT
+    
+  matched (Var x) w = id
+    . TrackAllT
+    . local (Indices.replaceAt x w)
+    . runTrackAllT
+  matched _ _ = id
+    
+  
+instance Fail.Can m => Fail.Can (TrackAllT r m) where
+  here = Trans.lift Fail.here
+  catch = mapTrackAllT Fail.catch
+  
+instance Defs.Read m => Defs.Read (TrackAllT r m) where
+  lookupTerm n = Trans.lift . Defs.lookupTerm n
+  lookupType n = Trans.lift . Defs.lookupType n
+  lookupName = Trans.lift . Defs.lookupName
+  
+instance Discovery.Tells m => Discovery.Tells (TrackAllT r m) where
+  tell = Trans.lift . Discovery.tell
+
+instance Discovery.Listens m => Discovery.Listens (TrackAllT r m) where
+  listen = mapTrackAllT Discovery.listen
+
   
 
 -- | Stores a list of terms structurally smaller than a given object.

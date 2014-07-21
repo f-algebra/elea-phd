@@ -29,24 +29,24 @@ import qualified Data.Map as Map
 import qualified Control.Monad.Trans as Trans
 
 run :: Term -> Term
-run = Fold.isoRewriteSteps Env.ignoreClosed steps
+run = Fold.rewriteSteps steps
 
 quick :: Term -> Term
-quick = Fold.isoRewriteSteps Env.ignoreClosed steps
+quick = Fold.rewriteSteps steps
   where
-  steps = Eval.steps ++ [ unfoldFixInj, propagateMatch ]
+  steps = Eval.steps ++ [ unfoldFixInj, propagateMatch, constantCase ]
   
 
 steps :: Fail.Can m => [Term -> m Term]
 steps = Eval.steps ++
   [ const Fail.here
   , Fail.concatTransforms transformSteps
+  , propagateMatch
   , finiteArgFix
   , unfoldFixInj
-  , freeCaseFix
-  , propagateMatch
-  -- , finiteCaseFix   
+  , freeCaseFix   
   , unfoldWithinFix
+  , finiteCaseFix
   ]
   where
   -- Transformation steps do not require sub terms to be rewritten upon success.
@@ -57,6 +57,7 @@ steps = Eval.steps ++
     , constArg
     , identityCase
     , uselessFix
+    , constantCase
     ] 
 
 -- | Remove arguments to a fixpoint if they never change in 
@@ -240,7 +241,7 @@ unfoldFixInj term@(App fix@(Fix _ _ fix_t) args)
     -- at the given argument position, and all the recursive arguments to
     -- those arguments, and so on...
     rec_vars = recursiveConArgs arg
-      
+    
     matched_vars = id
       . Env.trackOffset
       . Env.liftTracked
@@ -339,9 +340,10 @@ finiteCaseFix term@(Case (App (Fix _ _ fix_t) args) alts) = do
   Fail.when (0 `Indices.freeWithin` unrolled)
   return (Indices.lower unrolled)
   where
-  extendedEval = Fold.rewriteSteps (Eval.steps ++ [finiteCaseFix])
+  extendedEval = Fold.rewriteSteps (Eval.steps ++ [constantCase, finiteCaseFix])
   unrolled = id
     . extendedEval
+   -- . traceMe "[finite case fix]"
     . Case (App fix_t (Indices.lift args)) 
     $ Indices.lift alts
     
@@ -351,6 +353,12 @@ finiteCaseFix term@(Case (App (Fix _ _ fix_t) args) alts) = do
     Set.null (Indices.free alt_t `Set.intersection` rec_vars)
     where
     rec_vars = Set.fromList (Type.recursiveArgIndices con)
+    {-
+  simplifyAlt :: Alt -> Alt
+  simplifyAlt (Alt con bs alt_t) = 
+    where
+    containsBind :: (Bind, Nat) -> Bool
+    -}
   
 finiteCaseFix _ = Fail.here
 
@@ -437,4 +445,18 @@ unfoldWithinFix fix@(Fix fix_i fix_b fix_t) = do
     return other
   
 unfoldWithinFix _ = Fail.here
+          
 
+-- | Removes a pattern match if every branch returns the same value.
+constantCase :: forall m . Fail.Can m => Term -> m Term
+constantCase (Case _ alts) = do
+  Fail.when (any (isCase . get altInner) alts)
+  (alt_t:alt_ts) <- mapM loweredAltTerm alts
+  Fail.unless (all (== alt_t) alt_ts)
+  return alt_t
+  where
+  loweredAltTerm :: Alt -> m Term
+  loweredAltTerm (Alt _ bs alt_t) = 
+    Indices.tryLowerMany (length bs) alt_t
+    
+constantCase _ = Fail.here

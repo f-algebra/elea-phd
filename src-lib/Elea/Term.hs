@@ -23,7 +23,7 @@ module Elea.Term
   inductivelyTyped, 
   fromVar, 
   conjunction, true, false,
-  altPattern, 
+  altPattern, recursivePatternVars,
   isSimple,
   isFinite,
   lowerableAltInner,
@@ -88,6 +88,8 @@ data FixInfo
               -- fused into this fixpoint, and the value of the applied
               -- arguments to the fixpoint itself.
               -- Stops match-fix fusion from repeating itself.
+              -- We don't actually use this anymore because we have
+              -- the memoisation code
               _fixFailedConstraints :: ![(Set Constraint, Term)]
               
             , _fixClosed :: !Bool 
@@ -280,6 +282,11 @@ altPattern con@(Constructor (Type.Ind _ cons) n) = id
     . length
     . snd
     $ cons `nth` fromEnum n
+    
+    
+recursivePatternVars :: Constructor -> [Index]
+recursivePatternVars con = 
+  map (fromVar . (arguments (altPattern con) !!)) (Type.recursiveArgs con)
     
     
 -- | Whether a term contains a finite amount of information, from a

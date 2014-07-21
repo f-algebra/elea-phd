@@ -53,7 +53,7 @@ import qualified Data.Set as Set
 -- | Fixpoint fusion.
 -- > if E' = fusion C E
 -- > then C[E] = E'
-fusion :: forall m . (Fail.Can m, Env.Read m, Defs.Read m, Memo.Can m) 
+fusion :: forall m . (Fail.Can m, Env.All m, Defs.Read m, Memo.Can m) 
   -- | A simplification function to be called during fusion.
   -- All indices will have been lifted by one in the supplied term,
   -- and the index of the unrolled fixpoint variable will be 0.
@@ -61,6 +61,11 @@ fusion :: forall m . (Fail.Can m, Env.Read m, Defs.Read m, Memo.Can m)
   -> Context 
   -> Term 
   -> m Term
+fusion _ ctx ifix 
+  | not . isFix . leftmost $ ifix = do
+    ifs <- showM ifix
+    ctxs <- showM ctx
+    error (ctxs ++ " with " ++ ifs)
 fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) = 
     -- Use the fusion memoisation monad to memoise this computation
     Memo.fusion outer_ctx inner_fix $ do
@@ -98,25 +103,25 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   --  . traceMe "\n\n?????? FLOATING VARS FROM"
     -- Apply the context to the unwrapped function body
     $ Context.apply (Indices.lift outer_ctx) fix_t
-    
-  -- DEBUG
-  simp_s <- Env.bindMany (reverse (fix_b:free_var_bs)) (showM simplified_t)
-  let s2 = "\nSIMPLIFIED:\n" ++ simp_s
   
   -- Before we can replace we need to revert any pattern matches
   -- over the recursive function call, 
   -- as this will rewrite the term we are replacing
   let reverted_t = id
         -- DEBUG
-        . trace s2
         . Env.trackIndices 0
         . Term.revertMatchesWhenM isInnerFixMatch
         $ simplified_t
+  
+  -- DEBUG
+  simp_s <- Env.bindMany (reverse (fix_b:free_var_bs)) (showM reverted_t)
+  let s2 = "\nSIMPLIFIED++:\n" ++ simp_s
   
   -- The new fix body with every occurrence of the context composed
   -- with the old fix variable replaced with the new fix variable
   let inner_fix_here = Indices.liftMany (length free_vars + 1) inner_fix
       replaced_t = id 
+        . trace s2
         -- Expand every call to the inner fixpoint if it uses a finite
         -- amount of information from that fixpoint
         . expandFiniteCalls Indices.omega inner_fix_here
@@ -390,7 +395,7 @@ fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
     
 -- | Uses fixpoint fusion to merge a constraint into a fixpoint.
 constraintFusion
-  :: forall m . (Env.Read m, Defs.Read m, Fail.Can m, Memo.Can m)
+  :: forall m . (Env.All m, Defs.Read m, Fail.Can m, Memo.Can m)
   => (Term -> m Term)
   -> Constraint 
   -> Term
@@ -415,19 +420,33 @@ constraintFusion simplify
   simplifyAndExpress term = do
     -- First we simplify the term
     term' <- simplify term
+    let term'' = id
+          . Simp.run
+          . Env.trackAll (Indices.lift cons_ctx)
+          $ Fold.transformM interleaveConstraint term'
     t_s <- showM term
     t_s' <- showM term'
-    orig_s <- showM orig_term
+    t_s'' <- showM term''
+    
     return
-    --  . trace ("before:\n" ++ t_s ++ "\nafter:\n" ++ t_s' ++ "\noriginal:\n" ++ orig_s)
       -- Then we take any pattern matches which unify with the constraint and
       -- express them at the site of any recursive calls to the function
       . Env.trackIndices fix_f
       . Fold.transformM expressPattern
+      
       -- We float all potential matches to the constraint as high as they
       -- can go, so they reach the furthest into the term
-      . Env.trackIndices fix_f
-      . Fold.rewriteM floatMatchUp
+    --  . Env.trackIndices fix_f
+    --  . Fold.rewriteM floatMatchUp
+  
+      -- At this bit we take the constraint and place it everywhere in the 
+      -- term it is applicable, so that the 'expressPattern' step afterwards
+      -- has the best chance of finding an expressable constraint pattern.
+      . Simp.run
+      . Env.trackAll (Indices.lift cons_ctx)
+      -- Need to get isoTransforms working properly, no idea what is wrong
+      . Fold.transformM interleaveConstraint
+  --    . trace ("[constraint fusion]\nbefore:\n" ++ t_s' ++ "\nafter:\n" ++ t_s'')
       $ term'
     where    
     fix_f = 0
@@ -458,6 +477,14 @@ constraintFusion simplify
         return False
     floatMatchUp _ =
       Fail.here
+      
+    interleaveConstraint :: Term -> Env.TrackAll Context Term
+    interleaveConstraint cse_t@(Case (Var x) _) = do
+      ctx <- Env.tracked
+      if x `Indices.freeWithin` ctx
+      then return (Context.apply ctx cse_t)
+      else return cse_t
+    interleaveConstraint term = return term
 
     expressPattern :: Term -> Env.TrackIndices Index Term
     expressPattern (Case cse_t alts) 
@@ -467,7 +494,7 @@ constraintFusion simplify
       | Unifier.exists match_t cse_t = do
         fix_f <- Env.tracked
         let alt_t' = id
-              . Env.trackIndices (fix_f, cse_t)
+              . Env.trackAll (Var fix_f, cse_t)
               . Env.liftTrackedMany (length alt_bs)
               $ Fold.transformM express alt_t
             alts' = l_alts ++ (Alt alt_con alt_bs alt_t' : r_alts)
@@ -476,9 +503,9 @@ constraintFusion simplify
       con_n = get Type.constructorIndex cons_con
       (l_alts, Alt alt_con alt_bs alt_t : r_alts) = splitAt (enum con_n) alts
       
-      express :: Term -> Env.TrackIndices (Index, Term) Term
-      express term@(App (Var f) args) = do
-        (fix_f, cse_t) <- Env.tracked
+      express :: Term -> Env.TrackAll (Term, Term) Term
+      express term@(App (Var f) _) = do
+        (Var fix_f, cse_t) <- Env.tracked
         let cse_ctx = Constraint.makeContext cons_con cse_t result_ty
             term' = Context.apply cse_ctx term
         -- We only need to express the constraint if it can be unified with
@@ -489,9 +516,10 @@ constraintFusion simplify
         else return term
       express other = 
         return other
-        
+
     expressPattern other = 
       return other
 
 constraintFusion _ _ _ = 
   Fail.here
+

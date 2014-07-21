@@ -20,11 +20,19 @@ let or =
   fun (p q: bool) -> if p then True else q
 
 let and =
-  fun (p q:bool) -> if p then q else False
+  fun (p q: bool) -> if p then q else False
     
 let implies =
-  fun (p q:bool) -> if p then q else True
+  fun (p q: bool) -> if p then q else True
+  
+let iff =
+  fun (p q: bool) -> and (implies p q) (implies q p)
 
+  
+/* Option */
+
+ind option<A> = None | Some A
+  
     
 /* Natural numbers */    
     
@@ -307,12 +315,12 @@ let rightmost<A> =
   end
   
 let leftmost<A> = 
-  fix (lm: tree<A> -> A) (t: tree<A>) ->
+  fix (lm: tree<A> -> option<A>) (t: tree<A>) ->
   match t with
-  | Leaf -> _|_ A
+  | Leaf -> None<A>
   | Node t1 x t2 ->
     match t1 with
-    | Leaf -> x
+    | Leaf -> Some<A> x
     | Node t1' y t2' -> lm t1
     end
   end
@@ -327,28 +335,27 @@ let rightmost_leq =
     | Node t1' x' t2' -> rleq t2 n
     end
   end
-  /*
+  
 let leq_leftmost =
   fun (n: nat) (t: tree<nat>) ->
   match flatten<nat> t with
   | Nil -> True
   | Cons x xs -> leq_nat n x
   end
-  */
   
+  /*
 let leq_leftmost =
-  fun (n: nat) (t: tree<nat>) ->
+  fix (lm: nat -> tree<nat> -> bool) (n: nat) (t: tree<nat>) ->
   match t with
-  | Leaf -> True
+  | Leaf -> True 
   | Node t1 x t2 ->
-    (fix (lm: tree<nat> -> bool) (t: tree<nat>) ->
-      assert Node t1 x t2 <- t in
-      match t1 with
-      | Leaf -> leq_nat n x
-      | Node t1' y t2' -> lm t1
-      end) t
+    match t1 with
+    | Leaf -> leq_nat n x
+    | Node t1' y t2' -> lm n t1
+    end
   end
-  
+*/
+
 let sorted_tree = 
   fix (srtd: tree<nat> -> bool) (t: tree<nat>) ->
   match t with

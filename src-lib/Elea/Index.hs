@@ -122,6 +122,10 @@ instance Substitutable t => Substitutable [t] where
   type Inner [t] = Inner t
   substAt i x = map (substAt i x)
   
+instance Substitutable t => Substitutable (t, t) where
+  type Inner (t, t) = Inner t
+  substAt i x (t1, t2) = (substAt i x t1, substAt i x t2)
+  
 instance (Ord t, Substitutable t) => Substitutable (Set t) where
   type Inner (Set t) = Inner t
   substAt i x = Set.map (substAt i x)

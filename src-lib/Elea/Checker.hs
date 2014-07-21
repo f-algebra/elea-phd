@@ -48,7 +48,7 @@ constrainedToConstant constrs term@(App fix@(Fix {}) args) = do
   -- Unwrap the fixpoint, apply the constraints and simplify the term
   simp_t = id
   --  . 
---   . traceMe "[checker] after second simplification:\n"
+   -- . traceMe "[checker] after second simplification:\n"
 
     -- This bit is a teensy bit hacky but it seems to work. 
     -- Some unreachable branches were not being properly removed
@@ -63,9 +63,11 @@ constrainedToConstant constrs term@(App fix@(Fix {}) args) = do
     . Env.trackOffset
     . Fold.rewriteM unwrapNonFreeFix
     
-  --  . traceMe "[checker] before second simplification:\n"
+   -- . traceMe "[checker] before second simplification:\n"
   
     . Simp.quick
+    
+   -- . traceMe "[checker] before first simplification:\n"
     -- Bring all pattern matches on variables topmost, so we unroll 
     -- functions based on the unwrapped fixpoint recursion scheme.
     . Eval.floatVarMatches
@@ -91,14 +93,11 @@ constrainedToConstant constrs term@(App fix@(Fix {}) args) = do
     freeTerms (Unr _) = 
       return mempty
     freeTerms term = do
-      offset <- Env.offset
-      if not (Indices.lowerableBy offset term)
-      then Fail.here -- trace ("\n\n\nfailed on:\n" ++ show term) $ Fail.here
-      else 
-     -- Fail.unless (Indices.lowerableBy offset term)
-        return
-          . Set.singleton 
-          $ Indices.lowerMany offset term
+      offset <- Env.offset 
+      Fail.unless (Indices.lowerableBy offset term)
+      return
+        . Set.singleton 
+        $ Indices.lowerMany offset term
 
   unwrapNonFreeFix :: Term -> MaybeT Env.TrackOffset Term
   unwrapNonFreeFix term@(App fix@(Fix {}) args) = do

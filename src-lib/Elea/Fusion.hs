@@ -45,6 +45,7 @@ run = runSteps (map Type.checkStep (fission_steps ++ fusion_steps))
     , Fold.rewriteOnceM expressMatch
     , Fold.rewriteOnceM repeatedArg
     , Fold.rewriteOnceM fixfix
+    , Fold.rewriteOnceM fixMatch
     , Fold.rewriteOnceM decreasingFreeVars
     , Fold.rewriteOnceM matchFix
     ]
@@ -82,7 +83,7 @@ runSteps steps term = do
 -- | Apply any rewrites defined by pattern matches
 expressMatch :: forall m . (Fail.Can m, Env.MatchRead m) => Term -> m Term
 expressMatch term@(App (Fix {}) _) = do
-  ms <- Env.findMatches (== term)
+  ms <- Env.findMatches ((== term) . fst)
   Fail.when (length ms == 0)
   if length ms > 1
   -- If we have more than one potential constructor match then we are down
@@ -99,22 +100,26 @@ fixfix :: forall m . (FusionM m, Fail.Can m) => Term -> m Term
 fixfix oterm@(App ofix@(Fix {}) oargs) 
   -- Check this is not a partially applied fixpoint
   -- since I'm not sure what happens in this case.
-  | Term.inductivelyTyped oterm = id
+  | Term.inductivelyTyped oterm = do
+    oargs' <- mapM Term.revertEnvMatches oargs
+    id
       -- Broadcast the discovery
-      . Discovery.equalsM oterm
+      . Discovery.equalsM (App ofix oargs')
       -- Pick the first one which does not fail
       . Fail.choose
       -- Run fixfixArg on every decreasing fixpoint argument position
-      . map fixfixArg
-      . filter (Term.isFix . Term.leftmost . (oargs !!))
+      . map (fixfixArg oargs')
+      . filter (Term.isFix . Term.leftmost . (oargs' !!))
       $ Term.decreasingArgs ofix
   where
   -- Run fixfix fusion on the argument at the given position
-  fixfixArg :: Int -> m Term
-  fixfixArg arg_i =
+  fixfixArg :: [Term] -> Int -> m Term
+  fixfixArg oargs arg_i =
     -- Generalise the arguments of the outer fixpoint
     Term.generaliseArgs oterm outerGeneralised
     where
+    oterm = App ofix oargs
+    
     outerGeneralised :: Indices.Shift -> Term -> m Term
     outerGeneralised shiftOuter (App ofix' oargs') =
       -- Generalise the arguments of the inner fixpoint
@@ -272,10 +277,7 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
   
   extra_matches <- Env.findMatches (overlappingMatch (map fst useful_matches))
   let matches = nubOrd (useful_matches ++ extra_matches)
-  
-  -- Check whether we have already tried fusing this set of matches into
-  -- the fixpoint.
-  let constraint_set = Set.fromList (map Constraint.fromMatch matches)
+      constraint_set = Set.fromList (map Constraint.fromMatch matches)
   
   -- Memoise our efforts for efficiency
   Memo.constraintFusion constraint_set outer_t $ do
@@ -292,16 +294,16 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
     -- more than once within this function
     let fusionFailed = do
           let msg = "\n[match-fix fusion] failed."
-                ++ "\nConstraints:\n" ++ cons_s
-                ++ "\n\nTarget:\n" ++ outer_s
-                ++ "\n\nConstant:\n" ++ const_s 
+                ++ "\nconstraints:\n" ++ cons_s
+                ++ "\n\ntarget:\n" ++ outer_s
+                ++ "\n\nconstant:\n" ++ const_s 
           trace msg Fail.here
     
     let msg1 = "\n[match-fix fusion] hypothesised that:\n" ++ cons_s 
           ++ "\n\ncollapses:\n" ++ outer_s 
           ++ "\n\ninto constant term:\n" ++ const_s
           
-    when (isNothing mby_const) fusionFailed
+    when (isNothing mby_const) Fail.here -- fusionFailed
     let Just const_t = mby_const
   
     -- We apply match-fix fusion for every match
@@ -316,16 +318,16 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
     -- so we can output it with 'Discovery.equals'
     let all_constraints = 
           concatMap (Constraint.matchContext result_ty) matches
-        from_t = Context.apply all_constraints outer_t 
-        fused_t' = Constraint.removeAll fused_t
-    Discovery.equals from_t fused_t'
-    return fused_t'
+        from_t = Context.apply all_constraints outer_t
+    Discovery.equals from_t fused_t
+    return fused_t
   where
   result_ty = Type.get outer_t
   
   -- Whether a pattern match should be fused into the current fixpoint.
   -- We also check that one of the strict arguments of each term match.
-  usefulMatch match_t@(App (Fix {}) m_args) =
+  usefulMatch :: (Term, Term) -> Bool
+  usefulMatch (match_t@(App (Fix {}) m_args), _) =
     True -- all Term.isSimple m_args 
     && not (Set.null shared_terms)
     where
@@ -333,7 +335,8 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
       (Set.intersection `on` Eval.strictTerms) outer_t match_t
   usefulMatch _ = False
   
-  overlappingMatch useful_matches match_t@(App (Fix {}) m_args) =
+  overlappingMatch :: [Term] -> (Term, Term) -> Bool
+  overlappingMatch useful_matches (match_t@(App (Fix {}) m_args), _) =
     all Term.isSimple m_args
     && overlapsWith outer_t
     && any overlapsWith useful_matches
@@ -352,12 +355,16 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
   -- Will write 'True' if fusion ever succeeds.
   fuseMatches :: [(Term, Term)] -> Term -> m Term
   fuseMatches matches term =
-    foldrM fuseMatch term matches
+    -- Using 'foldl' is important here, since 'useful_matches' will be the 
+    -- firsts ones in the list and they need to be fused in first,
+    -- otherwise the 'extra_matches' won't fuse properly, since they'll
+    -- have nothing to fuse into.
+    foldlM fuseMatch term matches
     where
-    fuseMatch :: (Term, Term) -> Term -> m Term
-    fuseMatch _ with_t
+    fuseMatch :: Term -> (Term, Term) -> m Term
+    fuseMatch with_t _
       | (not . isFix . leftmost) with_t = return with_t
-    fuseMatch (match_t, con_t) with_t =
+    fuseMatch with_t (match_t, con_t) =
       -- Generalise any function calls inside the term arguments
       Term.generaliseTerms func_calls (match_t, with_t) generalised 
       where
@@ -495,4 +502,87 @@ decreasingFreeVars orig_t@(App fix@(Fix {}) orig_args) = do
         
 decreasingFreeVars _ =
   Fail.here
+  
+  
+fixMatch :: forall m . (FusionM m, Fail.Can m, Env.MatchRead m) 
+  => Term -> m Term
+fixMatch inner_t@(App (Fix {}) args) = do
+  arg_ms <- Env.findMatches argVarMatch
+  Fail.when (null arg_ms)
+  fuseMatch (head arg_ms)
+  where
+  -- Any pattern match which has a pattern variable as an argument to 
+  -- the inner fixpoint.
+  argVarMatch :: (Term, Term) -> Bool
+  argVarMatch (App (Fix {}) _, App (Con {}) xs) = 
+    any (`elem` args) xs
+  argVarMatch _ = False
+  
+  -- Fuse the fixpoint of that match
+  fuseMatch :: (Term, Term) -> m Term
+  fuseMatch match@(App match_fix _, App (Con p_con) p_args) = 
+    Fix.fusion simplify ctx match_fix
+    where 
+    ctx = Context.make (buildContext inner_t match)
+    Just inner_i = findIndex (`elem` p_args) args
+    Just pat_i = findIndex (== (args !! inner_i)) p_args 
+    orig_t = Context.apply ctx (Var 0)
+    
+    buildContext :: Term -> (Term, Term) -> Term -> Term
+    buildContext 
+        inner_t@(App _ args)
+        (App _ match_args, App (Con p_con) p_args) 
+        gap_t = 
+      Case (App gap_t match_args) alts
+      where
+      pat_var = arguments (Term.altPattern p_con) !! pat_i
+      alts = id
+        . map makeAlt
+        . Type.constructors
+        $ get Type.constructorOf p_con
+      
+      makeAlt :: Constructor -> Alt
+      makeAlt con = Alt con alt_bs alt_t
+        where
+        App inner_f' args' = Indices.liftMany (length alt_bs) inner_t
+        inner_t' = App inner_f' (setAt inner_i pat_var args')
+        
+        alt_bs = Type.makeAltBindings con
+        alt_t | con /= p_con = Unr (Type.get inner_t)
+              | otherwise = inner_t'
+              
+          
+    -- Our custom inner simplification which will get run during fixpoint fusion.
+    -- It runs the simplifier then expresses the pattern match wherever possible.
+    simplify :: Term -> m Term
+    simplify = 
+      Env.alsoTrack 0 . Fold.transformM express . Simp.run
+      where
+      express :: Term -> Env.AlsoTrack Index m Term
+      express term@(App (Fix {}) i_args)
+        | Unifier.exists term inner_t = do
+          fix_f <- Env.tracked
+          ms <- Env.findMatches (correctMatch fix_f)
+          if null ms
+          then return term
+          else do
+            let ctx = Context.make (buildContext term (head ms))
+                term' = Context.apply ctx (Var fix_f)
+                orig_t' = Indices.liftMany (succ (enum fix_f)) orig_t
+            if Unifier.exists term' orig_t'
+            then return term'
+            else return term
+        where
+        correctMatch :: Index -> (Term, Term) -> Bool
+        correctMatch fix_f (App (Var f) _, App (Con p_con') p_args') = 
+          fix_f == f 
+          && p_con == p_con' 
+          && p_args' !! pat_i == i_args !! inner_i
+        correctMatch _ _ = False
+      express other = 
+        return other
+    
+  
+            
+fixMatch _ = Fail.here
           

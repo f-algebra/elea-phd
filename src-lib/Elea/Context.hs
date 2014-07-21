@@ -51,7 +51,7 @@ toLambda ty ctx = id
   . apply (Indices.lift ctx) 
   $ Var 0
   
--- | Returns whether there is any gap in the given context.
+-- | Returns whether there is any g in the given context.
 isConstant :: Context -> Bool
 isConstant =
   not . Indices.containsOmega . get term

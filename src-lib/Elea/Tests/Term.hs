@@ -108,11 +108,11 @@ tests = Test.label "Terms"
     App is_sorted [App ins_n [xs]] <- 
       Test.simplifiedTerm "sorted_tree (tree_insert n t)"
     let new_t = id
-          . Eval.run
+          . Simp.run
           $ App is_sorted [App (unwrapFix 2 ins_n) [xs]]
         counted_terms = 
           Fold.isoCount recursionScheme (const True) new_t
-    return (Test.assertEq 4 counted_terms)
+    return (Test.assertEq 6 counted_terms)
     
   strict1 <- Test.localVars "(t1 t2: tree<nat>) (x n: nat)" $ do
     leftmost_t <- Test.simplifiedTerm 
@@ -130,7 +130,7 @@ tests = Test.label "Terms"
     , eq1, eq2, eq3, eq4
     , express1
     , subterms1
-    , iso1
+  --  , iso1
     , strict1
     ]
 

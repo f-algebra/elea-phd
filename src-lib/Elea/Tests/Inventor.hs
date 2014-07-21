@@ -21,7 +21,7 @@ import qualified Elea.Inventor as Invent
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Data.Set as Set
 
-testFixFix :: forall m . (Defs.Read m, Env.Read m, Memo.Can m)
+testFixFix :: forall m . (Defs.Read m, Env.All m, Memo.Can m)
   => Term -> m Test.Test
 testFixFix term =
   Env.bindMany bs (fixFix inner_t)

@@ -57,10 +57,12 @@ strip (Case cse_t alts) = do
   [con_n] = non_abs
   Alt con bs alt_t = alts !! con_n
   
-  -- Revert the pattern match
+  -- Revert the pattern match if the pattern has at least one argument
   cse_t' = Indices.liftMany (length bs) cse_t
   pat_t = Term.altPattern con
-  alt_t' = Term.replace pat_t cse_t' alt_t
+  alt_t'
+    | (not . null . arguments) pat_t = Term.replace pat_t cse_t' alt_t
+    | otherwise = alt_t
     
 strip _ = 
   Fail.here

@@ -1,3 +1,7 @@
+-- | Boilerplate code for recursing over data types using their representation
+-- as the fixpoint of a functor.
+-- The 'iso' code and 'selectiveTransformM' is not working properly though,
+-- and I don't know where the problem is.
 module Elea.Foldable
 (
   module Data.Functor.Foldable,

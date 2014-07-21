@@ -15,6 +15,7 @@ module Elea.Type
   isInd, isFun, fromBase,
   unflatten, flatten, unfold, argumentCount,
   recursiveArgs, nonRecursiveArgs, recursiveArgIndices,
+  constructors,
   isBaseCase, isRecursive, 
   makeAltBindings,
   
@@ -329,8 +330,8 @@ isRecursive = not . all isBaseCase . constructors
 -- | Given a specific constructor index of an inductive type, return 
 -- appropriate bindings for a pattern match on that constructor.
 -- > makeAltBindings nlist 1 = [Bind "B0" nat, Bind "B1" nlist]
-makeAltBindings :: Ind -> Nat -> [Bind]
-makeAltBindings ind con_n =
+makeAltBindings :: Constructor -> [Bind]
+makeAltBindings (Constructor ind con_n) =
   zipWith Bind arg_names arg_tys
   where
   Bind _ con_ty = unfold ind `nth` enum con_n

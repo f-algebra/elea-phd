@@ -32,7 +32,7 @@ import qualified Elea.Monad.Memo.Class as Memo
 import qualified Data.Set as Set
 
 
-run :: forall m . (Env.Read m, Defs.Read m, Fail.Can m, Memo.Can m)
+run :: forall m . (Env.All m, Defs.Read m, Fail.Can m, Memo.Can m)
   -- | A simplification function to be called within run.
   => (Term -> m Term)
   -> Term 
@@ -113,18 +113,14 @@ run simplify f_term@(App f_fix@(Fix {}) f_args) g_term = do
     
     makeAlt :: Nat -> m Alt
     makeAlt con_n = do
-      -- Make sure this constraint fusion will be successful
-      if False --isNothing (Checker.constrainedToConstant (Set.singleton constr) g_term)
-      then 
-        trace ("[meep] failed on " ++ show constr ++ " for " ++ show g_term) Fail.here
-      else do
-        alt_t <- Fix.constraintFusion simplify constr g_term
-        return 
-          . Alt con alt_bs
-          $ Indices.liftMany (length alt_bs) alt_t
+      alt_t <- Fix.constraintFusion simplify constr g_term
+      return 
+        . Alt con alt_bs
+        . Constraint.removeAll
+        $ Indices.liftMany (length alt_bs) alt_t
       where
       constr = Constraint.make con f_term
-      alt_bs = Type.makeAltBindings f_ind con_n
+      alt_bs = Type.makeAltBindings con
       con = Constructor f_ind con_n
     
 
