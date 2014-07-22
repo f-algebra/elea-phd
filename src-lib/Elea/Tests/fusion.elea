@@ -138,13 +138,7 @@ let srtd_tree_ins =
   end
 
 prop "sorted flatten": forall (t: tree<nat>) (n: nat) (xs: list<nat>) ->
-  sorted_tree (tree_insert n t)
-  
-prop "infer leftmost": forall (t: tree<nat>) (n: nat) ->
-  match flatten<nat> t with
-  | Nil -> True
-  | Cons x xs -> leq_nat x n
-  end
+  implies (is_sorted (flatten<nat> t)) (is_sorted (flatten<nat> (tree_insert n t)))
 
 prop "rightmost ins": forall (t: tree<nat>) (n: nat) (x: nat) ->
   implies (and (leq_nat x n) (rightmost_leq t n)) 
@@ -188,3 +182,26 @@ prop "prop 9": forall (i j k: nat) ->
 prop "height mirror" <A>: forall (t: tree<A>) ->
   height<A> (mirror<A> t) = height<A> t
 */
+
+ 
+prop "unfold productive fix": forall (xs: list<nat>) ->
+  (match append<nat> xs (Cons<nat> 1 Nil<nat>) with
+   | Nil -> 0 | Cons y ys -> y end)
+  =
+  (match xs with
+   | Nil -> 1 | Cons y ys -> y end)
+   
+prop "unfold branching fix"<A>: forall (t: tree<A>) ->
+  (match flatten<A> t with
+   | Nil -> 0 | Cons y ys -> 1 end)
+  = 
+  (match t with
+   | Leaf -> 0 | Node t1 x t2 -> 1 end)
+   
+prop "unfold branching fix 2": forall (t: tree<nat>) (n: nat) ->
+  (match tree_insert n t with
+    | Leaf -> 1
+    | Node t1 x t2 -> 2 
+    end) = 2
+    
+

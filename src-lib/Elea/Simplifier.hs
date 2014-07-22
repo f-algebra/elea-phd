@@ -47,6 +47,7 @@ steps = Eval.steps ++
   , freeCaseFix   
   , unfoldWithinFix
   , finiteCaseFix
+  , unsafeUnfoldFixInj
   ]
   where
   -- Transformation steps do not require sub terms to be rewritten upon success.
@@ -226,8 +227,12 @@ uselessFix _ = Fail.here
 -- which is defined enough to fully reduce all matches on that argument.
 unfoldFixInj :: Fail.Can m => Term -> m Term
 unfoldFixInj term@(App fix@(Fix _ _ fix_t) args)
-  | any isSafeConArg (Term.decreasingAppArgs term) = 
-    return (Eval.run (app (Term.unfoldFix fix) args))
+  | any isSafeConArg (Term.decreasingAppArgs term) = id
+    return   
+    --  . traceMe "[unfold fix-inj] after"
+      . Eval.run 
+    --  . traceMe "[unfold fix-inj] before"
+      $ app (Term.unfoldFix fix) args
   where
   -- Check whether an argument is a constructor, and will reduce all pattern 
   -- matches upon it.
@@ -340,6 +345,9 @@ finiteCaseFix term@(Case (App fix@(Fix _ _ fix_t) args) alts) = do
   Fail.when (0 `Indices.freeWithin` simp_t)
  
   return  
+   -- . traceMe "[finite case-fix] after"
+    . extendedEval
+   -- . traceMe "[finite case-fix] before"
     $ Case (App (Term.unfoldFix fix) args) alts
   where
   simp_t = id
@@ -372,7 +380,6 @@ finiteCaseFix term@(Case (App fix@(Fix _ _ fix_t) args) alts) = do
       removeUnused (Var x)
         | Set.member x free_vars = Var x
         | otherwise = Var Indices.omega
-    
   
 finiteCaseFix _ = Fail.here
 
@@ -464,7 +471,6 @@ unfoldWithinFix _ = Fail.here
 -- | Removes a pattern match if every branch returns the same value.
 constantCase :: forall m . Fail.Can m => Term -> m Term
 constantCase (Case _ alts) = do
-  -- Fail.when (any (isCase . get altInner) alts)
   (alt_t:alt_ts) <- mapM loweredAltTerm alts
   Fail.unless (all (== alt_t) alt_ts)
   return alt_t
@@ -474,3 +480,25 @@ constantCase (Case _ alts) = do
     Indices.tryLowerMany (length bs) alt_t
     
 constantCase _ = Fail.here
+
+
+-- | Need to unroll fixpoints where a recursive argument is a uninterpreted
+-- function call. Useful sometimes for fixfix fusion, but can cause loops
+-- if you give it weird functions.
+unsafeUnfoldFixInj :: Fail.Can m => Term -> m Term
+unsafeUnfoldFixInj (App fix@(Fix {}) args)
+  | any unfoldable args = id
+    . return
+    $ app (Term.unfoldFix fix) args
+  where 
+  rec_args = map (args !!) (Term.decreasingArgs fix)
+  
+  unfoldable (App (Con _) args) = 
+    any (Fold.any functionVar) args
+    where 
+    functionVar (App (Var _) (_:_)) = True
+    functionVar _ = False
+  unfoldable _ = False
+  
+unsafeUnfoldFixInj _ =
+  Fail.here

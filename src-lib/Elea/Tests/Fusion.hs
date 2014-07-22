@@ -4,7 +4,6 @@ module Elea.Tests.Fusion
 )
 where
 
-import Prelude()
 import Elea.Prelude
 import Elea.Term
 import qualified Elea.Monad.Env as Env
@@ -28,6 +27,6 @@ tests = Test.label "Fusion"
   Test.loadPrelude
   eqs <- Test.loadFile "src-lib/Elea/Tests/fusion.elea"
   mapM checkEquation
-    . filter ((/= "sorted flatten") . get equationName)
+    . filter ((== "leftmost impl") . get equationName)
     $ eqs
 

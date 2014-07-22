@@ -37,21 +37,20 @@ type FusionM m = (Defs.Read m, Env.All m, Discovery.Tells m, Memo.Can m)
  
 {-# SPECIALISE run :: Term -> Fedd Term #-}
 
-run :: FusionM m => Term -> m Term
-run = runSteps (map Type.checkStep (fission_steps ++ fusion_steps))
+run :: forall m . FusionM m => Term -> m Term
+run = Fold.rewriteStepsM all_steps
   where
-  fusion_steps =
+  all_steps :: [Term -> MaybeT m Term]
+  all_steps = Fission.steps ++
     [ const Fail.here
-    , Fold.rewriteOnceM expressMatch
-    , Fold.rewriteOnceM repeatedArg
-    , Fold.rewriteOnceM fixfix
-    , Fold.rewriteOnceM fixMatch
-    , Fold.rewriteOnceM decreasingFreeVars
-    , Fold.rewriteOnceM matchFix
+    , expressMatch
+    , repeatedArg
+    , fixfix
+    , fixMatch 
+  --  , Simp.finiteCaseFix
+    , decreasingFreeVars
+    , matchFix 
     ]
-   
-  fission_steps =
-    map Fold.rewriteOnceM Fission.steps
     
     
 runSteps :: FusionM m => 
@@ -129,6 +128,9 @@ fixfix oterm@(App ofix@(Fix {}) oargs)
       
       innerGeneralised :: Indices.Shift -> Term -> m Term
       innerGeneralised shiftInner (App ifix iargs) = do 
+        let ifix_name = get Type.bindLabel (Term.binding ifix)
+            ofix_name = get Type.bindLabel (Term.binding ofix)
+        Fail.when (ifix_name == "build" && ofix_name == "flat")
         Fix.fusion (simplify ctx) ctx ifix
         where
         -- The context is the outer term, with all variables generalised
@@ -296,7 +298,7 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
           ++ "\n\ncollapses:\n" ++ outer_s 
           ++ "\n\ninto constant term:\n" ++ const_s
           
-    when (isNothing mby_const) fusionFailed
+    when (isNothing mby_const) Fail.here
     let Just const_t = mby_const
   
     -- We apply match-fix fusion for every match
@@ -304,7 +306,7 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
       . trace msg1
       $ fuseMatches matches outer_t
       
-    when (fused_t /= const_t) Fail.here --fusionFailed
+    when (fused_t /= const_t) fusionFailed
     
     -- Express all the matches we fused in as a single constraint,
     -- so we can show which term we fused together to make 'fused_t',
@@ -547,8 +549,10 @@ fixMatch inner_t@(App (Fix {}) args) = do
     -- Our custom inner simplification which will get run during fixpoint fusion.
     -- It runs the simplifier then expresses the pattern match wherever possible.
     simplify :: Term -> m Term
-    simplify = 
-      Env.alsoTrack 0 . Fold.transformM express . Simp.run
+    simplify term = do
+      term' <- run term
+      Env.alsoTrack 0 
+        $ Fold.transformM express term'
       where
       express :: Term -> Env.AlsoTrack Index m Term
       express term@(App (Fix {}) i_args)
@@ -573,8 +577,6 @@ fixMatch inner_t@(App (Fix {}) args) = do
         correctMatch _ _ = False
       express other = 
         return other
-    
-  
             
 fixMatch _ = Fail.here
           
