@@ -11,7 +11,9 @@ module Elea.Unification.Map
   lookup, 
   insert,
   toList,
-  elems
+  elems,
+  lookupLG,
+  lookupAlphaEq,
 )
 where
 
@@ -50,37 +52,56 @@ empty = UMap Map.empty
 singleton :: forall k a . (Ord k, Unifiable k) => k -> a -> UMap k a
 singleton k a = insert k a empty
 
--- | The insertion operation favours the more general key w.r.t unification.
--- So if @k1 -> a1@ is inside the map, and we insert @k2 -> a2@, then:
---   1. If @Unifier.exists k1 k2@ then we don't insert @k2 -> a2@, since @k1@ 
---      is the more general.
---   2. If @Unifier.exists k2 k1@ then we remove @k1 -> a1@ 
---      and insert @k2 -> a2@.
---   3. Otherwise we just insert @k2 -> a2@ and keep @k1 -> a1@.
 insert :: forall k a . (Ord k, Unifiable k) 
   => k -> a -> UMap k a -> UMap k a
 insert k a = UMap . Map.alter ins (pure k) . getMap
   where
   ins :: Maybe [(k, a)] -> Maybe [(k, a)]
   ins Nothing = Just [(k, a)]
+  ins (Just ks) = Just ((k, a) : filter (not . alphaEq k . fst) ks)
+  
+  {-
   ins (Just ks) 
     | any ((`subsumes` k) . fst) ks = Just ks
     | otherwise = Just ((k, a) : filter ((k `subsumes`) . fst) ks)
     where
     subsumes :: k -> k -> Bool
     subsumes = exists
+    -}
   
-lookup :: forall m k a . (Fail.Can m, Unifiable k) 
-  => k -> UMap k a -> m (Unifier (Inner k), a)
-lookup k (UMap dmap) = do
-  kas <- Fail.mapLookup (pure k) dmap
-  Fail.choose (map findUni kas)
+lookup :: forall m k a . (Ord (Inner k), Unifiable k)
+  => k -> UMap k a -> [(k, (Unifier (Inner k), a))]
+lookup k (UMap dmap) = 
+  case Map.lookup (pure k) dmap of
+    Nothing -> []
+    Just kas -> mapMaybe findUni kas
   where
-  findUni :: (k, a) -> m (Unifier (Inner k), a)
+  findUni :: (k, a) -> Maybe (k, (Unifier (Inner k), a))
   findUni (k', a) = do
     uni <- find k' k
-    return (uni, a)
-    
+    return (k', (uni, a))
+
+-- | Lookup a least general unifier. Not guaranteed to be unique.
+lookupLG :: (Fail.Can m, Ord (Inner k), Unifiable k) 
+  => k -> UMap k a -> m (Unifier (Inner k), a)
+lookupLG k map = do
+  Fail.when (null lgs)
+  return (snd (head lgs))
+  where
+  lgs = leastGeneral (lookup k map)
+  
+  
+lookupAlphaEq :: (Fail.Can m, Ord (Inner k), Unifiable k) 
+  => k -> UMap k a -> m (Unifier (Inner k), a)
+lookupAlphaEq k map = do
+  Fail.when (null kuas)
+  return (snd (head kuas))
+  where
+  kuas = id
+    . filter (\(k', _) -> alphaEq k k')
+    $ lookup k map
+  
+                             
 toList :: UMap k a -> [(k, a)]
 toList = concat . Map.elems . getMap
 

@@ -1,7 +1,9 @@
 module Elea.Unification 
 (
   Unifier, Unifiable (..), 
-  union, unions, singleton, exists
+  union, unions, singleton, exists,
+  overlapping,
+  leastGeneral, mostGeneral,
 )
 where
 
@@ -29,6 +31,9 @@ class (Eq (Inner t), Substitutable t) => Unifiable t where
   -- inequality of hashes implies inequality of orignals.
   gcompare :: t -> t -> Ordering
   
+  -- | Whether two things are equal modulo renaming
+  alphaEq :: t -> t -> Bool
+  
 
 singleton :: Index -> a -> Unifier a
 singleton = Map.singleton
@@ -52,6 +57,25 @@ unions = foldrM union mempty
 exists :: Unifiable t => t -> t -> Bool
 exists t = isJust . find t
 
+-- | A unifier is \overlapping\ if it rewrites different variables to the
+-- same value, viz. it creates variable overlap where none previously existed.
+overlapping :: Ord t => Unifier t -> Bool
+overlapping = not . isNub . Map.elems
+
+-- | Filter out any elements which have a less general element elsewhere in 
+-- the list
+leastGeneral :: Unifiable k => [(k, a)] -> [(k, a)]
+leastGeneral = screen lg
+  where
+  lg xs (k, _) ys = 
+    not (any (\(k', _) -> exists k k') (xs ++ ys))
+    
+mostGeneral :: Unifiable k => [(k, a)] -> [(k, a)]
+mostGeneral = screen mg
+  where
+  mg xs (k, _) ys = 
+    not (any (\(k', _) -> exists k' k) (xs ++ ys))
+    
 
 instance Unifiable t => Unifiable [t] where
   find xs ys = do
@@ -64,6 +88,10 @@ instance Unifiable t => Unifiable [t] where
     
   gcompare xs = 
     mconcat . zipWith gcompare xs
+    
+  alphaEq ts ts' = 
+    nlength ts == length ts'
+    && and (zipWith alphaEq ts ts')
 
     
 instance (Ord t, Unifiable t) => Unifiable (Set t) where
@@ -75,3 +103,7 @@ instance (Ord t, Unifiable t) => Unifiable (Set t) where
     
   gcompare xs ys = 
     mconcat $ zipWith gcompare (toList xs) (toList ys)
+    
+  alphaEq ts ts' = 
+    alphaEq (Set.toAscList ts) (Set.toAscList ts')
+

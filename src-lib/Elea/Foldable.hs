@@ -11,7 +11,8 @@ module Elea.Foldable
   isoFindM, isoAnyM, isoAllM, isoRewriteOnceM, isoFoldM,
   isoRewrite, isoTransform, isoFind, isoRewriteM',
   rewriteM, foldM, rewriteOnceM, collectM, isoCollectM,
-  rewriteM',
+  rewriteM', isoRewritePhasesM, isoRewriteStepsM',
+  rewritePhases,
   allM, findM, anyM, any, all, isoFold, isoAny, isoAll, find,
   collect, isoCollect,
   transform, rewrite, recover,
@@ -230,7 +231,53 @@ isoRewriteStepsM iso steps =
   isoRewriteM iso rrwt
   where
   rrwt t = MaybeT $ firstM (map (\f -> runMaybeT (f t)) steps)
-   
+
+isoRewriteStepsM' :: (Monad m, TransformableM (WriterT Monoid.Any m) t) =>
+  Iso a t -> [a -> MaybeT m a] -> a -> MaybeT m a
+isoRewriteStepsM' iso steps = 
+  isoRewriteM' iso rrwt
+  where
+  rrwt t = MaybeT $ firstM (map (\f -> runMaybeT (f t)) steps)
+  
+
+isoRewritePhasesM :: 
+  forall m t a . ( Monad m, TransformableM m t
+                 , TransformableM (WriterT Monoid.Any m) t ) 
+  => Iso a t -> [[a -> MaybeT m a]] -> a -> m a
+isoRewritePhasesM iso phases x = do
+  mby_x' <- runMaybeT (first_step x)
+  let x' = fromMaybe x mby_x'
+  rewriteTopLevel other_steps x'
+  where
+  (first_step : other_steps) = map (isoRewriteStepsM' iso) phases
+  
+  rewriteTopLevel :: [a -> MaybeT m a] -> a -> m a
+  rewriteTopLevel (f:fs) x = do
+    mby_x' <- runMaybeT (f x)
+    case mby_x' of
+      Nothing -> rewriteTopLevel fs x
+      Just x' -> isoRewritePhasesM iso phases x'
+  rewriteTopLevel [] x = 
+    return x
+
+
+rewritePhasesM :: ( Monad m, TransformableM m t
+                  , TransformableM (WriterT Monoid.Any m) t ) 
+  => [[t -> MaybeT m t]] -> t -> m t
+rewritePhasesM = isoRewritePhasesM id
+
+rewritePhases :: ( TransformableM Identity t
+                 , TransformableM (Writer Monoid.Any) t ) 
+  => [[t -> Maybe t]] -> t -> t
+rewritePhases phases = runIdentity . rewritePhasesM phases'
+  where
+  phases' = map (map (mby .)) phases 
+  
+  mby :: Maybe a -> MaybeT Identity a
+  mby (Just x) = return x
+  mby Nothing = Fail.here
+  
+
 rewriteStepsM :: (Monad m, TransformableM m t) =>
   [t -> MaybeT m t] -> t -> m t
 rewriteStepsM = isoRewriteStepsM id

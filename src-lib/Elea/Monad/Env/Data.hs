@@ -10,6 +10,7 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Index
 import Elea.Monad.Env ()
+import qualified Elea.Index as Indices
 import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Type as Type
 
@@ -34,5 +35,10 @@ bindAt at b = id
   . modify dbBinds (insertAt (enum at) b)
 
 matched :: Term -> Term -> Data -> Data
-matched t1 t2 = modify dbMatches (++ [(t1, t2)])
+matched t1 t2 = modify dbMatches ((++ [(t1, t2)]) . replace)
+  where
+  replace :: [(Term, Term)] -> [(Term, Term)]
+  replace | Var x <- t1 = map (Indices.replaceAt x t2)
+          | otherwise = id
+
 

@@ -63,6 +63,9 @@ library
                      
   exposed-modules:   Elea.Tests.All
                      Elea.Prelude
+                     Elea.Testing
+                     Elea.Terms
+                     Elea.Tests.Fusion
                      
                      
 executable elea  

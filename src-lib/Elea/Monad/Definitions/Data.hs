@@ -57,7 +57,7 @@ getName (Lam {}) _ = Fail.here
 getName term _ 
   | (not . isFix) term = Fail.here
 getName term (get dbTermNames -> name_map) = do
-  (uni, name) <- UMap.lookup term' name_map
+  (uni, name) <- UMap.lookupLG term' name_map
   
   -- Every free variable needs to have been bound, so we just check the 
   -- sorted list of indices is equal to the list of all indices

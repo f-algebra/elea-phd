@@ -46,12 +46,13 @@ tests = Test.label "Checker"
    
     rightleq_y <- Test.simplifiedTerm "rightmost_leq t y" 
     sorted_t <- Test.simplifiedTerm "sorted_tree t" 
-    let srtd_con = Set.fromList [Constraint.fromMatch (sorted_t, true)] 
-        mby_rightleq_const = Checker.constrainedToConstant srtd_con rightleq_y
+    let srtd_con = Constraint.fromMatch (sorted_t, true)
+        srtd_cons = Set.fromList [srtd_con]
+        mby_rightleq_const = 
+          Checker.constrainedToConstant srtd_cons rightleq_y
         test_tree = Test.assertEq Nothing mby_rightleq_const
         
-   
-    let mby_srtd_srtd = Checker.constrainedToConstant srtd_con sorted_t
+    let mby_srtd_srtd = Checker.constrainedToConstant srtd_cons sorted_t
         test_tree2 = Test.assertEq (Just true) mby_srtd_srtd
         
         not_srtd_con = Set.singleton (Constraint.fromMatch (sorted_t, false))
@@ -72,12 +73,19 @@ tests = Test.label "Checker"
         mby_tree5 = Checker.constrainedToConstant rleq_con sorted_t
         test_tree5 = Test.assertEq Nothing mby_tree5
   
+    rightleq_z <- Test.simplifiedTerm "rightmost_leq t z"
+    let rleq_z_con = Constraint.fromMatch (rightleq_z, true)
+        cons6 = Set.fromList [srtd_con, rleq_z_con]
+        mby_const6 = Checker.constrainedToConstant cons6 rightleq_y
+        test_tree6 = Test.assertEq Nothing mby_const6
+        
     -- Leaving out test_leq2 because it only works for 
     -- search depth 2, but this will stop test_srtd working
     -- which is the more important one.
     -- Also leaving out test_tree4 because the fusion step takes aaaages.
-        
+
     return (Test.list 
-      [ test_elem, test_leq, test_tree3 --, test_tree5
-      , test_tree, test_tree2, test_srtd ]) 
+      [ test_elem, test_leq, test_tree3, test_tree5
+      , test_tree, test_tree2, test_srtd, test_tree6 ]) 
+     
 

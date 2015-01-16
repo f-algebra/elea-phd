@@ -26,6 +26,20 @@ import qualified Data.Set as Set
 unwrapDepth :: Nat
 unwrapDepth = 1
 
+{-
+minimalConstraints :: Fail.Can m 
+  -- | The set of constraints we start with
+  => Set Constraint 
+  -- | The term we try to fuse them into
+  -> Term 
+  -- | The constant we guessed they collapse the term into
+  -> Term 
+  -- | A new set of constraints which are the minimum required
+  -- to collapse this term
+  -> m (Set Constraint)
+minimalConstraints
+-}
+
 -- | Checks whether a set of constraints reduces the given recursive function
 -- call to a constant.
 -- No point running match-fix fusion if they don't.
@@ -39,6 +53,7 @@ constrainedToConstant constrs term@(App fix@(Fix {}) args) = do
   else return (head free_terms)
   where    
   result_ty = Type.get term
+  fix' = Term.floatRecCallInwards fix
   
   -- Uses the context composition monoid from "Elea.Context"
   constr_ctx = id
@@ -63,7 +78,7 @@ constrainedToConstant constrs term@(App fix@(Fix {}) args) = do
     . Env.trackOffset
     . Fold.rewriteM unwrapNonFreeFix
     
-   -- . traceMe "[checker] before second simplification:\n"
+ --   . traceMe "[checker] before second simplification:\n"
   
     . Simp.quick
     
@@ -76,7 +91,7 @@ constrainedToConstant constrs term@(App fix@(Fix {}) args) = do
     -- Unwrap the fixpoint and replace the recursive call with
     -- unreachable, since we don't care about any value which 
     -- depends upon a recursive call to the fixpoint
-    $ app (Term.unwrapFix unwrapDepth fix) args
+    $ app (Term.unwrapFix unwrapDepth fix') args
 
   -- Collect the possible free return terms.
   -- This list will be empty if there are possible non-free return terms.
@@ -100,9 +115,11 @@ constrainedToConstant constrs term@(App fix@(Fix {}) args) = do
         $ Indices.lowerMany offset term
 
   unwrapNonFreeFix :: Term -> MaybeT Env.TrackOffset Term
-  unwrapNonFreeFix term@(App fix@(Fix {}) args) = do
+  unwrapNonFreeFix (Case term@(App fix@(Fix {}) args) alts) = do
     Fail.whenM (Env.lowerableByOffset term)
-    return (app (Term.unwrapFix unwrapDepth fix) args)
+    return (Case term' alts)
+    where 
+    term' = app (Term.unwrapFix unwrapDepth fix) args
   unwrapNonFreeFix _ = 
     Fail.here
 

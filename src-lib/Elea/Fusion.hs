@@ -46,8 +46,7 @@ run = Fold.rewriteStepsM all_steps
     , expressMatch
     , repeatedArg
     , fixfix
-    , fixMatch 
-  --  , Simp.finiteCaseFix
+    , fixMatch
     , decreasingFreeVars
     , matchFix 
     ]
@@ -90,6 +89,53 @@ expressMatch term@(App (Fix {}) _) = do
   then return (Unr (Type.get term))
   else let [(_, cons_t)] = ms in return cons_t
 expressMatch _ = Fail.here
+
+{-
+-- | Any pattern matches over fixpoints which would have their fixpoints
+-- unfolded after this pattern match, will be expressed within that branch
+-- as a constraint.
+expressUnfoldingMatch :: forall m . (Fail.Can m, Env.MatchRead m)
+  => Term -> m Term
+expressUnfoldingMatch cse_t@(Case (Var x) alts) = do
+  Fail.unless (Type.has cse_t)
+  ms <- Env.findMatches potentialMatch
+  alts' <- Fail.choose (map express ms)
+  return (Case (Var x) alts')
+  where
+  result_ty = Type.get cse_t
+  
+  potentialMatch (t, _) = 
+    Set.member (Var x) (Eval.strictTerms t)
+    && not (Simp.willUnfold t)
+   
+  express :: Fail.Can m => (Term, Term) -> m [Alt]
+  express (match_t, with_t) = do
+    Fail.when (all isNothing m_alts)
+    return (zipWith fromMaybe alts m_alts)
+    where
+    m_alts = map expressAlt alts
+    
+    expressAlt :: Alt -> Maybe Alt
+    expressAlt (Alt con bs alt_t) = do
+      Fail.unless (Simp.willUnfold match_t')
+      return (Alt con bs alt_t')
+      where
+      liftHere :: Indexed a => a -> a
+      liftHere = Indices.liftMany (length bs)
+      
+      match_c = Constraint.fromMatch (match_t', liftHere with_t)
+      
+      alt_t' = id
+        . Simp.run 
+        $ Constraint.apply match_c (alt_t, result_ty)
+      
+      match_t' = id               
+        . Indices.replaceAt (liftHere x) (Term.altPattern con)
+        $ liftHere match_t
+        
+expressUnfoldingMatch _ = 
+  Fail.here
+  -}
   
         
 -- | Uses fixpoint fusion on a fix with a fix as a decreasing argument.
@@ -268,54 +314,81 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
   Fail.unless (Term.inductivelyTyped outer_t)
   
   useful_matches <- Env.findMatches usefulMatch
+
+  {-
+  when (null useful_matches) $ do
+    outer_s <- showM outer_t
+    ms <- Env.matches
+    ms_s <- showM ms
+    strict_s <- showM (map (Eval.strictTerms . fst) ms)
+    trace ("\n[match-fix] no shared between:\n" ++ outer_s ++ "\n" ++ ms_s ++ "\nSTRICT:\n" ++ strict_s) 
+      Fail.here
+    -}
+    
   Fail.when (null useful_matches)
   
   extra_matches <- Env.findMatches (overlappingMatch (map fst useful_matches))
   let matches = nubOrd (useful_matches ++ extra_matches)
-      constraint_set = Set.fromList (map Constraint.fromMatch matches)
-  
+      constraints = map Constraint.fromMatch matches
+      constraint_set = Set.fromList constraints
+        
   -- Memoise our efforts for efficiency
   Memo.constraintFusion constraint_set outer_t $ do
     -- Use dynamic checking to see if these constraints could collapse 
     -- the fixpoint to a constaint, and fail if they don't.
-    let mby_const = Checker.constrainedToConstant constraint_set outer_t
-      
-    -- DEBUG
-    cons_s <- showM constraint_set
-    const_s <- showM mby_const
-    outer_s <- showM outer_t
-    
-    -- We need to invoke failure with this debug trace message
-    -- more than once within this function
-    let fusionFailed = do
-          let msg = "\n[match-fix fusion] failed."
-                ++ "\nconstraints:\n" ++ cons_s
-                ++ "\n\ntarget:\n" ++ outer_s
-                ++ "\n\nconstant:\n" ++ const_s 
-          trace msg Fail.here
-    
-    let msg1 = "\n[match-fix fusion] hypothesised that:\n" ++ cons_s 
-          ++ "\n\ncollapses:\n" ++ outer_s 
-          ++ "\n\ninto constant term:\n" ++ const_s
+    let mby_constraints' = Constraint.unfoldAll constraints
+        cons_map = id
+          . Map.fromList
+          . map (\(Constraint con t) -> (t, con))
+          $ fromJust mby_constraints'
+        mby_con = Map.lookup outer_t cons_map
+        
+    case (mby_constraints', mby_con) of
+      (Nothing, _) -> return (Unr result_ty)
+      (_, Just con)
+        | result_ty == Type.get con -> return (Con con)
+        
+      (Just constraints', Nothing) -> do
+        
+      let constraint_set' = Set.fromList constraints'
+          mby_const = Checker.constrainedToConstant constraint_set' outer_t
           
-    when (isNothing mby_const) Fail.here
-    let Just const_t = mby_const
-  
-    -- We apply match-fix fusion for every match
-    fused_t <- id
-      . trace msg1
-      $ fuseMatches matches outer_t
+      -- DEBUG
+      cons_s <- showM constraint_set'
+      const_s <- showM mby_const
+      outer_s <- showM outer_t
       
-    when (fused_t /= const_t) fusionFailed
+      -- We need to invoke failure with this debug trace message
+      -- more than once within this function
+      let fusionFailed = do
+            let msg = "\n[match-fix fusion] failed."
+                  ++ "\nconstraints:\n" ++ cons_s
+                  ++ "\n\ntarget:\n" ++ outer_s
+                  ++ "\n\nconstant:\n" ++ const_s 
+            trace msg Fail.here
+      
+      let msg1 = "\n[match-fix fusion] hypothesised that:\n" ++ cons_s 
+            ++ "\n\ncollapses:\n" ++ outer_s 
+            ++ "\n\ninto constant term:\n" ++ const_s
+            
+      when (isNothing mby_const) Fail.here -- fusionFailed 
+      let Just const_t = mby_const
     
-    -- Express all the matches we fused in as a single constraint,
-    -- so we can show which term we fused together to make 'fused_t',
-    -- so we can output it with 'Discovery.equals'
-    let all_constraints = 
-          concatMap (Constraint.matchContext result_ty) matches
-        from_t = Context.apply all_constraints outer_t
-    Discovery.equals from_t fused_t
-    return fused_t
+      -- We apply match-fix fusion for every match
+      fused_t <- id
+        . trace msg1
+        $ fuseConstraints constraints' outer_t
+        
+      when (fused_t /= const_t) fusionFailed
+      
+      -- Express all the matches we fused in as a single constraint,
+      -- so we can show which term we fused together to make 'fused_t',
+      -- so we can output it with 'Discovery.equals'
+      let all_constraints = 
+            concatMap (Constraint.toContext result_ty) constraints'
+          from_t = Context.apply all_constraints outer_t
+      Discovery.equals from_t fused_t
+      return fused_t
   where
   result_ty = Type.get outer_t
   
@@ -343,41 +416,36 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
       $ Indices.free with_t
   overlappingMatch _ _ = False
   
-  -- Fuse a pattern match into a fixpoint.
-  -- Typed so that we can apply it using foldrM over the list of matches.
-  -- If fusion fails it returns the original term.
-  -- Will write 'True' if fusion ever succeeds.
-  fuseMatches :: [(Term, Term)] -> Term -> m Term
-  fuseMatches matches term =
+  fuseConstraints :: [Constraint] -> Term -> m Term
+  fuseConstraints cons term =
     -- Using 'foldl' is important here, since 'useful_matches' will be the 
     -- firsts ones in the list and they need to be fused in first,
     -- otherwise the 'extra_matches' won't fuse properly, since they'll
     -- have nothing to fuse into.
-    foldlM fuseMatch term matches
+    foldlM fuse term cons
     where
-    fuseMatch :: Term -> (Term, Term) -> m Term
-    fuseMatch with_t _
+    fuse :: Term -> Constraint -> m Term
+    fuse with_t _
       | (not . isFix . leftmost) with_t = return with_t
-    fuseMatch with_t (match_t, con_t) =
-      -- Generalise any function calls inside the term arguments
-      Term.generaliseTerms func_calls (match_t, with_t) generalised 
+    fuse with_t (Constraint con match_t) =
+      -- Generalise any function calls
+      Term.generaliseTerms gen_terms (match_t, with_t) generalised 
       where
-      Con con = leftmost con_t
       App (Fix {}) w_args = with_t
       App (Fix {}) m_args = match_t
       
-      func_calls =
-        concatMap (Term.collect isFuncCall) (w_args ++ m_args)
+      gen_terms =
+        concatMap (Term.collect isGenTerm) (w_args ++ m_args)
         where
-        isFuncCall (App f (_:_)) = isFix f || isVar f
-        isFuncCall _ = False
+        isGenTerm (App f (_:_)) = isFix f || isVar f
+        isGenTerm _ = False
         
       generalised _ (match_t, with_t) = id
         . liftM (fromMaybe with_t)
         . Fail.catch
-        $ Fix.constraintFusion run constr with_t
+        $ Fix.constraintFusion run cons_here with_t
         where 
-        constr = Constraint.make con match_t 
+        cons_here = Constraint.make con match_t 
         
         
 matchFix _ = Fail.here

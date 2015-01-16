@@ -619,6 +619,13 @@ instance Unifiable Term where
       compAlts (Alt con1 bs1 t1) (Alt con2 bs2 t2) = 
         liftTrackedMany (length bs1) (comp t1 t2)
       
+  alphaEq t t'
+    | Just u1 <- Unifier.find t t'
+    , Just u2 <- Unifier.find t' t = 
+      all isVar (Map.elems u1 ++ Map.elems u2)
+  alphaEq _ _ = False
+
+        
 instance Indexed Constraint where
   free = free . get constrainedTerm
   shift f = modify constrainedTerm (shift f)
@@ -638,4 +645,7 @@ instance Unifiable Constraint where
     
   gcompare (Constraint con1 t1) (Constraint con2 t2) =
     compare con1 con2 ++ Unifier.gcompare t1 t2
+    
+  alphaEq (Constraint con1 t1) (Constraint con2 t2) =
+    con1 == con2 && Unifier.alphaEq t1 t2
 

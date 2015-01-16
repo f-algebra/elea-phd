@@ -38,10 +38,14 @@ mkLabels [ ''Data ]
 
 empty :: Data
 empty = Data UMap.empty
+
+isSuccess :: Outcome -> Bool
+isSuccess (Success _) = True
+isSuccess _ = False
   
 lookup :: Fail.Can m => Term -> Data -> m Outcome
 lookup term db = do
-  (uni, outcome) <- UMap.lookup term (get dbFusions db)
+  (uni, outcome) <- UMap.lookupAlphaEq term (get dbFusions db) 
   return (mapTerms (Unifier.apply uni) outcome)
 
 insert :: Term -> Outcome -> Data -> Data

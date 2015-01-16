@@ -22,6 +22,9 @@ module Elea.Constraint
   matchContext,
   makeContext,
   manyToContext,
+  canUnfold,
+  unfold,
+  unfoldAll,
 )
 where
 
@@ -150,4 +153,53 @@ toContext result_ty constr =
 manyToContext :: Type -> Set Constraint -> Context
 manyToContext ty = 
   concatMap (toContext ty) . Set.toAscList
+
+  
+-- | Unfolds all the fixpoints in all the constraints provided.
+-- Returns 'Nothing' if any of the constraints are unsatisfiable,
+-- and hence we are down an unreachable branch.
+unfoldAll :: [Constraint] -> Maybe [Constraint]
+unfoldAll cons = id
+  . fmap concat
+  . sequence
+  . zipWith fromMaybe (map (\c -> Just [c]) cons)
+  $ map unfold cons
+
+
+canUnfold :: Constraint -> Bool
+canUnfold (Constraint _ t) = Simp.willUnfold t
+  
+
+-- | Unfolds the constrained term of a constraint.
+-- Will return a list of new constraints that this has generated.
+-- An empty list gives that the constraint is satisfied, 
+-- and 'Nothing' signifies that a constraint is unsatisfiable.
+unfold :: forall m . Fail.Can m => Constraint -> m (Maybe [Constraint])
+unfold con
+  | not (canUnfold con) = 
+    return (Just [con])
+  | otherwise = id
+    . collect 
+    . Simp.quick
+    . apply con 
+    $ (Var Indices.omega, Type.emptyTy)
+  where  
+  collect :: Term -> m (Maybe [Constraint])
+  collect (Var x)
+    | x == Indices.omega = 
+      return (Just [])
+  collect (Unr _) = 
+    return Nothing
+  collect (Case cse_t@(App (Fix {}) _) alts) = do
+    Fail.unless (length not_unr <= 1)
+    if null not_unr
+    then return Nothing
+    else do
+      let [Alt con bs alt_t] = not_unr
+      alt_t' <- Indices.tryLowerMany (length bs) alt_t
+      liftM (fmap (make con cse_t :)) (collect alt_t')
+    where
+    (unr, not_unr) = partition (Term.isUnr . get altInner) alts
+  collect _ = 
+    Fail.here
 

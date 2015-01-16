@@ -58,7 +58,7 @@ module Elea.Prelude
   insertAt, enum, indent, indentBy, debugNth,
   arrowSum, supremum, (|>), ($>), replaceAt,
   Maximum (..), Minimum (..), sconcatMap, nlength,
-  intersects, length, liftMaybe, maybeT, nth, drop, take,
+  intersects, length, liftMaybe, maybeT, nth, drop, take, screen,
 )
 where
 
@@ -408,3 +408,15 @@ instance Monoid (Minimum CoNat) where
   
 intersects :: Ord a => Set a -> Set a -> Bool
 intersects x = not . Set.null . Set.intersection x
+
+
+-- | Like 'filter', but also supplying all 
+-- other elements before or after in list to the predicate.
+screen :: ([a] -> a -> [a] -> Bool) -> [a] -> [a]
+screen p = go []
+  where
+  go xs [] = []
+  go xs (y:ys) 
+    | p xs y ys = y : go (xs ++ [y]) ys
+    | otherwise = go xs ys
+

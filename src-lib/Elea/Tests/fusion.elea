@@ -126,10 +126,10 @@ let srtd_tree_ins =
   | Node t1 x t2 ->
     if leq_nat n x
     then 
-      and (srtd_ins n t1) 
+      and (sorted_tree t2)
         (and (leq_leftmost x t2)
         (and (rightmost_leq (tree_insert n t1) x)
-        (sorted_tree t2)))
+        (srtd_ins n t1)))
     else 
       and (sorted_tree t1)
         (and (leq_leftmost x (tree_insert n t2))
@@ -138,7 +138,7 @@ let srtd_tree_ins =
   end
 
 prop "sorted flatten": forall (t: tree<nat>) (n: nat) (xs: list<nat>) ->
-  implies (is_sorted (flatten<nat> t)) (is_sorted (flatten<nat> (tree_insert n t)))
+  implies (sorted_tree t) (is_sorted (flatten<nat> (tree_insert n t)))
 
 prop "rightmost ins": forall (t: tree<nat>) (n: nat) (x: nat) ->
   implies (and (leq_nat x n) (rightmost_leq t n)) 
@@ -150,14 +150,28 @@ prop "rightmost leq": forall (t: tree<nat>) (n: nat) ->
 prop "leftmost ins": forall (t: tree<nat>) (n x: nat) ->
   implies (and (leq_nat n x) (leq_leftmost n t)) 
     (leq_leftmost n (tree_insert x t))
+ /*   
+prop "leftmost ins 2": forall (t1 t2: tree<nat>) (x y n: nat) ->
+  implies (and (leq_nat n x) (leq_leftmost n (Node<nat> t1 y Leaf<nat>))) 
+    (leq_leftmost n (Node<nat> (tree_insert x t1) y Leaf<nat>))
     
+prop "sorted tree impl": forall (t1 t2: tree<nat>) (x: nat) ->
+  match sorted_tree (Node<nat> t1 x t2) with
+  | True -> 
+    match t2 with 
+    | Leaf -> rightmost_leq t1 x
+    | Node t1 x t2 -> True
+    end
+  | False -> True
+  end
+  */
 prop "leftmost impl": forall (t1 t2: tree<nat>) (x n: nat) ->
   implies (leq_leftmost n (Node<nat> t1 x t2))
     (leq_leftmost n (tree_insert n t1))
     
 prop "last flatten"<A>: forall (t: tree<A>) ->
   last<A> (flatten<A> t) = rightmost<A> t
- 
+  
 prop "prop 27": forall (x: nat) (xs ys: list<nat>) ->
   implies (elem_nat x ys) (elem_nat x (append<nat> xs ys))
 
@@ -183,25 +197,4 @@ prop "height mirror" <A>: forall (t: tree<A>) ->
   height<A> (mirror<A> t) = height<A> t
 */
 
- 
-prop "unfold productive fix": forall (xs: list<nat>) ->
-  (match append<nat> xs (Cons<nat> 1 Nil<nat>) with
-   | Nil -> 0 | Cons y ys -> y end)
-  =
-  (match xs with
-   | Nil -> 1 | Cons y ys -> y end)
-   
-prop "unfold branching fix"<A>: forall (t: tree<A>) ->
-  (match flatten<A> t with
-   | Nil -> 0 | Cons y ys -> 1 end)
-  = 
-  (match t with
-   | Leaf -> 0 | Node t1 x t2 -> 1 end)
-   
-prop "unfold branching fix 2": forall (t: tree<nat>) (n: nat) ->
-  (match tree_insert n t with
-    | Leaf -> 1
-    | Node t1 x t2 -> 2 
-    end) = 2
-    
 

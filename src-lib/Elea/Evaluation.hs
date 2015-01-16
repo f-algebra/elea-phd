@@ -38,17 +38,19 @@ steps =
   , caseCase
   ]
   
+unwrapDepth :: Nat
+unwrapDepth = 2
   
 -- | The variables or uninterpreted function application terms
 -- whose value must be known in order to evaluate the given term.
 strictTerms :: Term -> Set Term
 strictTerms (Case cse_t@(App (Fix {}) _) _) = 
   strictTerms cse_t
-strictTerms (App (Fix _ _ fix_t) args) = id
+strictTerms (App fix@(Fix _ _ fix_t) args) = id
   . collectTerms 
   $ run (App fix_t' args)
   where
-  fix_t' = substAt 0 (Var Indices.omega) fix_t
+  fix_t' = Term.unwrapFix unwrapDepth fix
 
   collectTerms (Case cse_t alts)
     | isVar (leftmost cse_t) = Set.insert cse_t alt_terms

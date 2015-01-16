@@ -326,15 +326,16 @@ let leftmost<A> =
   end
 
 let rightmost_leq = 
-  fix (rleq: tree<nat> -> nat -> bool) (t: tree<nat>) (n: nat) ->
+  fun (t: tree<nat>) (n: nat) ->
+  (fix (rleq: tree<nat> -> bool) (t: tree<nat>) ->
   match t with
   | Leaf -> True
   | Node t1 x t2 ->
     match t2 with
     | Leaf -> leq_nat x n
-    | Node t1' x' t2' -> rleq t2 n
+    | Node t1' x' t2' -> rleq t2
     end
-  end
+  end) t
   
 let leq_leftmost =
   fun (n: nat) (t: tree<nat>) ->
@@ -363,5 +364,15 @@ let sorted_tree =
   | Node t1 x t2 ->
     and (leq_leftmost x t2) 
       (and (srtd t1)
+        (and (rightmost_leq t1 x) (srtd t2)))
+  end
+  
+let sorted_tree2 = 
+  fix (srtd: tree<nat> -> bool) (t: tree<nat>) ->
+  match t with
+  | Leaf -> True
+  | Node t1 x t2 ->
+    and (srtd t1)
+      (and (leq_leftmost x t2) 
         (and (rightmost_leq t1 x) (srtd t2)))
   end

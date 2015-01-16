@@ -151,6 +151,7 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
   -- DEBUG
   let new_term = id
         . Simp.run
+        . Term.floatRecCallInwards
         . app new_fix 
         . map Var 
         $ reverse free_vars
@@ -323,7 +324,7 @@ fission simplify fix@(Fix fix_info fix_b fix_t) outer_ctx = do
     -- Simplify the result
     . Env.bind fix_b
     . simplify
-    
+     
     -- Add the outer context to every recursive call site
     . Indices.replaceAt 0 (Context.apply (Indices.lift outer_ctx) (Var 0))
     $ fix_t
@@ -420,6 +421,9 @@ constraintFusion simplify
   simplifyAndExpress term = do
     -- First we simplify the term
     term' <- simplify term
+    
+    {-
+    DEBUG
     let term'' = id
           . Simp.run
           . Env.trackAll (Indices.lift cons_ctx)
@@ -427,31 +431,32 @@ constraintFusion simplify
     t_s <- showM term
     t_s' <- showM term'
     t_s'' <- showM term''
+    let msg1 = "[constraint fusion]\nbefore:\n" ++ t_s' ++ "\nafter:\n" ++ t_s''
+    -}
     
-    return
+    id
       -- Then we take any pattern matches which unify with the constraint and
       -- express them at the site of any recursive calls to the function
-      . Env.trackIndices fix_f
-      . Fold.transformM expressPattern
+      . Env.alsoTrack fix_f
+      . Fold.transformM expressConstraint
       
-      -- We float all potential matches to the constraint as high as they
-      -- can go, so they reach the furthest into the term
-    --  . Env.trackIndices fix_f
-    --  . Fold.rewriteM floatMatchUp
-  
       -- At this bit we take the constraint and place it everywhere in the 
       -- term it is applicable, so that the 'expressPattern' step afterwards
       -- has the best chance of finding an expressable constraint pattern.
       . Simp.run
       . Env.trackAll (Indices.lift cons_ctx)
-      -- Need to get isoTransforms working properly, no idea what is wrong
       . Fold.transformM interleaveConstraint
-  --    . trace ("[constraint fusion]\nbefore:\n" ++ t_s' ++ "\nafter:\n" ++ t_s'')
+      
+      -- DEBUG
+    --  . trace msg1
+    
+      . Context.apply (Indices.lift cons_ctx)
       $ term'
     where    
     fix_f = 0
     ctx = Indices.lift full_ctx
     orig_term = Context.apply ctx (Var fix_f)
+    
     
     floatMatchUp :: Term -> MaybeT (Env.TrackIndices Index) Term
     floatMatchUp orig_t@(Case fix_t@(App (Var g) _) _) = do
@@ -478,47 +483,53 @@ constraintFusion simplify
     floatMatchUp _ =
       Fail.here
       
+      
     interleaveConstraint :: Term -> Env.TrackAll Context Term
-    interleaveConstraint cse_t@(Case (Var x) _) = do
+    interleaveConstraint cse_t@(Case (Var x) alts) = do
       ctx <- Env.tracked
-      if x `Indices.freeWithin` ctx
-      then return (Context.apply ctx cse_t)
-      else return cse_t
+      if not (x `Indices.freeWithin` ctx)
+      then return cse_t
+      else do
+        let alts' = map (applyToAlt ctx) alts
+        return (Case (Var x) alts')
+      where
+      applyToAlt :: Context -> Alt -> Alt
+      applyToAlt ctx (Alt con bs alt_t) = 
+        Alt con bs (Context.apply ctx' alt_t)
+        where
+        ctx' = Indices.liftMany (length bs) ctx
+        
     interleaveConstraint term = return term
 
-    expressPattern :: Term -> Env.TrackIndices Index Term
-    expressPattern (Case cse_t alts) 
-      -- If we have found a pattern match which unifies with the original
-      -- match context then we should express it at recursive calls to the
-      -- function
-      | Unifier.exists match_t cse_t = do
-        fix_f <- Env.tracked
-        let alt_t' = id
-              . Env.trackAll (Var fix_f, cse_t)
-              . Env.liftTrackedMany (length alt_bs)
-              $ Fold.transformM express alt_t
-            alts' = l_alts ++ (Alt alt_con alt_bs alt_t' : r_alts)
-        return (Case cse_t alts')
+    
+    -- Express the constraint at the recursive function call site
+    expressConstraint :: Term -> Env.AlsoTrack Index m Term
+    expressConstraint term@(App (Var f) _) = do
+      fix_f <- Env.tracked
+      if fix_f /= f 
+      then return term
+      else do
+        -- Find matches which unify with the constraint
+        ms <- Env.findMatches usefulMatch
+        let unified_ts = mapMaybe unifiedMatch ms
+        if null unified_ts
+        then return term
+        else return (head unified_ts)
       where
-      con_n = get Type.constructorIndex cons_con
-      (l_alts, Alt alt_con alt_bs alt_t : r_alts) = splitAt (enum con_n) alts
+      usefulMatch :: (Term, Term) -> Bool
+      usefulMatch (cse_t, leftmost -> Con con) =
+        con == cons_con && Unifier.exists match_t cse_t
       
-      express :: Term -> Env.TrackAll (Term, Term) Term
-      express term@(App (Var f) _) = do
-        (Var fix_f, cse_t) <- Env.tracked
-        let cse_ctx = Constraint.makeContext cons_con cse_t result_ty
-            term' = Context.apply cse_ctx term
-        -- We only need to express the constraint if it can be unified with
-        -- the original constraint, and hence could be replaced by fusion.
-        if fix_f == f 
-          && Unifier.exists orig_term term'
-        then return term'
-        else return term
-      express other = 
-        return other
-
-    expressPattern other = 
-      return other
+      unifiedMatch :: (Term, Term) -> Maybe Term
+      unifiedMatch (cse_t, leftmost -> Con con) = do
+        Fail.unless (Unifier.exists orig_term term_here)
+        return term_here
+        where
+        ctx_here = Constraint.makeContext con cse_t result_ty
+        term_here = Context.apply ctx_here term
+        
+    expressConstraint term = 
+      return term
 
 constraintFusion _ _ _ = 
   Fail.here

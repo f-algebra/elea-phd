@@ -4,6 +4,7 @@ module Elea.Simplifier
 (
   run, quick,
   steps, removeConstArgs,
+  willUnfold,
   
   -- | These two steps are useful for fixpoint fusion
   finiteCaseFix, finiteArgFix,
@@ -32,10 +33,9 @@ run :: Term -> Term
 run = Fold.rewriteSteps steps
 
 quick :: Term -> Term
-quick = Fold.rewriteSteps steps
+quick = Fold.rewriteSteps q_steps
   where
-  steps = Eval.steps ++ [ unfoldFixInj, propagateMatch, constantCase ]
-  
+  q_steps = Eval.steps ++ [ unfoldFixInj, propagateMatch, constantCase ]
 
 steps :: Fail.Can m => [Term -> m Term]
 steps = Eval.steps ++
@@ -65,6 +65,59 @@ steps = Eval.steps ++
 -- any recursive calls.
 removeConstArgs :: Term -> Term
 removeConstArgs = Eval.run . Fold.rewrite constArg
+
+
+-- | Whether a fixpoint call will be unfolded by the simplifier
+willUnfold :: Term -> Bool
+willUnfold term@(App fix@(Fix _ _ fix_t) args) = 
+  any isSafeConArg (Term.decreasingAppArgs term)
+  where
+  -- Check whether an argument is a constructor, and will reduce all pattern 
+  -- matches upon it.
+  isSafeConArg :: Int -> Bool
+  isSafeConArg arg_i =
+    isCon (leftmost arg) 
+    && Set.null matched_rec_vars
+    where
+    arg = args !! arg_i
+    -- All the recursive arguments to the constructor
+    -- at the given argument position, and all the recursive arguments to
+    -- those arguments, and so on...
+    rec_vars = recursiveConArgs arg
+    
+    matched_vars = id
+      . Env.trackOffset
+      . Env.liftTracked
+      $ Fold.foldM matchedVars unwrapped_t
+      
+    matched_rec_vars = Set.intersection matched_vars rec_vars
+    
+    unwrapped_t = id
+      . Eval.run 
+      . App fix_t 
+      . setAt arg_i (Indices.lift arg)
+      $ replicate (length args) (Var 0)
+      
+    recursiveConArgs :: Term -> Set Index
+    recursiveConArgs (Var x) = Set.singleton x
+    recursiveConArgs (flattenApp -> Con con : con_args) = id
+      . concatMap recursiveConArgs
+      . map (con_args !!)
+      $ Type.recursiveArgs con
+    recursiveConArgs _ = mempty
+    
+    -- Free variables pattern matched upon in the given term
+    matchedVars :: Term -> Env.TrackOffset (Set Index) 
+    matchedVars (Case (Var x) alts) = do
+      can_lower <- Env.lowerableByOffset x
+      -- Variable must be free outside the original term,
+      -- and must be recursed upon (so the match cannot be finite)
+      if can_lower 
+        && not (Term.isFiniteMatch alts)
+      then liftM Set.singleton (Env.lowerByOffset x)
+      else return mempty
+    matchedVars _ = 
+      return mempty
 
   
 -- | We do not want pattern matches to return function typed values,
@@ -222,65 +275,17 @@ uselessFix (Fix _ _ fix_t)
     return (Indices.lower fix_t)
 uselessFix _ = Fail.here
 
-
 -- | Unfolds a 'Fix' if one of its decreasing arguments is a constructor term 
 -- which is defined enough to fully reduce all matches on that argument.
 unfoldFixInj :: Fail.Can m => Term -> m Term
 unfoldFixInj term@(App fix@(Fix _ _ fix_t) args)
-  | any isSafeConArg (Term.decreasingAppArgs term) = id
+  | willUnfold term =
     return   
     --  . traceMe "[unfold fix-inj] after"
       . Eval.run 
     --  . traceMe "[unfold fix-inj] before"
       $ app (Term.unfoldFix fix) args
-  where
-  -- Check whether an argument is a constructor, and will reduce all pattern 
-  -- matches upon it.
-  isSafeConArg :: Int -> Bool
-  isSafeConArg arg_i =
-    isCon (leftmost arg) 
-    && Set.null matched_rec_vars
-    where
-    arg = args !! arg_i
-    -- All the recursive arguments to the constructor
-    -- at the given argument position, and all the recursive arguments to
-    -- those arguments, and so on...
-    rec_vars = recursiveConArgs arg
-    
-    matched_vars = id
-      . Env.trackOffset
-      . Env.liftTracked
-      $ Fold.foldM matchedVars unwrapped_t
-      
-    matched_rec_vars = Set.intersection matched_vars rec_vars
-    
-    unwrapped_t = id
-      . Eval.run 
-      . App fix_t 
-      . setAt arg_i (Indices.lift arg)
-      $ replicate (length args) (Var 0)
-      
-    recursiveConArgs :: Term -> Set Index
-    recursiveConArgs (Var x) = Set.singleton x
-    recursiveConArgs (flattenApp -> Con con : con_args) = id
-      . concatMap recursiveConArgs
-      . map (con_args !!)
-      $ Type.recursiveArgs con
-    recursiveConArgs _ = mempty
-    
-    -- Free variables pattern matched upon in the given term
-    matchedVars :: Term -> Env.TrackOffset (Set Index) 
-    matchedVars (Case (Var x) alts) = do
-      can_lower <- Env.lowerableByOffset x
-      -- Variable must be free outside the original term,
-      -- and must be recursed upon (so the match cannot be finite)
-      if can_lower 
-        && not (Term.isFiniteMatch alts)
-      then liftM Set.singleton (Env.lowerByOffset x)
-      else return mempty
-    matchedVars _ = 
-      return mempty
-    
+  
 unfoldFixInj _ = Fail.here
 
 
@@ -502,3 +507,6 @@ unsafeUnfoldFixInj (App fix@(Fix {}) args)
   
 unsafeUnfoldFixInj _ =
   Fail.here
+
+
+

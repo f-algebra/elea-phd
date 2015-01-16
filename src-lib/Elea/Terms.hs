@@ -24,6 +24,7 @@ module Elea.Terms
   revertMatchesWhenM, 
   revertMatchesWhen, 
   revertMatches,
+  commuteMatchesWhenM,
   occurrences,
   isSubterm,
   alreadyFused,
@@ -31,6 +32,7 @@ module Elea.Terms
   removeSubterms,
   freeSubtermsOf,
   revertEnvMatches,
+  floatRecCallInwards,
 )
 where
 
@@ -462,6 +464,34 @@ revertMatchesWhen when = runIdentity . revertMatchesWhenM (return . when)
 revertMatches :: Term -> Term
 revertMatches = revertMatchesWhen (const True)
 
+commuteMatchesWhenM :: forall m . Env.Write m 
+  => (Term -> Term -> m Bool) -> Term -> m Term
+commuteMatchesWhenM when = Fold.rewriteM commute
+  where
+  commute :: Term -> MaybeT m Term
+  commute outer_cse@(Case outer_t outer_as) = do
+    mby_inner_cse <- id
+      . lift
+      . firstM 
+      $ map (runMaybeT . commutable) outer_as
+    Fail.unless (isJust mby_inner_cse)
+    let Just inner_cse = mby_inner_cse
+    return (applyCase inner_cse outer_cse)
+    where
+    commutable :: Alt -> MaybeT m Term
+    commutable (Alt con bs (Case inner_t inner_as))
+      | Indices.lowerableBy (length bs) inner_t = do
+        here <- lift (when outer_t inner_t')
+        Fail.unless here
+        return (Case inner_t' inner_as)
+      where
+      inner_t' = Indices.lowerMany (length bs) inner_t
+    commutable _ = 
+      Fail.here
+  commute _ = 
+    Fail.here
+
+
 -- | Return the number of times a given subterm occurs in a larger term.
 occurrences :: Term -> Term -> Int
 occurrences t = Env.trackIndices t . Fold.countM (\t -> Env.trackeds (== t))
@@ -544,3 +574,25 @@ revertEnvMatches term = id
   revertOrd p1 p2 = 
     compare p1 p2 
   
+    
+-- | If we pattern match on the result of recursive call to a fixpoint
+-- we should float that as far inside the term as possible.
+floatRecCallInwards :: Term -> Term
+floatRecCallInwards = 
+  Fold.transform inwards
+  where
+  inwards (Fix i b fix_t) =
+    Fix i b fix_t'
+    where 
+    fix_t' = id
+      . Env.trackIndices 0
+      $ commuteMatchesWhenM isRecCall fix_t
+      
+    isRecCall :: Term -> Term -> Env.TrackIndices Index Bool
+    isRecCall outer_t (leftmost -> Var f) = do
+      fix_f <- Env.tracked
+      return (f == fix_f && not (isVar (leftmost outer_t)))
+    isRecCall _ _ = return False
+      
+  inwards term = term
+    
