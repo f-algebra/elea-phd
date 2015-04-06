@@ -163,6 +163,15 @@ instance Can Monoid.First where
   here = Monoid.First mzero
   catch = Monoid.First . catch . Monoid.getFirst
   
+instance Can m => Monoid (a -> m a) where
+  mempty = const here
+  
+  (f `mappend` g) x = do
+    mby_fx <- catch (f x)
+    case mby_fx of
+      Nothing -> g x
+      Just fx -> return fx  
+  
 
 -- | See the definition of @mappend@ to 
 -- understand how the /transformation/ monoid works.

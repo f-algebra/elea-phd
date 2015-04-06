@@ -26,6 +26,6 @@ tests = Test.label "Fusion"
   Test.loadPrelude
   eqs <- Test.loadFile "src-lib/Elea/Tests/fusion.elea"
   mapM checkEquation
-    . filter ((== "insertsort sorted") . get equationName)
+ --   . filter ((== "insertsort sorted") . get equationName)
     $ eqs
 

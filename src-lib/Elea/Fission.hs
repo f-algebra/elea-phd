@@ -21,15 +21,16 @@ import qualified Elea.Simplifier as Simp
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs
+import qualified Elea.Monad.Eval as Eval
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 
 {-# SPECIALISE run :: Term -> Fedd Term #-}
 
 run :: (Defs.Read m, Env.Read m) => Term -> m Term
-run = Fold.rewriteStepsM steps
+run = Eval.runStep (Fail.concatTransforms steps)
 
-steps :: (Env.Read m, Fail.Can m, Defs.Read m) => [Term -> m Term]
+steps :: (Eval.Rule m, Env.Read m, Fail.Can m, Defs.Read m) => [Term -> m Term]
 steps = Simp.steps ++ 
   [ const Fail.here
   , identityFix

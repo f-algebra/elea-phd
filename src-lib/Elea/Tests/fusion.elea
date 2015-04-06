@@ -118,7 +118,7 @@ prop "take drop"<A>: forall (n m: nat) (xs: list<A>) ->
 prop "take zip"<A, B>: forall (n: nat) (xs: list<A>) (ys: list<B>) ->
   take<(A, B)> n (zip<A, B> xs ys) 
   = zip<A, B> (take<A> n xs) (take<B> n ys)
-
+/*
 let srtd_tree_ins = 
   fix (srtd_ins: nat -> tree<nat> -> bool) (n: nat) (t: tree<nat>) ->
   match t with
@@ -150,7 +150,7 @@ prop "rightmost leq": forall (t: tree<nat>) (n: nat) ->
 prop "leftmost ins": forall (t: tree<nat>) (n x: nat) ->
   implies (and (leq_nat n x) (leq_leftmost n t)) 
     (leq_leftmost n (tree_insert x t))
- /*   
+    
 prop "leftmost ins 2": forall (t1 t2: tree<nat>) (x y n: nat) ->
   implies (and (leq_nat n x) (leq_leftmost n (Node<nat> t1 y Leaf<nat>))) 
     (leq_leftmost n (Node<nat> (tree_insert x t1) y Leaf<nat>))
@@ -164,14 +164,14 @@ prop "sorted tree impl": forall (t1 t2: tree<nat>) (x: nat) ->
     end
   | False -> True
   end
-  */
+  
 prop "leftmost impl": forall (t1 t2: tree<nat>) (x n: nat) ->
   implies (leq_leftmost n (Node<nat> t1 x t2))
     (leq_leftmost n (tree_insert n t1))
     
 prop "last flatten"<A>: forall (t: tree<A>) ->
   last<A> (flatten<A> t) = rightmost<A> t
-  
+  */
 prop "prop 27": forall (x: nat) (xs ys: list<nat>) ->
   implies (elem_nat x ys) (elem_nat x (append<nat> xs ys))
 

@@ -16,7 +16,6 @@ import qualified Elea.Unification as Unifier
 import qualified Elea.Testing as Test
 import qualified Elea.Evaluation as Eval
 import qualified Elea.Simplifier as Simp
-import qualified Elea.Fusion as Fusion
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 
@@ -55,8 +54,8 @@ tests = Test.label "Terms"
   Base ntree <- Test._type "tree<nat>"
   Base nlist <- Test._type "list<nat>"
   
-  let fold1 = Test.assertEq fold_nat_nat (buildFold nat (Base nat))
-      fold2 = Test.assertEq fold_ntree_nlist (buildFold ntree (Base nlist))
+  let fold1 = Test.assertSimpEq fold_nat_nat (buildFold nat (Base nat))
+      fold2 = Test.assertSimpEq fold_ntree_nlist (buildFold ntree (Base nlist))
       
   -- A weird problem I had at one point
   let eq_ind = Ind "__EQ" [("==", [ConArg (Base nat), ConArg (Base nat)])]
@@ -102,7 +101,7 @@ tests = Test.label "Terms"
         test2 = Test.assertEq removed_ts [x_plus_1, two, y]
         
     return (Test.list [test1, test2])
-    
+    {-
   -- Testing out some restricted transformation term isomorphisms
   iso1 <- Test.localVars "(n: nat) (t: tree<nat>)" $ do
     App is_sorted [App ins_n [xs]] <- 
@@ -120,7 +119,7 @@ tests = Test.label "Terms"
     t1 <- Test.term "t1"
     let strict_ts = trace ("\n\n!!!!!\n\n" ++ show leftmost_t) $ Eval.strictTerms leftmost_t
     return (Test.assertEq (Set.singleton t1) strict_ts)
-  
+    -}
   return $ Test.list $  
     [ dec1, dec2, dec3
     , fin1, fin2, fin3 

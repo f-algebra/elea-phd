@@ -3,11 +3,13 @@
 module Elea.Simplifier
 (
   run, quick,
-  steps, removeConstArgs,
+  steps, 
+  --removeConstArgs,
   willUnfold,
   
   -- | These two steps are useful for fixpoint fusion
-  finiteCaseFix, finiteArgFix,
+  --finiteCaseFix, 
+  finiteArgFix,
 )
 where
 
@@ -24,47 +26,43 @@ import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs
+import qualified Elea.Monad.Eval as Eval
 import qualified Data.Monoid as Monoid
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Control.Monad.Trans as Trans
 
 run :: Term -> Term
-run = Fold.rewriteSteps steps
+run = flip runReader ([] :: [Bind]) 
+    -- ^ Use the Reader [Bind] instance for type environments
+    . Eval.runStep (Fail.concatTransforms all_steps) 
+  where
+  all_steps = steps ++ Eval.traverseSteps
 
 quick :: Term -> Term
-quick = Fold.rewriteSteps q_steps
-  where
-  q_steps = Eval.steps ++ [ unfoldFixInj, propagateMatch, constantCase ]
+quick = run
 
-steps :: Fail.Can m => [Term -> m Term]
-steps = Eval.steps ++
+steps :: Eval.Step m => [Term -> m Term]
+steps = Eval.transformSteps ++
   [ const Fail.here
-  , Fail.concatTransforms transformSteps
+  , caseFun
+  , constArg
+  , identityCase
+  , constantCase
+  {-
+  , constantFix
+  , uselessFix
   , propagateMatch
   , finiteArgFix
   , unfoldFixInj
   , freeCaseFix   
   , unfoldWithinFix
-  , finiteCaseFix
+ -- , finiteCaseFix
   , unsafeUnfoldFixInj
-  ]
-  where
-  -- Transformation steps do not require sub terms to be rewritten upon success.
-  transformSteps = 
-    [ const Fail.here
-    , caseFun
-    , constantFix
-    , constArg
-    , identityCase
-    , uselessFix
-    , constantCase
-    ] 
+  -}
+  ] 
 
--- | Remove arguments to a fixpoint if they never change in 
--- any recursive calls.
-removeConstArgs :: Term -> Term
-removeConstArgs = Eval.run . Fold.rewrite constArg
+  
 
 
 -- | Whether a fixpoint call will be unfolded by the simplifier
@@ -122,10 +120,10 @@ willUnfold term@(App fix@(Fix _ _ fix_t) args) =
   
 -- | We do not want pattern matches to return function typed values,
 -- so we add a new lambda above one if this is the case.
-caseFun :: Fail.Can m => Term -> m Term
+caseFun :: Eval.Step m => Term -> m Term
 caseFun cse@(Case t alts) = do
   Fail.unless (length potential_bs > 0)
-  return
+  Eval.continue
     . Lam (head potential_bs)
     . Case (Indices.lift t)
     $ map appAlt alts
@@ -149,13 +147,13 @@ caseFun _ = Fail.here
   
 -- | If an argument to a 'Fix' never changes in any recursive call
 -- then we should float that lambda abstraction outside the 'Fix'.
-constArg :: Fail.Can m => Term -> m Term
+constArg :: Eval.Step m => Term -> m Term
 constArg term@(Fix fix_info (Bind fix_name fix_ty) fix_t) = do
   -- Find if any arguments never change in any recursive calls
   pos <- Fail.fromMaybe (find isConstArg [0..length arg_bs - 1])
   
   -- Then we run the 'removeConstArg' function on that position
-  return (Eval.run (removeConstArg pos))
+  Eval.continue (Eval.run (removeConstArg pos))
   where
   -- Strip off the preceding lambdas of the function
   (arg_bs, fix_body) = flattenLam fix_t
@@ -257,9 +255,9 @@ finiteArgFix _ = Fail.here
 
 
 -- | Removes a pattern match which just returns the term it is matching upon.
-identityCase :: Fail.Can m => Term -> m Term
+identityCase :: Eval.Step m => Term -> m Term
 identityCase (Case cse_t alts)
-  | all isIdAlt alts = return cse_t
+  | all isIdAlt alts = Eval.continue cse_t
   where
   isIdAlt :: Alt -> Bool
   isIdAlt (Alt con _ alt_t) = 
@@ -335,7 +333,7 @@ propagateMatch (Case cse_t alts)
     
 propagateMatch _ = Fail.here
 
-
+{-
 -- | Unfolds a 'Fix' which is being pattern matched upon if that pattern
 -- match only uses a finite amount of information from the 'Fix'.
 -- Currently only works for a single unrolling, but otherwise we'd need an 
@@ -387,7 +385,7 @@ finiteCaseFix term@(Case (App fix@(Fix _ _ fix_t) args) alts) = do
         | otherwise = Var Indices.omega
   
 finiteCaseFix _ = Fail.here
-
+-}
 
 -- | If a recursive function just returns the same value, regardless of its
 -- inputs, just reduce it to that value.
@@ -474,11 +472,11 @@ unfoldWithinFix _ = Fail.here
           
 
 -- | Removes a pattern match if every branch returns the same value.
-constantCase :: forall m . Fail.Can m => Term -> m Term
+constantCase :: forall m . Eval.Step m => Term -> m Term
 constantCase (Case _ alts) = do
   (alt_t:alt_ts) <- mapM loweredAltTerm alts
   Fail.unless (all (== alt_t) alt_ts)
-  return alt_t
+  Eval.continue alt_t
   where
   loweredAltTerm :: Alt -> m Term
   loweredAltTerm (Alt _ bs alt_t) = 

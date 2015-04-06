@@ -285,10 +285,10 @@ fusion simplify outer_ctx inner_fix@(Fix fix_info fix_b fix_t) =
     . Fold.rewriteM expand
     where
     expand :: Term -> MaybeT (Env.TrackIndices (Index, Term)) Term
-    expand (Case (App (Var f) args) alts) = do
+  {-  expand (Case (App (Var f) args) alts) = do
       (fix_f, inner_fix) <- Env.tracked
       Fail.unless (f == fix_f)
-      Simp.finiteCaseFix (Case (App inner_fix args) alts)
+      Simp.finiteCaseFix (Case (App inner_fix args) alts) -}
     expand (App (Var f) args) = do
       (fix_f, inner_fix) <- Env.tracked
       Fail.unless (f == fix_f)

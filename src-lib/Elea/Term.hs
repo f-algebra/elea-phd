@@ -47,7 +47,7 @@ import qualified Algebra.Lattice as Algebra
 
 
 data Term
-  = Unr  { resultType :: !Type } 
+  = Unr     { resultType :: !Type } 
   
   | Var     { varIndex :: !Index }
 

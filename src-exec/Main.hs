@@ -3,7 +3,6 @@ module Main
   module Elea.Prelude,
   main,
   test,
-  run
 )
 where
 
@@ -12,7 +11,7 @@ import Elea.Tests.All ( runTests )
 import Text.Printf
 import System.CPUTime
 import qualified Elea.Testing as Test
-import qualified Elea.Tests.Fusion as Test
+--import qualified Elea.Tests.Fusion as Test
 import qualified Elea.Terms as Term
 
 time :: IO t -> IO t
@@ -28,7 +27,7 @@ test :: IO ()
 test = time runTests
 
 main = test
-
+{-
 run :: String -> IO ()
 run prop_name = id 
     . Test.execute
@@ -38,3 +37,4 @@ run prop_name = id
   mapM Test.checkEquation
     . filter ((== prop_name) . get Term.equationName)
     $ eqs
+    -}
