@@ -47,12 +47,13 @@ quick = run
 
 steps :: (Embed.History m, Eval.Step m) => [Term -> m Term]
 steps = Eval.transformSteps ++
- -- map Height.enforceDecrease
+  -- map Height.enforceDecrease
     [ const Fail.here
     , caseFun
     , constArg
     , identityCase
     , constantCase
+    , Height.enforceDecrease unfold
     {-
     , constantFix
     , uselessFix
@@ -283,6 +284,7 @@ uselessFix (Fix _ _ fix_t)
     return (Indices.lower fix_t)
 uselessFix _ = Fail.here
 
+{-
 -- | Unfolds a 'Fix' if one of its decreasing arguments is a constructor term 
 -- which is defined enough to fully reduce all matches on that argument.
 unfoldFixInj :: Fail.Can m => Term -> m Term
@@ -295,7 +297,16 @@ unfoldFixInj term@(App fix@(Fix _ _ fix_t) args)
       $ app (Term.unfoldFix fix) args
   
 unfoldFixInj _ = Fail.here
+-}
 
+unfold :: (Eval.Step m, Embed.History m) => Term -> m Term
+unfold term@(App fix@(Fix {}) args)
+  -- No point unfolding if none of the arguments are in HNF.
+  | any (isCon . leftmost) args = id
+      . Embed.check term
+      . Eval.continue
+      $ app (Term.unfoldFix fix) args
+unfold _ = Fail.here
 
 -- | If we pattern match inside a 'Fix', but only using variables that exist
 -- outside of the 'Fix', then we can float this pattern match outside
@@ -494,7 +505,7 @@ constantCase (Case _ alts) = do
     
 constantCase _ = Fail.here
 
-
+{-
 -- | Need to unroll fixpoints where a recursive argument is a uninterpreted
 -- function call. Useful sometimes for fixfix fusion, but can cause loops
 -- if you give it weird functions.
@@ -515,6 +526,5 @@ unsafeUnfoldFixInj (App fix@(Fix {}) args)
   
 unsafeUnfoldFixInj _ =
   Fail.here
-
-
+-}
 

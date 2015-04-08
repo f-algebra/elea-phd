@@ -40,7 +40,7 @@ run = flip runReader ([] :: [Bind])
   
 transformSteps :: Eval.Step m => [Term -> m Term]
 transformSteps =
- -- map Height.enforceDecrease
+  -- map Height.enforceDecrease
     [ normaliseApp
     , eta 
     , absurdity

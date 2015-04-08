@@ -41,7 +41,6 @@ module Elea.Prelude
   module Data.Generics.Str,
   module Data.Key,
   module Data.Proxy,
-  module Data.Hashable,
   
   module Debug.Trace,
   module System.IO.Unsafe,
@@ -119,7 +118,6 @@ import Data.String
 import Data.Generics.Str
 import Data.Key ( Zip (..) )
 import Data.Proxy
-import Data.Hashable ( Hashable (..) )
 
 import Debug.Trace
 import System.IO.Unsafe
@@ -347,7 +345,7 @@ indentBy :: Int -> String -> String
 indentBy n = concatMap extendNewLine
   where
   extendNewline '\n' = '\n':(replicate n ' ') 
-  extendNewLine c = "c"
+  extendNewLine c = [c]
 
 indent :: String -> String
 indent = indentBy 2

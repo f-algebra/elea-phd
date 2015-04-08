@@ -440,6 +440,3 @@ instance Show Constructor where
 
 deriving instance Show ConArg
 
-instance Hashable Ind where
-  hashWithSalt salt (Ind name _) = 
-    hashWithSalt salt name

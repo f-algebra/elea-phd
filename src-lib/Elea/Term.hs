@@ -19,6 +19,7 @@ module Elea.Term
   isFix, isUnr, isCase,
   isUnr',
   emptyInfo,
+  tags,
   inductivelyTyped, 
   fromVar, 
   conjunction, true, false,
@@ -244,6 +245,19 @@ arguments = tail . flattenApp
 
 emptyInfo :: FixInfo
 emptyInfo = FixInfo False Nothing Tag.omega
+
+tags :: Term -> Set Tag
+tags = Fold.cata ts
+  where
+  ts :: Term' (Set Tag) -> Set Tag
+  ts (Fix' inf _ _) = Set.singleton (get fixTag inf)
+  ts (Var' _) = Set.empty
+  ts (Unr' _) = Set.empty
+  ts (App' f xs) = Set.unions (f:xs)
+  ts (Lam' _ t) =  t
+  ts (Con' _) = Set.empty
+  ts (Case' t alts) = 
+    Set.unions (t : map (get altInner') alts)
 
 
 -- | This should maybe be called @fullyApplied@ but it checks whether a fixpoint
