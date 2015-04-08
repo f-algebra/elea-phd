@@ -10,6 +10,7 @@ import Elea.Terms
 import Elea.Type
 import Elea.Show
 import qualified Elea.Type as Type
+import qualified Elea.Embed as Embed
 import qualified Elea.Index as Indices
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Unification as Unifier
@@ -22,23 +23,6 @@ import qualified Data.Set as Set
 tests = Test.label "Terms"
     $ Test.run $ do
   Test.loadPrelude
-  
-  Lam _ (Lam _ (App add_fix _)) <- Test.term "add"
-  
-  leq_nat <- Test.term "leq_nat"
-  srtd_fix <- Test.term "is_sorted"
-  
-  one <- Test.term "1"
-  Lam _ x_list <- Test.term "fun (x: nat) -> Cons<nat> x Nil<nat>"
-  xs_list <- liftM (\t -> app t [Var 0]) (Test.term "Cons<nat> 1")
-   
-  let dec1 = Test.assertEq [0] (decreasingArgs add_fix)
-      dec2 = Test.assertEq [0, 1] (decreasingArgs leq_nat)
-      dec3 = Test.assertEq [0] (decreasingArgs srtd_fix)
-      
-      fin1 = Test.assert (isFinite one)
-      fin2 = Test.assert (isFinite x_list)
-      fin3 = Test.assertNot (isFinite xs_list)
       
   fold_nat_nat <- Test.term 
     $ "fun (v: nat) (k: nat -> nat) -> "
@@ -81,12 +65,6 @@ tests = Test.label "Terms"
       eq2 = Test.assertEq eq_ntree' eq_ntree 
       eq3 = Test.assertEq eq_bool' eq_bool 
       eq4 = Test.assertEq eq_unit' eq_unit 
-      
-  Lam bind_y add_simp <- Test.simplifiedTerm def_add_raw
-  add_raw <- Test.term def_add_raw
-  express1 <- Env.bind bind_y $ do
-    App add_raw' [_] <- expressFreeVariable 0 add_simp
-    Test.assertTermEq add_raw add_raw'
   
   subterms1 <- Test.localVars "(x y: nat)" $ do
     x_plus_1 <- Test.term "add x 1"
@@ -121,13 +99,10 @@ tests = Test.label "Terms"
     return (Test.assertEq (Set.singleton t1) strict_ts)
     -}
   return $ Test.list $  
-    [ dec1, dec2, dec3
-    , fin1, fin2, fin3 
-    , fold1, fold2
+    [ fold1, fold2
     , weird1
     , conj1
     , eq1, eq2, eq3, eq4
-    , express1
     , subterms1
   --  , iso1
   --  , strict1

@@ -11,7 +11,7 @@ module Elea.Term
   projectAlt, embedAlt,
   altBindings, altInner, altConstructor,
   altBindings', altInner', altConstructor',
-  fixClosed, fixName, fixFailedConstraints,
+  fixClosed, fixName, fixTag,
   constrainedTerm, constrainedTo,
   flattenApp, leftmost, arguments,
   flattenLam, unflattenLam,
@@ -19,7 +19,6 @@ module Elea.Term
   isFix, isUnr, isCase,
   isUnr',
   emptyInfo,
-  addFusedMatches,
   inductivelyTyped, 
   fromVar, 
   conjunction, true, false,
@@ -37,8 +36,10 @@ import Elea.Prelude
 import Elea.Index ( Index, Indexed, Substitutable, Inner )
 import Elea.Type ( Type (..), Ind (..), ConArg (..)
                  , Bind (..), Constructor (..) )
+import Elea.Tag ( Tag )
 import qualified Elea.Type as Type
 import qualified Elea.Index as Indices
+import qualified Elea.Tag as Tag
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
@@ -84,16 +85,10 @@ data Constraint
   
 -- | Information stored about fixpoints, to add efficiency.
 data FixInfo
-  = FixInfo { -- | The sets of pattern matches that have been unsuccessfully
-              -- fused into this fixpoint, and the value of the applied
-              -- arguments to the fixpoint itself.
-              -- Stops match-fix fusion from repeating itself.
-              -- We don't actually use this anymore because we have
-              -- the memoisation code
-              _fixFailedConstraints :: ![(Set Constraint, Term)]
-              
-            , _fixClosed :: !Bool 
-            , _fixName :: Maybe String }
+  = FixInfo { _fixClosed :: !Bool 
+            , _fixName :: Maybe String
+            , _fixTag :: Tag }
+            
               
 -- Fixpoint information does not change the meaning of a fixpoint, so
 -- it does not effect equality between terms.
@@ -248,7 +243,7 @@ arguments :: Term -> [Term]
 arguments = tail . flattenApp
 
 emptyInfo :: FixInfo
-emptyInfo = FixInfo [] False Nothing
+emptyInfo = FixInfo False Nothing Tag.omega
 
 
 -- | This should maybe be called @fullyApplied@ but it checks whether a fixpoint
@@ -257,14 +252,6 @@ inductivelyTyped :: Term -> Bool
 inductivelyTyped (App (Fix _ (Bind _ fix_ty) _) args) =
   Type.argumentCount fix_ty == length args
   
-  
--- | Add a set of matches we attempted to fuse into a fixpoint.
-addFusedMatches :: Set Constraint -> Term -> Term
-addFusedMatches ms term = 
-  app (Fix info' fix_b fix_t) args
-  where
-  Fix info fix_b fix_t : args = flattenApp term
-  info' = modify fixFailedConstraints (++ [(ms, term)]) info
   
   
 -- | Given an inductive type and a constructor index this will return
@@ -317,7 +304,6 @@ lowerableAltInner (Alt _ bs alt_t) =
 loweredAltInner :: Indexed Term => Alt -> Term
 loweredAltInner (Alt _ bs alt_t) =
   Indices.lowerMany (length bs) alt_t
-  
   
 -- | Build a fold function. 
 buildFold :: Indexed Term 

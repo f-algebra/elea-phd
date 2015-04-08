@@ -22,6 +22,7 @@ import qualified Elea.Context as Context
 import qualified Elea.Unification as Unifier
 import qualified Elea.Index as Indices
 import qualified Elea.Foldable as Fold
+import qualified Elea.Term.Height as Height
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Monad.Eval as Eval
@@ -36,27 +37,30 @@ run = flip runReader ([] :: [Bind])
   where
   all_steps = transformSteps ++ traverseSteps
   
-
+  
 transformSteps :: Eval.Step m => [Term -> m Term]
 transformSteps =
-  [ normaliseApp
-  , eta 
-  , absurdity
-  , beta
-  , caseOfCon
-  , caseApp
-  , appCase
-  , caseCase
-  ]
+ -- map Height.enforceDecrease
+    [ normaliseApp
+    , eta 
+    , absurdity
+    , beta
+    , caseOfCon 
+    , caseApp
+    , appCase
+    , caseCase
+    ]
 
+traverseSteps :: Eval.Step m => [Term -> m Term]
 traverseSteps = 
-  [ traverseMatch
-  , traverseVarBranch
-  , traverseFunBranch
-  , traverseFun
-  , traverseApp
-  , traverseFix
-  ]
+ -- map Height.enforceDecrease
+    [ traverseMatch
+    , traverseVarBranch
+    , traverseFunBranch
+    , traverseFun
+    , traverseApp
+    , traverseFix
+    ]
   
 unwrapDepth :: Nat
 unwrapDepth = 2
@@ -183,13 +187,19 @@ appCase _ = Fail.here
 -- | If we are pattern matching on a pattern match then remove this 
 -- using distributivity.
 caseCase :: Eval.Step m => Term -> m Term
-caseCase outer_cse@(Case inner_cse@(Case {}) _) =
-  Eval.continue (Term.applyCase inner_cse outer_cse)
+caseCase outer_cse@(Case inner_cse@(Case inner_t inner_alts) outer_alts) =
+  Eval.continue (Case inner_t (map newOuterAlt inner_alts))
+  where
+  newOuterAlt :: Alt -> Alt
+  newOuterAlt (Alt con bs t) = 
+    Alt con bs (Case t alts_here)
+    where
+    alts_here = map (Indices.liftMany (length bs)) outer_alts
 caseCase _ = Fail.here
 
 
 traverseMatch :: Eval.Step m => Term -> m Term
-traverseMatch (Case cse_t alts) = do
+traverseMatch term@(Case cse_t alts) = do
   cse_t' <- Eval.continue cse_t
   Fail.when (cse_t == cse_t')
   Eval.continue (Case cse_t' alts)
@@ -200,7 +210,7 @@ traverseVarBranch :: Eval.Step m => Term -> m Term
 traverseVarBranch (Case (Var x) alts) = do
   alts' <- mapM traverseAlt alts
   Fail.when (alts == alts')
-  Eval.continue (Case (Var x) alts')
+  return (Case (Var x) alts')
   where
   traverseAlt (Alt con bs t) = do
     t' <- id
@@ -220,7 +230,7 @@ traverseFunBranch :: Eval.Step m => Term -> m Term
 traverseFunBranch (Case cse_t alts) = do
   alts' <- mapM traverseAlt alts
   Fail.when (alts == alts')
-  Eval.continue (Case cse_t alts')
+  return (Case cse_t alts')
   where
   traverseAlt (Alt con bs t) = do
     t' <- id
@@ -252,11 +262,11 @@ traverseApp _ = Fail.here
 
 traverseFix :: Eval.Step m => Term -> m Term
 traverseFix (Fix inf b t) = do
-  -- Fail.when (get fixClosed inf)
+ -- Fail.when (get fixClosed inf)
   t' <- id
     . Env.bind b
     $ Eval.continue t
-  let inf' = set fixClosed True inf
+  let inf' = inf --set fixClosed True inf
   return (Fix inf' b t')
 traverseFix _ = Fail.here
 

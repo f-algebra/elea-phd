@@ -23,7 +23,7 @@ tests = Test.list
   , Term.tests
   , UMap.tests
 --  , Checker.tests 
- -- , Simplifier.tests
+  , Simplifier.tests
  -- , Constraints.tests
  -- , Context.tests
  -- , Inventor.tests

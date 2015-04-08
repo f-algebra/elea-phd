@@ -19,7 +19,6 @@ module Elea.Prelude
   module Control.Exception,
   
   module Data.Nat,
-  module Data.Label.Pure,
   module Data.Label,
   module Data.Maybe,
   module Data.Either,
@@ -40,9 +39,9 @@ module Elea.Prelude
   module Data.Text,
 --  module Data.Generics.Uniplate.Operations,
   module Data.Generics.Str,
-  module Data.String.Utils,
   module Data.Key,
   module Data.Proxy,
+  module Data.Hashable,
   
   module Debug.Trace,
   module System.IO.Unsafe,
@@ -54,11 +53,12 @@ module Elea.Prelude
   minimalBy, nubOrd, elemOrd, intersectOrd, countOrd,
   fromRight, fromLeft, traceMe, setAt, firstM, 
   takeIndices, isNub, foldl1M, seqStr, strSeq,
-  isLeft, isRight, modifyM', modifyM, removeAt,
+  isLeft, isRight, modifyM, removeAt,
   insertAt, enum, indent, indentBy, debugNth,
   arrowSum, supremum, (|>), ($>), replaceAt,
   Maximum (..), Minimum (..), sconcatMap, nlength,
   intersects, length, liftMaybe, maybeT, nth, drop, take, screen,
+  isSubsequenceOf
 )
 where
 
@@ -92,9 +92,7 @@ import Control.Monad.Fix
 import Control.Exception ( assert )
 
 import Data.Nat ( Nat, CoNat )
-import Data.Label.Pure
-import Data.Label ( mkLabels )
-import Data.Label.Maybe ( (:~>) )
+import Data.Label ( (:->), get, set, modify, mkLabels )
 import Data.Maybe
 import Data.Either ( lefts, rights, partitionEithers )
 import Data.Monoid hiding ( Sum, All, (<>) )
@@ -119,9 +117,9 @@ import Data.Text ( Text )
 import Data.String
 -- import Data.Generics.Uniplate.Operations
 import Data.Generics.Str
-import Data.String.Utils ( replace )
 import Data.Key ( Zip (..) )
 import Data.Proxy
+import Data.Hashable ( Hashable (..) )
 
 import Debug.Trace
 import System.IO.Unsafe
@@ -129,7 +127,7 @@ import System.IO.Unsafe
 import qualified Prelude as Pre
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
-import qualified Data.Label.Maybe as Maybe
+import qualified Data.Label.Partial as Partial
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Nat as Nat
 
@@ -320,13 +318,6 @@ seqStr =  listStr . toList
 strSeq :: Str a -> Seq a
 strSeq = Seq.fromList . strList
 
-modifyM' :: Monad m => (f :~> a) -> (a -> m a) -> f -> m f
-modifyM' r g f
-  | Just a <- Maybe.get r f = do
-      a' <- g a
-      return $ fromJust $ Maybe.set r a' f 
-  | otherwise = return f
-  
 modifyM :: Monad m => (f :-> a) -> (a -> m a) -> f -> m f
 modifyM r g f = do
   x <- g (get r f)
@@ -353,7 +344,10 @@ enum :: (Enum a, Enum b) => a -> b
 enum = toEnum . fromEnum
 
 indentBy :: Int -> String -> String
-indentBy n = replace "\n" ("\n" ++ replicate n ' ')
+indentBy n = concatMap extendNewLine
+  where
+  extendNewline '\n' = '\n':(replicate n ' ') 
+  extendNewLine c = "c"
 
 indent :: String -> String
 indent = indentBy 2
@@ -419,4 +413,10 @@ screen p = go []
   go xs (y:ys) 
     | p xs y ys = y : go (xs ++ [y]) ys
     | otherwise = go xs ys
+    
+isSubsequenceOf :: (Eq a) => [a] -> [a] -> Bool
+isSubsequenceOf []    _                    = True
+isSubsequenceOf _     []                   = False
+isSubsequenceOf a@(x:a') (y:b) | x == y    = isSubsequenceOf a' b
+                               | otherwise = isSubsequenceOf a b
 

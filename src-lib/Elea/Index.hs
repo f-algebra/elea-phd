@@ -37,12 +37,6 @@ class Indexed t where
 {-# RULES
   "shift natural" 
     forall f g xs . shift f (shift g xs) = shift (f . g) xs ;
-    
-  "liftMany compose" 
-    forall n m xs . liftMany n (liftMany m xs) = liftMany (n + m) xs ;
-    
-  "lowerMany compose"
-    forall n m xs . lowerMany n (lowerMany m xs) = lowerMany (n + m) xs ;
   #-}
   
   

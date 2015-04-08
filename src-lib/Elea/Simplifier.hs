@@ -17,12 +17,14 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Show ( showM )
 import qualified Elea.Terms as Term
+import qualified Elea.Term.Height as Height
 import qualified Elea.Types as Type
 import qualified Elea.Index as Indices
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Unification as Unifier
 import qualified Elea.Evaluation as Eval
 import qualified Elea.Foldable as Fold
+import qualified Elea.Embed as Embed
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs
@@ -35,6 +37,7 @@ import qualified Control.Monad.Trans as Trans
 run :: Term -> Term
 run = flip runReader ([] :: [Bind]) 
     -- ^ Use the Reader [Bind] instance for type environments
+    . Embed.emptyHistoryT
     . Eval.runStep (Fail.concatTransforms all_steps) 
   where
   all_steps = steps ++ Eval.traverseSteps
@@ -42,25 +45,26 @@ run = flip runReader ([] :: [Bind])
 quick :: Term -> Term
 quick = run
 
-steps :: Eval.Step m => [Term -> m Term]
+steps :: (Embed.History m, Eval.Step m) => [Term -> m Term]
 steps = Eval.transformSteps ++
-  [ const Fail.here
-  , caseFun
-  , constArg
-  , identityCase
-  , constantCase
-  {-
-  , constantFix
-  , uselessFix
-  , propagateMatch
-  , finiteArgFix
-  , unfoldFixInj
-  , freeCaseFix   
-  , unfoldWithinFix
- -- , finiteCaseFix
-  , unsafeUnfoldFixInj
-  -}
-  ] 
+ -- map Height.enforceDecrease
+    [ const Fail.here
+    , caseFun
+    , constArg
+    , identityCase
+    , constantCase
+    {-
+    , constantFix
+    , uselessFix
+    , propagateMatch
+    , finiteArgFix
+    , unfoldFixInj
+    , freeCaseFix   
+    , unfoldWithinFix
+   -- , finiteCaseFix
+    , unsafeUnfoldFixInj
+    -}
+    ] 
 
   
 
@@ -148,12 +152,17 @@ caseFun _ = Fail.here
 -- | If an argument to a 'Fix' never changes in any recursive call
 -- then we should float that lambda abstraction outside the 'Fix'.
 constArg :: Eval.Step m => Term -> m Term
-constArg term@(Fix fix_info (Bind fix_name fix_ty) fix_t) = do
+constArg (App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args) = do
   -- Find if any arguments never change in any recursive calls
   pos <- Fail.fromMaybe (find isConstArg [0..length arg_bs - 1])
   
-  -- Then we run the 'removeConstArg' function on that position
-  Eval.continue (Eval.run (removeConstArg pos))
+  -- Then we run the 'removeConstArg' function on that position to
+  -- get a new fixed-point
+  let fix' = removeConstArg pos
+  
+  -- Run evaluation to reduce all the new lambdas
+  -- then continue with simplification
+  Eval.continue (Eval.run (app fix' args))
   where
   -- Strip off the preceding lambdas of the function
   (arg_bs, fix_body) = flattenLam fix_t
@@ -197,10 +206,7 @@ constArg term@(Fix fix_info (Bind fix_name fix_ty) fix_t) = do
     
     -- Need to make sure no variables are captured by these new outer lambdas
     . Indices.liftManyAt (length left_bs) 1 
-    
-    -- The fixpoint information is lifted by one to take into account the 
-    -- removed argument index (which is 0 at this point).
-    . Fix (Indices.lift fix_info) fix_b'
+    . Fix fix_info' fix_b'
     
     -- Remove the argument everywhere it appears
     . Env.trackIndices 0
@@ -215,6 +221,10 @@ constArg term@(Fix fix_info (Bind fix_name fix_ty) fix_t) = do
     . unflattenLam right_bs
     $ fix_body
     where
+    -- The fixed-point will no longer be closed since we have
+    -- moved the constant argument outside it
+    fix_info' = set fixClosed False fix_info
+    
     -- Lambdas to the left and right of the removed lambda
     (left_bs, dropped_b:right_bs) = splitAt arg_i arg_bs
     

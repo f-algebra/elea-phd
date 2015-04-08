@@ -20,6 +20,7 @@ import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Definitions as Defs
 import qualified Data.Map as Map
 
+
 instance Show Term where
   show = emptyEnv . showM
     where
@@ -137,21 +138,6 @@ instance (Env.Read m, Defs.Read m) => ShowM m (Term' (Term, String)) where
           
 instance (Env.Read m, Defs.Read m) => ShowM m Context where
   showM = showM . get Context.term
-    
-instance Show FixInfo where
-  show (FixInfo ms _ _) = show ms
-  
-instance (Env.Read m, Defs.Read m) => ShowM m FixInfo where
-  showM (FixInfo ms _ _) = do
-    ms_s <- mapM showFused ms
-    let ms_s' = "[" ++ intercalate ", " ms_s ++ "]"
-    return ("fused@" ++ ms_s')
-    where
-    showFused :: (Set Constraint, Term) -> m String
-    showFused (ts, t) = do
-      ts_s <- mapM showM (toList ts)
-      t_s <- showM t
-      return (intercalate ", " ts_s ++ " |- " ++ t_s)
     
 instance Show Context where
   show = show . get Context.term

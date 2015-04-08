@@ -8,11 +8,14 @@ module Elea.Monad.Eval
   Step,
   runRule,
   runStep,
+  traceCont,
+  mapRuleT,
 )
 where
 
 import Elea.Prelude
 import Elea.Term 
+import Elea.Show ()
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Monad.Definitions.Class as Defs
@@ -42,7 +45,14 @@ runRule f t = runReaderT (ruleT (f t)) (runRule f)
 runStep :: Monad m => (Term -> MaybeT (RuleT m) Term) -> Term -> m Term
 runStep f = runRule (\t -> Fail.withDefault t (f t))
 
-  
+
+traceCont :: Rule m => String -> Term -> Term -> m Term
+traceCont step_name orig new = 
+  trace 
+    ("\n\n[" ++ step_name ++ "]\n" ++ show orig ++ "\n==>\n" ++ show new) 
+    (continue new)
+
+
 instance MonadTrans RuleT where
   lift m = RuleT (ReaderT (\_ -> m))
   
@@ -50,6 +60,10 @@ instance Monad m => Rule (RuleT m) where
   continue t = do
     f <- RuleT Reader.ask
     Trans.lift (f t)
+    
+instance Fail.Can m => Fail.Can (RuleT m) where
+  here = Trans.lift Fail.here
+  catch = mapRuleT Fail.catch
     
 instance Rule m => Rule (MaybeT m) where
   continue = Trans.lift . continue

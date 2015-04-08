@@ -27,7 +27,6 @@ module Elea.Terms
   commuteMatchesWhenM,
   occurrences,
   isSubterm,
-  alreadyFused,
   findContext,
   removeSubterms,
   freeSubtermsOf,
@@ -296,7 +295,7 @@ generaliseTerms :: forall m a t .
     , Substitutable a, Inner a ~ Term ) =>
   Set Term -> t -> (Indices.Shift -> t -> m a) -> m a
 generaliseTerms (toList -> terms) target run
-  | length terms == 0 = run id target
+  | nlength terms == 0 = run id target
   | otherwise = do
     gen_bs <- mapM makeBind [0..length terms - 1]
           
@@ -499,19 +498,6 @@ occurrences t = Env.trackIndices t . Fold.countM (\t -> Env.trackeds (== t))
 -- | Whether the first argument is a subterm of the second
 isSubterm :: Term -> Term -> Bool
 isSubterm t = Env.trackIndices t . Fold.anyM (\t -> Env.trackeds (== t))
-  
--- | Whether we have already attempted to fuse this set of terms into
--- this fixpoint.
-alreadyFused :: FixInfo -> Set Constraint -> Term -> Bool
-alreadyFused (FixInfo fused _ _) matched fix_term = 
-  any unifiable fused
-  where
-  unifiable :: (Set Constraint, Term) -> Bool
-  unifiable (matched', fix_term')
-    | Just term_uni <- Unifier.find fix_term fix_term'
-    , Just m_uni <- Unifier.find matched matched' =  
-      isJust (Unifier.union term_uni m_uni)
-  unifiable _ = False
     
 -- | Finds a context which will turn the first term into the second.
 -- Basically takes the first term and replaces all instances of it 

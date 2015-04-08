@@ -7,10 +7,10 @@ prop "2*2=2+2":
 
 prop "1<=2": 
   leq_nat 1 2
-  
+ 
 prop "not-not": forall (p: bool) ->
   not (not p) = p
-  
+   /*
 prop "expand-rev"<A>: forall (xs: list<A>) (x: A) ->
   reverse<A> (Cons<A> x xs) = append<A> (reverse<A> xs) (Cons<A> x Nil<A>)
   
@@ -108,7 +108,7 @@ prop "unfold branching fix 2": forall (t: tree<nat>) (n: nat) ->
     | Leaf -> 1
     | Node t1 x t2 -> 2 
     end) = 2
-  
+  */
    /*
 let super_loopy = fun (t: tree<nat>) (n: nat) ->
   match t with

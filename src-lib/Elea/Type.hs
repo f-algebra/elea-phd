@@ -439,3 +439,7 @@ instance Show Constructor where
     fst (cons !! n)
 
 deriving instance Show ConArg
+
+instance Hashable Ind where
+  hashWithSalt salt (Ind name _) = 
+    hashWithSalt salt name
