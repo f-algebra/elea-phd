@@ -6,7 +6,7 @@ where
 
 import Elea.Prelude
 import qualified Elea.Context as Context
-import qualified Elea.Simplifier as Simp
+import qualified Elea.Transform.Simplify as Simp
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Testing as Test
 

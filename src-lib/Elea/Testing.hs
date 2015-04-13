@@ -23,9 +23,9 @@ import Elea.Monad.Fedd ( Fedd )
 import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Parser.Calculus as Parse
-import qualified Elea.Simplifier as Simp
+import qualified Elea.Transform.Simplify as Simp
 import qualified Elea.Equality as Equality
---import qualified Elea.Fusion as Fusion
+--import qualified Elea.Transform.Fusion as Fusion
 import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Discovery as Discovery
 import qualified Elea.Monad.Error.Class as Err

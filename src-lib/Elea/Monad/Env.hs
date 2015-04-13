@@ -536,8 +536,10 @@ instance Unifiable Term where
       -- Since we are inside a binding the indices go up by one, 
       -- so we call 'liftTracked'.
       liftTracked (t1 `uni` t2)
-    uni (Fix _ b1 t1) (Fix _ b2 t2) = 
-      liftTracked (t1 `uni` t2)
+    uni (Fix i1 b1 t1) (Fix i2 b2 t2) 
+      | i1 == i2 =
+      -- ^ Need to make sure tags match
+        liftTracked (t1 `uni` t2)
     uni (App f1 xs1) (App f2 xs2) = do
       uni_f <- uni f1 f2
       uni_xs <- zipWithM uni xs1 xs2

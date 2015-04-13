@@ -1,7 +1,7 @@
 -- | Some term transformation steps that rely on fixpoint fusion.
-module Elea.Fusion
+module Elea.Transform.Fusion
 (
-  FusionM, run
+  run
 )
 where
 
@@ -9,34 +9,119 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
 import Elea.Show ( showM )
-import Elea.Monad.Fedd ( Fedd )
-import qualified Elea.Checker as Checker
-import qualified Elea.Fixpoint as Fix
-import qualified Elea.Inventor as Invent
-import qualified Elea.Constraint as Constraint
-import qualified Elea.Evaluation as Eval
+import qualified Elea.Transform.Evaluate as Eval
 import qualified Elea.Index as Indices
 import qualified Elea.Monad.Env as Env
+import qualified Elea.Monad.Transform as Transform
 import qualified Elea.Terms as Term
 import qualified Elea.Types as Type
-import qualified Elea.Context as Context
 import qualified Elea.Unification as Unifier
-import qualified Elea.Simplifier as Simp
-import qualified Elea.Fission as Fission
+import qualified Elea.Transform.Simplify as Simp
+import qualified Elea.Tag as Tag
+import qualified Elea.Embed as Embed
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Discovery.Class as Discovery
 import qualified Elea.Monad.Memo.Class as Memo
+import qualified Elea.Monad.Rewrite as Rewrite
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
 
-type FusionM m = (Defs.Read m, Env.All m, Discovery.Tells m, Memo.Can m)
- 
-{-# SPECIALISE run :: Term -> Fedd Term #-}
 
+type Env m = 
+  ( Defs.Read m
+  , Env.All m
+  , Discovery.Tells m
+  , Tag.Gen m 
+  , Rewrite.Env m
+  , Embed.History m )
+  
+  
+type Step m =
+  ( Transform.Step m
+  , Env m )
+ 
+  
+run :: Env m => Term -> m Term
+run = undefined
+
+
+fusion :: Step m => Term -> Term -> m Term
+fusion ctx_t fix@(Fix fix_inf fix_b fix_t) = 
+  Embed.check orig_t $ do
+    -- Generate a new tag, larger than all others in the term
+    -- to prioritise rewrites that remove it
+    temp_tag <- Tag.make (Tag.tags orig_t)
+    let temp_fix = Fix (set fixTag temp_tag fix_inf) fix_b fix_t
+        rewrite_from = Eval.run (app ctx_t [temp_fix])
+    
+    new_fix_t <- id
+      . Rewrite.local temp_tag rewrite_from 0
+      $ Transform.continue (app ctx_t [Term.unfoldFix temp_fix])
+      
+    -- Check we actually performed a rewrite
+    Fail.unless (Indices.freeWithin 0 new_fix_t)
+    
+    return    
+      . Fix new_fix_inf new_fix_b 
+      $ Indices.substAt 0 fix new_fix_t
+  where
+  orig_t = Eval.run (app ctx_t [fix])
+  
+  new_fix_b = set Type.bindType (Type.get orig_t) fix_b
+  new_fix_inf = set fixClosed False fix_inf
+  
+  
+fixfix :: forall m . Step m => Term -> m Term
+fixfix o_term@(App o_fix@(Fix _ _ o_fix_t) o_args) = do
+  -- ^ o_ is outer, i_ is inner
+  Fail.unless (Term.inductivelyTyped o_term) 
+  Fail.assert (Term.isLambdaFloated o_fix)
+  
+  -- Broadcast the discovery
+  Discovery.equalsM o_term
+    -- Pick the first one which does not fail
+    . Fail.choose
+    -- Run fixfixArg on every decreasing fixpoint argument position
+    . map fixArg
+    . filter (Term.isFix . Term.leftmost . (o_args !!))
+    $ Term.decreasingArgs o_fix
+  where  
+  fixArg :: Int -> m Term
+  -- Run fix-fix fusion on the argument at the given index
+  fixArg arg_i = do
+    Fail.unless (Term.inductivelyTyped i_term)
+    Fail.assert (Term.isLambdaFloated i_fix)
+    fusion ctx_t i_fix
+    where
+    i_term@(App i_fix@(Fix _ i_fix_b i_fix_t) i_args) = o_args !! arg_i
+   
+    ctx_t = id 
+      . unflattenLam (i_fix_b : o_fix_bs ++ i_fix_bs) 
+      $ app o_fix' o_args'
+      where
+      o_fix' = Indices.liftMany (o_arg_c + i_arg_c + 1) o_fix
+      o_args' = id
+        . setAt arg_i i_term' 
+        . reverse
+        . map (Indices.liftMany i_arg_c . Var . enum)
+        $ [0..o_arg_c-1] 
+      
+      i_term' = App i_fix' i_args'
+      i_args' = reverse (map (Var . enum) [0..i_arg_c - 1])
+      i_fix' = Indices.liftMany (o_arg_c + i_arg_c) (Var 0)
+             
+      o_fix_bs = fst (flattenLam o_fix_t)
+      i_fix_bs = fst (flattenLam i_fix_t)
+        
+      o_arg_c = nlength o_fix_bs
+      i_arg_c = nlength i_fix_bs
+  
+
+{-
 run :: forall m . FusionM m => Term -> m Term
 run = Fold.rewriteStepsM all_steps
   where
@@ -90,7 +175,7 @@ expressMatch term@(App (Fix {}) _) = do
   else let [(_, cons_t)] = ms in return cons_t
 expressMatch _ = Fail.here
 
-{-
+{??-
 -- | Any pattern matches over fixpoints which would have their fixpoints
 -- unfolded after this pattern match, will be expressed within that branch
 -- as a constraint.
@@ -135,7 +220,7 @@ expressUnfoldingMatch cse_t@(Case (Var x) alts) = do
         
 expressUnfoldingMatch _ = 
   Fail.here
-  -}
+  
   
         
 -- | Uses fixpoint fusion on a fix with a fix as a decreasing argument.
@@ -315,7 +400,7 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
   
   useful_matches <- Env.findMatches usefulMatch
 
-  {-
+  {??-
   when (null useful_matches) $ do
     outer_s <- showM outer_t
     ms <- Env.matches
@@ -323,7 +408,7 @@ matchFix outer_t@(App fix@(Fix fix_info _ _) args) = do
     strict_s <- showM (map (Eval.strictTerms . fst) ms)
     trace ("\n[match-fix] no shared between:\n" ++ outer_s ++ "\n" ++ ms_s ++ "\nSTRICT:\n" ++ strict_s) 
       Fail.here
-    -}
+    
     
   Fail.when (null useful_matches)
   
@@ -647,4 +732,4 @@ fixMatch inner_t@(App (Fix {}) args) = do
         return other
             
 fixMatch _ = Fail.here
-          
+          -}

@@ -14,7 +14,7 @@ import qualified Elea.Monad.Env as Env
 import qualified Elea.Terms as Term
 import qualified Elea.Types as Type
 import qualified Elea.Foldable as Fold
-import qualified Elea.Simplifier as Simp
+import qualified Elea.Transform.Simplify as Simp
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs
 import qualified Data.Map as Map

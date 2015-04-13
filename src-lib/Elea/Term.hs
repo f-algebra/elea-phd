@@ -1,6 +1,7 @@
 module Elea.Term
 (
   module Elea.Index,
+  Tag,
   Term (..), Alt (..),
   Term' (..), Alt' (..),
   Type, Bind (..), Constructor (..),
@@ -19,7 +20,6 @@ module Elea.Term
   isFix, isUnr, isCase,
   isUnr',
   emptyInfo,
-  tags,
   inductivelyTyped, 
   fromVar, 
   conjunction, true, false,
@@ -30,6 +30,7 @@ module Elea.Term
   loweredAltInner,
   buildFold,
   buildEq,
+  reset,
 )
 where
 
@@ -87,14 +88,15 @@ data Constraint
 -- | Information stored about fixpoints, to add efficiency.
 data FixInfo
   = FixInfo { _fixClosed :: !Bool 
-            , _fixName :: Maybe String
-            , _fixTag :: Tag }
+            , _fixName :: !(Maybe String)
+            , _fixTag :: !Tag }
             
               
 -- Fixpoint information does not change the meaning of a fixpoint, so
 -- it does not effect equality between terms.
 instance Eq FixInfo where
   _ == _ = True
+  
 instance Ord FixInfo where
   _ `compare` _ = EQ
   
@@ -188,6 +190,7 @@ instance Zip Term' where
   zip (Case' t alts) (Case' t' alts') =
     Case' (t, t') (zipWith zip alts alts')
 
+
 -- * Some generally helpful functions
 
 app :: Term -> [Term] -> Term
@@ -245,20 +248,6 @@ arguments = tail . flattenApp
 
 emptyInfo :: FixInfo
 emptyInfo = FixInfo False Nothing Tag.omega
-
-tags :: Term -> Set Tag
-tags = Fold.cata ts
-  where
-  ts :: Term' (Set Tag) -> Set Tag
-  ts (Fix' inf _ _) = Set.singleton (get fixTag inf)
-  ts (Var' _) = Set.empty
-  ts (Unr' _) = Set.empty
-  ts (App' f xs) = Set.unions (f:xs)
-  ts (Lam' _ t) =  t
-  ts (Con' _) = Set.empty
-  ts (Case' t alts) = 
-    Set.unions (t : map (get altInner') alts)
-
 
 -- | This should maybe be called @fullyApplied@ but it checks whether a fixpoint
 -- has every argument applied to it.
@@ -476,3 +465,24 @@ buildEq ind@(Ind _ cons) =
             where
             f_var = Var (enum (arg_i + 1 + length con_args))
 
+            
+-- | Generate new tags for every term that needs them, with
+-- tag ordering properly representing tag containment.
+-- Also un-closes all fixed-points.
+reset :: ContainsTerms a => a -> a
+reset = id
+  . evalWriter 
+  . Tag.runGenT
+  . mapTermsM (Fold.cata reset')
+  where
+  reset' :: Term' (Tag.GenT (Writer (Set Tag)) Term) 
+         -> Tag.GenT (Writer (Set Tag)) Term
+  reset' (Fix' inf b fix_t) = do
+    (fix_t', inner_tags) <- listen fix_t
+    new_tag <- Tag.make inner_tags
+    let inf' = (set fixTag new_tag . set fixClosed False) inf
+    tell (Set.singleton new_tag)
+    return (Fix inf' b fix_t')
+  reset' other = 
+    liftM Fold.embed (sequence other)
+    

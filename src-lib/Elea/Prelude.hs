@@ -57,7 +57,7 @@ module Elea.Prelude
   arrowSum, supremum, (|>), ($>), replaceAt,
   Maximum (..), Minimum (..), sconcatMap, nlength,
   intersects, length, liftMaybe, maybeT, nth, drop, take, screen,
-  isSubsequenceOf
+  isSubsequenceOf, evalWriter, evalWriterT
 )
 where
 
@@ -79,7 +79,8 @@ import Control.Monad.State ( evalStateT, execState, runState, evalState,
 import Control.Monad.Reader ( 
   MonadReader (..), Reader (..), ReaderT (..), 
   asks, runReader, mapReaderT, withReaderT, withReader )
-import Control.Monad.Writer ( execWriter, runWriter, execWriterT, mapWriterT,
+import Control.Monad.Writer ( execWriter, runWriter, execWriterT, 
+  mapWriterT,
   MonadWriter (..), Writer (..), WriterT (..), censor, listens )
 import Control.Monad.List ( ListT (..) )
 import Control.Monad.Trans.Maybe
@@ -342,11 +343,10 @@ enum :: (Enum a, Enum b) => a -> b
 enum = toEnum . fromEnum
 
 indentBy :: Int -> String -> String
-indentBy n = concatMap extendNewLine
-  where
-  extendNewline '\n' = '\n':(replicate n ' ') 
-  extendNewLine c = [c]
-
+indentBy n [] = []
+indentBy n ('\n':cs) = '\n' : replicate n ' ' ++ indentBy n cs
+indentBy n (c:cs) = c : indentBy n cs
+  
 indent :: String -> String
 indent = indentBy 2
 
@@ -418,3 +418,9 @@ isSubsequenceOf _     []                   = False
 isSubsequenceOf a@(x:a') (y:b) | x == y    = isSubsequenceOf a' b
                                | otherwise = isSubsequenceOf a b
 
+evalWriter :: Writer w a -> a
+evalWriter = fst . runWriter
+
+evalWriterT :: Monad m => WriterT w m a -> m a
+evalWriterT = liftM fst . runWriterT
+                               

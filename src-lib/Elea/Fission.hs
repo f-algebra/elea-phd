@@ -17,11 +17,11 @@ import qualified Elea.Terms as Term
 import qualified Elea.Types as Type
 import qualified Elea.Context as Context
 import qualified Elea.Unification as Unifier
-import qualified Elea.Simplifier as Simp
+import qualified Elea.Transform.Simplify as Simp
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs
-import qualified Elea.Monad.Eval as Eval
+import qualified Elea.Monad.Transform as Transform
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 

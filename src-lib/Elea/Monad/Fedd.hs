@@ -1,6 +1,5 @@
 -- | The Fusion, Environment, Definitions and Discovery monad.
 -- Possible speed increase by collapsing a monad transformer stack.
--- Unfinished.
 module Elea.Monad.Fedd
 (
   FeddT, Fedd,
@@ -16,6 +15,9 @@ import Elea.Monad.Memo.Data ( Outcome (..) )
 import qualified Elea.Constraint as Constraint
 import qualified Elea.Context as Context
 import qualified Elea.Types as Type
+import qualified Elea.Embed as Embed
+import qualified Elea.Tag as Tag
+import qualified Elea.Monad.Rewrite as Rewrite
 import qualified Elea.Monad.Discovery.EquationSet as EqSet
 import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Definitions.Data as Defs
@@ -42,7 +44,8 @@ type Fedd = FeddT Identity
 data FeddState 
   = FS  { _fsDefs :: !Defs.Data
         , _fsFusions :: !MemoDB.Data
-        , _fsConstraintFusions :: !MemoDB.Data }
+        , _fsConstraintFusions :: !MemoDB.Data
+        , _fsTagGen :: !Int }
         
 mkLabels [ ''FeddState ]
 
@@ -54,7 +57,8 @@ evalT = id
   where
   fst3 (x, _, _) = x
 
-emptyState = FS Defs.empty MemoDB.empty MemoDB.empty
+emptyState :: FeddState
+emptyState = FS Defs.empty MemoDB.empty MemoDB.empty 0
   
 eval :: Fedd a -> a
 eval = runIdentity . evalT
@@ -145,4 +149,19 @@ instance Monad m => Memo.Can (FeddT m) where
     
   maybeFission _ _ = id
   
+  
+instance Monad m => Rewrite.Env (FeddT m) where
+  rewrites = asks EnvDB.rewrites
+  local a t x = local (EnvDB.addRewrite a t x) 
+  
     
+instance Monad m => Embed.History (FeddT m) where
+  codes = asks EnvDB.codes
+  seeCode c = local (EnvDB.addCode c)
+  
+instance Monad m => Tag.Gen (FeddT m) where
+  generateId = do
+    new_i <- State.gets (get fsTagGen)
+    State.modify (set fsTagGen (new_i + 1))
+    return new_i
+  

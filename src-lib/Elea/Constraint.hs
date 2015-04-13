@@ -38,7 +38,7 @@ import qualified Elea.Monad.Env as Env
 import qualified Elea.Context as Context
 import qualified Elea.Unification as Unifier
 import qualified Elea.Foldable as Fold
-import qualified Elea.Simplifier as Simp
+import qualified Elea.Transform.Simplify as Simp
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs
 import qualified Data.Set as Set

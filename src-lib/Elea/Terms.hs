@@ -32,6 +32,7 @@ module Elea.Terms
   freeSubtermsOf,
   revertEnvMatches,
   floatRecCallInwards,
+  isLambdaFloated,
 )
 where
 
@@ -44,6 +45,7 @@ import qualified Elea.Monad.Env as Env
 import qualified Elea.Context as Context
 import qualified Elea.Unification as Unifier
 import qualified Elea.Foldable as Fold
+import qualified Elea.Tag as Tag
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs
@@ -349,7 +351,7 @@ generaliseUninterpreted target =
 -- the constructor.
 tuple :: (Defs.Read m, Env.Read m) => [Term]-> m Term
 tuple ts
-  | length ts > 1 = do
+  | nlength ts > 1 = do
     ind <- id
       . liftM Type.tuple
       $ mapM Type.getM ts
@@ -369,8 +371,8 @@ isEquation _ = Fail.here
             
 -- | Take a free variable of a fixpoint and express it as a new first argument
 -- of that fixpoint.
--- It can reverse the @constArg@ step from "Elea.Simplifier".
--- Necessary for then @freeDecreasingArg@ step from "Elea.Fusion".
+-- It can reverse the @constArg@ step from "Elea.Transform.Simplify".
+-- Necessary for then @freeDecreasingArg@ step from "Elea.Transform.Fusion".
 expressFreeVariable :: Env.Read m => Index -> Term -> m Term
 expressFreeVariable free_var (Fix fix_i (Bind fix_n fix_ty) fix_t) = do
   var_b <- Env.boundAt free_var
@@ -582,3 +584,27 @@ floatRecCallInwards =
       
   inwards term = term
     
+
+instance Tag.Has Term where
+  tags = Fold.collect tags'
+    where
+    tags' :: Term -> Maybe Tag 
+    tags' (Fix inf _ _) = Just (get fixTag inf)
+    tags' _ = Nothing
+    
+  map f = Fold.transform rep 
+    where
+    rep :: Term -> Term
+    rep (Fix inf b t) = 
+      Fix (modify fixTag f inf) b t
+    rep t = t
+    
+
+-- | Check that all argument lambdas are topmost in a fixed-point
+isLambdaFloated :: Term -> Bool
+isLambdaFloated fix@(Fix _ _ fix_t) = 
+  ty_arg_count == lam_count
+  where
+  ty_arg_count = nlength (Type.argumentTypes (Type.get fix))
+  lam_count = nlength (fst (flattenLam fix_t))
+      

@@ -21,8 +21,8 @@ import qualified Elea.Index as Indices
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Terms as Term
 import qualified Elea.Types as Type
-import qualified Elea.Evaluation as Eval
-import qualified Elea.Simplifier as Simp
+import qualified Elea.Transform.Evaluate as Eval
+import qualified Elea.Transform.Simplify as Simp
 import qualified Elea.Context as Context
 import qualified Elea.Constraint as Constraint
 import qualified Elea.Foldable as Fold

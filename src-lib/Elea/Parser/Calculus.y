@@ -354,8 +354,10 @@ lookupType (name, raw_ty_args) = do
     else Err.throw $ "Undefined inductive type: " ++ name
     
 parseAndCheckTerm :: RawTerm -> ParserMonad m Term
-parseAndCheckTerm = 
-  Err.check Type.check . parseRawTerm
+parseAndCheckTerm = id
+  . liftM reset 
+  . Err.check Type.check 
+  . parseRawTerm
   
 parseRawType :: RawType -> ParserMonad m Type
 parseRawType (TyBase name) =

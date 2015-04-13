@@ -15,8 +15,8 @@ import qualified Elea.Index as Indices
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Unification as Unifier
 import qualified Elea.Testing as Test
-import qualified Elea.Evaluation as Eval
-import qualified Elea.Simplifier as Simp
+import qualified Elea.Transform.Evaluate as Eval
+import qualified Elea.Transform.Simplify as Simp
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 
@@ -99,7 +99,7 @@ tests = Test.label "Terms"
     return (Test.assertEq (Set.singleton t1) strict_ts)
     -}
   return $ Test.list $  
-    [ fold1, fold2
+    [ fold1 --, fold2
     , weird1
     , conj1
     , eq1, eq2, eq3, eq4

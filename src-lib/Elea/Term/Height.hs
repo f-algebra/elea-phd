@@ -1,18 +1,23 @@
 module Elea.Term.Height
 (
   Height (..),
-  enforceDecrease
+  enforceDecrease,
+  assertDecrease,
 )
 where
 
 import Elea.Prelude
 import Elea.Term
 import Elea.Tag ( Tag )
+import Elea.Show ()
+import Elea.Terms ()
+import qualified Elea.Type as Type
 import qualified Elea.Foldable as Fold 
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Embed as Embed
 import qualified Elea.Tag as Tag
 import qualified Data.Set as Set
+import qualified Data.Map as Map
 
 
 data Height 
@@ -58,10 +63,16 @@ height (Var _) = 1
 height (Unr _) = 1
 height (Con _) = 1
 height (Lam _ t) = 1 + height t
-height (Fix _ _ _) = 1 
+height (Fix inf b _) = 
+  1 + fromIntegral arg_count
+    + is_closed
+  where
+  arg_count = Type.argumentCount (get Type.bindType b)
+  is_closed | get fixClosed inf = 0
+            | otherwise = 1
 
 height (Case t alts) = 
-  heightCase t + concatMap (height . get altInner) alts
+  heightCase t + concatMap (heightAlt . get altInner) alts
   where
   heightCase :: Term -> Height
   heightCase t@(leftmost -> Con _) = 1 + height t
@@ -69,19 +80,47 @@ height (Case t alts) =
   heightCase t@(Case _ _) = 1 + height t
   heightCase t = height t
   
+  heightAlt (Lam _ t) = 2 + heightAlt t
+  heightAlt t = height t
+  
 height (App f xs) = 
-  heightApp f + concatMap heightApp xs
+  heightFun f + concatMap heightApp xs
   where 
+  heightFun :: Term -> Height
+  heightFun t@(App _ _) = 1 + height t
+  heightFun t = heightApp t
+  
   heightApp :: Term -> Height
   heightApp t@(Case _ _) = 1 + height t
   heightApp t = height t
   
   
+assertDecrease :: Monad m => String -> (Term -> m Term) -> Term -> m Term
+assertDecrease step f t = do
+  t' <- f t
+  let tag_order = Tag.compare t' t
+  if tag_order == GT
+    || (tag_order == EQ && height t' >= height t)
+  then
+    error $ "[" ++ step ++ "] failed to decrease: " 
+         ++ show t ++ "\n\n==> into ==>\n" ++ show t'
+  else
+    return t'
+  
+  
 enforceDecrease :: Fail.Can m => (Term -> m Term) -> Term -> m Term
 enforceDecrease f t = do
   t' <- f t
-  let tag_order = Tag.order (tags t') (tags t)
-  Fail.when (tag_order == GT)
-  Fail.when (tag_order == EQ && height t' >= height t)
-  return t'                              
+  let tag_order = Tag.compare t' t
+  if tag_order == GT
+    || (tag_order == EQ && height t' >= height t)
+  then do
+    Fail.when (True || t == t')
+    trace ("ENFORCE failed to decrease: " 
+         ++ show t ++ "\n\nwith encoding: " ++ show (Embed.encode t)
+         ++ "\n\n==> into ==>\n" 
+         ++ show t' ++ "\n\nwith encoding: " ++ show (Embed.encode t')) 
+         Fail.here
+  else
+    return t'
   

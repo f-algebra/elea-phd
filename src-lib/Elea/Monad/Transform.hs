@@ -1,7 +1,6 @@
--- | Evaluation rules are things which carry around a 'Term -> m Term' function. 
--- This function represents the recursive call to continue any
--- transformations.
-module Elea.Monad.Eval
+-- | A transformation monad carries around a 'Term -> m Term' function
+-- allowing it to apply the transformation recursively.
+module Elea.Monad.Transform
 (
   Rule (..),
   RuleT (..),
@@ -19,7 +18,6 @@ import Elea.Show ()
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Monad.Definitions.Class as Defs
-
 import qualified Control.Monad.Reader.Class as Reader
 import qualified Control.Monad.Trans.Class as Trans
 

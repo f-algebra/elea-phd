@@ -13,7 +13,7 @@ import qualified Elea.Tests.Simplifier as Simplifier
 import qualified Elea.Tests.Context as Context
 --import qualified Elea.Tests.Inventor as Inventor
 -- import qualified Elea.Tests.Constraints as Constraints
---import qualified Elea.Tests.Fusion as Fusion
+import qualified Elea.Tests.Fusion as Fusion
 import qualified Elea.Tests.UMap as UMap
 --import qualified Elea.Tests.Checker as Checker
 

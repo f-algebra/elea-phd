@@ -1,6 +1,6 @@
 -- | The most basic and well established simplification steps,
 -- plus a couple of functions which strongly rely on evaluation.
-module Elea.Evaluation 
+module Elea.Transform.Evaluate 
 (
   run, 
   transformSteps, 
@@ -8,6 +8,8 @@ module Elea.Evaluation
   strictTerms,
   degenerateContext,
   --floatVarMatches,
+  
+  caseOfCon,
 )
 where
 
@@ -25,7 +27,7 @@ import qualified Elea.Foldable as Fold
 import qualified Elea.Term.Height as Height
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Env.Class as Env
-import qualified Elea.Monad.Eval as Eval
+import qualified Elea.Monad.Transform as Transform
 import qualified Data.Set as Set
 
 -- TODO absurdity needs to properly evaluate strict arguments
@@ -33,27 +35,23 @@ import qualified Data.Set as Set
 run :: Term -> Term
 run = flip runReader ([] :: [Bind]) 
     -- ^ Use the Reader [Bind] instance for type environments
-    . Eval.runStep (Fail.concatTransforms all_steps)
+    . Transform.runStep (Fail.concatTransforms all_steps)
   where
   all_steps = transformSteps ++ traverseSteps
   
   
-transformSteps :: Eval.Step m => [Term -> m Term]
+transformSteps :: Transform.Step m => [Term -> m Term]
 transformSteps =
-  -- map Height.enforceDecrease
-    [ normaliseApp
-    , eta 
-    , absurdity
-    , beta
-    , caseOfCon 
-    , caseApp
-    , appCase
-    , caseCase
+    [ Height.assertDecrease "normalise" normaliseApp
+    , Height.assertDecrease "eta" eta 
+    , Height.assertDecrease "absurd" absurdity
+    , Height.assertDecrease "beta" beta
+    , Height.assertDecrease "case-con" caseOfCon 
     ]
 
-traverseSteps :: Eval.Step m => [Term -> m Term]
+traverseSteps :: Transform.Step m => [Term -> m Term]
 traverseSteps = 
- -- map Height.enforceDecrease
+  map Height.enforceDecrease
     [ traverseMatch
     , traverseVarBranch
     , traverseFunBranch
@@ -107,11 +105,11 @@ degenerateContext ctx = id
 -- | Finds terms that are absurd and sets them that way.
 -- So far it detects applying arguments to an absurd function.
 -- Need to add pattern matching over absurdity, but how to find the type?
-absurdity :: Eval.Step m => Term -> m Term
+absurdity :: Transform.Step m => Term -> m Term
 absurdity term
   | Type.has term
   , absurd term = 
-    Eval.continue (Unr (Type.get term))
+    Transform.continue (Unr (Type.get term))
   where 
   absurd (App (Unr _) _) = True
   absurd (App _ args) = any Term.isUnr args
@@ -121,35 +119,35 @@ absurdity _ =
   Fail.here
   
   
-normaliseApp :: Eval.Step m => Term -> m Term
+normaliseApp :: Transform.Step m => Term -> m Term
 normaliseApp (App f []) = 
-  Eval.continue f
+  Transform.continue f
 normaliseApp (App (App f ts1) ts2) = 
-  Eval.continue (App f (ts1 ++ ts2))
+  Transform.continue (App f (ts1 ++ ts2))
 normaliseApp _ = 
   Fail.here
   
 
-beta :: Eval.Step m => Term -> m Term
+beta :: Transform.Step m => Term -> m Term
 beta (App (Lam _ rhs) (arg:args)) = 
-  Eval.continue (app (subst arg rhs) args)
+  Transform.continue (app (subst arg rhs) args)
 beta _ = Fail.here
   
 
-eta :: Eval.Step m => Term -> m Term
+eta :: Transform.Step m => Term -> m Term
 eta (Lam _ (App f xs@(last -> Var 0)))
   | not (0 `Set.member` Indices.free new_t) = 
-    Eval.continue (Indices.lower new_t)
+    Transform.continue (Indices.lower new_t)
   where
   new_t = app f (init xs)
 eta _ = Fail.here
 
 
-caseOfCon :: Eval.Step m => Term -> m Term
+caseOfCon :: Transform.Step m => Term -> m Term
 caseOfCon (Case cse_t alts)
   | Con con : args <- flattenApp cse_t
   , Alt _ bs alt_t <- alts !! get Type.constructorIndex con = id
-    . Eval.continue
+    . Transform.continue
     -- We fold substitute over the arguments to the constructor
     -- starting with the return value of the pattern match (alt_t).
     -- So we substitute each argument in one by one to the alt term.
@@ -163,59 +161,25 @@ caseOfCon (Case cse_t alts)
 caseOfCon _ = Fail.here
 
 
--- | If we have a case statement on the left of term 'App'lication
--- then float it out.
-caseApp :: Eval.Step m => Term -> m Term
-caseApp (App (Case t alts) args) =
-  Eval.continue (Case t (map appArg alts))
-  where
-  appArg (Alt con bs alt_t) =
-    Alt con bs (app alt_t (Indices.liftMany (length bs) args))
-    
-caseApp _ = Fail.here
 
-
--- | If we have a case statement on the right of term 'App'lication
--- then float it out.
-appCase :: Eval.Step m => Term -> m Term
-appCase term@(App _ args) = do
-  cse_t <- Fail.fromMaybe (find isCase args)
-  Eval.continue (Term.applyCase cse_t term)
-appCase _ = Fail.here
-
-
--- | If we are pattern matching on a pattern match then remove this 
--- using distributivity.
-caseCase :: Eval.Step m => Term -> m Term
-caseCase outer_cse@(Case inner_cse@(Case inner_t inner_alts) outer_alts) =
-  Eval.continue (Case inner_t (map newOuterAlt inner_alts))
-  where
-  newOuterAlt :: Alt -> Alt
-  newOuterAlt (Alt con bs t) = 
-    Alt con bs (Case t alts_here)
-    where
-    alts_here = map (Indices.liftMany (length bs)) outer_alts
-caseCase _ = Fail.here
-
-
-traverseMatch :: Eval.Step m => Term -> m Term
+traverseMatch :: Transform.Step m => Term -> m Term
 traverseMatch term@(Case cse_t alts) = do
-  cse_t' <- Eval.continue cse_t
+  cse_t' <- Transform.continue cse_t
   Fail.when (cse_t == cse_t')
-  Eval.continue (Case cse_t' alts)
+  Transform.continue (Case cse_t' alts)
 traverseMatch _ = Fail.here
 
 
-traverseVarBranch :: Eval.Step m => Term -> m Term
+traverseVarBranch :: Transform.Step m => Term -> m Term
 traverseVarBranch (Case (Var x) alts) = do
   alts' <- mapM traverseAlt alts
   Fail.when (alts == alts')
-  return (Case (Var x) alts')
+  Transform.continue (Case (Var x) alts')
   where
   traverseAlt (Alt con bs t) = do
     t' <- id
       . Env.bindMany bs
-      . Eval.continue 
+      . Transform.continue 
       -- Substitute the variable we have just bound for the 
       -- pattern it has been bound to
       $ Indices.replaceAt x_here pat_t t
@@ -226,17 +190,17 @@ traverseVarBranch (Case (Var x) alts) = do
 traverseVarBranch _ = Fail.here
 
 
-traverseFunBranch :: Eval.Step m => Term -> m Term
+traverseFunBranch :: Transform.Step m => Term -> m Term
 traverseFunBranch (Case cse_t alts) = do
   alts' <- mapM traverseAlt alts
   Fail.when (alts == alts')
-  return (Case cse_t alts')
+  Transform.continue (Case cse_t alts')
   where
   traverseAlt (Alt con bs t) = do
     t' <- id
       . Env.bindMany bs
       . Env.matched cse_t_here pat_t
-      $ Eval.continue t
+      $ Transform.continue t
     return (Alt con bs t')
     where
     cse_t_here = Indices.liftMany (length bs) cse_t
@@ -244,29 +208,29 @@ traverseFunBranch (Case cse_t alts) = do
 traverseFunBranch _ = Fail.here
 
 
-traverseFun :: Eval.Step m => Term -> m Term
+traverseFun :: Transform.Step m => Term -> m Term
 traverseFun (Lam b t) = do
-  t' <- Env.bind b (Eval.continue t)
+  t' <- Env.bind b (Transform.continue t)
   return (Lam b t')
 traverseFun _ = Fail.here
 
 
-traverseApp :: Eval.Step m => Term -> m Term
+traverseApp :: Transform.Step m => Term -> m Term
 traverseApp (App f xs) = do
-  xs' <- mapM Eval.continue xs
-  f' <- Eval.continue f
+  xs' <- mapM Transform.continue xs
+  f' <- Transform.continue f
   Fail.when (xs == xs' && f' == f)
-  Eval.continue (App f' xs')
+  Transform.continue (App f' xs')
 traverseApp _ = Fail.here
 
 
-traverseFix :: Eval.Step m => Term -> m Term
+traverseFix :: Transform.Step m => Term -> m Term
 traverseFix (Fix inf b t) = do
- -- Fail.when (get fixClosed inf)
+  Fail.when (get fixClosed inf)
   t' <- id
     . Env.bind b
-    $ Eval.continue t
-  let inf' = inf --set fixClosed True inf
+    $ Transform.continue t
+  let inf' = set fixClosed True inf
   return (Fix inf' b t')
 traverseFix _ = Fail.here
 

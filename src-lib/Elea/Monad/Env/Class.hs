@@ -8,6 +8,8 @@ module Elea.Monad.Env.Class
   
   MatchRead (..), 
   findMatches,
+  findMatch,
+  isMatched,
   
   Tracks (..), 
   trackeds, liftTracked, 
@@ -78,6 +80,18 @@ class Write m => MatchRead m where
 findMatches :: MatchRead m => ((Term, Term) -> Bool) -> m [(Term, Term)]
 findMatches p = liftM (filter p) matches
 
+findMatch :: (Fail.Can m, MatchRead m) => Term -> m Term
+findMatch t = do
+  ms <- findMatches ((== t) . fst) 
+  Fail.when (null ms)
+  return (snd (head ms))
+
+isMatched :: MatchRead m => Term -> m Bool
+isMatched = id
+  . liftM isJust 
+  . runMaybeT
+  . findMatch
+ 
 
 -- | Anything that tracks indices as we move within something that binds
 -- indices.

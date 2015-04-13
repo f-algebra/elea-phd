@@ -73,8 +73,8 @@ instance Show (Term' String) where
     xs' = intercalate " " (map bracketIfNeeded xs)
     f' | "->" `isInfixOf` f || "end" `isInfixOf` f = "(" ++ f ++ ")"
        | otherwise = f
-  show (Fix' _ (show -> b) t) =
-    "\nfix " ++ b ++ " -> " ++ indent t
+  show (Fix' inf (show -> b) t) =
+    "\nfix" ++ show inf ++" " ++ b ++ " -> " ++ indent t
   show (Lam' (show -> b) t) =
     "\nfun " ++ b ++ " -> " ++ t
   show (Con' con) = show con
@@ -82,7 +82,13 @@ instance Show (Term' String) where
       "\nmatch " ++ cse_t ++ " with"
     ++ concatMap show f_alts 
     ++ "\nend"
-      
+    
+instance Show FixInfo where
+  show (FixInfo c _ tag) = "<" ++ is_c ++ "|" ++ show tag ++ ">"
+    where
+    is_c | c = "T"
+         | not c = "F"
+    
 instance Show (Alt' String) where
   show (Alt' con bs t) = 
     "\n| " ++ pat_s ++ " -> " ++ indent t

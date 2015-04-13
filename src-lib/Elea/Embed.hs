@@ -1,6 +1,7 @@
 -- | All things to do with our homeomorphic embedding termination check
 module Elea.Embed 
 (
+  Code,
   Encodable (..),
   History (..),
   HistoryT,
@@ -14,7 +15,7 @@ import Elea.Term
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Tag as Tag
 import qualified Elea.Type as Type
-import qualified Elea.Monad.Eval as Eval
+import qualified Elea.Monad.Transform as Transform
 import qualified Elea.Monad.Env.Class as Env
 import qualified Control.Monad.Trans.Class as Trans
 import qualified Data.Set as Set
@@ -35,8 +36,19 @@ instance Encodable Code where
   encode = id
 
 class Monad m => History m where
+  seeCode :: Code -> m a -> m a
+  codes :: m [Code]
+  
+  seenCode :: Code -> m Bool
+  seenCode code =
+    liftM (any (`embedsInto` code)) codes
+
   seen :: Encodable a => a -> m Bool
+  seen = seenCode . encode
+  
   see :: Encodable a => a -> m b -> m b
+  see = seeCode . encode
+  
   
 check :: (Fail.Can m, History m, Encodable a) => a -> m b -> m b
 check x continue = do
@@ -56,11 +68,8 @@ mapHistoryT f = HistoryT . mapReaderT f . historyT
 
   
 instance Monad m => History (HistoryT m) where
-  seen (encode -> code) = do
-    prev_codes <- ask
-    return (any (`embedsInto` code) prev_codes)
-  
-  see (encode -> code) =
+  codes = ask
+  seeCode code =
     local (\codes -> code : codes)
     
 instance Fail.Can m => Fail.Can (HistoryT m) where
@@ -68,12 +77,12 @@ instance Fail.Can m => Fail.Can (HistoryT m) where
   catch = mapHistoryT Fail.catch
   
 instance History m => History (MaybeT m) where
-  seen = Trans.lift . seen
-  see x = mapMaybeT (see x)
+  codes = Trans.lift codes
+  seeCode x = mapMaybeT (seeCode x)
   
-instance History m => History (Eval.RuleT m) where
-  seen = Trans.lift . seen
-  see x = Eval.mapRuleT (see x)
+instance History m => History (Transform.RuleT m) where
+  codes = Trans.lift codes
+  seeCode x = Transform.mapRuleT (seeCode x)
   
 instance Env.Read m => Env.Read (HistoryT m) where
   bindings = Trans.lift Env.bindings
@@ -120,4 +129,4 @@ instance Encodable Constructor where
     
 instance Encodable Alt where
   encode (Alt con bs t) = 
-    pair 7 0 ++ encode t
+    pair 7 0 ++ encode t ++ pair 7 0

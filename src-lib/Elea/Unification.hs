@@ -76,7 +76,10 @@ mostGeneral = screen mg
   mg xs (k, _) ys = 
     not (any (\(k', _) -> exists k' k) (xs ++ ys))
     
-
+instance Indexed (Unifier a) where
+  free = Map.keysSet
+  shift = Map.mapKeys
+    
 instance Unifiable t => Unifiable [t] where
   find xs ys = do
     Fail.unless ((length xs :: Int) == length ys)
