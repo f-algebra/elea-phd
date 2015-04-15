@@ -12,7 +12,7 @@ import Text.Printf
 import System.CPUTime
 import qualified Elea.Testing as Test
 --import qualified Elea.Tests.Fusion as Test
-import qualified Elea.Terms as Term
+import qualified Elea.Term.Ext as Term
 
 time :: IO t -> IO t
 time a = do

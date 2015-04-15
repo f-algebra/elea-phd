@@ -6,22 +6,17 @@ module Elea.Transform.Simplify
   run, 
   quick,
   steps,
-  --removeConstArgs,
-  willUnfold,
-  
-  -- | These two steps are useful for fixpoint fusion
-  --finiteCaseFix, 
-  finiteArgFix,
 )
 where
 
 import Elea.Prelude
 import Elea.Term
 import Elea.Show ( showM )
-import qualified Elea.Terms as Term
+import qualified Elea.Term.Ext as Term
 import qualified Elea.Term.Height as Height
-import qualified Elea.Types as Type
-import qualified Elea.Index as Indices
+import qualified Elea.Type.Ext as Type
+import qualified Elea.Term.Index as Indices
+import qualified Elea.Monad.History as History
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Unification as Unifier
 import qualified Elea.Transform.Evaluate as Eval
@@ -36,17 +31,19 @@ import qualified Data.Map as Map
 import qualified Control.Monad.Trans as Trans
 
 run :: Term -> Term
-run = flip runReader ([] :: [Bind]) 
-    -- ^ Use the Reader [Bind] instance for type environments
-    . Transform.runStep (Fail.concatTransforms all_steps)
-    . Term.reset
+run = id
+  . flip runReader ([] :: [Bind]) 
+  . History.emptyEnvT
+  -- ^ Use the Reader [Bind] instance for type environments
+  . Transform.fix (Transform.compose all_steps)
+  . Term.reset
   where
   all_steps = Eval.transformSteps ++ steps ++ Eval.traverseSteps
 
 quick :: Term -> Term
 quick = run
 
-steps :: Transform.Step m => [Term -> m Term]
+steps :: Eval.Step m => [Term -> m Term]
 steps =
     [ const Fail.here
     , Height.assertDecrease "case-app" caseApp
@@ -71,71 +68,17 @@ steps =
     ] 
     
 
-  
-
-
--- | Whether a fixpoint call will be unfolded by the simplifier
-willUnfold :: Term -> Bool
-willUnfold term@(App fix@(Fix _ _ fix_t) args) = 
-  any isSafeConArg (Term.decreasingAppArgs term)
-  where
-  -- Check whether an argument is a constructor, and will reduce all pattern 
-  -- matches upon it.
-  isSafeConArg :: Int -> Bool
-  isSafeConArg arg_i =
-    isCon (leftmost arg) 
-    && Set.null matched_rec_vars
-    where
-    arg = args !! arg_i
-    -- All the recursive arguments to the constructor
-    -- at the given argument position, and all the recursive arguments to
-    -- those arguments, and so on...
-    rec_vars = recursiveConArgs arg
-    
-    matched_vars = id
-      . Env.trackOffset
-      . Env.liftTracked
-      $ Fold.foldM matchedVars unwrapped_t
-      
-    matched_rec_vars = Set.intersection matched_vars rec_vars
-    
-    unwrapped_t = id
-      . Eval.run 
-      . App fix_t 
-      . setAt arg_i (Indices.lift arg)
-      $ replicate (length args) (Var 0)
-      
-    recursiveConArgs :: Term -> Set Index
-    recursiveConArgs (Var x) = Set.singleton x
-    recursiveConArgs (flattenApp -> Con con : con_args) = id
-      . concatMap recursiveConArgs
-      . map (con_args !!)
-      $ Type.recursiveArgs con
-    recursiveConArgs _ = mempty
-    
-    -- Free variables pattern matched upon in the given term
-    matchedVars :: Term -> Env.TrackOffset (Set Index) 
-    matchedVars (Case (Var x) alts) = do
-      can_lower <- Env.lowerableByOffset x
-      -- Variable must be free outside the original term,
-      -- and must be recursed upon (so the match cannot be finite)
-      if can_lower 
-        && not (Term.isFiniteMatch alts)
-      then liftM Set.singleton (Env.lowerByOffset x)
-      else return mempty
-    matchedVars _ = 
-      return mempty
-
-  
 -- | We do not want pattern matches to return function typed values,
 -- so we add a new lambda above one if this is the case.
-caseFun :: Transform.Step m => Term -> m Term
+caseFun :: Eval.Step m => Term -> m Term
 caseFun cse@(Case t alts) 
   | Just new_b <- potentialBinds alts = do
+    alts' <- id
+      . Env.bind new_b 
+      $ mapM (appAlt . Indices.lift) alts
     Transform.continue
       . Lam new_b
-      . Case (Indices.lift t)
-      $ map appAlt alts
+      $ Case (Indices.lift t) alts'
   where
   alt_ts = map (get altInner) alts
   
@@ -148,10 +91,13 @@ caseFun cse@(Case t alts)
     findLam (Alt _ _ (Case _ alts)) = potentialBinds alts
     findLam _ = Nothing
   
-  appAlt (Alt con bs alt_t) =
-    Alt con bs (Eval.run (app alt_t' [arg]))
+  appAlt (Alt con bs alt_t) = do
+    alt_t' <- id
+      . Env.bindMany bs
+      . Transform.continue
+      $ app alt_t [arg]
+    return (Alt con bs alt_t')
     where
-    alt_t' = Indices.liftAt (length bs) alt_t
     arg = Var (length bs)
     
 caseFun _ = Fail.here
@@ -159,7 +105,7 @@ caseFun _ = Fail.here
   
 -- | If an argument to a 'Fix' never changes in any recursive call
 -- then we should float that lambda abstraction outside the 'Fix'.
-constArg :: Transform.Step m => Term -> m Term
+constArg :: Eval.Step m => Term -> m Term
 constArg (App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
   | length arg_bs /= nlength args = Fail.here
   | otherwise = do
@@ -176,8 +122,7 @@ constArg (App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
     let args' = setAt pos arg' args
     
     -- Run evaluation to reduce all the new lambdas
-    -- then continue with simplification
-    Transform.continue (Eval.run (app fix' args'))
+    Eval.beta (app fix' args')
   where
   -- Strip off the preceding lambdas of the function
   (arg_bs, fix_body) = flattenLam fix_t
@@ -270,19 +215,8 @@ constArg (App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
 constArg _ = Fail.here
 
 
--- | If a fixpoint has a finite input to one of its decreasing arguments
--- then you can safely unfold it.
-finiteArgFix :: Fail.Can m => Term -> m Term
-finiteArgFix term@(App fix@(Fix {}) args)
-  | any isFinite dec_args = 
-    return (Eval.run (app (Term.unfoldFix fix) args))
-  where
-  dec_args = map (args `nth`) (Term.decreasingAppArgs term)
-finiteArgFix _ = Fail.here
-
-
 -- | Removes a pattern match which just returns the term it is matching upon.
-identityCase :: Transform.Step m => Term -> m Term
+identityCase :: Eval.Step m => Term -> m Term
 identityCase (Case cse_t alts)
   | all isIdAlt alts = Transform.continue cse_t
   where
@@ -299,21 +233,6 @@ uselessFix (Fix _ _ fix_t)
   | not (0 `Set.member` Indices.free fix_t) = 
     return (Indices.lower fix_t)
 uselessFix _ = Fail.here
-
-{-
--- | Unfolds a 'Fix' if one of its decreasing arguments is a constructor term 
--- which is defined enough to fully reduce all matches on that argument.
-unfoldFixInj :: Fail.Can m => Term -> m Term
-unfoldFixInj term@(App fix@(Fix _ _ fix_t) args)
-  | willUnfold term =
-    return   
-    --  . traceMe "[unfold fix-inj] after"
-      . Eval.run 
-    --  . traceMe "[unfold fix-inj] before"
-      $ app (Term.unfoldFix fix) args
-  
-unfoldFixInj _ = Fail.here
--}
 
 
 -- | If we pattern match inside a 'Fix', but only using variables that exist
@@ -342,25 +261,6 @@ freeCaseFix fix@(Fix _ _ fix_t) = do
 freeCaseFix _ = Fail.here
 
 
--- | Replace all instances of a term with the pattern it is matched to.
-propagateMatch :: Fail.Can m => Term -> m Term
-propagateMatch (Case cse_t alts) 
-  | any altSubterm alts = id
-    return (Case cse_t (map propagateAlt alts))
-  where
-  altSubterm (Alt _ bs alt_t) = 
-    Term.isSubterm (Indices.liftMany (length bs) cse_t) alt_t
-  
-  propagateAlt :: Alt -> Alt
-  propagateAlt (Alt con bs alt_t) = id
-    . Alt con bs  
-    . Eval.run
-    $ Term.replace cse_t' alt_p alt_t
-    where
-    alt_p = Term.altPattern con
-    cse_t' = Indices.liftMany (length bs) cse_t
-    
-propagateMatch _ = Fail.here
 
 {-
 -- | Unfolds a 'Fix' which is being pattern matched upon if that pattern
@@ -445,8 +345,8 @@ constantFix t@(App (Fix _ fix_b fix_t) args)
     . Fold.isoFoldM Term.branches resultTerm
     where
     resultTerm :: Term -> MaybeT Env.TrackOffset (Set Term)
-    resultTerm (Eval.run -> term)
-      | isUnr term = return mempty
+    resultTerm term
+      | isUnr (Eval.run term) = return mempty
       | otherwise = do
         depth <- Env.offset
         Fail.unless (Indices.lowerableBy depth term)
@@ -502,7 +402,7 @@ unfoldWithinFix _ = Fail.here
           
 
 -- | Removes a pattern match if every branch returns the same value.
-constantCase :: forall m . Transform.Step m => Term -> m Term
+constantCase :: forall m . Eval.Step m => Term -> m Term
 constantCase (Case _ alts) = do
   (alt_t:alt_ts) <- mapM loweredAltTerm alts
   Fail.unless (all (== alt_t) alt_ts)
@@ -518,7 +418,7 @@ constantCase _ = Fail.here
 
 -- | If we have a case statement on the left of term 'App'lication
 -- then float it out.
-caseApp :: Transform.Step m => Term -> m Term
+caseApp :: Eval.Step m => Term -> m Term
 caseApp (App (Case t alts) args) =
   Transform.continue (Case t (map appArg alts))
   where
@@ -530,16 +430,31 @@ caseApp _ = Fail.here
 
 -- | If we have a case statement on the right of term 'App'lication
 -- then float it out.
-appCase :: Transform.Step m => Term -> m Term
-appCase term@(App _ args) = do
-  cse_t <- Fail.fromMaybe (find isCase args)
-  Transform.continue (Term.applyCase cse_t term)
+-- TODO check for strict args!!
+appCase :: Eval.Step m => Term -> m Term
+appCase term@(App f xs) = do
+  cse_i <- Fail.fromMaybe (findIndex isCase xs)
+  Transform.continue (applyCase cse_i)
+  where
+  applyCase cse_i = 
+    Case cse_t (map applyAlt alts)
+    where
+    Case cse_t alts = xs !! cse_i
+    
+    applyAlt (Alt con bs alt_t) = 
+      Alt con bs (app f' xs')
+      where
+      f' = Indices.liftMany (length bs) f
+      xs' = id 
+        . setAt cse_i alt_t
+        $ Indices.liftMany (length bs) xs
+      
 appCase _ = Fail.here
 
 
 -- | If we are pattern matching on a pattern match then remove this 
 -- using distributivity.
-caseCase :: Transform.Step m => Term -> m Term
+caseCase :: Eval.Step m => Term -> m Term
 caseCase outer_cse@(Case inner_cse@(Case inner_t inner_alts) outer_alts) =
   Transform.continue (Case inner_t (map newOuterAlt inner_alts))
   where
@@ -575,10 +490,12 @@ unsafeUnfoldFixInj _ =
 
 -- | If a fixed-point has a finite decreasing argument then we unfold 
 -- the fixed-point.
-unfoldFinite :: Transform.Step m => Term -> m Term
-unfoldFinite (App fix@(Fix {}) args) 
-  | any Term.isFinite dec_args = do
-    Transform.continue (app (Term.unfoldFix fix) args)
+unfoldFinite :: Eval.Step m => Term -> m Term
+unfoldFinite term@(App fix@(Fix {}) args) 
+  | any Term.isFinite dec_args = id
+      . History.check term 
+      . Transform.continue 
+      $ app (Term.unfoldFix fix) args
   where
   dec_args = map (args !!) (Term.decreasingArgs fix)
 unfoldFinite _ = Fail.here

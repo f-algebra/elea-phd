@@ -19,13 +19,14 @@ module Elea.Monad.Env.Class
 where
 
 import Elea.Prelude
-import Elea.Index
+import Elea.Term.Index
 import Elea.Term
 import Elea.Unification ( Unifier )
 import qualified Elea.Type as Type
-import qualified Elea.Index as Indices
+import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions.Class as Defs
+import qualified Elea.Monad.History as History
 import qualified Control.Monad.Trans as Trans
 import qualified Data.Map as Map
 
@@ -174,3 +175,14 @@ instance Tracks r m => Tracks r (MaybeT m) where
 instance (Monoid w, Tracks r m) => Tracks r (WriterT w m) where
   tracked = Trans.lift tracked
   liftTrackedMany n = mapWriterT (liftTrackedMany n)
+  
+
+instance Read m => Read (History.EnvT m) where
+  bindings = Trans.lift bindings
+
+instance Write m => Write (History.EnvT m) where
+  bindAt at b = History.mapEnvT (bindAt at b)
+  matched t c = History.mapEnvT (matched t c)
+  
+instance MatchRead m => MatchRead (History.EnvT m) where
+  matches = Trans.lift matches

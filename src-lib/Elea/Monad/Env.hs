@@ -32,7 +32,7 @@ module Elea.Monad.Env
 where
 
 import Elea.Prelude
-import Elea.Index
+import Elea.Term.Index
 import Elea.Term
 import Elea.Type ( ContainsTypes (..) )
 import Elea.Unification ( Unifiable, Unifier )
@@ -41,7 +41,7 @@ import qualified Elea.Type as Type
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Discovery.Class as Discovery
-import qualified Elea.Index as Indices
+import qualified Elea.Term.Index as Indices
 import qualified Elea.Unification as Unifier 
 import qualified Elea.Unification.Map as UMap
 import qualified Elea.Foldable as Fold
@@ -177,6 +177,8 @@ instance Substitutable Term where
     . Fold.transformM substVar
     where
     substVar :: Term -> TrackIndices (Index, Term) Term
+    substVar (App f xs) =
+      return (app f xs)
     substVar (Var var) = do
       (at, with) <- tracked
       return $ case at `compare` var of
@@ -548,7 +550,6 @@ instance Unifiable Term where
       Fail.when (con1 /= con2)
       return mempty
     uni (Case t1 alts1) (Case t2 alts2) = do
-      Fail.assert (length alts1 == (length alts2 :: Int))
       ut <- uni t1 t2
       ualts <- zipWithM uniAlt alts1 alts2
       Unifier.unions (ut:ualts) 

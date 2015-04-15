@@ -11,10 +11,10 @@ import Elea.Context ( Context )
 import Elea.Show ( showM )
 import Elea.Monad.Fedd ( Fedd )
 import qualified Elea.Fixpoint as Fix
-import qualified Elea.Index as Indices
+import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.Env as Env
-import qualified Elea.Terms as Term
-import qualified Elea.Types as Type
+import qualified Elea.Term.Ext as Term
+import qualified Elea.Type.Ext as Type
 import qualified Elea.Context as Context
 import qualified Elea.Unification as Unifier
 import qualified Elea.Transform.Simplify as Simp

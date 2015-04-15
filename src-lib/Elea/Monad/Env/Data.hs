@@ -10,10 +10,10 @@ where
 
 import Elea.Prelude
 import Elea.Term
-import Elea.Index
+import Elea.Term.Index
 import Elea.Embed ( Code )
 import Elea.Monad.Env ()
-import qualified Elea.Index as Indices
+import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Monad.Rewrite as Rewrite
 import qualified Elea.Type as Type
@@ -37,6 +37,7 @@ bindings = get dbBinds
 
 bindAt :: Index -> Bind -> Data -> Data
 bindAt at b = id
+  . liftRewritesAt (enum at)
   . modify dbMatches (map (liftAt (enum at) *** liftAt (enum at)))
   . modify dbBinds (insertAt (enum at) b)
 
@@ -55,6 +56,12 @@ addRewrite a t x = modify dbRewrites ((a, t, x) :)
 
 codes :: Data -> [Code]
 codes = get dbCodes
+
+liftRewritesAt :: Index -> Data -> Data
+liftRewritesAt at = 
+  modify dbRewrites (map liftR)
+  where
+  liftR (a, t, x) = (a, liftAt at t, liftAt at x)
 
 addCode :: Code -> Data -> Data
 addCode code = modify dbCodes (code :)

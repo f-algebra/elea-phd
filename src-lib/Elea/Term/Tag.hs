@@ -1,6 +1,6 @@
 {-# LANGUAGE UndecidableInstances #-}
 -- | Tags for indexed fixed-points. 
-module Elea.Tag
+module Elea.Term.Tag
 (
   Tag,
   Gen (..),
@@ -8,19 +8,21 @@ module Elea.Tag
   Has (..),
   make,
   omega,
+  replace,
   runGenT,
   uniqueId,
   smallerIndices,
 )
 where
 
-import Elea.Prelude hiding ( compare )
+import Elea.Prelude hiding ( compare, map )
 import qualified Elea.Prelude as Prelude
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Control.Monad.State.Class as State
 import qualified Control.Monad.Trans.Class as Trans
 import qualified Control.Monad.Trans.State as StateT
 import qualified Data.Set as Set
+import qualified Data.Poset as Partial
 
 
 data Tag 
@@ -57,16 +59,23 @@ class Has a where
   tags :: a -> Set Tag
   map :: (Tag -> Tag) -> a -> a
   
-  -- | A partial well-order on sets of tags. 'EQ' means incomparable.
-  compare :: a -> a -> Ordering
-  compare (tags -> a) (tags -> b) =
-    if not (Set.null a_minus_b)
-      && allSmaller (smallerIn a) b_minus_a
-    then GT
-    else if not (Set.null b_minus_a)
-      && allSmaller (smallerIn b) a_minus_b
-    then LT
-    else EQ
+  compareTags :: a -> a -> Partial.Ordering
+  compareTags = Partial.compare `on` tags
+  
+-- | A partial well-order on sets of tags
+instance Partial.Ord (Set Tag) where
+  compare a b 
+    | a == b = Partial.EQ 
+    
+    | not (Set.null a_minus_b)
+    , allSmaller (smallerIn a) b_minus_a =
+      Partial.GT
+      
+    | not (Set.null b_minus_a)
+    , allSmaller (smallerIn b) a_minus_b =
+      Partial.LT
+      
+    | otherwise = Partial.NC
     where
     -- All tags which have a larger tag in this set   
     smallerIn :: Set Tag -> Set Tag 
@@ -81,10 +90,14 @@ class Has a where
       
     a_minus_b = Set.difference a b
     b_minus_a = Set.difference b a
+      
   
 newtype GenT m a
   = GenT { genT :: StateT Int m a }
   deriving ( Functor, Monad, MonadState Int, MonadTrans )
+  
+replace :: Has a => Tag -> Tag -> a -> a
+replace a b = map (\x -> if x == a then b else x)
   
 runGenT :: Monad m => GenT m a -> m a
 runGenT = flip evalStateT 1 . genT
@@ -103,4 +116,7 @@ instance MonadWriter w m => MonadWriter w (GenT m) where
   tell = Trans.lift . tell
   listen = GenT . listen . genT
   pass = GenT . pass . genT
+  
+instance Gen m => Gen (MaybeT m) where
+  generateId = Trans.lift generateId
   

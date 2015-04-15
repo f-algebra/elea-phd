@@ -22,18 +22,17 @@ module Elea.Constraint
   matchContext,
   makeContext,
   manyToContext,
-  canUnfold,
-  unfold,
-  unfoldAll,
+ -- unfold,
+ -- unfoldAll,
 )
 where
 
 import Elea.Prelude hiding ( replace )
 import Elea.Term
 import Elea.Context ( Context )
-import qualified Elea.Types as Type
-import qualified Elea.Terms as Term
-import qualified Elea.Index as Indices
+import qualified Elea.Type.Ext as Type
+import qualified Elea.Term.Ext as Term
+import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Context as Context
 import qualified Elea.Unification as Unifier
@@ -154,7 +153,7 @@ manyToContext :: Type -> Set Constraint -> Context
 manyToContext ty = 
   concatMap (toContext ty) . Set.toAscList
 
-  
+  {-
 -- | Unfolds all the fixpoints in all the constraints provided.
 -- Returns 'Nothing' if any of the constraints are unsatisfiable,
 -- and hence we are down an unreachable branch.
@@ -166,11 +165,7 @@ unfoldAll cons = id
   $ map unfold cons
 
 
-canUnfold :: Constraint -> Bool
-canUnfold (Constraint _ t) = Simp.willUnfold t
-  
-
--- | Unfolds the constrained term of a constraint.
+-- |Unfolds the constrained term of a constraint.
 -- Will return a list of new constraints that this has generated.
 -- An empty list gives that the constraint is satisfied, 
 -- and 'Nothing' signifies that a constraint is unsatisfiable.
@@ -202,4 +197,4 @@ unfold con
     (unr, not_unr) = partition (Term.isUnr . get altInner) alts
   collect _ = 
     Fail.here
-
+-}

@@ -14,9 +14,9 @@ import Elea.Context ( Context )
 import Elea.Monad.Memo.Data ( Outcome (..) )
 import qualified Elea.Constraint as Constraint
 import qualified Elea.Context as Context
-import qualified Elea.Types as Type
-import qualified Elea.Embed as Embed
-import qualified Elea.Tag as Tag
+import qualified Elea.Type.Ext as Type
+import qualified Elea.Monad.History as History
+import qualified Elea.Term.Tag as Tag
 import qualified Elea.Monad.Rewrite as Rewrite
 import qualified Elea.Monad.Discovery.EquationSet as EqSet
 import qualified Elea.Monad.Definitions.Class as Defs
@@ -155,8 +155,8 @@ instance Monad m => Rewrite.Env (FeddT m) where
   local a t x = local (EnvDB.addRewrite a t x) 
   
     
-instance Monad m => Embed.History (FeddT m) where
-  codes = asks EnvDB.codes
+instance Monad m => History.Env (FeddT m) where
+  ask = asks EnvDB.codes
   seeCode c = local (EnvDB.addCode c)
   
 instance Monad m => Tag.Gen (FeddT m) where

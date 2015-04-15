@@ -5,8 +5,9 @@ module Elea.Monad.Rewrite
 )
 where
 
-import Elea.Prelude
+import Elea.Prelude hiding ( local )
 import Elea.Term
+import qualified Control.Monad.Trans.Class as Trans
 import qualified Data.Set as Set
 
 class Monad m => Env m where
@@ -19,3 +20,6 @@ findTags tags = id
   . liftM (filter (\(t, _, _) -> Set.member t tags)) 
   $ rewrites
 
+instance Env m => Env (MaybeT m) where
+  local a t x = mapMaybeT (local a t x)
+  rewrites = Trans.lift rewrites

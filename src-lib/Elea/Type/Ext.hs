@@ -19,7 +19,7 @@ import Elea.Term
 import Elea.Show ( showM )
 import qualified Elea.Term as Term
 import qualified Elea.Prelude as Prelude
-import qualified Elea.Index as Indices
+import qualified Elea.Term.Index as Indices
 import qualified Elea.Type as Type
 import qualified Elea.Foldable as Fold
 import qualified Elea.Errors.Typing as Err
@@ -31,17 +31,15 @@ import qualified Elea.Monad.Failure.Class as Fail
 
 -- | Return the type of something given a type environment. 
 class HasTypeM a where
-  getM :: (Defs.Read m, Env.Read m) => a -> m Type
-  hasM :: (Defs.Read m, Env.Read m) => a -> m Bool
+  getM :: Env.Read m => a -> m Type
+  hasM :: Env.Read m => a -> m Bool
   
 instance HasTypeM Term where
   getM t = do
     can_type <- hasM t
     if can_type
     then Fold.paraM getM t
-    else do
-      t_s <- showM t
-      error ("[typing] Cannot type:\n" ++ t_s)
+    else error ("[typing] Cannot type:\n" ++ show t)
       
   hasM t = do
     offset <- Env.bindingDepth
@@ -66,8 +64,8 @@ instance HasTypeM Term where
 -- we should only call this on closed terms that we know
 -- are well typed.
 instance HasType Term where
-  get t | has t = (Defs.readEmpty . Env.emptyT . getM) t
-  has = Defs.readEmpty . Env.emptyT . hasM
+  get t | has t = (Env.empty . getM) t
+  has = Env.empty . hasM
   
 instance HasType (Term' (Term, Type)) where 
   has = undefined

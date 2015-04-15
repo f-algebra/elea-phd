@@ -1,6 +1,6 @@
 -- | Here I've put all the helper functions dealing with 
 -- 'Term's, but which also require other modules based on Elea.Term.
-module Elea.Terms
+module Elea.Term.Ext
 (
   module Elea.Term,
   branches,
@@ -39,13 +39,13 @@ where
 import Elea.Prelude hiding ( replace )
 import Elea.Term
 import Elea.Context ( Context )
-import qualified Elea.Types as Type
-import qualified Elea.Index as Indices
+import qualified Elea.Type.Ext as Type
+import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Context as Context
 import qualified Elea.Unification as Unifier
 import qualified Elea.Foldable as Fold
-import qualified Elea.Tag as Tag
+import qualified Elea.Term.Tag as Tag
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs

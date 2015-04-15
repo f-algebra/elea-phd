@@ -6,11 +6,11 @@ where
 
 import Elea.Prelude
 import Elea.Term
-import Elea.Terms
+import Elea.Term.Ext
 import Elea.Type
 import Elea.Show
 import Elea.Unification.Map ( UMap, Generalised )
-import qualified Elea.Index as Indices
+import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Unification as Unifier
 import qualified Elea.Testing as Test

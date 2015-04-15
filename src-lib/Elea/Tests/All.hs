@@ -11,6 +11,7 @@ import qualified Elea.Tests.Type as Type
 import qualified Elea.Tests.Term as Term
 import qualified Elea.Tests.Simplifier as Simplifier 
 import qualified Elea.Tests.Context as Context
+import qualified Elea.Tests.Height as Height
 --import qualified Elea.Tests.Inventor as Inventor
 -- import qualified Elea.Tests.Constraints as Constraints
 import qualified Elea.Tests.Fusion as Fusion
@@ -21,6 +22,7 @@ tests = Test.list
   [ Prelude.tests
   , Type.tests
   , Term.tests
+  , Height.tests
   , UMap.tests
 --  , Checker.tests 
   , Simplifier.tests

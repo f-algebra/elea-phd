@@ -8,11 +8,11 @@ where
 import Elea.Prelude
 import Elea.Term
 import Elea.Show
-import qualified Elea.Index as Indices
+import qualified Elea.Term.Index as Indices
 import qualified Elea.Unification as Unifier
 import qualified Elea.Monad.Env as Env
-import qualified Elea.Terms as Term
-import qualified Elea.Types as Type
+import qualified Elea.Term.Ext as Term
+import qualified Elea.Type.Ext as Type
 import qualified Elea.Foldable as Fold
 import qualified Elea.Transform.Simplify as Simp
 import qualified Elea.Monad.Failure.Class as Fail

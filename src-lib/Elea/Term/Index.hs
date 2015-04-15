@@ -1,5 +1,5 @@
 -- | de-Bruijn indices, lifting, and substitution.
-module Elea.Index
+module Elea.Term.Index
 (
   Index, 
   Indexed (..), 

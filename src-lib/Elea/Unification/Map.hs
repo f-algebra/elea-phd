@@ -18,9 +18,9 @@ module Elea.Unification.Map
 where
 
 import Elea.Prelude hiding ( find, lookup, toList )
-import Elea.Index
+import Elea.Term.Index
 import Elea.Unification hiding ( singleton, toList )
-import qualified Elea.Index as Indices
+import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Data.Set as Set
 import qualified Data.Map as Map

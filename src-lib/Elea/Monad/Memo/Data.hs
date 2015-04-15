@@ -19,7 +19,7 @@ import Elea.Unification ( Unifier )
 import Elea.Monad.Env ()
 import Elea.Show
 import qualified Elea.Type as Type
-import qualified Elea.Index as Indices
+import qualified Elea.Term.Index as Indices
 import qualified Elea.Unification as Unifier
 import qualified Elea.Unification.Map as UMap
 import qualified Elea.Monad.Failure.Class as Fail

@@ -6,12 +6,12 @@ where
 
 import Elea.Prelude
 import Elea.Term
-import Elea.Terms
+import Elea.Term.Ext
 import Elea.Type
 import Elea.Show
 import qualified Elea.Type as Type
 import qualified Elea.Embed as Embed
-import qualified Elea.Index as Indices
+import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Unification as Unifier
 import qualified Elea.Testing as Test
@@ -52,17 +52,17 @@ tests = Test.label "Terms"
   let conj1 = Test.assertEq conj3_t' conj3_t
       
   eq_nat <- Test.simplifiedTerm "eq[nat]"
-  eq_ntree <- Test.simplifiedTerm "eq[tree<nat>]"
+--  eq_ntree <- Test.simplifiedTerm "eq[tree<nat>]"
   eq_bool <- Test.simplifiedTerm "eq[bool]"
   eq_unit <- Test.simplifiedTerm "eq[unit]"
   
   eq_nat' <- Test.simplifiedTerm def_eq_nat
-  eq_ntree' <- Test.simplifiedTerm def_eq_ntree
+ -- eq_ntree' <- Test.simplifiedTerm def_eq_ntree
   eq_bool' <- Test.simplifiedTerm def_eq_bool
   eq_unit' <- Test.simplifiedTerm def_eq_unit
   
   let eq1 = Test.assertEq eq_nat' eq_nat 
-      eq2 = Test.assertEq eq_ntree' eq_ntree 
+     -- eq2 = Test.assertEq eq_ntree' eq_ntree 
       eq3 = Test.assertEq eq_bool' eq_bool 
       eq4 = Test.assertEq eq_unit' eq_unit 
   
@@ -99,10 +99,10 @@ tests = Test.label "Terms"
     return (Test.assertEq (Set.singleton t1) strict_ts)
     -}
   return $ Test.list $  
-    [ fold1 --, fold2
-    , weird1
+    [ weird1
+    -- , fold1, fold2 
     , conj1
-    , eq1, eq2, eq3, eq4
+    , eq1 {-, eq2-}, eq3, eq4
     , subterms1
   --  , iso1
   --  , strict1

@@ -1,6 +1,6 @@
 module Elea.Term
 (
-  module Elea.Index,
+  module Elea.Term.Index,
   Tag,
   Term (..), Alt (..),
   Term' (..), Alt' (..),
@@ -35,13 +35,14 @@ module Elea.Term
 where
 
 import Elea.Prelude
-import Elea.Index ( Index, Indexed, Substitutable, Inner )
+import Elea.Term.Index ( Index, Indexed, Substitutable, Inner )
 import Elea.Type ( Type (..), Ind (..), ConArg (..)
                  , Bind (..), Constructor (..) )
-import Elea.Tag ( Tag )
+import Elea.Term.Tag ( Tag )
 import qualified Elea.Type as Type
-import qualified Elea.Index as Indices
-import qualified Elea.Tag as Tag
+import qualified Elea.Embed as Embed
+import qualified Elea.Term.Index as Indices
+import qualified Elea.Term.Tag as Tag
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
@@ -486,3 +487,39 @@ reset = id
   reset' other = 
     liftM Fold.embed (sequence other)
     
+    
+-- Some useful functions for encoding terms    
+cantor :: Int -> Int -> Int
+cantor m n =
+  (m + n) * (m + n + 1) `quot` 2 + m
+  
+pair :: Int -> Int -> Embed.Code
+pair x y = Embed.code [cantor x y]
+
+hash :: String -> Int
+hash [c] = ord c
+hash (c:cs) = cantor (ord c) (hash cs)
+
+instance Embed.Encodable Term where
+  encode (Unr _) = pair 1 0
+  encode (Var _) = pair 2 0
+  encode (Lam _ t) = pair 3 0 ++ Embed.encode t
+  encode (Con con) = Embed.encode con
+  encode (App f xs) =
+    Embed.encode f ++ concatMap ((pair 4 0 ++) . Embed.encode) xs
+  encode (Fix _ _ fix_t) = 
+    pair 5 0 ++ Embed.encode fix_t
+    -- where
+    -- tag_id = (get Tag.uniqueId . get fixTag) inf
+  encode (Case cse_t alts) = 
+    Embed.encode cse_t ++ concatMap Embed.encode alts
+    
+instance Embed.Encodable Constructor where
+  encode (Constructor ind idx) = 
+    pair 6 (cantor (hash ind_name) (enum idx))
+    where
+    ind_name = get Type.indName ind
+    
+instance Embed.Encodable Alt where
+  encode (Alt con bs t) = 
+    pair 7 0 ++ Embed.encode t ++ pair 7 0

@@ -9,16 +9,18 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Context ( Context )
 import Elea.Show ( showM )
-import qualified Elea.Transform.Evaluate as Eval
-import qualified Elea.Index as Indices
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Monad.Transform as Transform
-import qualified Elea.Terms as Term
-import qualified Elea.Types as Type
+import qualified Elea.Term.Ext as Term
+import qualified Elea.Type.Ext as Type
 import qualified Elea.Unification as Unifier
+import qualified Elea.Transform.Evaluate as Eval
 import qualified Elea.Transform.Simplify as Simp
-import qualified Elea.Tag as Tag
-import qualified Elea.Embed as Embed
+import qualified Elea.Transform.Rewrite as Rewrite
+import qualified Elea.Term.Tag as Tag
+import qualified Elea.Term.Index as Indices
+import qualified Elea.Term.Height as Height
+import qualified Elea.Monad.History as History
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions.Class as Defs
@@ -29,50 +31,83 @@ import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
+import qualified Data.Poset as Partial
 
 
 type Env m = 
   ( Defs.Read m
   , Env.All m
   , Discovery.Tells m
-  , Tag.Gen m 
-  , Rewrite.Env m
-  , Embed.History m )
+  , Tag.Gen m
+  , History.Env m 
+  , Rewrite.Env m )
   
   
 type Step m =
-  ( Transform.Step m
+  ( Rewrite.Step m
   , Env m )
  
   
 run :: Env m => Term -> m Term
-run = undefined
+run = id
+  . Transform.fix (Transform.compose all_steps)
+  . Term.reset
+  where
+  all_steps = []
+    ++ Eval.transformSteps
+    ++ Simp.steps
+    ++ Rewrite.steps
+    ++ steps
+    ++ Eval.traverseSteps
+    
+  
+steps :: Step m => [Term -> m Term]
+steps = 
+  [ const Fail.here
+  , Height.enforceDecrease fixfix ]
 
 
 fusion :: Step m => Term -> Term -> m Term
 fusion ctx_t fix@(Fix fix_inf fix_b fix_t) = 
-  Embed.check orig_t $ do
+  History.check orig_t $ do
+    t_s <- showM orig_t
+  
     -- Generate a new tag, larger than all others in the term
     -- to prioritise rewrites that remove it
     temp_tag <- Tag.make (Tag.tags orig_t)
     let temp_fix = Fix (set fixTag temp_tag fix_inf) fix_b fix_t
-        rewrite_from = Eval.run (app ctx_t [temp_fix])
+        rewrite_from = id
+          . Indices.lift 
+          . Eval.run 
+          $ app ctx_t [temp_fix]
+           
+    t_s' <- Env.bind new_fix_b $ showM rewrite_from
+    t_s'' <- showM (Eval.run (app ctx_t [Term.unfoldFix temp_fix]))
     
-    new_fix_t <- id
+    new_fix_t <- id  
+      . Env.bind new_fix_b
       . Rewrite.local temp_tag rewrite_from 0
-      $ Transform.continue (app ctx_t [Term.unfoldFix temp_fix])
+      . Transform.continue
+      . trace ("\n\nfusing: " ++ t_s)
+      . trace ("\n\nreplacing: " ++ t_s')
+      . trace ("\n\ntransforming: " ++ t_s'')
+      -- Make room for our new variables we are rewriting to
+      . Indices.lift
+      $ app ctx_t [Term.unfoldFix temp_fix]
       
+    t_s''' <- Env.bind new_fix_b (showM new_fix_t) 
     -- Check we actually performed a rewrite
-    Fail.unless (Indices.freeWithin 0 new_fix_t)
-    
+    Fail.unless $ trace ("\n\nyielding: " ++ t_s''') $ (Indices.freeWithin 0 new_fix_t)
+      
     return    
       . Fix new_fix_inf new_fix_b 
-      $ Indices.substAt 0 fix new_fix_t
+      $ Tag.replace temp_tag orig_tag new_fix_t
   where
   orig_t = Eval.run (app ctx_t [fix])
+  orig_tag = get fixTag fix_inf
   
   new_fix_b = set Type.bindType (Type.get orig_t) fix_b
-  new_fix_inf = set fixClosed False fix_inf
+  new_fix_inf = set fixClosed True fix_inf
   
   
 fixfix :: forall m . Step m => Term -> m Term
@@ -81,45 +116,59 @@ fixfix o_term@(App o_fix@(Fix _ _ o_fix_t) o_args) = do
   Fail.unless (Term.inductivelyTyped o_term) 
   Fail.assert (Term.isLambdaFloated o_fix)
   
-  -- Broadcast the discovery
-  Discovery.equalsM o_term
+  term' <- id
     -- Pick the first one which does not fail
     . Fail.choose
     -- Run fixfixArg on every decreasing fixpoint argument position
     . map fixArg
     . filter (Term.isFix . Term.leftmost . (o_args !!))
     $ Term.decreasingArgs o_fix
+    
+  Transform.continue term'
   where  
   fixArg :: Int -> m Term
   -- Run fix-fix fusion on the argument at the given index
   fixArg arg_i = do
     Fail.unless (Term.inductivelyTyped i_term)
     Fail.assert (Term.isLambdaFloated i_fix)
-    fusion ctx_t i_fix
+    trace (show ctx_t ++ " : " ++ show (Type.get ctx_t)
+      ++ "\n+++\n" ++ show i_fix ++ "  : " ++ show (Type.get i_fix)) $ Fail.assert (Type.get (app ctx_t (i_fix:(o_args' ++ i_args))) == Type.get o_term)
+    new_fix <- fusion ctx_t i_fix
+    let new_term = app new_fix (o_args' ++ i_args) 
+    -- Make sure we have actually shrunk the term
+    -- will probably never fail
+    Fail.assert (new_term Partial.< o_term)
+    return new_term
     where
     i_term@(App i_fix@(Fix _ i_fix_b i_fix_t) i_args) = o_args !! arg_i
+    o_args' = removeAt arg_i o_args
    
     ctx_t = id 
       . unflattenLam (i_fix_b : o_fix_bs ++ i_fix_bs) 
       $ app o_fix' o_args'
       where
-      o_fix' = Indices.liftMany (o_arg_c + i_arg_c + 1) o_fix
+      o_fix' = Indices.liftMany (enum (o_arg_c + i_arg_c + 1)) o_fix
       o_args' = id
-        . setAt arg_i i_term' 
         . reverse
-        . map (Indices.liftMany i_arg_c . Var . enum)
-        $ [0..o_arg_c-1] 
+        $ left_args ++ [i_term'] ++ right_args
+        
+      left_args =
+        map (Var . enum . (+ i_arg_c)) [0..arg_i-1]
+      right_args = 
+        map (Var . enum . (+ i_arg_c)) [arg_i..o_arg_c-1]
       
       i_term' = App i_fix' i_args'
       i_args' = reverse (map (Var . enum) [0..i_arg_c - 1])
-      i_fix' = Indices.liftMany (o_arg_c + i_arg_c) (Var 0)
+      i_fix' = Indices.liftMany (enum arg_c) (Var 0)
              
-      o_fix_bs = fst (flattenLam o_fix_t)
+      o_fix_bs = removeAt arg_i (fst (flattenLam o_fix_t))
       i_fix_bs = fst (flattenLam i_fix_t)
         
-      o_arg_c = nlength o_fix_bs
-      i_arg_c = nlength i_fix_bs
-  
+      o_arg_c :: Int = length o_fix_bs
+      i_arg_c :: Int = length i_fix_bs   
+      arg_c = o_arg_c + i_arg_c
+      
+fixfix _ = Fail.here
 
 {-
 run :: forall m . FusionM m => Term -> m Term

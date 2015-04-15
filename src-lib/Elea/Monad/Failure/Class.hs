@@ -4,7 +4,6 @@ module Elea.Monad.Failure.Class
 (
   Can (..), when, unless, toMaybe, withDefault, assert, choose,
   success, successM, catchWith, fromEither, has, fromMaybe, mapLookup,
-  concatTransforms,
   whenM, unlessM, hasM,
   joinMaybe,
 )
@@ -43,8 +42,9 @@ fromEither (Left _) = here
 fromEither (Right x) = return x
 
 -- Force the assertion to be evaluated within the failure monad.
+{-# INLINE assert #-}
 assert :: Can m => Bool -> m ()
-assert p = Prelude.assert p (unless p)
+assert p = Prelude.unless p (Prelude.assert p here)
 
 has :: Maybe a -> Bool
 has = isNothing
@@ -163,39 +163,4 @@ instance Can Monoid.First where
   here = Monoid.First mzero
   catch = Monoid.First . catch . Monoid.getFirst
   
-instance Can m => Monoid (a -> m a) where
-  mempty = const here
-  
-  (f `mappend` g) x = do
-    mby_fx <- catch (f x)
-    case mby_fx of
-      Nothing -> g x
-      Just fx -> return fx  
-  
-
--- | See the definition of @mappend@ to 
--- understand how the /transformation/ monoid works.
-newtype Transform m a
-  = Transform { runTransform :: a -> m a }
-
-concatTransforms :: Can m => [a -> m a] -> a -> m a
-concatTransforms = runTransform . concat . map Transform
-  
-instance Can m => Monoid (Transform m a) where
-  -- An alternative identity element would be:
-  -- > mempty = Transform return
-  mempty = Transform (\_ -> here)
-  
-  Transform f `mappend` Transform g = Transform fg
-    where
-    fg x = do
-      mby_fx <- catch (f x)
-      case mby_fx of
-        Nothing -> g x
-        Just fx -> do
-          mby_gfx <- catch (g fx)
-          -- If f succeeded then f ++ g succeeded
-          case mby_gfx of
-            Nothing -> return fx
-            Just gfx -> return gfx
 

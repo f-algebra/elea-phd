@@ -19,7 +19,7 @@ import Elea.Term
 import Elea.Monad.Definitions.Class
 import Elea.Monad.Definitions.Data ( Data )
 import qualified Elea.Type as Type
-import qualified Elea.Index as Indices
+import qualified Elea.Term.Index as Indices
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Monad.Discovery.Class as Discovery

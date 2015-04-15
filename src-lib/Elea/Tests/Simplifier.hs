@@ -22,6 +22,6 @@ tests = id
   eqs <- Test.loadFile "src-lib/Elea/Tests/simplifier.elea"
   return 
     . map checkEquation 
-    -- . filter ((== "2*2=2+2") . get equationName)
+   -- . filter ((== "beta2") . get equationName)
     $ eqs
 

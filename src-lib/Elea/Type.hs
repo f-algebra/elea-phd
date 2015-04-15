@@ -26,7 +26,7 @@ module Elea.Type
 where
 
 import Elea.Prelude hiding ( get )
-import Elea.Index
+import Elea.Term.Index
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Failure.Class as Fails
 
@@ -251,6 +251,7 @@ argumentCount = pred . length . flatten
 dropArgs :: Nat -> Type -> Type
 dropArgs 0 ty = ty
 dropArgs n (Fun _ ty) = dropArgs (pred n) ty
+dropArgs _ _ = error "Type does not have enough arguments"
 
 unfold :: Ind -> [Bind]
 unfold ind@(Ind _ cons) =

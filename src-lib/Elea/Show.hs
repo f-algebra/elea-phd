@@ -7,12 +7,12 @@ module Elea.Show
 where
 
 import Elea.Prelude
-import Elea.Index
+import Elea.Term.Index
 import Elea.Term
 import Elea.Type hiding ( get )
 import Elea.Context ( Context )
 import Elea.Show.Class
-import qualified Elea.Index as Indices
+import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Type as Type
 import qualified Elea.Context as Context

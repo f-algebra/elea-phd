@@ -1,29 +1,35 @@
 module Elea.Term.Height
 (
   Height (..),
+  get,
+  ensureDecrease,
   enforceDecrease,
   assertDecrease,
 )
 where
 
-import Elea.Prelude
+import Elea.Prelude hiding ( get )
 import Elea.Term
-import Elea.Tag ( Tag )
+import Elea.Term.Tag ( Tag )
 import Elea.Show ()
-import Elea.Terms ()
+import Elea.Term.Ext ()
+import qualified Elea.Prelude as Pre
 import qualified Elea.Type as Type
 import qualified Elea.Foldable as Fold 
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Embed as Embed
-import qualified Elea.Tag as Tag
+import qualified Elea.Term.Tag as Tag
 import qualified Data.Set as Set
 import qualified Data.Map as Map
+import qualified Data.Poset as Partial
 
 
 data Height 
   = Height  { size :: !Nat
             , count :: !Nat }
             
+instance Show Height where
+  show (Height h n) = show (h, n)
             
 instance Num Height where
   Height h1 n1 + Height h2 n2 = 
@@ -58,49 +64,59 @@ instance Monoid Height where
     | otherwise = Height h1 (n1 + n2)
     
 
-height :: Term -> Height
-height (Var _) = 1
-height (Unr _) = 1
-height (Con _) = 1
-height (Lam _ t) = 1 + height t
-height (Fix inf b _) = 
+get :: Term -> Height
+get (Var _) = 1
+get (Unr _) = 1
+get (Con _) = 1
+get (Lam _ t) = 1 + get t
+get (Fix inf b _) = 
   1 + fromIntegral arg_count
     + is_closed
   where
-  arg_count = Type.argumentCount (get Type.bindType b)
-  is_closed | get fixClosed inf = 0
+  arg_count = Type.argumentCount (Pre.get Type.bindType b)
+  is_closed | Pre.get fixClosed inf = 0
             | otherwise = 1
 
-height (Case t alts) = 
-  heightCase t + concatMap (heightAlt . get altInner) alts
+get (Case t alts) = 
+  1 + getCase t + concatMap (getAlt . Pre.get altInner) alts
   where
-  heightCase :: Term -> Height
-  heightCase t@(leftmost -> Con _) = 1 + height t
-  heightCase t@(Unr _) = 1 + height t
-  heightCase t@(Case _ _) = 1 + height t
-  heightCase t = height t
+  getCase :: Term -> Height
+  getCase t@(leftmost -> Con _) = 1 + get t
+  getCase t@(Unr _) = 1 + get t
+  getCase t@(Case _ _) = 1 + get t
+  getCase t = get t
   
-  heightAlt (Lam _ t) = 2 + heightAlt t
-  heightAlt t = height t
+  getAlt (Lam _ t) = 2 + getAlt t
+  getAlt t = get t
   
-height (App f xs) = 
-  heightFun f + concatMap heightApp xs
+get (App f xs) = 
+  getFun f + concatMap getApp xs
   where 
-  heightFun :: Term -> Height
-  heightFun t@(App _ _) = 1 + height t
-  heightFun t = heightApp t
+  getFun :: Term -> Height
+  getFun t@(App _ _) = 1 + get t
+  getFun t = getApp t
   
-  heightApp :: Term -> Height
-  heightApp t@(Case _ _) = 1 + height t
-  heightApp t = height t
+  getApp :: Term -> Height
+  getApp t@(Case _ _) = 1 + get t
+  getApp t = get t
   
-  
+-- | Our partial well-order on term size (tag ordering + height ordering)
+instance Partial.Ord Term where
+  compare t t' =
+    Partial.compare (Tag.tags t) (Tag.tags t')
+      ++  Partial.fromTotal (compare (get t) (get t'))
+      -- ^ This monoid instance implements lexicographic ordering
+    
+      
+ensureDecrease :: Fail.Can m => Term -> Term -> m ()
+ensureDecrease t t' = 
+  Fail.unless False -- (t Partial.< t')
+      
+      
 assertDecrease :: Monad m => String -> (Term -> m Term) -> Term -> m Term
 assertDecrease step f t = do
   t' <- f t
-  let tag_order = Tag.compare t' t
-  if tag_order == GT
-    || (tag_order == EQ && height t' >= height t)
+  if False || not (t' Partial.< t)
   then
     error $ "[" ++ step ++ "] failed to decrease: " 
          ++ show t ++ "\n\n==> into ==>\n" ++ show t'
@@ -111,9 +127,7 @@ assertDecrease step f t = do
 enforceDecrease :: Fail.Can m => (Term -> m Term) -> Term -> m Term
 enforceDecrease f t = do
   t' <- f t
-  let tag_order = Tag.compare t' t
-  if tag_order == GT
-    || (tag_order == EQ && height t' >= height t)
+  if False || not (t' Partial.< t)
   then do
     Fail.when (True || t == t')
     trace ("ENFORCE failed to decrease: " 

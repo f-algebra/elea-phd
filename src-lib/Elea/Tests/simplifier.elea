@@ -1,4 +1,14 @@
 
+prop "beta1": forall (x: nat) ->
+  (fun (y: nat) -> add x y) x
+  =
+  add x x
+  
+prop "beta2": 
+  (fun (x: nat) (y: nat) -> True)
+  =
+  (fun (f: nat -> bool) (x: nat) -> f) (fun (y: nat) -> True)
+
 prop "1+1=2": 
   add 1 1 = 2
 
@@ -10,6 +20,11 @@ prop "1<=2":
  
 prop "not-not": forall (p: bool) ->
   not (not p) = p
+  
+prop "case-app" : forall (x: nat) ->
+  Suc (match x with | 0 -> 0 | Suc x -> x end)
+  =
+  (match x with | 0 -> Suc 0 | Suc x -> Suc x end)
    
   /*
   This one no longer applies
@@ -20,7 +35,7 @@ prop "expand-rev"<A>: forall (xs: list<A>) (x: A) ->
 let append3<A> =
   fix (app3: list<A> -> list<A> -> list<A> -> list<A>) ->
     fun (xs: list<A>) (ys: list<A>) (zs: list<A>) ->
-    match xs with
+    match xs with   
     | Nil -> append<A> ys zs
     | Cons x xs' -> Cons<A> x (app3 xs' ys zs)
     end
