@@ -36,7 +36,6 @@ run = id
   . History.emptyEnvT
   -- ^ Use the Reader [Bind] instance for type environments
   . Transform.fix (Transform.compose all_steps)
-  . Term.reset
   where
   all_steps = Eval.transformSteps ++ steps ++ Eval.traverseSteps
 
@@ -45,27 +44,28 @@ quick = run
 
 steps :: Eval.Step m => [Term -> m Term]
 steps =
-    [ const Fail.here
-    , Height.assertDecrease "case-app" caseApp
-    , Height.assertDecrease "fun-case" appCase
-    , Height.assertDecrease "case-case" caseCase
-    , Height.assertDecrease "case-fun" caseFun
-    , Height.assertDecrease "const-arg" constArg
-    , Height.assertDecrease "id-case" identityCase
-    , Height.assertDecrease "const-case" constantCase
-    , Height.assertDecrease "const-fix" constantFix
-    , Height.assertDecrease "unfold-finite" unfoldFinite
-    {-
-    , uselessFix
-    , propagateMatch
-    , finiteArgFix
-    , unfoldFixInj
-    , freeCaseFix   
-    , unfoldWithinFix
-   -- , finiteCaseFix
-    , unsafeUnfoldFixInj
-    -}
-    ] 
+  [ const Fail.here
+  , caseApp
+  , appCase
+  , caseCase
+  , caseFun
+  , constArg
+  , identityCase
+  , constantCase
+  , constantFix
+  , identityFix
+  , unfoldFinite
+  {-
+  , uselessFix
+  , propagateMatch
+  , finiteArgFix
+  , unfoldFixInj
+  , freeCaseFix   
+  , unfoldWithinFix
+ -- , finiteCaseFix
+  , unsafeUnfoldFixInj
+  -}
+  ] 
     
 
 -- | We do not want pattern matches to return function typed values,
@@ -114,7 +114,9 @@ constArg (App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
     
     -- Then we run the 'removeConstArg' function on that position to
     -- get a new fixed-point
-    let fix' = removeConstArg pos
+    let fix' = id
+        --  . trace ("\n\n[const-arg] trying position " ++ show pos) 
+          $ removeConstArg pos
     
     -- Might as well simplify the constant argument before pushing it inside
     -- and possible duplicating it
@@ -122,7 +124,7 @@ constArg (App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
     let args' = setAt pos arg' args
     
     -- Run evaluation to reduce all the new lambdas
-    Eval.beta (app fix' args')
+    Transform.continue (Eval.reduce fix' args')
   where
   -- Strip off the preceding lambdas of the function
   (arg_bs, fix_body) = flattenLam fix_t
@@ -316,17 +318,31 @@ finiteCaseFix term@(Case (App fix@(Fix _ _ fix_t) args) alts) = do
 finiteCaseFix _ = Fail.here
 -}
 
+identityFix :: Eval.Step m => Term -> m Term
+identityFix (App fix@(Fix _ _ fix_t@(Lam lam_b _)) [arg]) 
+  | Type.get fix == new_ty
+  , run (Indices.subst id_fun fix_t) == id_fun = 
+    Transform.continue arg
+  where
+  arg_ty = get Type.bindType lam_b
+  new_ty = Type.Fun arg_ty arg_ty
+  id_fun = Lam lam_b (Var 0)
+  
+identityFix _ = Fail.here
+
 -- | If a recursive function just returns the same value, regardless of its
 -- inputs, just reduce it to that value.
-constantFix :: forall m . Fail.Can m => Term -> m Term
+constantFix :: Eval.Step m => Term -> m Term
 constantFix t@(App (Fix _ fix_b fix_t) args)
   | length args /= nlength arg_bs = Fail.here
    
   | Just [result] <- mby_results
-  , correctGuess result = return result
+  , correctGuess result = 
+    Transform.continue result
   
   | Just [] <- mby_results
-  , correctGuess (Unr result_ty) = return (Unr result_ty)
+  , correctGuess (Unr result_ty) = 
+    return (Unr result_ty)
   
   where
   (arg_bs, _) = flattenLam fix_t
@@ -335,6 +351,7 @@ constantFix t@(App (Fix _ fix_b fix_t) args)
   
   mby_results = id
     . potentialResults
+    . Eval.run
     $ Indices.substAt 0 (Unr fix_ty) fix_t
   
   potentialResults :: Term -> Maybe [Term]
@@ -346,7 +363,7 @@ constantFix t@(App (Fix _ fix_b fix_t) args)
     where
     resultTerm :: Term -> MaybeT Env.TrackOffset (Set Term)
     resultTerm term
-      | isUnr (Eval.run term) = return mempty
+      | isUnr term = return mempty
       | otherwise = do
         depth <- Env.offset
         Fail.unless (Indices.lowerableBy depth term)
@@ -460,7 +477,7 @@ caseCase outer_cse@(Case inner_cse@(Case inner_t inner_alts) outer_alts) =
   where
   newOuterAlt :: Alt -> Alt
   newOuterAlt (Alt con bs t) = 
-    Alt con bs (Case t alts_here)
+    Alt con bs (Eval.run (Case t alts_here))
     where
     alts_here = map (Indices.liftMany (length bs)) outer_alts
 caseCase _ = Fail.here
@@ -492,10 +509,12 @@ unsafeUnfoldFixInj _ =
 -- the fixed-point.
 unfoldFinite :: Eval.Step m => Term -> m Term
 unfoldFinite term@(App fix@(Fix {}) args) 
-  | any Term.isFinite dec_args = id
-      . History.check term 
+  | any Term.isFinite dec_args = do
+    term' <- History.check "fin-unf" term
       . Transform.continue 
       $ app (Term.unfoldFix fix) args
+    Height.ensureDecrease term' term
+    return term'
   where
   dec_args = map (args !!) (Term.decreasingArgs fix)
 unfoldFinite _ = Fail.here

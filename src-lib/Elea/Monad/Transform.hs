@@ -26,7 +26,12 @@ import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Height as Height
 import qualified Control.Monad.Reader.Class as Reader
 import qualified Control.Monad.Trans.Class as Trans
+
 import qualified Data.Poset as Partial
+import qualified Data.Map as Map
+
+{-# INLINEABLE fix #-}
+{-# INLINEABLE compose #-}
 
 
 -- | Accessing the recursive call to our transformation 
@@ -54,7 +59,9 @@ fix f t = do
       if not (Type.has t)
         || not (Type.has t')
         || Type.get t == Type.get t'
-      then return t'
+      then do
+       -- trace ("\n\n[simp from]" ++ show t ++ "\n\n[simp to]" ++ show t')
+          (return t')
       else error
           $ "[type error] transforming:\n"
           ++ show t ++ " : " ++ show (Type.get t)
@@ -64,14 +71,16 @@ fix f t = do
   where
   -- Our recursive transformation, a wrapper around 'f'
   run :: History.Repr -> Term -> m Term
-  run hist t' = do
+  run hist t' = continue
+    {- do
+    hist' <- History.ask
     -- Check term size has shrunk
     if t' Partial.< t
-    then fix f t'
+    then continue
     else do
       hist' <- History.ask
-      if nlength hist' > nlength hist 
-      then fix f t'
+      if History.size hist' > History.size hist 
+      then continue
       -- ^ We can only shrink the term in the recursive call
       -- if we add a term to the history. Otherwise we
       -- have an increasing recursive call and should throw an error.
@@ -80,6 +89,11 @@ fix f t = do
         ++ show (Height.get t) ++ "]\n" ++ show t
         ++ "\n\nGiven a larger term [" ++ show (Height.get t') 
         ++ "]:\n" ++ show t' ++ "\n"
+        -}
+    where
+    continue =
+    --  trace ("\n\n[rec from]" ++ show t ++ "\n\n[rec call]" ++ show t')
+        (fix f t')
     
 
 traceCont :: Step m => String -> Term -> Term -> m Term
@@ -139,6 +153,6 @@ instance Discovery.Tells m => Discovery.Tells (StepT m) where
   
 instance History.Env m => History.Env (StepT m) where
   ask = Trans.lift History.ask
-  seeCode x = mapStepT (History.seeCode x)
+  local f = mapStepT (History.local f)
   
 

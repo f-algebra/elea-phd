@@ -57,7 +57,8 @@ module Elea.Prelude
   arrowSum, supremum, (|>), ($>), replaceAt,
   Maximum (..), Minimum (..), sconcatMap, nlength,
   intersects, length, liftMaybe, maybeT, nth, drop, take, screen,
-  isSubsequenceOf, evalWriter, evalWriterT
+  isSubsequenceOf, evalWriter, evalWriterT, 
+  maximum
 )
 where
 
@@ -103,7 +104,7 @@ import Data.Set ( Set, (\\) )
 import qualified Data.Set as Set
 import Data.IntSet ( IntSet )
 import Data.Traversable
-import Data.Foldable hiding ( concat, concatMap )
+import Data.Foldable hiding ( concat, concatMap, maximum, minimum )
 import Data.List ( intersperse, unfoldr, partition,
   isPrefixOf, isSuffixOf, isInfixOf, sort, sortBy, findIndex,
   delete, elemIndices, intersect, union, transpose, groupBy,
@@ -400,6 +401,9 @@ instance Monoid (Minimum CoNat) where
   
 intersects :: Ord a => Set a -> Set a -> Bool
 intersects x = not . Set.null . Set.intersection x
+
+maximum :: (Monoid (Maximum a), Foldable f) => f a -> a
+maximum = getMaximum . concat . map Maximum . toList
 
 
 -- | Like 'filter', but also supplying all 

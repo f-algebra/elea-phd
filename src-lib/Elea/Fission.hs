@@ -112,7 +112,7 @@ constructorFission fix@(Fix _ fix_b fix_t) = do
     returnCons (Case _ alts) = 
       Set.unions (map (returnCons . get altInner) alts)
     returnCons _ = mempty
-
+    
   -- The set of constructor contexts we should try fission on
   suggestions :: Set Context
   suggestions = id

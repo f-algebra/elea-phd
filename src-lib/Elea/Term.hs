@@ -15,7 +15,7 @@ module Elea.Term
   fixClosed, fixName, fixTag,
   constrainedTerm, constrainedTo,
   flattenApp, leftmost, arguments,
-  flattenLam, unflattenLam,
+  flattenLam, unflattenLam, unflattenApp,
   isCon, isLam, isVar,
   isFix, isUnr, isCase,
   isUnr',
@@ -31,6 +31,7 @@ module Elea.Term
   buildFold,
   buildEq,
   reset,
+  stripTags,
 )
 where
 
@@ -96,10 +97,10 @@ data FixInfo
 -- Fixpoint information does not change the meaning of a fixpoint, so
 -- it does not effect equality between terms.
 instance Eq FixInfo where
-  _ == _ = True
+  (==) = (==) `on` _fixTag
   
 instance Ord FixInfo where
-  _ `compare` _ = EQ
+  compare = compare `on` _fixTag
   
 -- | Equations between terms
 data Equation
@@ -240,6 +241,9 @@ unflattenLam = flip (foldr Lam)
 flattenApp :: Term -> [Term]
 flattenApp (App f xs) = f:xs
 flattenApp t = [t]
+
+unflattenApp :: [Term] -> Term
+unflattenApp (f:xs) = app f xs
 
 leftmost :: Term -> Term
 leftmost = head . flattenApp
@@ -470,14 +474,13 @@ buildEq ind@(Ind _ cons) =
 -- | Generate new tags for every term that needs them, with
 -- tag ordering properly representing tag containment.
 -- Also un-closes all fixed-points.
-reset :: ContainsTerms a => a -> a
+reset :: forall m a . (Tag.Gen m, ContainsTerms a) => a -> m a
 reset = id
-  . evalWriter 
-  . Tag.runGenT
+  . evalWriterT
   . mapTermsM (Fold.cata reset')
   where
-  reset' :: Term' (Tag.GenT (Writer (Set Tag)) Term) 
-         -> Tag.GenT (Writer (Set Tag)) Term
+  reset' :: Term' (WriterT (Set Tag) m Term) 
+         -> WriterT (Set Tag) m Term
   reset' (Fix' inf b fix_t) = do
     (fix_t', inner_tags) <- listen fix_t
     new_tag <- Tag.make inner_tags
@@ -486,6 +489,16 @@ reset = id
     return (Fix inf' b fix_t')
   reset' other = 
     liftM Fold.embed (sequence other)
+    
+
+-- | Use this to strip all tags and thereby reduce indexed fixed-points
+-- to fixed-points. Useful if you want to check term equality modulo tags.
+stripTags :: Term -> Term
+stripTags = Fold.transform strip
+  where
+  strip (Fix inf b t) = 
+    Fix (set fixTag Tag.omega inf) b t
+  strip other = other
     
     
 -- Some useful functions for encoding terms    

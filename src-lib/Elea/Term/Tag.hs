@@ -117,6 +117,9 @@ instance MonadWriter w m => MonadWriter w (GenT m) where
   listen = GenT . listen . genT
   pass = GenT . pass . genT
   
+instance (Monoid w, Gen m) => Gen (WriterT w m) where
+  generateId = Trans.lift generateId
+  
 instance Gen m => Gen (MaybeT m) where
   generateId = Trans.lift generateId
   

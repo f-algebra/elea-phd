@@ -8,6 +8,18 @@ prop "beta2":
   (fun (x: nat) (y: nat) -> True)
   =
   (fun (f: nat -> bool) (x: nat) -> f) (fun (y: nat) -> True)
+  
+prop "unr1":
+  (fun (x: nat) -> assert 0 <- x in True)
+  =
+  (fun (x: nat) ->
+    match x with
+    | 0 -> True
+    | Suc x' -> 
+      if _|_ (nat -> bool) x'
+      then False
+      else False
+    end)
 
 prop "1+1=2": 
   add 1 1 = 2
@@ -85,11 +97,12 @@ prop "constant fix 2": forall (xs: list<nat>) ->
     or (f ys) (eq_nat 1 y)
   end) xs
  
-prop "id nat":
-  (fun (n: nat) -> n)
+prop "id nat": forall (n: nat) ->
+  n
   = 
   (fix (id: nat -> nat) (n: nat) -> 
-    match n with | 0 -> 0 | Suc n' -> Suc (id n') end)
+    match n with | 0 -> 0 | Suc n' -> Suc (id n') end) n
+    
 
   /*
 let is_sorted2 = 

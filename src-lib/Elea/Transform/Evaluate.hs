@@ -4,7 +4,7 @@ module Elea.Transform.Evaluate
 (
   Step,
   run, 
-  beta,
+  reduce,
   transformSteps, 
   traverseSteps,
   strictTerms,
@@ -31,11 +31,15 @@ import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Monad.Transform as Transform
 import qualified Elea.Monad.History as History
-import qualified Data.Set as Set
 
--- TODO absurdity needs to properly evaluate strict arguments
+import qualified Data.Set as Set
+import qualified Data.Poset as Partial
+
+-- TODO absurdity needs to properly evaluate strictness of arguments
 -- TODO traverses should be successively applied to 
   -- the tallest branch downwards
+  
+-- TODO URGENT remove var-branch and just use term-branch??
 
 type Step m = 
   ( Transform.Step m
@@ -55,23 +59,21 @@ run = flip runReader ([] :: [Bind])
   
 transformSteps :: Step m => [Term -> m Term]
 transformSteps =
-    [ Height.assertDecrease "normalise" normaliseApp
-    , Height.assertDecrease "eta" eta 
-    , Height.assertDecrease "absurd" absurdity
-    , Height.assertDecrease "beta" beta
-    , Height.assertDecrease "case-con" caseOfCon 
-    ]
+  [ normaliseApp
+ -- , eta 
+  , absurdity
+  , beta
+  , caseOfCon 
+  ]
 
 traverseSteps :: Step m => [Term -> m Term]
 traverseSteps = 
-  map (Height.assertDecrease "traverse")
-    [ traverseMatch
-    , traverseVarBranch
-    , traverseFunBranch
-    , traverseFun
-    , traverseApp
-    , traverseFix
-    ]
+  [ traverseMatch
+  , traverseBranches
+  , traverseFun
+  , traverseApp
+  , traverseFix
+  ]
   
 unwrapDepth :: Nat
 unwrapDepth = 2
@@ -113,20 +115,29 @@ degenerateContext ctx = id
   . toList 
   . strictTerms
   $ Context.apply ctx (Var Indices.omega)
+  
+reduce :: Term -> [Term] -> Term
+reduce (Lam _ rhs) (x:xs) = 
+  reduce (subst x rhs) xs
+reduce f xs = 
+  app f xs
     
   
 -- | Finds terms that are absurd and sets them that way.
 -- So far it detects applying arguments to an absurd function.
 -- Need to add pattern matching over absurdity, but how to find the type?
 absurdity :: Step m => Term -> m Term
+absurdity (Unr _) = 
+  Fail.here
+  -- ^ Cannot simplify further
 absurdity term
   | Type.has term
   , absurd term = 
     Transform.continue (Unr (Type.get term))
   where 
-  absurd (App (Unr _) _) = True
-  absurd (App _ args) = any Term.isUnr args
-  absurd (Case (Unr _) _) = True
+  absurd (Unr _) = True
+  absurd (App f xs) = absurd f || any absurd xs
+  absurd (Case t _) = absurd t
   absurd _ = False
 absurdity _ =
   Fail.here
@@ -142,12 +153,10 @@ normaliseApp _ =
   
 
 beta :: Step m => Term -> m Term
-beta t@(App (Lam _ rhs@(Lam {})) (x:y:ys)) =
-  beta (App (subst x rhs) (y:ys))
-beta t@(App (Lam _ rhs) (x:xs)) = 
-  Transform.continue (app (subst x rhs) xs)
-  -- ^ Only continute the transformation 
-  -- once every argument has been substituted in
+beta t@(App f@(Lam _ rhs) xs) = id
+  . History.check "beta" t
+  . Transform.continue
+  $ reduce f xs
 beta _ = Fail.here
   
 
@@ -178,21 +187,27 @@ caseOfCon (Case cse_t alts)
 caseOfCon _ = Fail.here
 
 
-
 traverseMatch :: Step m => Term -> m Term
 traverseMatch term@(Case cse_t alts) = do
   cse_t' <- Transform.continue cse_t
-  Height.ensureDecrease cse_t' cse_t
-  Transform.continue (Case cse_t' alts)
+  Fail.when (cse_t' == cse_t)
+  if True || (Case cse_t' []) Partial.< (Case cse_t [])
+  then Transform.continue (Case cse_t' alts)
+      -- ^ Only recurse if we have shrunk our term
+      -- removing the branches is a slight speed optimisation
+  else return (Case cse_t' alts)
 traverseMatch _ = Fail.here
 
 
-traverseVarBranch :: Step m => Term -> m Term
-traverseVarBranch term@(Case (Var x) alts) = do
+traverseBranches :: Step m => Term -> m Term
+
+traverseBranches term@(Case (Var x) alts) = do
   alts' <- mapM traverseAlt alts
+  Fail.when (alts' == alts)
   let term' = Case (Var x) alts'
-  Height.ensureDecrease term' term
-  Transform.continue term'
+  if term' Partial.< term
+  then Transform.continue term'
+  else return (Case (Var x) alts')
   where
   traverseAlt (Alt con bs t) = do
     t' <- id
@@ -205,15 +220,14 @@ traverseVarBranch term@(Case (Var x) alts) = do
     where
     x_here = Indices.liftMany (length bs) x
     pat_t = altPattern con
-traverseVarBranch _ = Fail.here
-
-
-traverseFunBranch :: Step m => Term -> m Term
-traverseFunBranch term@(Case cse_t alts) = do
+    
+traverseBranches term@(Case cse_t alts) = do
   alts' <- mapM traverseAlt alts
+  Fail.when (alts' == alts)
   let term' = Case cse_t alts'
-  Height.ensureDecrease term' term
-  Transform.continue (Case cse_t alts')
+  if True || term' Partial.< term
+  then Transform.continue term'
+  else return term'
   where
   traverseAlt (Alt con bs t) = do
     t' <- id
@@ -224,13 +238,14 @@ traverseFunBranch term@(Case cse_t alts) = do
     where
     cse_t_here = Indices.liftMany (length bs) cse_t
     pat_t = altPattern con
-traverseFunBranch _ = Fail.here
+    
+traverseBranches _ = Fail.here
 
 
 traverseFun :: Step m => Term -> m Term
 traverseFun (Lam b t) = do
   t' <- Env.bind b (Transform.continue t)
-  Height.ensureDecrease t' t
+  Fail.when (t' == t)
   return (Lam b t')
 traverseFun _ = Fail.here
 
@@ -240,19 +255,25 @@ traverseApp term@(App f xs) = do
   xs' <- mapM Transform.continue xs
   f' <- Transform.continue f
   let term' = App f' xs'
-  Height.ensureDecrease term' term
-  Transform.continue term'
+  Fail.when (term' == term)
+  if True || term' Partial.< term
+  then Transform.continue term'
+    -- ^ Only recurse if we have shrunk the term
+  else return term'
+  
 traverseApp _ = Fail.here
 
 
 traverseFix :: Step m => Term -> m Term
 traverseFix (Fix inf b t) = do
-  Fail.when (get fixClosed inf)
+ -- Fail.when (get fixClosed inf)
   t' <- id
     . Env.bind b
+    . History.check "fix" t
     $ Transform.continue t
-  let inf' = set fixClosed True inf
-  return (Fix inf' b t')
+ -- let inf' = set fixClosed True inf
+  Fail.when (t' == t)
+  return (Fix inf b t')
 traverseFix _ = Fail.here
 
 

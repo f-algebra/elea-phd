@@ -10,6 +10,7 @@ module Elea.Testing
 --  fusedTerm,
  -- assertProvablyEq,
   assertTermEq,
+  assertTermEqM,
   localVars,
 ) 
 where
@@ -60,7 +61,7 @@ assertEq = (HUnit.TestCase .) . HUnit.assertEqual ""
 
 assertSimpEq :: Term -> Term -> Test
 assertSimpEq (Simp.run -> t1) (Simp.run -> t2) = 
-  assertEq t1 t2
+  assertTermEq t1 t2
 
 prelude :: String
 prelude = unsafePerformIO
@@ -90,8 +91,12 @@ assertProvablyEq t1 t2 = do
     . HUnit.assertBool prop_s
     $ fromMaybe False mby_eq
   -}
-assertTermEq :: (Env.Read m, Defs.Read m) => Term -> Term -> m Test
-assertTermEq t1 t2 = do
+  
+assertTermEq :: Term -> Term -> Test
+assertTermEq = assertEq `on` stripTags
+
+assertTermEqM :: (Env.Read m, Defs.Read m) => Term -> Term -> m Test
+assertTermEqM (stripTags -> t1) (stripTags -> t2) = do
   t1s <- showM t1
   t2s <- showM t2
   let prop_s = "\nexpected: " ++ t1s ++ "\nbut got: " ++ t2s

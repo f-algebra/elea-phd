@@ -4,7 +4,7 @@ module Elea.Monad.Env.Data
   bindAt, matched, 
   matches, bindings,
   rewrites, addRewrite,
-  codes, addCode
+  history,
 )
 where
 
@@ -13,6 +13,7 @@ import Elea.Term
 import Elea.Term.Index
 import Elea.Embed ( Code )
 import Elea.Monad.Env ()
+import qualified Elea.Monad.History as History
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Monad.Rewrite as Rewrite
@@ -22,12 +23,12 @@ data Data
   = Data  { _dbBinds :: [Bind]
           , _dbMatches :: [(Term, Term)]
           , _dbRewrites :: [(Tag, Term, Index)] 
-          , _dbCodes :: [Code] }
+          , _dbHistory :: History.Repr }
           
 mkLabels [ ''Data ]
 
 empty :: Data
-empty = Data mempty mempty mempty mempty
+empty = Data mempty mempty mempty History.empty
 
 matches :: Data -> [(Term, Term)]
 matches = get dbMatches
@@ -54,8 +55,8 @@ rewrites = get dbRewrites
 addRewrite :: Tag -> Term -> Index -> Data -> Data
 addRewrite a t x = modify dbRewrites ((a, t, x) :) 
 
-codes :: Data -> [Code]
-codes = get dbCodes
+history :: (Data :-> History.Repr)
+history = dbHistory
 
 liftRewritesAt :: Index -> Data -> Data
 liftRewritesAt at = 
@@ -63,6 +64,4 @@ liftRewritesAt at =
   where
   liftR (a, t, x) = (a, liftAt at t, liftAt at x)
 
-addCode :: Code -> Data -> Data
-addCode code = modify dbCodes (code :)
 

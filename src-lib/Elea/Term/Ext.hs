@@ -33,6 +33,7 @@ module Elea.Term.Ext
   revertEnvMatches,
   floatRecCallInwards,
   isLambdaFloated,
+  findArguments,
 )
 where
 
@@ -608,3 +609,19 @@ isLambdaFloated fix@(Fix _ _ fix_t) =
   ty_arg_count = nlength (Type.argumentTypes (Type.get fix))
   lam_count = nlength (fst (flattenLam fix_t))
       
+  
+-- | Attempt to find a list of arguments for the first term that
+-- will make it equal the second
+findArguments :: Fail.Can m => Term -> Term -> m [Term]
+findArguments ctx term = do
+  uni <- Unifier.find ctx_body (Indices.liftMany (length arg_bs) term)
+  Fail.unless (Indices.free uni `Set.isSubsetOf` arg_idxs)
+  return 
+    . map (Indices.lowerMany (length arg_bs) . snd)
+    $ Map.toDescList uni
+  where
+  (arg_bs, ctx_body) = flattenLam ctx
+  
+  arg_idxs :: Set Index
+  arg_idxs = (Set.fromList . map enum) [0..nlength arg_bs - 1]
+

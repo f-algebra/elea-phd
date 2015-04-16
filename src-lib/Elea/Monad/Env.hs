@@ -565,6 +565,8 @@ instance Unifiable Term where
     . Fold.transformM replace
     where
     replace :: Term -> TrackOffset Term
+    replace (App f xs) =
+      return (app f xs)
     replace (Var x) = do
       n <- offset
       if x < enum n

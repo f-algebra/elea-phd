@@ -84,6 +84,7 @@ instance Show (Term' String) where
     ++ "\nend"
     
 instance Show FixInfo where
+  -- show _ = ""
   show (FixInfo c _ tag) = "<" ++ is_c ++ "|" ++ show tag ++ ">"
     where
     is_c | c = "T"
@@ -94,10 +95,10 @@ instance Show (Alt' String) where
     "\n| " ++ pat_s ++ " -> " ++ indent t
     where
     pat_s = intercalate " " ([show con] ++ map show bs)
-      
+                                       
 instance (Env.Read m, Defs.Read m) => ShowM m (Term' (Term, String)) where
   showM (Var' idx) = do
-    bs <- Env.bindings
+    bs <- Env.bindings                   
     if idx >= length bs
     -- If we don't have a binding for this index 
     -- just display the index itself

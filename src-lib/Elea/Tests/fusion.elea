@@ -4,13 +4,7 @@ prop "add 0": forall (n: nat) -> add n 0 = n
 
 prop "add associative": forall (x y z: nat) -> 
   add (add x y) z = add x (add y z)
-    
-prop "add commutative": forall (x y z: nat) ->
-  add x y = add y x
-  
-prop "max associative": forall (x y z: nat) ->
-  max x (max y z) = max (max x y) z
-
+   
 let double = 
   fix (dbl: nat -> nat) (x: nat) ->
   match x with
@@ -20,6 +14,12 @@ let double =
   
 prop "add double": forall (x: nat) ->
   double x = add x x
+  
+  
+  /*
+prop "add commutative": forall (x y z: nat) ->
+  add x y = add y x
+  
 
 prop "id list"<A>:
   (fun (n: nat) (xs: list<A>) -> xs)
@@ -98,6 +98,7 @@ prop "filter reverse"<A>: forall (p: A -> bool) (xs: list<A>) ->
 
 prop "insertsort sorted": forall (xs: list<nat>) ->
   is_sorted (insertsort xs)
+  */
 /*  
 prop "take append"<A>: forall (n: nat) (xs ys: list<A>) ->
   take<A> n (append<A> xs ys) 
@@ -108,10 +109,11 @@ prop "take drop"<A>: forall (n m: nat) (xs: list<A>) ->
   take<A> n (drop <A> m xs)
   = drop<A> m (take<A> (add n m) xs)
   */
-  
+ /* 
 prop "take zip"<A, B>: forall (n: nat) (xs: list<A>) (ys: list<B>) ->
   take<(A, B)> n (zip<A, B> xs ys) 
   = zip<A, B> (take<A> n xs) (take<B> n ys)
+  */
 /*
 let srtd_tree_ins = 
   fix (srtd_ins: nat -> tree<nat> -> bool) (n: nat) (t: tree<nat>) ->
@@ -165,20 +167,18 @@ prop "leftmost impl": forall (t1 t2: tree<nat>) (x n: nat) ->
     
 prop "last flatten"<A>: forall (t: tree<A>) ->
   last<A> (flatten<A> t) = rightmost<A> t
-  */
+  
 prop "prop 27": forall (x: nat) (xs ys: list<nat>) ->
   implies (elem_nat x ys) (elem_nat x (append<nat> xs ys))
 
 prop "prop 30": forall (x: nat) (xs: list<nat>) ->
   elem_nat x (insert_nat x xs)
-  /*
+  
 prop "prop 66": forall (p: nat -> bool) (xs: list<nat>) ->
   leq_nat (length<nat> (filter<nat> p xs)) (length<nat> xs)
-  */
-  /*
+
 prop "prop 3": forall (n: nat) (xs ys: list<nat>) ->
   leq_nat (count_nat n xs) (count_nat n (append<nat> xs ys))
-*/
 
 prop "prop 6": forall (n m: nat) ->
   minus n (add n m) = 0 
@@ -186,7 +186,7 @@ prop "prop 6": forall (n m: nat) ->
 prop "prop 9": forall (i j k: nat) ->
   minus (minus i j) k = minus i (add j k)
   
-  /*
+ 
 prop "height mirror" <A>: forall (t: tree<A>) ->
   height<A> (mirror<A> t) = height<A> t
 */

@@ -29,7 +29,7 @@ tests = Test.list
  -- , Constraints.tests
  -- , Context.tests
  -- , Inventor.tests
- -- , Fusion.tests  
+  , Fusion.tests  
   ]
 
 runTests :: IO ()

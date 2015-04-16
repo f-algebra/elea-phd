@@ -20,13 +20,13 @@ checkEquation (Equals name bs t1 t2) = id
     t1' <- Fusion.run t1
     t2' <- Fusion.run t2
    -- Test.assertProvablyEq t1' t2'
-    return (Test.assertEq t1' t2')
+    return (Test.assertTermEq t1' t2')
     
 tests = Test.label "Fusion"
     $ Test.run $ do
   Test.loadPrelude
   eqs <- Test.loadFile "src-lib/Elea/Tests/fusion.elea"
   mapM checkEquation
-    . filter ((== "add associative") . get equationName)
+   -- . filter ((== "add associative") . get equationName)
     $ eqs
 

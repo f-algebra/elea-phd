@@ -156,8 +156,8 @@ instance Monad m => Rewrite.Env (FeddT m) where
   
     
 instance Monad m => History.Env (FeddT m) where
-  ask = asks EnvDB.codes
-  seeCode c = local (EnvDB.addCode c)
+  ask = asks (get EnvDB.history)
+  local f = local (modify EnvDB.history f)
   
 instance Monad m => Tag.Gen (FeddT m) where
   generateId = do

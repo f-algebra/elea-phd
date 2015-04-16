@@ -49,9 +49,9 @@ type Step m =
  
   
 run :: Env m => Term -> m Term
-run = id
-  . Transform.fix (Transform.compose all_steps)
-  . Term.reset
+run t = do
+  t' <- Term.reset t
+  Transform.fix (Transform.compose all_steps) t'
   where
   all_steps = []
     ++ Eval.transformSteps
@@ -64,56 +64,58 @@ run = id
 steps :: Step m => [Term -> m Term]
 steps = 
   [ const Fail.here
-  , Height.enforceDecrease fixfix ]
+  , fixfix
+  , decreasingFreeVar 
+  ]
 
 
 fusion :: Step m => Term -> Term -> m Term
-fusion ctx_t fix@(Fix fix_inf fix_b fix_t) = 
-  History.check orig_t $ do
-    t_s <- showM orig_t
+fusion ctx_t fix@(Fix fix_inf fix_b fix_t) = do
+  t_s <- showM orig_t
+
+  -- Generate a new tag, larger than all others in the term
+  -- to prioritise rewrites that remove it
+  temp_tag <- Tag.make (Tag.tags orig_t)
+  let temp_fix = Fix (set fixTag temp_tag fix_inf) fix_b fix_t
+      rewrite_from = id
+        . Simp.run
+        . Indices.lift 
+        . Eval.run 
+        $ app ctx_t [temp_fix]
+         
+  t_s' <- Env.bind new_fix_b $ showM rewrite_from
+  t_s'' <- showM (Eval.run (app ctx_t [Term.unfoldFix temp_fix]))
   
-    -- Generate a new tag, larger than all others in the term
-    -- to prioritise rewrites that remove it
-    temp_tag <- Tag.make (Tag.tags orig_t)
-    let temp_fix = Fix (set fixTag temp_tag fix_inf) fix_b fix_t
-        rewrite_from = id
-          . Indices.lift 
-          . Eval.run 
-          $ app ctx_t [temp_fix]
-           
-    t_s' <- Env.bind new_fix_b $ showM rewrite_from
-    t_s'' <- showM (Eval.run (app ctx_t [Term.unfoldFix temp_fix]))
+  new_fix_t <- id  
+    . Env.bind new_fix_b
+    . Rewrite.local temp_tag rewrite_from 0
+    . Transform.continue
+    . trace ("\n\n[fusing <" ++ show temp_tag ++ ">] " ++ t_s)
+  --  . trace ("\n\n[replacing] " ++ t_s')
+  --  . trace ("\n\n[transforming] " ++ show temp_tag ++ t_s'')
+    -- Make room for our new variables we are rewriting to
+    . Indices.lift
+    $ app ctx_t [Term.unfoldFix temp_fix]
     
-    new_fix_t <- id  
-      . Env.bind new_fix_b
-      . Rewrite.local temp_tag rewrite_from 0
-      . Transform.continue
-      . trace ("\n\nfusing: " ++ t_s)
-      . trace ("\n\nreplacing: " ++ t_s')
-      . trace ("\n\ntransforming: " ++ t_s'')
-      -- Make room for our new variables we are rewriting to
-      . Indices.lift
-      $ app ctx_t [Term.unfoldFix temp_fix]
-      
-    t_s''' <- Env.bind new_fix_b (showM new_fix_t) 
-    -- Check we actually performed a rewrite
-    Fail.unless $ trace ("\n\nyielding: " ++ t_s''') $ (Indices.freeWithin 0 new_fix_t)
-      
-    return    
-      . Fix new_fix_inf new_fix_b 
-      $ Tag.replace temp_tag orig_tag new_fix_t
+  t_s''' <- Env.bind new_fix_b (showM new_fix_t) 
+  -- Check we actually performed a rewrite
+  Fail.unless 
+    . trace ("\n\n[yielding <" ++ show temp_tag ++ ">] " ++ t_s''') 
+    $ (Indices.freeWithin 0 new_fix_t)
+    
+  return    
+    . Fix fix_inf new_fix_b 
+    $ Tag.replace temp_tag orig_tag new_fix_t
   where
   orig_t = Eval.run (app ctx_t [fix])
   orig_tag = get fixTag fix_inf
   
   new_fix_b = set Type.bindType (Type.get orig_t) fix_b
-  new_fix_inf = set fixClosed True fix_inf
   
   
 fixfix :: forall m . Step m => Term -> m Term
 fixfix o_term@(App o_fix@(Fix _ _ o_fix_t) o_args) = do
   -- ^ o_ is outer, i_ is inner
-  Fail.unless (Term.inductivelyTyped o_term) 
   Fail.assert (Term.isLambdaFloated o_fix)
   
   term' <- id
@@ -124,24 +126,28 @@ fixfix o_term@(App o_fix@(Fix _ _ o_fix_t) o_args) = do
     . filter (Term.isFix . Term.leftmost . (o_args !!))
     $ Term.decreasingArgs o_fix
     
+  term_s <- showM term'
   Transform.continue term'
   where  
   fixArg :: Int -> m Term
   -- Run fix-fix fusion on the argument at the given index
   fixArg arg_i = do
-    Fail.unless (Term.inductivelyTyped i_term)
     Fail.assert (Term.isLambdaFloated i_fix)
-    trace (show ctx_t ++ " : " ++ show (Type.get ctx_t)
-      ++ "\n+++\n" ++ show i_fix ++ "  : " ++ show (Type.get i_fix)) $ Fail.assert (Type.get (app ctx_t (i_fix:(o_args' ++ i_args))) == Type.get o_term)
-    new_fix <- fusion ctx_t i_fix
-    let new_term = app new_fix (o_args' ++ i_args) 
-    -- Make sure we have actually shrunk the term
-    -- will probably never fail
-    Fail.assert (new_term Partial.< o_term)
-    return new_term
+    
+    History.check "fxfx" gen_t $ do
+      Fail.assert (Type.get full_t == Type.get o_term)
+      new_fix <- fusion ctx_t i_fix
+      let new_term = app new_fix (o_args' ++ i_args) 
+      -- Make sure we have actually shrunk the term
+      -- will probably never fail
+      Fail.assert (new_term Partial.< o_term)
+      return new_term
     where
     i_term@(App i_fix@(Fix _ i_fix_b i_fix_t) i_args) = o_args !! arg_i
     o_args' = removeAt arg_i o_args
+    
+    gen_t = Eval.run (app ctx_t [i_fix])
+    full_t = app ctx_t (i_fix:(o_args' ++ i_args))
    
     ctx_t = id 
       . unflattenLam (i_fix_b : o_fix_bs ++ i_fix_bs) 
@@ -170,6 +176,53 @@ fixfix o_term@(App o_fix@(Fix _ _ o_fix_t) o_args) = do
       
 fixfix _ = Fail.here
 
+
+decreasingFreeVar :: Step m => Term -> m Term
+decreasingFreeVar orig_t@(App fix@(Fix _ _ fix_t) args) = do
+  Fail.unless (length var_arg_is > 0)
+  Fail.assert (Term.isLambdaFloated fix)
+  
+  App expr_fix@(Fix _ expr_b _) expr_args <- 
+    Term.expressFreeVariables (reverse var_args) fix
+  
+  Fail.assert (expr_args == map Var var_args)
+    
+  let (orig_bs, _) = flattenLam fix_t
+      ctx_t = id
+        . unflattenLam (expr_b:orig_bs)
+        . app (Var (length orig_bs))
+        . map (Var . enum) 
+        $ var_arg_is ++ reverse [0..length orig_bs - 1]
+        
+      full_t = Eval.reduce ctx_t (expr_fix:args)
+        
+  Fail.assert (Type.get full_t == Type.get orig_t)
+  
+  new_fix <- id
+    . History.check "dec-free" full_t
+    $ fusion ctx_t expr_fix
+    
+  Transform.continue (app new_fix args)
+  where
+  -- The variable arguments we should attempt this technique on.
+  -- They must be a decreasing argument, and free within the fixpoint itself. 
+  var_arg_is :: [Int]
+  var_arg_is = id
+    . sort
+    . filter isFreeVar 
+    $ Term.decreasingArgs fix
+    where
+    isFreeVar arg_i 
+      | Var x <- args `nth` arg_i =
+        x `Indices.freeWithin` fix
+    isFreeVar _ = False
+    
+  var_args :: [Index]
+  var_args = nubOrd (map (fromVar . (args !!)) var_arg_is) 
+  
+decreasingFreeVar _ = Fail.here
+  
+    
 {-
 run :: forall m . FusionM m => Term -> m Term
 run = Fold.rewriteStepsM all_steps

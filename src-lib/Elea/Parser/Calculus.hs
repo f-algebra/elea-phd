@@ -1768,7 +1768,6 @@ lookupType (name, raw_ty_args) = do
     
 parseAndCheckTerm :: RawTerm -> ParserMonad m Term
 parseAndCheckTerm = id
-  . liftM reset 
   . Err.check Type.check 
   . parseRawTerm
   
