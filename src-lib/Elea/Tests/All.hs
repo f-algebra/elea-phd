@@ -10,7 +10,6 @@ import qualified Elea.Tests.Prelude as Prelude
 import qualified Elea.Tests.Type as Type
 import qualified Elea.Tests.Term as Term
 import qualified Elea.Tests.Simplifier as Simplifier 
-import qualified Elea.Tests.Context as Context
 import qualified Elea.Tests.Height as Height
 --import qualified Elea.Tests.Inventor as Inventor
 -- import qualified Elea.Tests.Constraints as Constraints
@@ -23,7 +22,7 @@ tests = Test.list
   , Type.tests
   , Term.tests
   , Height.tests
-  , UMap.tests
+ -- , UMap.tests
 --  , Checker.tests 
   , Simplifier.tests
  -- , Constraints.tests

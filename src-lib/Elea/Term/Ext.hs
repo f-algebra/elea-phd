@@ -27,23 +27,22 @@ module Elea.Term.Ext
   commuteMatchesWhenM,
   occurrences,
   isSubterm,
-  findContext,
   removeSubterms,
   freeSubtermsOf,
   revertEnvMatches,
   floatRecCallInwards,
   isLambdaFloated,
   findArguments,
+  abstractVar,
+  abstractVars,
 )
 where
 
 import Elea.Prelude hiding ( replace )
 import Elea.Term
-import Elea.Context ( Context )
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.Env as Env
-import qualified Elea.Context as Context
 import qualified Elea.Unification as Unifier
 import qualified Elea.Foldable as Fold
 import qualified Elea.Term.Tag as Tag
@@ -147,7 +146,7 @@ unfoldFix fix@(Fix _ _ fix_t) =
 -- | Unfolds a fixpoint a given number of times and replace the fix variable
 -- with 'Unr'eachable.
 unwrapFix :: Nat -> Term -> Term
-unwrapFix 0 fix@(Fix {}) = Unr (Type.get fix)
+unwrapFix 0 fix@(Fix {}) = Bot (Type.get fix)
 unwrapFix n fix@(Fix _ _ fix_t) =
   Indices.subst (unwrapFix (n - 1) fix) fix_t
   
@@ -502,6 +501,7 @@ occurrences t = Env.trackIndices t . Fold.countM (\t -> Env.trackeds (== t))
 isSubterm :: Term -> Term -> Bool
 isSubterm t = Env.trackIndices t . Fold.anyM (\t -> Env.trackeds (== t))
     
+{-
 -- | Finds a context which will turn the first term into the second.
 -- Basically takes the first term and replaces all instances of it 
 -- with the gap in the second. Will fail if there was not at least one
@@ -510,6 +510,7 @@ findContext :: Fail.Can m => Term -> Term -> m Context
 findContext inner full = do
   Fail.unless (inner `isSubterm` full)
   return (Context.make (\gap -> replace inner gap full))
+  -}
   
 -- | Removes all elements which are subterms of other elements in the list
 removeSubterms :: [Term] -> [Term]
@@ -625,3 +626,15 @@ findArguments ctx term = do
   arg_idxs :: Set Index
   arg_idxs = (Set.fromList . map enum) [0..nlength arg_bs - 1]
 
+  
+-- | Beta-abstracts the given index
+abstractVar :: Bind -> Index -> Term -> Term
+abstractVar b x t = id
+  . Lam b 
+  . Indices.substAt (succ x) (Var 0) 
+  $ Indices.lift t
+
+abstractVars :: [Bind] -> [Index] -> Term -> Term
+abstractVars bs xs = 
+  concatEndos (zipWith abstractVar bs xs)
+  

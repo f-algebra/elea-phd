@@ -41,6 +41,6 @@ run term_def = putStrLn output
     term' <- Fusion.run term
     term_s' <- showM term'
     term_s <- showM term
-    return ("\n\n[hihi]" ++ term_s ++ "\n\n==>\n\n" ++ term_s')
+    return term_s'
   
     

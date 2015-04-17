@@ -143,7 +143,7 @@ prove simplify t1 t2 = do
     id
     --  . trace ("[prove eq] splitting on: " ++ cse_s)
       . concatMapM equalAlt 
-      $ filter (not . isUnr . get altInner) alts
+      $ filter (not . isBot . get altInner) alts
     where
     equalAlt :: Alt -> m Result
     equalAlt (Alt con bs alt_t) = id

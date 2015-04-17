@@ -10,10 +10,7 @@ where
 import Elea.Prelude
 import Elea.Term
 import Elea.Show
-import Elea.Context ( Context )
 import Elea.Monad.Memo.Data ( Outcome (..) )
-import qualified Elea.Constraint as Constraint
-import qualified Elea.Context as Context
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Monad.History as History
 import qualified Elea.Term.Tag as Tag
@@ -138,6 +135,7 @@ memoise lens term run = do
       State.modify (modify lens (const fusion_db''))
       return mby_t
 
+      {-
 instance Monad m => Memo.Can (FeddT m) where
   maybeFusion ctx term = 
     memoise fsFusions (Context.apply ctx term)
@@ -148,7 +146,7 @@ instance Monad m => Memo.Can (FeddT m) where
     ctx = Constraint.manyToContext (Type.get term) cons
     
   maybeFission _ _ = id
-  
+  -}
   
 instance Monad m => Rewrite.Env (FeddT m) where
   rewrites = asks EnvDB.rewrites

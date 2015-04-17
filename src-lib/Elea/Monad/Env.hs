@@ -203,9 +203,6 @@ instance ContainsTypes Term where
     mapTy (Fix i b t) = do
       b' <- mapTypesM f' b
       return (Fix i b' t)
-    mapTy (Unr ty) = do
-      ty' <- f' ty
-      return (Unr ty')
     mapTy (Con con) = do
       con' <- mapTypesM f' con
       return (Con con')
@@ -221,11 +218,10 @@ instance ContainsTypes Term where
       return term
       
 instance ContainsTypes Equation where
-  mapTypesM f (Equals name bs t1 t2) = do
+  mapTypesM f (Equals name bs t) = do
     bs' <- mapM (mapTypesM f) bs
-    t1' <- mapTypesM f t1
-    t2' <- mapTypesM f t2
-    return (Equals name bs' t1' t2')
+    t' <- mapTypesM f t
+    return (Equals name bs' t')
       
       
 -- | If you just need a simple type environment, use the reader
@@ -517,8 +513,11 @@ instance Unifiable Term where
     where
     uni :: forall m . Fail.Can m => 
       Term -> Term -> TrackIndicesT Index m (Unifier Term)
-    uni (Unr ty1) (Unr ty2) = do
-      Fail.assert (ty1 == ty2)
+    uni (Eql x y) (Eql x' y') = do
+      uni_x <- uni x x'
+      uni_y <- uni y y'
+      Unifier.union uni_x uni_y
+    uni (Bot _) (Bot _) = 
       return mempty
     uni (Var x1) (Var x2)
       | x1 == x2 = return mempty
@@ -596,9 +595,16 @@ instance Unifiable Term where
       if free_y && free_t
       then return EQ
       else return GT
-    comp (Unr _) (Unr _) = return EQ
-    comp (Unr _) _ = return LT
-    comp _ (Unr _) = return GT
+    comp (Eql x y) (Eql x' y') = do
+      cx <- comp x x'
+      cy <- comp y y'
+      return (cx ++ cy)
+    comp (Bot _) (Bot _) =  
+      return EQ
+    comp (Bot _) _ = return LT
+    comp _ (Bot _) = return GT
+    comp (Eql _ _) _ = return LT
+    comp _ (Eql _ _) = return GT
     comp (App t1 t2) (App t1' t2') = do
       -- We use the lexicographical ordering monoid append operation.
       c1 <- comp t1 t1'

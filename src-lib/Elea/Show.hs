@@ -10,12 +10,10 @@ import Elea.Prelude
 import Elea.Term.Index
 import Elea.Term
 import Elea.Type hiding ( get )
-import Elea.Context ( Context )
 import Elea.Show.Class
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Type as Type
-import qualified Elea.Context as Context
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Definitions as Defs
 import qualified Data.Map as Map
@@ -45,7 +43,7 @@ instance Show (Term' (Term, String)) where
     where                    
     non_absurd_alts :: [Alt' (Term, String)]
     non_absurd_alts =
-      filter (not . isUnr . fst . get altInner') f_alts
+      filter (not . isBot . fst . get altInner') f_alts
       
       
   -- Special case for showing equation pairs
@@ -67,7 +65,8 @@ instance Show (Term' (Term, String)) where
 
 
 instance Show (Term' String) where
-  show (Unr' ty) = "UNR"
+  show (Eql' x y) = "(" ++ x ++ " = " ++ y ++ ")"
+  show (Bot' _) = "_|_"
   show (App' f xs) = f' ++ " " ++ xs'
     where 
     xs' = intercalate " " (map bracketIfNeeded xs)
@@ -143,6 +142,7 @@ instance (Env.Read m, Defs.Read m) => ShowM m (Term' (Term, String)) where
         -- If we can't find an alias, then default to the normal show instance
         return (show term')
           
+        {-
 instance (Env.Read m, Defs.Read m) => ShowM m Context where
   showM = showM . get Context.term
     
@@ -156,9 +156,10 @@ instance (Env.Read m, Defs.Read m) => ShowM m Constraint where
     
 instance Show Constraint where
   show = Defs.readEmpty . Env.emptyT . showM
+  -}
       
 instance (Env.Read m, Defs.Read m) => ShowM m Equation where
-  showM (Equals n bs t1 t2) = 
+  showM (Equals n bs (Eql t1 t2)) = 
     Env.bindMany bs $ do
       t1' <- liftM (dropWhile (== '\n')) (showM t1)
       t2' <- showM t2

@@ -7,7 +7,6 @@ where
 
 import Elea.Prelude
 import Elea.Term
-import Elea.Context ( Context )
 import Elea.Show ( showM )
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Monad.Transform as Transform
@@ -17,6 +16,7 @@ import qualified Elea.Unification as Unifier
 import qualified Elea.Transform.Evaluate as Eval
 import qualified Elea.Transform.Simplify as Simp
 import qualified Elea.Transform.Rewrite as Rewrite
+import qualified Elea.Transform.Equality as Equality
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Term.Height as Height
@@ -59,6 +59,7 @@ run t = do
     ++ Rewrite.steps
     ++ steps
     ++ Eval.traverseSteps
+    ++ Equality.steps
     
   
 steps :: Step m => [Term -> m Term]

@@ -12,14 +12,14 @@ import Elea.Prelude
 import Elea.Type hiding ( get )
 import Elea.Term
 import Elea.Show ( showM )
-import qualified Elea.Index as Indices
-import qualified Elea.Terms as Term
-import qualified Elea.Types as Type
+import qualified Elea.Term.Index as Indices
+import qualified Elea.Term.Ext as Term
+import qualified Elea.Type.Ext as Type
 import qualified Elea.Constraint as Constraint
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Foldable as Fold
-import qualified Elea.Simplifier as Simp
-import qualified Elea.Evaluation as Eval
+import qualified Elea.Transform.Simplify as Simp
+import qualified Elea.Transform.Evaluate as Eval
 import qualified Elea.Monad.Definitions.Class as Defs      
 import qualified Elea.Monad.Error.Class as Err
 import qualified Data.Map as Map
@@ -39,7 +39,7 @@ type TypeDef = (ParamName, [[String]])
 type TermDef = (ParamName, RawTerm)
 
 -- Declarations to decide equality between terms
-type PropDef = (ParamName, [RawBind], (RawTerm, RawTerm))
+type PropDef = (ParamName, [RawBind], RawTerm)
 
 data RawProgram 
   = RawProgram  { _programTypes :: [TypeDef]
@@ -64,7 +64,7 @@ data RawTerm
   | TUnr RawType
   | TCase RawTerm [RawAlt]
   | TLet String RawTerm RawTerm
-  | TEq RawType
+  | TEql RawTerm RawTerm
   | TFold RawType
   | TTuple [RawTerm]
   | TAssert [String] RawTerm RawTerm
@@ -182,10 +182,10 @@ Term :: { RawTerm }
   | '(' Term ')'                      { $2 }
   | Term '(' Term ',' TermList ')'    { TApp $1 (TTuple ($3:$5)) }
   | '(' Term ',' TermList ')'         { TTuple ($2:$4) }
+  | Term '=' Term                     { TEql $1 $3 }
   | fun Bindings '->' Term            { TLam $2 $4 }
   | fix Bindings '->' Term            { TFix $2 $4 }
   | let name '=' Term in Term         { TLet $2 $4 $6 }
-  | 'eq[' Type ']'                    { TEq $2 }
   | 'fold[' Type ']'                  { TFold $2 }
   | match Term with Matches end       { TCase $2 $4 }
   | assert Pattern '<-' Term in Term  { TAssert $2 $4 $6 }
@@ -202,15 +202,12 @@ ParamCall :: { ParamCall }
 ParamName :: { ParamName }
   : name                              { ($1, []) }
   | name '<' NameList '>'             { ($1, $3) }
-  
-Equation :: { (RawTerm, RawTerm) }
-  : Term                              { (TVar ("True", []), $1) }
-  | Term '=' Term                     { ($1, $3) }
+ 
   
 PropDef :: { PropDef }
-  : prop ParamName ':' all Bindings '->' Equation   
+  : prop ParamName ':' all Bindings '->' Term   
                                       { ($2, $5, $7) }
-  | prop ParamName ':' Equation
+  | prop ParamName ':' Term
                                       { ($2, [], $4) }
 
 Program :: { RawProgram }
@@ -293,12 +290,13 @@ program text =
   RawProgram types terms props = happyProgram (lexer text)
     
   parseProp :: PropDef -> ParserMonad m (Polymorphic Equation)
-  parseProp ((name, ty_args), rbs, (rt1, rt2)) = 
+  parseProp ((name, ty_args), rbs, rt) = 
     localTypeArgs ty_args $ do
       bs <- mapM parseRawBind rbs
-      t1 <- Env.bindMany bs (parseAndCheckTerm rt1)
-      t2 <- Env.bindMany bs (parseAndCheckTerm rt2)
-      return (Equals name bs t1 t2)
+      t <- Env.bindMany bs (parseAndCheckTerm rt)
+      if isEql t
+      then return (Equals name bs t)
+      else return (Equals name bs (Eql t Term.true))
   
   defineType :: TypeDef -> ParserMonad m ()
   defineType ((ind_name, ty_args), raw_cons) = do
@@ -406,14 +404,15 @@ parseRawTerm (TTuple rts) = do
 parseRawTerm (TFold raw_ty) = do
   Fun (Base ind) res_ty <- parseRawType raw_ty
   return (buildFold ind res_ty)
-parseRawTerm (TEq raw_ty) = do
-  Base ind <- parseRawType raw_ty
-  return (buildEq ind)
+parseRawTerm (TEql rt1 rt2) = do
+  t1 <- parseRawTerm rt1
+  t2 <- parseRawTerm rt2
+  return (Term.Eql t1 t2)
 parseRawTerm (TVar var) = 
   lookupTerm var
 parseRawTerm (TUnr rty) = do
   ty <- parseRawType rty
-  return (Unr ty)
+  return (Term.Bot ty)
 parseRawTerm (TApp rt1 rt2) = do
   t1 <- parseRawTerm rt1 
   t2 <- parseRawTerm rt2

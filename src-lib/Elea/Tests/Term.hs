@@ -51,20 +51,6 @@ tests = Test.label "Terms"
   conj3_t' <- Test.simplifiedTerm "fun (p q r: bool) -> and p (and q r)"
   let conj1 = Test.assertEq conj3_t' conj3_t
       
-  eq_nat <- Test.simplifiedTerm "eq[nat]"
---  eq_ntree <- Test.simplifiedTerm "eq[tree<nat>]"
-  eq_bool <- Test.simplifiedTerm "eq[bool]"
-  eq_unit <- Test.simplifiedTerm "eq[unit]"
-  
-  eq_nat' <- Test.simplifiedTerm def_eq_nat
- -- eq_ntree' <- Test.simplifiedTerm def_eq_ntree
-  eq_bool' <- Test.simplifiedTerm def_eq_bool
-  eq_unit' <- Test.simplifiedTerm def_eq_unit
-  
-  let eq1 = Test.assertEq eq_nat' eq_nat 
-     -- eq2 = Test.assertEq eq_ntree' eq_ntree 
-      eq3 = Test.assertEq eq_bool' eq_bool 
-      eq4 = Test.assertEq eq_unit' eq_unit 
   
   subterms1 <- Test.localVars "(x y: nat)" $ do
     x_plus_1 <- Test.term "add x 1"
@@ -102,7 +88,6 @@ tests = Test.label "Terms"
     [ weird1
     -- , fold1, fold2 
     , conj1
-    , eq1 {-, eq2-}, eq3, eq4
     , subterms1
   --  , iso1
   --  , strict1

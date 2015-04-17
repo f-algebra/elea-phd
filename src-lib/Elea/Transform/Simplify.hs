@@ -20,6 +20,7 @@ import qualified Elea.Monad.History as History
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Unification as Unifier
 import qualified Elea.Transform.Evaluate as Eval
+import qualified Elea.Transform.Equality as Equality
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
@@ -37,7 +38,10 @@ run = id
   -- ^ Use the Reader [Bind] instance for type environments
   . Transform.fix (Transform.compose all_steps)
   where
-  all_steps = Eval.transformSteps ++ steps ++ Eval.traverseSteps
+  all_steps = Eval.transformSteps 
+    ++ steps 
+    ++ Eval.traverseSteps
+    ++ Equality.steps
 
 quick :: Term -> Term
 quick = run
@@ -341,8 +345,8 @@ constantFix t@(App (Fix _ fix_b fix_t) args)
     Transform.continue result
   
   | Just [] <- mby_results
-  , correctGuess (Unr result_ty) = 
-    return (Unr result_ty)
+  , correctGuess (Bot result_ty) = 
+    return (Bot result_ty)
   
   where
   (arg_bs, _) = flattenLam fix_t
@@ -352,7 +356,7 @@ constantFix t@(App (Fix _ fix_b fix_t) args)
   mby_results = id
     . potentialResults
     . Eval.run
-    $ Indices.substAt 0 (Unr fix_ty) fix_t
+    $ Indices.substAt 0 (Bot fix_ty) fix_t
   
   potentialResults :: Term -> Maybe [Term]
   potentialResults = id
@@ -363,7 +367,7 @@ constantFix t@(App (Fix _ fix_b fix_t) args)
     where
     resultTerm :: Term -> MaybeT Env.TrackOffset (Set Term)
     resultTerm term
-      | isUnr term = return mempty
+      | Term.isBot term = return mempty
       | otherwise = do
         depth <- Env.offset
         Fail.unless (Indices.lowerableBy depth term)

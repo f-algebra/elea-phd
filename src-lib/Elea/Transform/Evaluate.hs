@@ -8,7 +8,6 @@ module Elea.Transform.Evaluate
   transformSteps, 
   traverseSteps,
   strictTerms,
-  degenerateContext,
   --floatVarMatches,
   
   caseOfCon,
@@ -18,11 +17,9 @@ where
 import Elea.Prelude
 import Elea.Term.Index
 import Elea.Term
-import Elea.Context ( Context )
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Monad.Env as Env
-import qualified Elea.Context as Context
 import qualified Elea.Unification as Unifier
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Foldable as Fold
@@ -61,7 +58,7 @@ transformSteps :: Step m => [Term -> m Term]
 transformSteps =
   [ normaliseApp
  -- , eta 
-  , absurdity
+  , strictness
   , beta
   , caseOfCon 
   ]
@@ -104,17 +101,6 @@ strictTerms (App fix@(Fix _ _ fix_t) args) = id
 strictTerms _ = 
   Set.empty
   
-    
--- | Whether a context is degenerate down the current branch of a term.
--- A degenerate context is one which has lost its shape because we are down
--- a base case branch. For example @take n _@ is degenerate when @n = 0@.
--- This function is here because it requires 'strictVars'. 
-degenerateContext :: Env.MatchRead m => Context -> m Bool
-degenerateContext ctx = id
-  . anyM Env.isBaseCase 
-  . toList 
-  . strictTerms
-  $ Context.apply ctx (Var Indices.omega)
   
 reduce :: Term -> [Term] -> Term
 reduce (Lam _ rhs) (x:xs) = 
@@ -123,23 +109,20 @@ reduce f xs =
   app f xs
     
   
--- | Finds terms that are absurd and sets them that way.
+-- | Finds terms that are undefined and sets them that way.
 -- So far it detects applying arguments to an absurd function.
 -- Need to add pattern matching over absurdity, but how to find the type?
-absurdity :: Step m => Term -> m Term
-absurdity (Unr _) = 
-  Fail.here
-  -- ^ Cannot simplify further
-absurdity term
+strictness :: Step m => Term -> m Term
+strictness term 
   | Type.has term
-  , absurd term = 
-    Transform.continue (Unr (Type.get term))
+  , evalsToBot term = 
+    return (Bot (Type.get term))
   where 
-  absurd (Unr _) = True
-  absurd (App f xs) = absurd f || any absurd xs
-  absurd (Case t _) = absurd t
-  absurd _ = False
-absurdity _ =
+  evalsToBot t | Term.isBot t = True
+  evalsToBot (App f xs) = evalsToBot f || any evalsToBot xs
+  evalsToBot (Case t _) = evalsToBot t
+  evalsToBot _ = False
+strictness _ =
   Fail.here
   
   

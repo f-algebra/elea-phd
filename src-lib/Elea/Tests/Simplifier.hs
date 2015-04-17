@@ -11,9 +11,11 @@ import qualified Elea.Testing as Test
 import qualified Elea.Transform.Simplify as Simp
 
 checkEquation :: Equation -> Test.Test
-checkEquation (Equals name bs t1 t2) = id
+checkEquation (Equals name bs t) = id
   . Test.label name
-  $ Test.assertSimpEq t1 t2
+  $ Test.assertTermEq true t_body
+  where
+  (_, t_body) = flattenLam (Simp.run t)
   
 tests = id
     . Test.label "Simplifier"

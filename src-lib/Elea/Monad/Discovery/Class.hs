@@ -23,7 +23,7 @@ class Tells m => Listens m where
 equals :: (Env.Read m, Tells m) => Term -> Term -> m ()
 equals t1 t2 = do
   bs <- Env.bindings
-  tell (Equals "" (reverse bs) t1 t2)
+  tell (Equals "" (reverse bs) (Eql t1 t2))
   
 equalsM :: (Env.Read m, Tells m) => Term -> m Term -> m Term
 equalsM t1 mt2 = do

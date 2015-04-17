@@ -55,7 +55,7 @@ strip (Case cse_t alts) = do
   inner_t <- Indices.tryLowerMany (length bs) alt_t'
   return (make con cse_t, inner_t)
   where           
-  non_abs = findIndices (not . isUnr . get altInner) alts
+  non_abs = findIndices (not . isBot . get altInner) alts
   [con_n] = non_abs
   Alt con bs alt_t = alts !! con_n
   
@@ -141,7 +141,7 @@ apply (Constraint con match_t) (on_t, on_ty) =
     con = Constructor ind (enum alt_n)
     
     -- If we are not down the matched branch we return absurd
-    alt_t | enum alt_n /= con_n = Unr on_ty
+    alt_t | enum alt_n /= con_n = Bot on_ty
           | otherwise = on_t
 
 -- | Create a context from a constraint. Requires the return type of the gap.

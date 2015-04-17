@@ -14,13 +14,13 @@ import qualified Elea.Equality as Equality
 import qualified Elea.Monad.Definitions as Defs
 
 checkEquation :: Equation -> Test.M Test.Test
-checkEquation (Equals name bs t1 t2) = id
+checkEquation (Equals name bs t) = id
   . liftM (Test.label name)
   . Env.bindMany bs $ do
-    t1' <- Fusion.run t1
-    t2' <- Fusion.run t2
+    t' <- Fusion.run t
+    let (_, t_body) = flattenLam t'
    -- Test.assertProvablyEq t1' t2'
-    return (Test.assertTermEq t1' t2')
+    return (Test.assertTermEq true t_body)
     
 tests = Test.label "Fusion"
     $ Test.run $ do

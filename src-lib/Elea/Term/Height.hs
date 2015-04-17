@@ -26,7 +26,8 @@ import qualified Data.Poset as Partial
 
 get :: Term -> Nat
 get (Var _) = 1
-get (Unr _) = 1
+get (Eql x y) = 1 + get x + get y
+get (Bot _) = 1
 get (Con _) = 1
 get (Lam _ t) = 1 + get t
 get (Fix inf b _) = 1
@@ -36,7 +37,6 @@ get (Case t alts) =
   where
   getCase :: Term -> Nat
   getCase t@(leftmost -> Con _) = 1 + get t
-  getCase t@(Unr _) = 1 + get t
   getCase t@(Case _ _) = 1 + get t
   getCase t = get t
   

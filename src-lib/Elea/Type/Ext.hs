@@ -51,7 +51,8 @@ instance HasTypeM Term where
     closed (Var x) = do
       offset <- Env.tracked
       return (x < offset)
-    closed (Unr _) = return True
+    closed (Bot _) = return True
+    closed (Eql _ _) = return True
     closed (App f _) = closed f
     closed (Fix {}) = return True
     closed (Con {}) = return True
@@ -70,7 +71,8 @@ instance HasType Term where
 instance HasType (Term' (Term, Type)) where 
   has = undefined
 
-  get (Unr' ty) = ty
+  get (Bot' ty) = ty
+  get (Eql' _ _) = Type.Base Type.bool
   get (Lam' (Bind _ a) (_, b)) = Type.Fun a b
   get (App' (_, ty) xs) = Type.dropArgs (length xs) ty
   get (Fix' _ b _) = get b

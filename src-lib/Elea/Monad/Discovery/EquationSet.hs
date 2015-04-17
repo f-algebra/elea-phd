@@ -26,7 +26,7 @@ toList = collapse . runEqSet
   collapse eqs = id
     . UMap.elems
     . foldr (uncurry UMap.insert) UMap.empty  
-    $ map (get equationLHS) eqs `zip` eqs
+    $ map (get equationTerm) eqs `zip` eqs
   
 instance Monoid EqSet where
   mempty = EqSet mempty

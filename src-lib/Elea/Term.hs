@@ -7,7 +7,7 @@ module Elea.Term
   Type, Bind (..), Constructor (..),
   Constraint (..), FixInfo (..),
   ContainsTerms (..), mapTerms, containedTerms,
-  Equation (..), equationName, equationLHS, equationRHS,
+  Equation (..), equationName, equationTerm,
   app,
   projectAlt, embedAlt,
   altBindings, altInner, altConstructor,
@@ -17,12 +17,11 @@ module Elea.Term
   flattenApp, leftmost, arguments,
   flattenLam, unflattenLam, unflattenApp,
   isCon, isLam, isVar,
-  isFix, isUnr, isCase,
-  isUnr',
+  isFix, isBot, isCase, isEql,
   emptyInfo,
   inductivelyTyped, 
   fromVar, 
-  conjunction, true, false,
+  and, conjunction, true, false,
   altPattern, recursivePatternVars,
   isSimple,
   isFinite,
@@ -35,7 +34,7 @@ module Elea.Term
 )
 where
 
-import Elea.Prelude
+import Elea.Prelude hiding ( and )
 import Elea.Term.Index ( Index, Indexed, Substitutable, Inner )
 import Elea.Type ( Type (..), Ind (..), ConArg (..)
                  , Bind (..), Constructor (..) )
@@ -52,7 +51,10 @@ import qualified Algebra.Lattice as Algebra
 
 
 data Term
-  = Unr     { resultType :: !Type } 
+  = Eql     { eqLeft :: !Term
+            , eqRight :: !Term } 
+            
+  | Bot     { botType :: !Type }
   
   | Var     { varIndex :: !Index }
 
@@ -106,8 +108,7 @@ instance Ord FixInfo where
 data Equation
   = Equals  { _equationName :: String
             , _equationVars :: [Bind]
-            , _equationLHS :: Term
-            , _equationRHS :: Term }
+            , _equationTerm :: Term }
 
  
 -- * Base types for generalised cata/para morphisms.
@@ -115,7 +116,8 @@ data Equation
 type instance Fold.Base Term = Term'
 
 data Term' a 
-  = Unr' !Type
+  = Eql' a a
+  | Bot' !Type
   | Var' !Index
   | App' a [a]
   | Lam' !Bind a
@@ -145,7 +147,8 @@ instance Fold.Foldable Term where
   project (Fix i b t) = Fix' i b t
   project (Con con) = Con' con
   project (Case t alts) = Case' t (map projectAlt alts)
-  project (Unr ty) = Unr' ty
+  project (Eql t t') = Eql' t t'
+  project (Bot ty) = Bot' ty
 
 instance Fold.Unfoldable Term where
   embed (Var' x) = Var x
@@ -154,7 +157,8 @@ instance Fold.Unfoldable Term where
   embed (Fix' i b t) = Fix i b t
   embed (Con' con) = Con con
   embed (Case' t alts) = Case t (map embedAlt alts)
-  embed (Unr' ty) = Unr ty
+  embed (Eql' t t') = Eql t t'
+  embed (Bot' ty) = Bot ty
   
 class ContainsTerms t where
   mapTermsM :: Monad m => (Term -> m Term) -> t -> m t
@@ -171,7 +175,7 @@ instance ContainsTerms Term where
   mapTermsM = ($)
   
 instance ContainsTerms Equation where
-  mapTermsM f = modifyM equationLHS f <=< modifyM equationRHS f
+  mapTermsM f = modifyM equationTerm f
   
 instance (ContainsTerms a, ContainsTerms b) => ContainsTerms (a, b) where
   mapTermsM f (t1, t2) = do
@@ -188,7 +192,8 @@ instance Zip Term' where
   zip (Lam' b t) (Lam' _ t') = Lam' b (t, t')
   zip (Fix' i b t) (Fix' _ _ t') = Fix' i b (t, t')
   zip (Con' con) (Con' {}) = Con' con
-  zip (Unr' ty) (Unr' _) = Unr' ty
+  zip (Eql' x y) (Eql' x' y') = Eql' (x, x') (y, y')
+  zip (Bot' ty) (Bot' _) = Bot' ty
   zip (Case' t alts) (Case' t' alts') =
     Case' (t, t') (zipWith zip alts alts')
 
@@ -216,17 +221,17 @@ isFix :: Term -> Bool
 isFix (Fix {}) = True
 isFix _ = False
 
+isEql :: Term -> Bool
+isEql (Eql _ _) = True
+isEql _ = False
+
 isCase :: Term -> Bool
 isCase (Case {}) = True
 isCase _ = False
-
-isUnr :: Term -> Bool
-isUnr (Unr {}) = True
-isUnr _ = False
-
-isUnr' :: Term' a -> Bool
-isUnr' (Unr' {}) = True
-isUnr' _ = False
+  
+isBot :: Term -> Bool
+isBot (Bot _) = True
+isBot _ = False
 
 fromVar :: Term -> Index
 fromVar (Var x) = x
@@ -253,7 +258,7 @@ arguments = tail . flattenApp
 
 emptyInfo :: FixInfo
 emptyInfo = FixInfo False Nothing Tag.omega
-
+  
 -- | This should maybe be called @fullyApplied@ but it checks whether a fixpoint
 -- has every argument applied to it.
 inductivelyTyped :: Term -> Bool
@@ -399,6 +404,11 @@ false, true :: Term
 true = Con Type.true
 false = Con Type.false
       
+and :: Indexed Term => Term -> Term -> Term
+and t t' = app bool_fold [t', false, t]
+  where
+  bool_fold = buildFold Type.bool (Base Type.bool)
+
 -- | Returns an n-argument /and/ term.
 -- > conjunction 3 = fun (p q r: bool) -> and p (and q r)
 conjunction :: Indexed Term => Int -> Term
@@ -407,9 +417,6 @@ conjunction n = id
   . foldr and true
   . reverse
   $ map (Var . enum) [0..n-1]
-  where
-  and t t' = app bool_fold [t', false, t]
-  bool_fold = buildFold Type.bool (Base Type.bool)
 
     
 -- | Build an equality function for a given inductive type.
@@ -514,7 +521,10 @@ hash [c] = ord c
 hash (c:cs) = cantor (ord c) (hash cs)
 
 instance Embed.Encodable Term where
-  encode (Unr _) = pair 1 0
+  encode (Bot _) = pair 8 0
+  encode (Eql x y) = 
+    pair 1 0 ++ Embed.encode x 
+    ++ pair 1 0 ++ Embed.encode y
   encode (Var _) = pair 2 0
   encode (Lam _ t) = pair 3 0 ++ Embed.encode t
   encode (Con con) = Embed.encode con
