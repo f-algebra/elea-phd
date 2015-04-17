@@ -28,12 +28,11 @@ import qualified Elea.Monad.Failure.Class as Fail
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import qualified Data.Poset as Partial
 
 
 type Step m = 
-  ( Eval.Step m
-  , Env.All m
-  , Defs.Read m
+  ( Simp.Step m
   , Rewrite.Env m )
   
   
@@ -43,25 +42,9 @@ steps =
   , rewritePattern
   , rewriteFunction
   , expressConstructor
-  , unfold
   ] 
 
   
-unfold :: Step m => Term -> m Term
-unfold term@(App fix@(Fix {}) args) =
-  History.check "unf" term $ do
-    any_matched <- anyM Env.isMatched dec_args
-    -- No point unrolling unless a decreasing argument has a constructor
-    -- topmost, or has been matched to a constructor
-    Fail.unless (any (isCon . leftmost) dec_args || any_matched)
-    term' <- Transform.continue (app (Term.unfoldFix fix) args)
-    Height.ensureDecrease term' term
-    return term'
-  where
-  dec_args = map (args !!) (Term.decreasingArgs fix)
-  
-unfold _ = Fail.here
-
 
 rewritePattern :: Step m => Term -> m Term
 rewritePattern (Case cse_t alts)  = do
@@ -95,20 +78,21 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
      $ Set.toList suggestions
     -- ^ Check all the suggestions are correctly typed
     
+  
+  ts <- showM term
+  suggs <- showM suggestions 
+    
   fix' <- id
     . Fail.choose 
+  --  . trace ("\n\n[expr-con] " ++ ts ++ "\n\n[suggested] " ++ suggs)
     . map express 
     $ toList suggestions
     
-  ts <- showM term
-  suggs <- showM suggestions 
-  ts' <- showM (Eval.run (app fix' args))
+  -- ts' <- showM (Eval.run (app fix' args))
     
   id
-   -- . trace ("\n\n[expr-con] " ++ ts ++ "\n\n[suggested] " ++ suggs ++ "\n\n[result]" ++ ts')
     . History.check "exp-con" fix
-    . Transform.continue 
-    . Eval.run
+    . Transform.continue
     $ app fix' args
   where
   (arg_bs, _) = Term.flattenLam fix_t
@@ -186,39 +170,33 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
   express ctx_t = id
     . liftM (\t -> Indices.subst (Fix fix_i fix_b t) ctx_comp)
     . Env.trackIndicesT ctx_t
+    . Env.bind fix_b
     . strip
     . Simp.run
     $ Indices.replaceAt 0 ctx_comp fix_t
     where
     ctx_comp = id
       . unflattenLam arg_bs
-      . app (Indices.liftMany (length arg_bs) ctx_t)
+      . app (Indices.liftMany (length arg_bs + 1) ctx_t)
       . (return :: a -> [a])
       . unflattenApp 
       . reverse 
       $ map (Var . enum) [0..length arg_bs]
     
     strip :: Term -> Env.TrackIndicesT Term m Term
-    strip (Lam b t) = 
-      return (Lam b) `ap` strip t
+    strip (Lam b t) = do
+      t' <- Env.liftTracked (strip t)
+      return (Lam b t')
     strip (Case t alts) =
       return (Case t) `ap` mapM stripAlt alts
       where
-      stripAlt (Alt con bs t) = 
-        return (Alt con bs) `ap` strip t
+      stripAlt (Alt con bs t) = do
+        t' <- Env.liftTrackedMany (length bs) (strip t)
+        return (Alt con bs t')
     strip term = do
       sugg <- Env.tracked
-      mby_arg <- Fail.catch (Term.findArguments sugg term)
-      case mby_arg of
-        Just [arg] -> return arg
-        Nothing 
-          | App fix@(Fix {}) xs <- term -> 
-            History.check "strip" term
-              . strip
-              . Simp.run
-              $ app (Term.unfoldFix fix) xs
-          
-          | otherwise -> Fail.here
+      [arg] <- Term.findArguments sugg term
+      return arg
         
     
       

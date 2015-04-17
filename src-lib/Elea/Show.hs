@@ -11,6 +11,7 @@ import Elea.Term.Index
 import Elea.Term
 import Elea.Type hiding ( get )
 import Elea.Show.Class
+import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Type as Type
@@ -83,11 +84,9 @@ instance Show (Term' String) where
     ++ "\nend"
     
 instance Show FixInfo where
-  -- show _ = ""
-  show (FixInfo c _ tag) = "<" ++ is_c ++ "|" ++ show tag ++ ">"
-    where
-    is_c | c = "T"
-         | not c = "F"
+  show (FixInfo _ tag)
+    | tag == Tag.omega = ""
+    | otherwise = "<" ++ show tag ++ ">"
     
 instance Show (Alt' String) where
   show (Alt' con bs t) = 

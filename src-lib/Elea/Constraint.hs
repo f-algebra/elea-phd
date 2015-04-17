@@ -27,7 +27,7 @@ module Elea.Constraint
 )
 where
 
-import Elea.Prelude hiding ( replace )
+import Elea.Prelude hiding ( replace, removeAll )
 import Elea.Term
 import Elea.Context ( Context )
 import qualified Elea.Type.Ext as Type

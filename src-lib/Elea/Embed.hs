@@ -4,38 +4,50 @@ module Elea.Embed
   Code,
   Encodable (..),
   code,
+  encode,
+  (<=)
 )
 where
 
-import Elea.Prelude
+import Elea.Prelude hiding ( (<=) )
+import qualified Elea.Prelude as Prelude
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Data.Set as Set
 import qualified Data.Poset as Partial
 
-
-newtype Code = Code { repr :: [Int] }
+-- We store the length to speed up embedding checks
+data Code 
+  = Code { len :: !Int
+         , repr :: ![Int] }
   deriving ( Show, Eq )
 
 instance Monoid Code where
-  mempty = Code []
-  Code xs `mappend` Code ys = Code (xs ++ ys)
+  mempty = code []
+  Code n xs `mappend` Code m ys = Code (n + m) (xs ++ ys)
   
 code :: [Int] -> Code
-code = Code
+code xs = Code (length xs) xs
 
 -- | Things which can be checked for embedding
 class Encodable a where
-  encode :: a -> Code
+  encodeRaw :: a -> [Int]
   
-instance Encodable Code where
-  encode = id
+encode :: Encodable a => a -> Code
+encode = code . encodeRaw
+
+-- | Flattened homeomorphic embedding 
+(<=) :: Encodable a => a -> a -> Bool
+(<=) = (Partial.<=) `on` encode
+  
 
 -- | A partial well-order on codes
 instance Partial.Ord Code where
-  compare (Code x) (Code y) 
-    | x == y = Partial.EQ
-    | x `isSubsequenceOf` y = Partial.LT
-    | y `isSubsequenceOf` x = Partial.GT
+  compare (Code n xs) (Code m ys) 
+    | n == m, xs == ys = Partial.EQ
+    | n Prelude.<= m, xs `isSubsequenceOf` ys = Partial.LT
+    | m Prelude.<= n, ys `isSubsequenceOf` xs = Partial.GT
     | otherwise = Partial.NC
     
+  Code n xs <= Code m ys =
+    n Prelude.<= m && xs `isSubsequenceOf` ys
 

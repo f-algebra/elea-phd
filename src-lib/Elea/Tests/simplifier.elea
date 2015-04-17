@@ -37,6 +37,24 @@ prop "case-app" : forall (x: nat) ->
   Suc (match x with | 0 -> 0 | Suc x -> x end)
   =
   (match x with | 0 -> Suc 0 | Suc x -> Suc x end)
+  
+prop "unfold1"<A>: fun (xs: list<A>) (n: A) ->
+  reverse<A> (Cons<A> n xs)
+  = 
+  append<A> (reverse<A> xs) (Cons<A> n Nil<A>)
+  
+prop "eq1": forall (x: nat) ->
+  if (x = 0)
+  then 
+    match x with
+    | 0 -> True
+    | Suc x' -> False
+    end
+  else
+    match x with
+    | 0 -> False
+    | Suc x' -> True
+    end
    
   /*
   This one no longer applies

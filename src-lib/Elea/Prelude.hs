@@ -58,7 +58,7 @@ module Elea.Prelude
   Maximum (..), Minimum (..), sconcatMap, nlength,
   intersects, length, liftMaybe, maybeT, nth, drop, take, screen,
   isSubsequenceOf, evalWriter, evalWriterT, 
-  maximum
+  maximum, removeAll
 )
 where
 
@@ -333,6 +333,10 @@ removeAt :: Int -> [a] -> [a]
 removeAt _ [] = error "Can't remove past the end of a list"
 removeAt 0 (x:xs) = xs
 removeAt n (x:xs) = x:(removeAt (n-1) xs)
+
+removeAll :: [Int] -> [a] -> [a]
+removeAll is x = 
+  foldr removeAt x is
 
 replaceAt :: Int -> a -> [a] -> [a]
 replaceAt 0 x (y:ys) = x:ys

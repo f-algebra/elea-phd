@@ -43,11 +43,11 @@ get (Case t alts) =
   getAlt :: Term -> Nat
   getAlt (Lam _ t) = 2 + getAlt t
   getAlt t = get t
-  
-get (App f@(Fix {}) xs) = 1     
+    
+get (App f@(Fix _ _ f_t) xs) = 1     
   + length (screen isRep xs)
   + length (filter (not . isVar) xs)
-  + sum (map get xs)
+  + maximum (map get xs)
   where
   isRep :: [Term] -> Term -> [Term] -> Bool
   isRep left_xs (Var x) right_xs =
@@ -97,7 +97,7 @@ instance Partial.Ord Term where
       
 ensureDecrease :: Fail.Can m => Term -> Term -> m ()
 ensureDecrease t t' = 
-  Fail.unless (t Partial.< t')
+  Fail.unless (get t < get t')
       
       
 assertDecrease :: Monad m => String -> (Term -> m Term) -> Term -> m Term

@@ -116,6 +116,15 @@ let cubes =
   | 0 -> 0
   | Suc x' -> add (mul x (mul x x)) (cubes x')
   end
+  
+   
+let double = 
+  fix (dbl: nat -> nat) (x: nat) ->
+  match x with
+  | 0 -> 0
+  | Suc x' -> Suc (Suc (dbl x'))
+  end
+  
 
   
 /* Lists */

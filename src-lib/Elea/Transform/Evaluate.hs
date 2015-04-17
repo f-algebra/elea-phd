@@ -106,6 +106,7 @@ reduce :: Term -> [Term] -> Term
 reduce (Lam _ rhs) (x:xs) = 
   reduce (subst x rhs) xs
 reduce f xs = 
+
   app f xs
     
   
@@ -171,46 +172,39 @@ caseOfCon _ = Fail.here
 
 
 traverseMatch :: Step m => Term -> m Term
-traverseMatch term@(Case cse_t alts) = do
-  cse_t' <- Transform.continue cse_t
-  Fail.when (cse_t' == cse_t)
-  if True || (Case cse_t' []) Partial.< (Case cse_t [])
-  then Transform.continue (Case cse_t' alts)
-      -- ^ Only recurse if we have shrunk our term
-      -- removing the branches is a slight speed optimisation
-  else return (Case cse_t' alts)
+traverseMatch term@(Case cse_t alts) =
+  History.check "tm" cse_t $ do
+    cse_t' <- Transform.continue cse_t
+    Fail.when (cse_t == cse_t')
+    Transform.continue (Case cse_t' alts)
 traverseMatch _ = Fail.here
 
 
 traverseBranches :: Step m => Term -> m Term
 
-traverseBranches term@(Case (Var x) alts) = do
-  alts' <- mapM traverseAlt alts
-  Fail.when (alts' == alts)
-  let term' = Case (Var x) alts'
-  if term' Partial.< term
-  then Transform.continue term'
-  else return (Case (Var x) alts')
-  where
-  traverseAlt (Alt con bs t) = do
-    t' <- id
-      . Env.bindMany bs
-      . Transform.continue 
-      -- Substitute the variable we have just bound for the 
-      -- pattern it has been bound to
-      $ Indices.replaceAt x_here pat_t t
-    return (Alt con bs t')
+traverseBranches term@(Case (Var x) alts) =
+  History.check "tv" term $ do
+    alts' <- mapM traverseAlt alts
+    Fail.when (alts' == alts)
+    Transform.continue (Case (Var x) alts')
     where
-    x_here = Indices.liftMany (length bs) x
-    pat_t = altPattern con
+    traverseAlt (Alt con bs t) = do
+      t' <- id
+        . Env.bindMany bs
+        . Transform.continue 
+        -- Substitute the variable we have just bound for the 
+        -- pattern it has been bound to
+        $ Indices.replaceAt x_here pat_t t
+      return (Alt con bs t')
+      where
+      x_here = Indices.liftMany (length bs) x
+      pat_t = altPattern con
     
-traverseBranches term@(Case cse_t alts) = do
-  alts' <- mapM traverseAlt alts
-  Fail.when (alts' == alts)
-  let term' = Case cse_t alts'
-  if True || term' Partial.< term
-  then Transform.continue term'
-  else return term'
+traverseBranches term@(Case cse_t alts) = 
+  History.check "tt" term $ do
+    alts' <- mapM traverseAlt alts
+    Fail.when (alts' == alts)
+    Transform.continue (Case cse_t alts')
   where
   traverseAlt (Alt con bs t) = do
     t' <- id
@@ -234,27 +228,23 @@ traverseFun _ = Fail.here
 
 
 traverseApp :: Step m => Term -> m Term
-traverseApp term@(App f xs) = do
-  xs' <- mapM Transform.continue xs
-  f' <- Transform.continue f
-  let term' = App f' xs'
-  Fail.when (term' == term)
-  if True || term' Partial.< term
-  then Transform.continue term'
-    -- ^ Only recurse if we have shrunk the term
-  else return term'
+traverseApp term@(App f xs) = 
+  History.check "ta" term $ do
+    xs' <- mapM Transform.continue xs
+    f' <- Transform.continue f
+    let term' = App f' xs'
+    Fail.when (term' == term)
+    Transform.continue term'
   
 traverseApp _ = Fail.here
 
 
 traverseFix :: Step m => Term -> m Term
 traverseFix (Fix inf b t) = do
- -- Fail.when (get fixClosed inf)
   t' <- id
     . Env.bind b
-    . History.check "fix" t
+    . History.check "tf" t
     $ Transform.continue t
- -- let inf' = set fixClosed True inf
   Fail.when (t' == t)
   return (Fix inf b t')
 traverseFix _ = Fail.here

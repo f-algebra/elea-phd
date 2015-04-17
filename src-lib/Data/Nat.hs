@@ -5,10 +5,11 @@ module Data.Nat
 where
 
 import Prelude
+import Data.Function ( on )
 
 -- | Natural numbers. Use 'toEnum' to construct.
 newtype Nat = Nat Int
-  deriving ( Eq, Ord )
+  deriving ( Eq, Ord, Integral, Real )
 
 -- | Co-inductive natural numbers with decidable equality.
 data CoNat = Omega | CoNat Nat
@@ -42,7 +43,7 @@ instance Num Nat where
   fromInteger n 
     | n >= 0 = Nat (fromInteger n)
     | otherwise = error (show n ++ " is not a natural number.")
-  
+    
 instance Show CoNat where
   show Omega = "inf"
   show (CoNat n) = show n

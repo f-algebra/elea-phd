@@ -27,7 +27,9 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Poset as Partial
 
-type Step m = Eval.Step m
+type Step m = 
+  ( Env.Read m
+  , Eval.Step m )
 
 
 steps :: Step m => [Term -> m Term]
@@ -35,6 +37,7 @@ steps =
   [ const Fail.here   
   , equality
   ]
+  
  
 equality :: forall m . Step m => Term -> m Term
 equality (Eql x y) = do
@@ -42,16 +45,49 @@ equality (Eql x y) = do
   y' <- Transform.continue y
   reduce x' y'
   where
+  
   reduce :: Term -> Term -> m Term
   reduce x y
-    | stripTags x == stripTags y = 
+    | x == y = 
       return Term.true
+     
+  reduce x@(Lam b x') y = id
+    . Env.bind b
+    . reduce x' 
+    . Eval.run
+    $ app (Indices.lift y) [Var 0]
+   
+  reduce x y@(Lam {}) =
+    reduce y x
+    
+  reduce (flattenApp -> Con cx : xs) 
+         (flattenApp -> Con cy : ys)
+    | cx /= cy =
+      return Term.false
       
-  reduce (App (Con cx) xs) (App (Con cy) ys)
-    | cx /= cy = return Term.false
     | otherwise = do
         eqs <- zipWithM reduce xs ys
         Transform.continue (foldr Term.and Term.true eqs)
+       
+  reduce x@(flattenApp -> Con cx : xs) y = do
+    alts <- mapM getAlt all_cons
+    Transform.continue (Case y alts)
+    where
+    all_cons = Type.constructors (get Type.constructorOf cx)
+    
+    getAlt c 
+      | c /= cx =   
+        return (Alt c alt_bs Term.false)
+        
+      | otherwise = do
+        alt_t <- reduce (altPattern c) x
+        return (Alt c alt_bs alt_t)
+      where
+      alt_bs = Type.makeAltBindings c
+ 
+  reduce x y
+    | isCon (leftmost y)
+    , not (isCon (leftmost x)) = reduce y x
         
   reduce (Case cse_t alts) y = id
     . Transform.continue 
@@ -66,30 +102,38 @@ equality (Eql x y) = do
   reduce x y@(Case {}) =
     reduce y x
         
-  reduce x@(App fix@(Fix _ _ fix_t) xs) y
-    | all isVar xs
-    , length x_vars == Set.size x_vars_set
-    , Set.null overlap = do
-      x' <- id
-        . Transform.continue 
-        . (\f -> app f xs)
-        . Indices.subst (Term.abstractVars x_bs x_vars y)
-        $ fix_t
+  reduce x y
+    | isFixPromoted x = do
+      x' <- fixInduction x y
       reduce x' y
+      
+    | isFixPromoted y = do
+      y' <- fixInduction y x
+      reduce x y'
     where
-    x_vars = map fromVar xs
-    x_vars_set = Set.fromList x_vars
-    x_bs = fst (flattenLam fix_t)
-    overlap = Set.intersection (Indices.free fix) x_vars_set
+    isFixPromoted :: Term -> Bool
+    isFixPromoted (App fix@(Fix {}) xs) =
+      all isVar xs 
+      && length x_vars == Set.size x_vars_set
+      && Set.null overlap
+      where
+      x_vars = map fromVar xs
+      x_vars_set = Set.fromList x_vars
+      overlap = Set.intersection (Indices.free fix) x_vars_set
+    isFixPromoted _ = False
     
-  reduce x@(App fix@(Fix {}) xs) y 
-    | any (isCon . leftmost) xs =
-      History.check "eq-unfold" (Eql x y) $ do
-        x' <- id
-          . Transform.continue 
-          $ app (Term.unfoldFix fix) xs 
-        reduce x' y
-        
+    -- > fixInduction ((fix F) x) y = F (\x -> y)
+    fixInduction :: Term -> Term -> m Term
+    fixInduction (App (Fix _ _ fix_t) xs) y = id
+      . Transform.continue 
+      . (\f -> app f xs)
+      . Indices.subst (Term.abstractVars x_bs x_vars y)
+      $ fix_t
+      where
+      x_vars = map fromVar xs
+      x_bs = fst (flattenLam fix_t)
+      
+    
   -- | Saves me writing out the fix cases again twice    
   reduce x y@(App (Fix {}) _) 
     | not (isFix (leftmost x)) =

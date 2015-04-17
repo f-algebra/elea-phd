@@ -621,7 +621,7 @@ action_57 (25) = happyShift action_6
 action_57 (32) = happyShift action_43
 action_57 (35) = happyShift action_44
 action_57 (21) = happyGoto action_42
-action_57 _ = happyReduce_34
+action_57 _ = happyReduce_36
 
 action_58 _ = happyReduce_31
 
@@ -802,13 +802,13 @@ action_81 (25) = happyShift action_6
 action_81 (32) = happyShift action_43
 action_81 (35) = happyShift action_44
 action_81 (21) = happyGoto action_42
-action_81 _ = happyReduce_36
+action_81 _ = happyReduce_35
 
 action_82 (25) = happyShift action_6
 action_82 (32) = happyShift action_43
 action_82 (35) = happyShift action_44
 action_82 (21) = happyGoto action_42
-action_82 _ = happyReduce_35
+action_82 _ = happyReduce_34
 
 action_83 (26) = happyShift action_101
 action_83 (48) = happyShift action_102
@@ -1329,17 +1329,8 @@ happyReduction_33 (_ `HappyStk`
 		 (TTuple (happy_var_2:happy_var_4)
 	) `HappyStk` happyRest
 
-happyReduce_34 = happySpecReduce_3  19 happyReduction_34
-happyReduction_34 (HappyAbsSyn19  happy_var_3)
-	_
-	(HappyAbsSyn19  happy_var_1)
-	 =  HappyAbsSyn19
-		 (TEql happy_var_1 happy_var_3
-	)
-happyReduction_34 _ _ _  = notHappyAtAll 
-
-happyReduce_35 = happyReduce 4 19 happyReduction_35
-happyReduction_35 ((HappyAbsSyn19  happy_var_4) `HappyStk`
+happyReduce_34 = happyReduce 4 19 happyReduction_34
+happyReduction_34 ((HappyAbsSyn19  happy_var_4) `HappyStk`
 	_ `HappyStk`
 	(HappyAbsSyn17  happy_var_2) `HappyStk`
 	_ `HappyStk`
@@ -1348,8 +1339,8 @@ happyReduction_35 ((HappyAbsSyn19  happy_var_4) `HappyStk`
 		 (TLam happy_var_2 happy_var_4
 	) `HappyStk` happyRest
 
-happyReduce_36 = happyReduce 4 19 happyReduction_36
-happyReduction_36 ((HappyAbsSyn19  happy_var_4) `HappyStk`
+happyReduce_35 = happyReduce 4 19 happyReduction_35
+happyReduction_35 ((HappyAbsSyn19  happy_var_4) `HappyStk`
 	_ `HappyStk`
 	(HappyAbsSyn17  happy_var_2) `HappyStk`
 	_ `HappyStk`
@@ -1357,6 +1348,15 @@ happyReduction_36 ((HappyAbsSyn19  happy_var_4) `HappyStk`
 	 = HappyAbsSyn19
 		 (TFix happy_var_2 happy_var_4
 	) `HappyStk` happyRest
+
+happyReduce_36 = happySpecReduce_3  19 happyReduction_36
+happyReduction_36 (HappyAbsSyn19  happy_var_3)
+	_
+	(HappyAbsSyn19  happy_var_1)
+	 =  HappyAbsSyn19
+		 (TEql happy_var_1 happy_var_3
+	)
+happyReduction_36 _ _ _  = notHappyAtAll 
 
 happyReduce_37 = happyReduce 6 19 happyReduction_37
 happyReduction_37 ((HappyAbsSyn19  happy_var_6) `HappyStk`
@@ -1672,7 +1672,7 @@ program text =
     localTypeArgs ty_args $ do
       bs <- mapM parseRawBind rbs
       t <- Env.bindMany bs (parseAndCheckTerm rt)
-      if isEql t
+      if isQuantifiedEql t
       then return (Equals name bs t)
       else return (Equals name bs (Eql t Term.true))
   

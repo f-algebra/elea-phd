@@ -12,12 +12,13 @@ module Elea.Term
   projectAlt, embedAlt,
   altBindings, altInner, altConstructor,
   altBindings', altInner', altConstructor',
-  fixClosed, fixName, fixTag,
+  fixName, fixTag,
   constrainedTerm, constrainedTo,
   flattenApp, leftmost, arguments,
   flattenLam, unflattenLam, unflattenApp,
   isCon, isLam, isVar,
-  isFix, isBot, isCase, isEql,
+  isFix, isBot, isCase, 
+  isEql, isQuantifiedEql,
   emptyInfo,
   inductivelyTyped, 
   fromVar, 
@@ -31,6 +32,8 @@ module Elea.Term
   buildEq,
   reset,
   stripTags,
+  beingFused,
+  recursiveId,
 )
 where
 
@@ -91,8 +94,7 @@ data Constraint
   
 -- | Information stored about fixpoints, to add efficiency.
 data FixInfo
-  = FixInfo { _fixClosed :: !Bool 
-            , _fixName :: !(Maybe String)
+  = FixInfo { _fixName :: !(Maybe String)
             , _fixTag :: !Tag }
             
               
@@ -225,6 +227,10 @@ isEql :: Term -> Bool
 isEql (Eql _ _) = True
 isEql _ = False
 
+isQuantifiedEql :: Term -> Bool
+isQuantifiedEql = 
+  isEql . snd . flattenLam
+
 isCase :: Term -> Bool
 isCase (Case {}) = True
 isCase _ = False
@@ -257,7 +263,8 @@ arguments :: Term -> [Term]
 arguments = tail . flattenApp
 
 emptyInfo :: FixInfo
-emptyInfo = FixInfo False Nothing Tag.omega
+emptyInfo = FixInfo Nothing Tag.omega
+
   
 -- | This should maybe be called @fullyApplied@ but it checks whether a fixpoint
 -- has every argument applied to it.
@@ -265,6 +272,13 @@ inductivelyTyped :: Term -> Bool
 inductivelyTyped (App (Fix _ (Bind _ fix_ty) _) args) =
   Type.argumentCount fix_ty == length args
   
+
+-- | If a fixed-point is in the process of being fused into a context.
+-- Can be detected as the tag will not be omega
+beingFused :: Term -> Bool
+beingFused (Fix i _ _) =
+  get fixTag i /= Tag.omega
+
   
   
 -- | Given an inductive type and a constructor index this will return
@@ -398,6 +412,15 @@ buildFold ind@(Type.Ind _ cons) result_ty =
       where
       conArgToTy IndVar = result_ty
       conArgToTy (ConArg ty) = ty
+
+      
+-- | Returns the recursive identity function for a given type      
+recursiveId :: Indexed Term => Type.Ind -> Term
+recursiveId ind@(Ind _ cons) = 
+  app id_fold fold_cons
+  where
+  id_fold = buildFold ind (Type.Base ind)
+  fold_cons = map Con (Type.constructors ind)
    
     
 false, true :: Term
@@ -477,10 +500,7 @@ buildEq ind@(Ind _ cons) =
             where
             f_var = Var (enum (arg_i + 1 + length con_args))
 
-            
--- | Generate new tags for every term that needs them, with
--- tag ordering properly representing tag containment.
--- Also un-closes all fixed-points.
+
 reset :: forall m a . (Tag.Gen m, ContainsTerms a) => a -> m a
 reset = id
   . evalWriterT
@@ -491,7 +511,7 @@ reset = id
   reset' (Fix' inf b fix_t) = do
     (fix_t', inner_tags) <- listen fix_t
     new_tag <- Tag.make inner_tags
-    let inf' = (set fixTag new_tag . set fixClosed False) inf
+    let inf' = set fixTag Tag.omega inf
     tell (Set.singleton new_tag)
     return (Fix inf' b fix_t')
   reset' other = 
@@ -506,43 +526,39 @@ stripTags = Fold.transform strip
   strip (Fix inf b t) = 
     Fix (set fixTag Tag.omega inf) b t
   strip other = other
-    
+  
     
 -- Some useful functions for encoding terms    
 cantor :: Int -> Int -> Int
 cantor m n =
   (m + n) * (m + n + 1) `quot` 2 + m
   
-pair :: Int -> Int -> Embed.Code
-pair x y = Embed.code [cantor x y]
 
 hash :: String -> Int
 hash [c] = ord c
 hash (c:cs) = cantor (ord c) (hash cs)
 
 instance Embed.Encodable Term where
-  encode (Bot _) = pair 8 0
-  encode (Eql x y) = 
-    pair 1 0 ++ Embed.encode x 
-    ++ pair 1 0 ++ Embed.encode y
-  encode (Var _) = pair 2 0
-  encode (Lam _ t) = pair 3 0 ++ Embed.encode t
-  encode (Con con) = Embed.encode con
-  encode (App f xs) =
-    Embed.encode f ++ concatMap ((pair 4 0 ++) . Embed.encode) xs
-  encode (Fix _ _ fix_t) = 
-    pair 5 0 ++ Embed.encode fix_t
-    -- where
-    -- tag_id = (get Tag.uniqueId . get fixTag) inf
-  encode (Case cse_t alts) = 
-    Embed.encode cse_t ++ concatMap Embed.encode alts
+  encodeRaw (Bot _) = [cantor 8 0]
+  encodeRaw (Eql x y) = 
+    [cantor 1 0] ++ Embed.encodeRaw x 
+    ++ [cantor 1 0] ++ Embed.encodeRaw y
+  encodeRaw (Var _) = [cantor 2 0]
+  encodeRaw (Lam _ t) = [cantor 3 0] ++ Embed.encodeRaw t
+  encodeRaw (Con con) = Embed.encodeRaw con
+  encodeRaw (App f xs) =
+    Embed.encodeRaw f ++ concatMap ((cantor 4 0 :) . Embed.encodeRaw) xs
+  encodeRaw (Fix _ _ fix_t) = 
+    cantor 5 0 : Embed.encodeRaw fix_t
+  encodeRaw (Case cse_t alts) = 
+    Embed.encodeRaw cse_t ++ concatMap Embed.encodeRaw alts ++ [cantor 9 0]
     
 instance Embed.Encodable Constructor where
-  encode (Constructor ind idx) = 
-    pair 6 (cantor (hash ind_name) (enum idx))
+  encodeRaw (Constructor ind idx) = 
+    [cantor 6 (cantor (hash ind_name) (enum idx))]
     where
     ind_name = get Type.indName ind
     
 instance Embed.Encodable Alt where
-  encode (Alt con bs t) = 
-    pair 7 0 ++ Embed.encode t ++ pair 7 0
+  encodeRaw (Alt con bs t) = 
+    cantor 7 0 : Embed.encodeRaw t

@@ -35,6 +35,7 @@ module Elea.Term.Ext
   findArguments,
   abstractVar,
   abstractVars,
+  mapFixInfo,
 )
 where
 
@@ -637,4 +638,11 @@ abstractVar b x t = id
 abstractVars :: [Bind] -> [Index] -> Term -> Term
 abstractVars bs xs = 
   concatEndos (zipWith abstractVar bs xs)
+  
+
+mapFixInfo :: (FixInfo -> FixInfo) -> Term -> Term
+mapFixInfo f = Fold.transform mp
+  where
+  mp (Fix i b t) = Fix (f i) b t
+  mp t = t
   

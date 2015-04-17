@@ -76,6 +76,18 @@ tests = Test.label "Terms"
        
     return (Test.assertTermEq abs_xy abs_xy')
     
+  findArgs1 <- Test.localVars 
+    "(f: list<nat> -> list<nat>) (xs: list<nat>) (n x: nat)" $ do
+    ctx_t <- Test.term "fun (ys: list<nat>) -> Cons<nat> n ys"
+    in_ctx <- Test.term "Cons<nat> n (append<nat> (f xs) (Cons<nat> x Nil<nat>))"
+    ctx_arg <- Test.term "append<nat> (f xs) (Cons<nat> x Nil<nat>)"
+    Just [arg] <- runMaybeT (findArguments ctx_t in_ctx)
+    return (Test.assertTermEq ctx_arg arg)
+    
+  let id_nat = Eval.run (recursiveId nat)
+  id_nat' <- Test.term def_nat_id
+  let id1 = Test.assertTermEq id_nat' id_nat
+    
     {-
   -- Testing out some restricted transformation term isomorphisms
   iso1 <- Test.localVars "(n: nat) (t: tree<nat>)" $ do
@@ -101,6 +113,8 @@ tests = Test.label "Terms"
     , conj1
     , subterms1
     , abstract1
+    , findArgs1
+    , id1
   --  , iso1
   --  , strict1
     ]
@@ -128,4 +142,8 @@ def_eq_ntree =
 def_add_raw =
   "fix (add: nat -> nat -> nat) (y: nat) (x: nat) -> "
   ++ "match x with | 0 -> y | Suc x' -> Suc (add y x') end"
+  
+def_nat_id = 
+  "fix (id: nat -> nat) (x: nat) -> "
+  ++ "match x with | 0 -> 0 | Suc x' -> Suc (id x') end"
     

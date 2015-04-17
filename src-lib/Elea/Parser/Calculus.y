@@ -182,9 +182,9 @@ Term :: { RawTerm }
   | '(' Term ')'                      { $2 }
   | Term '(' Term ',' TermList ')'    { TApp $1 (TTuple ($3:$5)) }
   | '(' Term ',' TermList ')'         { TTuple ($2:$4) }
-  | Term '=' Term                     { TEql $1 $3 }
   | fun Bindings '->' Term            { TLam $2 $4 }
   | fix Bindings '->' Term            { TFix $2 $4 }
+  | Term '=' Term                     { TEql $1 $3 }
   | let name '=' Term in Term         { TLet $2 $4 $6 }
   | 'fold[' Type ']'                  { TFold $2 }
   | match Term with Matches end       { TCase $2 $4 }
@@ -294,7 +294,7 @@ program text =
     localTypeArgs ty_args $ do
       bs <- mapM parseRawBind rbs
       t <- Env.bindMany bs (parseAndCheckTerm rt)
-      if isEql t
+      if isQuantifiedEql t
       then return (Equals name bs t)
       else return (Equals name bs (Eql t Term.true))
   

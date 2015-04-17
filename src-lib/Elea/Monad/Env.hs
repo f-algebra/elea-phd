@@ -134,9 +134,8 @@ instance Write m => Fold.TransformableM m IgnoreClosed where
     f' = liftM notIgnoreClosed . f . IgnoreClosed
     
     ignore :: Term -> m (Bool, Term' Bool)
-    ignore (Fix fix_i fix_b _) 
-      | get fixClosed fix_i = 
-        return (True, Fix' fix_i fix_b False)
+    ignore (Fix fix_i fix_b _) =
+      return (True, Fix' fix_i fix_b False)
     ignore other = 
       Fold.selectAll other
   

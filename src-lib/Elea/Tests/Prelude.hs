@@ -12,7 +12,8 @@ tests = TestLabel "Prelude"
   [ test_deleteIndices
   , test_takeIndices
   , test_isNub
-  , test_nubOrd ]
+  , test_nubOrd
+  , test_removeAll ]
   
 testCase = TestCase . assert
 testList = TestList . map testCase
@@ -31,4 +32,8 @@ test_isNub = testList $
 test_nubOrd = testList $
   [ nubOrd ([] :: [Int]) == []
   , nubOrd [4, 7, 2, 4, 5, 7, 1] == [4, 7, 2, 5, 1] ]
+  
+test_removeAll = testList $
+  [ removeAll [1, 3] [0..5] == [0, 2, 4, 5]
+  , removeAll [0..9] [1..10] == [] ]
 

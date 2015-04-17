@@ -11,6 +11,7 @@ module Elea.Testing
  -- assertProvablyEq,
   assertTermEq,
   assertTermEqM,
+  assertTrue,
   localVars,
 ) 
 where
@@ -20,7 +21,7 @@ import Elea.Term
 import Elea.Type
 import Elea.Show
 import Elea.Monad.Fedd ( Fedd )
--- import qualified Elea.Parser.Haskell as Haskell
+import qualified Elea.Term.Ext as Term
 import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Parser.Calculus as Parse
@@ -62,6 +63,10 @@ assertEq = (HUnit.TestCase .) . HUnit.assertEqual ""
 assertSimpEq :: Term -> Term -> Test
 assertSimpEq (Simp.run -> t1) (Simp.run -> t2) = 
   assertTermEq t1 t2
+  
+assertTrue :: Term -> Test
+assertTrue (flattenLam -> (_, t)) = 
+  assertEq Term.true t
 
 prelude :: String
 prelude = unsafePerformIO
