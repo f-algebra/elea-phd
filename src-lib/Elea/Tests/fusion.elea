@@ -15,10 +15,33 @@ let double =
 prop "add double": forall (x: nat) ->
   double x = add x x
   
+prop "add commutative": forall (x y: nat) -> 
+  add x y = add y x
+  
+prop "append nil"<A>: forall (xs: list<A>) ->
+  append<A> xs Nil<A> = xs
+  
+prop "append associative"<A>: forall (xs ys zs: list<A>) ->
+  append<A> (append<A> xs ys) zs = append<A> xs (append<A> ys zs)
+  
+
+let revapp<A> = 
+  fix (rap: A -> list<A> -> list<A>) (n: A) (xs: list<A>) ->
+    match xs with
+    | Nil -> Cons<A> n Nil<A>
+    | Cons y ys -> append<A> (rap n ys) (Cons<A> y Nil<A>)
+    end
+    
+prop "revapp def"<A>: forall (n: A) (xs: list<A>) ->
+  reverse<A> (append<A> xs (Cons<A> n Nil<A>)) = revapp<A> n xs
+ 
+
+  
+
+prop "revapp cons"<A>: forall (n: A) (xs: list<A>) ->
+  revapp<A> n xs = Cons<A> n (reverse<A> xs)
   
   /*
-prop "add commutative": forall (x y z: nat) ->
-  add x y = add y x
   
 
 prop "id list"<A>:
@@ -34,26 +57,7 @@ prop "id list"<A>:
       end
     end)
 
-prop "append nil"<A>: forall (xs: list<A>) ->
-  append<A> xs Nil<A> = xs
- 
-prop "append associative"<A>: forall (xs ys zs: list<A>) ->
-  append<A> (append<A> xs ys) zs = append<A> xs (append<A> ys zs)
 
-  
-let revapp<A> = 
-  fix (rap: A -> list<A> -> list<A>) (n: A) (xs: list<A>) ->
-    match xs with
-    | Nil -> Cons<A> n Nil<A>
-    | Cons y ys -> append<A> (rap n ys) (Cons<A> y Nil<A>)
-    end
-    
-prop "revapp def"<A>: forall (n: A) (xs: list<A>) ->
-  reverse<A> (append<A> xs (Cons<A> n Nil<A>)) = revapp<A> n xs
-
-prop "revapp cons"<A>: forall (n: A) (xs: list<A>) ->
-  revapp<A> n xs = Cons<A> n (reverse<A> xs)
-  
 prop "revrev"<A>: forall (xs: list<A>) ->
   xs = reverse<A> (reverse<A> xs)
 

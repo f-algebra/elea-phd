@@ -40,7 +40,7 @@ type Step m =
 steps :: Step m => [Term -> m Term]
 steps =
   [ const Fail.here
- -- , rewritePattern
+  , rewritePattern
   , rewriteFunction
   , expressConstructor
   , unfold
@@ -87,7 +87,7 @@ rewriteFunction term@(App {}) = do
 rewriteFunction _ = Fail.here
 
 
-expressConstructor :: Step m => Term -> m Term
+expressConstructor :: forall m . Step m => Term -> m Term
 expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
   Fail.when (Set.null suggestions)
   Fail.assert 
@@ -182,7 +182,7 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
       return mempty
 
       
-  express :: forall m . Fail.Can m => Term -> m Term
+  express :: Term -> m Term
   express ctx_t = id
     . liftM (\t -> Indices.subst (Fix fix_i fix_b t) ctx_comp)
     . Env.trackIndicesT ctx_t
@@ -198,7 +198,6 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
       . reverse 
       $ map (Var . enum) [0..length arg_bs]
     
-    
     strip :: Term -> Env.TrackIndicesT Term m Term
     strip (Lam b t) = 
       return (Lam b) `ap` strip t
@@ -209,8 +208,17 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
         return (Alt con bs) `ap` strip t
     strip term = do
       sugg <- Env.tracked
-      [arg] <- Term.findArguments sugg term
-      return arg
+      mby_arg <- Fail.catch (Term.findArguments sugg term)
+      case mby_arg of
+        Just [arg] -> return arg
+        Nothing 
+          | App fix@(Fix {}) xs <- term -> 
+            History.check "strip" term
+              . strip
+              . Simp.run
+              $ app (Term.unfoldFix fix) xs
+          
+          | otherwise -> Fail.here
         
     
       

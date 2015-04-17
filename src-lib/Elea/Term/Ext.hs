@@ -631,7 +631,7 @@ findArguments ctx term = do
 abstractVar :: Bind -> Index -> Term -> Term
 abstractVar b x t = id
   . Lam b 
-  . Indices.substAt (succ x) (Var 0) 
+  . Indices.replaceAt (succ x) (Var 0) 
   $ Indices.lift t
 
 abstractVars :: [Bind] -> [Index] -> Term -> Term

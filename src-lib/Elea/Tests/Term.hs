@@ -65,6 +65,17 @@ tests = Test.label "Terms"
         test2 = Test.assertEq removed_ts [x_plus_1, two, y]
         
     return (Test.list [test1, test2])
+    
+  abstract1 <- Test.localVars "(x y: nat)" $ do
+    xy <- Test.term "add x y"
+    Var x <- Test.term "x"
+    Var y <- Test.term "y"
+    abs_xy <- Test.term "fun (x y: nat) -> add y x"
+    let abs_bs = fst (flattenLam abs_xy)
+        abs_xy' = abstractVars (reverse abs_bs) [y, x] xy
+       
+    return (Test.assertTermEq abs_xy abs_xy')
+    
     {-
   -- Testing out some restricted transformation term isomorphisms
   iso1 <- Test.localVars "(n: nat) (t: tree<nat>)" $ do
@@ -89,6 +100,7 @@ tests = Test.label "Terms"
     -- , fold1, fold2 
     , conj1
     , subterms1
+    , abstract1
   --  , iso1
   --  , strict1
     ]

@@ -41,6 +41,7 @@ import qualified Elea.Type as Type
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Discovery.Class as Discovery
+import qualified Elea.Monad.History as History
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Unification as Unifier 
 import qualified Elea.Unification.Map as UMap
@@ -319,6 +320,10 @@ instance Discovery.Tells m => Discovery.Tells (AlsoTrack r m) where
 
 instance Discovery.Listens m => Discovery.Listens (AlsoTrack r m) where
   listen = mapAlsoTrack Discovery.listen
+  
+instance History.Env m => History.Env (AlsoTrack r m) where
+  ask = Trans.lift History.ask
+  local f = mapAlsoTrack (History.local f)
 
 
 -- | To stop effects reaching the inner monad we

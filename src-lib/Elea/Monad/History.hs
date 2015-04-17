@@ -102,4 +102,8 @@ instance Env m => Env (MaybeT m) where
   ask = Trans.lift ask
   local f = mapMaybeT (local f)
   
+instance Env m => Env (IdentityT m) where
+  ask = Trans.lift ask
+  local f = mapIdentityT (local f)
+  
 

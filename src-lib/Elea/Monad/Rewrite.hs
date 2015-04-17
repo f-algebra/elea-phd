@@ -23,3 +23,4 @@ findTags tags = id
 instance Env m => Env (MaybeT m) where
   local a t x = mapMaybeT (local a t x)
   rewrites = Trans.lift rewrites
+  
