@@ -41,10 +41,11 @@ fromEither :: Can m => Either a b -> m b
 fromEither (Left _) = here
 fromEither (Right x) = return x
 
--- Force the assertion to be evaluated within the failure monad.
 {-# INLINE assert #-}
-assert :: Can m => Bool -> m ()
-assert p = Prelude.unless p (Prelude.assert p here)
+assert :: Can m => String -> Bool -> m ()
+assert msg p
+  | not p = traceStack msg here
+  | otherwise = return ()
 
 has :: Maybe a -> Bool
 has = isNothing

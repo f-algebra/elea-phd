@@ -73,7 +73,7 @@ rewriteFunction _ = Fail.here
 expressConstructor :: forall m . Step m => Term -> m Term
 expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
   Fail.when (Set.null suggestions)
-  Fail.assert 
+  Fail.assert "express-constructor suggestions not correctly typed"
     . all ((== suggestion_ty) . Type.get)
      $ Set.toList suggestions
     -- ^ Check all the suggestions are correctly typed

@@ -71,7 +71,8 @@ steps =
 
 fusion :: Step m => Term -> Term -> m Term
 fusion ctx_t fix@(Fix fix_i fix_b fix_t) = do
-  Fail.assert (not (Term.beingFused fix))
+  Fail.assert "trying to fuse the unfusable"
+    $ not (Term.beingFused fix)
 
   t_s <- showM orig_t
 
@@ -121,7 +122,10 @@ fixfix :: forall m . Step m => Term -> m Term
 fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
   -- ^ o_ is outer, i_ is inner
   
-  Fail.assert (Term.isLambdaFloated o_fix)
+  Fail.assert ("fixfix given non lambda floated outer fixed-point" 
+              ++ show o_fix ++ "\n" ++ show (Type.argumentTypes (Type.get o_fix))
+                ++ ", " ++ show (fst (flattenLam o_fix_t)))
+    $ Term.isLambdaFloated o_fix
   
   term' <- id
     -- Pick the first one which does not fail
@@ -142,15 +146,15 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
   -- Run fix-fix fusion on the argument at the given index
   fixArg arg_i = do
     Fail.when (Term.beingFused i_fix)
-    Fail.assert (Term.isLambdaFloated i_fix)
-    
+    Fail.assert ("fixfix given non lambda floated inner fixed-point " 
+                ++ show i_fix)
+      $ Term.isLambdaFloated i_fix
+    Fail.assert "fix-fix created an incorrectly typed context"
+        $ Type.get full_t == Type.get o_term
+        
     History.check "fxfx" gen_t $ do
-      Fail.assert (Type.get full_t == Type.get o_term)
       new_fix <- fusion ctx_t i_fix
-      let new_term = app new_fix (o_args' ++ i_args) 
-      -- Make sure we have actually shrunk the term
-      -- will probably never fail
-      Fail.assert (new_term Partial.< o_term)
+      let new_term = app new_fix (o_args' ++ i_args)
       return new_term
     where
     i_term@(App i_fix@(Fix _ i_fix_b i_fix_t) i_args) = o_args !! arg_i
@@ -165,7 +169,6 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
       where
       o_fix' = Indices.liftMany (enum (o_arg_c + i_arg_c + 1)) o_fix
       o_args' = id
-        . reverse
         $ left_args ++ [i_term'] ++ right_args
         
       left_args =
@@ -191,26 +194,39 @@ decreasingFreeVar :: Step m => Term -> m Term
 decreasingFreeVar orig_t@(App fix@(Fix _ _ fix_t) args) = do
   Fail.unless (nlength var_arg_is > 0)
   Fail.when (Term.beingFused fix)
-  Fail.assert (Term.isLambdaFloated fix)
+  Fail.assert "dec-free-var given non lambda floated fixed-point"
+    $ Term.isLambdaFloated fix
   
   App expr_fix@(Fix _ expr_b _) expr_args <- 
-    Term.expressFreeVariables (reverse var_args) fix
+    Term.expressFreeVariables var_args fix
   
-  Fail.assert (expr_args == map Var var_args)
+  Fail.assert ("expressFreeVariables failed in dec-free-var " 
+              ++ "\n[expressing] " ++ show var_args
+              ++ "\n[in] " ++ show fix
+              ++ "\n[yielded] " ++ show expr_fix)
+    $ expr_args == map Var var_args
     
   let (orig_bs, _) = flattenLam fix_t
       ctx_t = id
         . unflattenLam (expr_b:orig_bs)
         . app (Var (length orig_bs))
         . map (Var . enum) 
-        $ var_arg_is ++ reverse [0..length orig_bs - 1]
+        $ map (\v -> (length orig_bs - v) - 1) var_arg_is
+        ++ reverse [0..length orig_bs - 1]
         
       full_t = Eval.reduce ctx_t (expr_fix:args)
         
-  Fail.assert (Type.get full_t == Type.get orig_t)
+  Fail.assert "dec-free-var generated an incorrectly typed context"
+    $ Type.get full_t == Type.get orig_t
+  
+  orig_s <- showM orig_t
+  ctx_s <- showM ctx_t
+  fix_s <- showM expr_fix
   
   new_fix <- id
     . History.check "dec-free" full_t
+    . trace ("\n\n[dec-free from] " ++ orig_s ++ "\n\n[context] " ++ ctx_s 
+      ++ "\n\n[expressed fix] " ++ fix_s)
     $ fusion ctx_t expr_fix
     
   Transform.continue (app new_fix args)

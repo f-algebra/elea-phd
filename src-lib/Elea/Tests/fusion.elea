@@ -63,10 +63,29 @@ prop "leq_nat reflexive": forall (n: nat) ->
   leq_nat n n
   
   
+prop "drop add"<A>: forall (n: nat) (m: nat) (xs: list<A>) ->
+  drop<A> (add m n) xs = drop<A> n (drop<A> m xs)
+  
+
+prop "drop take"<A>: forall (n: nat) (xs: list<A>) ->
+  xs = append<A> (take<A> n xs) (drop<A> n xs)
+  
+
+prop "count append": forall (n: nat) (xs ys: list<nat>) ->
+  count_nat n (append<nat> xs ys) = add (count_nat n xs) (count_nat n ys)
+  
+
+prop "count snoc": forall (n: nat) (xs: list<nat>) ->
+  count_nat n (append<nat> xs (Cons<nat> n Nil<nat>)) = Suc (count_nat n xs)
+  
+prop "count reverse": forall (n: nat) (xs: list<nat>) ->
+  count_nat n (reverse<nat> xs) = count_nat n xs
+  
+  
   /*
   
 
-prop "id list"<A>:
+prop "id list"<A>:  
   (fun (n: nat) (xs: list<A>) -> xs)
   =
   (fix (id: nat -> list<A> -> list<A>) (n: nat) (xs: list<A>) ->
@@ -78,17 +97,6 @@ prop "id list"<A>:
       | Cons y ys -> Cons<A> y (id n' ys)
       end
     end)
-
-
-prop "count reverse": forall (n: nat) (xs: list<nat>) ->
-  count_nat n (reverse<nat> xs) = count_nat n xs
-  
-prop "count append": forall (n: nat) (xs ys: list<nat>) ->
-  count_nat n (append<nat> xs ys) = add (count_nat n xs) (count_nat n ys)
-
-prop "count snoc": forall (n: nat) (xs: list<nat>) ->
-  count_nat n (append<nat> xs (Cons<nat> n Nil<nat>)) = Suc (count_nat n xs)
-  
 
 prop "eq_nat symmetric": forall (n m: nat) ->
   implies (eq_nat n m) (eq_nat m n)
@@ -105,11 +113,7 @@ prop "leq_nat total": forall (n m: nat) ->
 prop "leq_nat total 2": forall (f: nat -> nat) (n m: nat) ->
   implies (not (leq_nat (f n) m)) (leq_nat m (f n))
   
-prop "drop take"<A>: forall (n: nat) (xs: list<A>) ->
-  xs = append<A> (take<A> n xs) (drop<A> n xs)
   
-prop "drop add"<A>: forall (n: nat) (m: nat) (xs: list<A>) ->
-  drop<A> (add m n) xs = drop<A> n (drop<A> m xs)
   
 prop "filter reverse"<A>: forall (p: A -> bool) (xs: list<A>) ->
   reverse<A> (filter<A> p xs) = filter<A> p (reverse<A> xs)
