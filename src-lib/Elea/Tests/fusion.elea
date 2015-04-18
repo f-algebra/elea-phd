@@ -62,25 +62,20 @@ prop "eq_nat3 2":
 prop "leq_nat reflexive": forall (n: nat) ->
   leq_nat n n
   
-  
 prop "drop add"<A>: forall (n: nat) (m: nat) (xs: list<A>) ->
   drop<A> (add m n) xs = drop<A> n (drop<A> m xs)
   
-
 prop "drop take"<A>: forall (n: nat) (xs: list<A>) ->
   xs = append<A> (take<A> n xs) (drop<A> n xs)
-  
-
+ 
 prop "count append": forall (n: nat) (xs ys: list<nat>) ->
   count_nat n (append<nat> xs ys) = add (count_nat n xs) (count_nat n ys)
   
-
 prop "count snoc": forall (n: nat) (xs: list<nat>) ->
   count_nat n (append<nat> xs (Cons<nat> n Nil<nat>)) = Suc (count_nat n xs)
   
 prop "count reverse": forall (n: nat) (xs: list<nat>) ->
-  count_nat n (reverse<nat> xs) = count_nat n xs
-  
+  count_nat n xs = count_nat n (reverse<nat> xs)
   
   /*
   

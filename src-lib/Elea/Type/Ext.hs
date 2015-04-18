@@ -6,17 +6,16 @@ module Elea.Type.Ext
 (
   module Elea.Type,
   HasTypeM (..),
-  typeOf,
-  check,
-  checkStep,
+  assertEqM,
 )
 where
 
-import Elea.Prelude hiding ( get, mapM )
+import Elea.Prelude hiding ( get )
 import Elea.Term.Index hiding ( lift )
 import Elea.Type hiding ( Var, Var' )
 import Elea.Term
-import Elea.Show ( showM )
+import Elea.Show ()
+import Elea.Show.Class ( ShowM (..) )
 import qualified Elea.Term as Term
 import qualified Elea.Prelude as Prelude
 import qualified Elea.Term.Index as Indices
@@ -30,161 +29,131 @@ import qualified Elea.Monad.Failure.Class as Fail
 
 
 -- | Return the type of something given a type environment. 
-class HasTypeM a where
+class Show a => HasTypeM a where
+  assignM :: (Fail.Can m, Env.Read m) => a -> m (Maybe Type)
+  
   getM :: Env.Read m => a -> m Type
+  getM x = do
+    as_x <- runMaybeT (assignM x)
+    case as_x of
+      Just (Just ty) -> return ty
+      _ -> error ("[Type.getM failed] " ++ show x)
+  
   hasM :: Env.Read m => a -> m Bool
+  hasM x = do
+    as_x <- runMaybeT (assignM x)
+    case as_x of
+      Just (Just _) -> return True
+      Just Nothing -> return False
+      Nothing ->
+        error ("[Type.has failed] " ++ show x)
+      
+  validM :: Env.Read m => a -> m Bool
+  validM = liftM isJust . runMaybeT . assignM
+  
   
 instance HasTypeM Term where
-  getM t = do
-    can_type <- hasM t
-    if can_type
-    then Fold.paraM getM t
-    else error ("[typing] Cannot type:\n" ++ show t)
-      
-  hasM t = do
-    offset <- Env.bindingDepth
-    return 
-      . Env.trackIndices (enum offset)
-      $ closed t
+  assignM = Fold.cataM check
     where
-    closed :: Term -> Env.TrackIndices Index Bool
-    closed (Var x) = do
-      offset <- Env.tracked
-      return (x < offset)
-    closed (Bot _) = return True
-    closed (Eql _ _) = return True
-    closed (App f _) = closed f
-    closed (Fix {}) = return True
-    closed (Con {}) = return True
-    closed (Lam _ t) = Env.liftTracked (closed t)
-    closed (Case _ (Alt _ bs t : _)) = 
-      Env.liftTrackedMany (length bs) (closed t)
+    check :: forall m . (Fail.Can m, Env.Read m) 
+      => Term' (Maybe Type) -> m (Maybe Type)
+    check (Var' x) = do
+      has <- Env.isBound x
+      if not has
+      then return Nothing
+      else liftM (Just . Prelude.get Type.bindType) (Env.boundAt x)
+    check (Bot' ty) = return (Just ty)
+    check (Eql' (Just xt) (Just yt)) = do
+      Fail.when (xt /= yt)
+      return (Just (Base bool))
+    check (Eql' _ _) = 
+      return (Just (Base bool))
+    check (App' Nothing _) =
+      return Nothing
+    check (App' (Just fty) xs) = do
+      Fail.unless (nlength arg_tys >= length xs)
+      Fail.unless (Prelude.and (zipWith checkArg xs arg_tys))
+      return 
+        . Just 
+        $ dropArgs (length xs) fty
+      where
+      (arg_tys, res_ty) = split fty
+      
+      checkArg :: Maybe Type -> Type -> Bool
+      checkArg Nothing _ = True
+      checkArg (Just ty) arg_ty = 
+        ty == arg_ty
+        
+    check (Fix' _ (Bind _ fix_ty) Nothing) = 
+      return (Just fix_ty)
+    check (Fix' _ (Bind _ fix_ty) (Just fix_ty')) = do
+      Fail.unless (fix_ty == fix_ty')
+      return (Just fix_ty)
+    check (Con' con) = 
+      return (Just (get con))
+    check (Lam' _ Nothing) = 
+      return Nothing
+    check (Lam' (Bind _ arg_ty) (Just res_ty)) = 
+      return (Just (Fun arg_ty res_ty))
+    check (Case' cse_ty alts) = do
+      -- Check the pattern match term is inductively typed
+      Fail.unless (isNothing cse_ty || (isInd . fromJust) cse_ty)
+      
+      mby_alt_tys <- mapM checkAlt alts
+      let alt_tys = nubOrd (catMaybes mby_alt_tys)
+      case length alt_tys of
+        0 -> return Nothing
+        1 -> return (Just (head alt_tys))
+        _ -> Fail.here
+          -- ^ Branches disagree on type
+      where
+      checkAlt :: Alt' (Maybe Type) -> m (Maybe Type)
+      checkAlt (Alt' con _ ty) = do
+        Fail.unless (isNothing cse_ty 
+          || cse_ind == Prelude.get constructorOf con)
+        return ty
+        where
+        Just (Base cse_ind) = cse_ty
+      
     
 
 -- | I know I said that terms shouldn't have a 'HasType' instance, but
 -- we should only call this on closed terms that we know
 -- are well typed.
 instance HasType Term where
-  get t | has t = (Env.empty . getM) t
-  has = Env.empty . hasM
+  assign = Env.emptyT . assignM
+
   
-instance HasType (Term' (Term, Type)) where 
-  has = undefined
-
-  get (Bot' ty) = ty
-  get (Eql' _ _) = Type.Base Type.bool
-  get (Lam' (Bind _ a) (_, b)) = Type.Fun a b
-  get (App' (_, ty) xs) = Type.dropArgs (length xs) ty
-  get (Fix' _ b _) = get b
-  get (Con' con) = get con
-  get (Case' _ (Alt' _ _ (_, ty) : _)) = ty
-  
-instance HasTypeM (Term' (Term, Type)) where
-  hasM = undefined
-
-  getM (Var' x) = do
-    is <- Env.isBound x
-    if not is
-    then error "here"
-    else liftM get (Env.boundAt x)
-  getM other =
-    return (get other)
-  
-
--- | Throws an error if a term is not correctly typed.
-check :: (Err.Throws m, Env.Read m, Defs.Read m) => Term -> m ()
--- Call 'typeOf' and ignore the argument
-check = liftM (const ()) . typeOf
-
-
--- | Wrap this around a term transformation step @Term -> m Term@
--- to add a check that the step preserves the type of the term.
-checkStep :: forall m . (Defs.Read m, Env.Read m) => 
-  (Term -> m Term) -> Term -> m Term
-checkStep step term = do
-  result <- step term
-  Err.noneM . Err.augmentM (stepErr result) $ do
-    t_ty <- typeOf term
-    r_ty <- typeOf result
-    if t_ty == r_ty
-    then return result
-    else 
-      Err.throw 
-        $ "Transformation does not preserve type."
-        ++ "\nBefore: [" ++ show t_ty ++ "]"
-        ++ "\nAfter: [" ++ show r_ty ++ "]"
-  where
-  stepErr :: Term -> EitherT String m String
-  stepErr result = do
-    t_s <- showM term
-    t_s' <- showM result
-    Err.throw
-      $ "In the transformation:"
-      ++ "\nFrom: [" ++ t_s ++ "]"
-      ++ "\nTo: [" ++ t_s' ++ "]"
+    
+assertEqM :: (Env.Read m, HasTypeM a, Show a) 
+  => String -> a -> a -> m ()
+assertEqM msg x y = do
+  as_x <- runMaybeT (assignM x)
+  as_y <- runMaybeT (assignM y)
+  case (as_x, as_y) of
+    (Nothing, _) -> error (msg ++ "\n[invalid from term] " ++ show x)
+    (_, Nothing) -> error (msg ++ "\n[invalid to term] " ++ show y)
+    (Just (Just xty), Just (Just yty))
+      | xty /= yty -> 
+        error (assertionMsg msg (show x) (show y) xty yty)
+    _ -> 
+      return () 
       
-
--- | Returns the type of a given 'Term' while checking it for type errors.
-typeOf :: forall m . (Err.Throws m, Env.Read m, Defs.Read m) => Term -> m Type  
-typeOf = Fold.paraM getAndCheck
-  where
-  getAndCheck :: Term' (Term, Type) -> m Type
-  getAndCheck t = do
-    t_s <- showM (Fold.recover t)
-    Err.whileChecking t_s (check' t)
-    getM t
+  {-
+assertEq :: (Monad m, HasType a, Show a) => String -> a -> a -> m ()
+assertEq msg x y 
+  case (assign x, assign y) of
+    (Nothing, _) -> fail (msg ++ "\n[invalid from term] " ++ show x)
+    (_, Nothing) -> fail (msg ++ "\n[invalid to term] " ++ show y)
+    (Just (Just xty), Just (Just yty))
+      | xty /= yty -> 
+    -}
     
--- | Takes a term with all subterms already typed, and throws an error
--- if the full term is incorrectly typed.
-check' :: forall m . (Err.Throws m, Env.Read m, Defs.Read m) 
-  => Term' (Term, Type) -> m ()
-  
-check' (Var' x)
-  | x == Indices.omega = 
-    Err.cannotTypeOmega
-    
--- Check that a variable has a type in the environment and the arguments
--- match correctly
-check' (Var' x) = do
-  is_bound <- Env.isBound x
-  unless is_bound (Err.unboundIndex (show x))
-  
-check' (App' (snd -> fun_ty) (map snd -> arg_tys)) = 
-  when (arg_tys /= arg_tys') 
-    $ Err.invalidArguments (show fun_ty) (show arg_tys)
-  where 
-  arg_tys' = take (length arg_tys :: Int) (Type.flatten fun_ty)
-    
-check' (Fix' _ b (t, ty))
-  | get b /= ty = do
-    t_s <- showM t
-    Err.fixBodyBadlyTyped t_s (show (get b)) (show ty)
-  
-check' (Case' (_, ind_ty) _)
-  | not (Type.isInd ind_ty) = 
-    Err.patternMatchNonInductive (show ind_ty)
-    
-check' (Case' (_, Base cse_ind) falts) =
-  zipWithM_ checkAlt' [0..] falts
-  where
-  return_ty = snd (Prelude.get altInner' (head falts))
-  
-  checkAlt' :: Nat -> Alt' (Term, Type) -> m ()
-  checkAlt' alt_n (Alt' con bs (_, alt_ty))
-    | con_ind /= cse_ind = Err.incorrectPattern (show con)
-    | alt_n /= con_n = Err.patternsOutOfOrder
-    | alt_ty /= return_ty = Err.incorrectAltType (show return_ty) (show alt_ty)
-    | nlength bs_tys /= length arg_tys = Err.incorrectPattern (show con)
-    | or (zipWith (/=) arg_tys bs_tys) = Err.incorrectPattern (show con)
-    | otherwise = return ()
-    where
-    Constructor con_ind con_n = con
-    (arg_tys, ind') = id
-      . splitAt (length bs) 
-      . Type.flatten
-      $ get con
-    bs_tys = map Type.get bs
-    
-check' _ = 
+assertEq _ _ _ = 
   return ()
+
+assertionMsg msg xs ys xty yty = 
+  "\n\n[type error] " ++ msg 
+    ++ "\n[original term] " ++ xs ++ " : " ++ show xty
+    ++ "\n[new term] " ++ ys ++ " : " ++ show yty
 

@@ -21,6 +21,7 @@ import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.History as History
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Unification as Unifier
+import qualified Elea.Transform.Names as Name
 import qualified Elea.Transform.Evaluate as Eval
 import qualified Elea.Transform.Equality as Equality
 import qualified Elea.Foldable as Fold
@@ -136,6 +137,7 @@ constArg (App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
     let args' = setAt pos arg' args
     
     -- Run evaluation to reduce all the new lambdas
+    let term' = Eval.reduce fix' args'
     Transform.continue (Eval.reduce fix' args')
   where
   -- Strip off the preceding lambdas of the function
@@ -244,31 +246,6 @@ uselessFix (Fix _ _ fix_t)
     return (Indices.lower fix_t)
 uselessFix _ = Fail.here
 
-
--- | If we pattern match inside a 'Fix', but only using variables that exist
--- outside of the 'Fix', then we can float this pattern match outside
--- of the 'Fix'.
-freeCaseFix :: Fail.Can m => Term -> m Term
-freeCaseFix fix@(Fix _ _ fix_t) = do
-  free_case <- id
-    . Fail.fromMaybe
-    . Env.trackOffset
-    . Env.liftTracked
-    $ Fold.findM freeCases fix_t
-  return (Term.applyCase free_case fix)
-  where
-  freeCases :: Term -> Env.TrackOffset (Maybe Term)
-  freeCases cse@(Case cse_t _) = do
-    idx_offset <- Env.tracked
-    if any (< idx_offset) (Indices.free cse_t) 
-    then return Nothing
-    else return 
-       . Just
-       . Indices.lowerMany (enum idx_offset) 
-       $ cse
-  freeCases _ = 
-    return Nothing
-freeCaseFix _ = Fail.here
 
 
 
@@ -515,15 +492,14 @@ unsafeUnfoldFixInj _ =
 
 
 unfold :: Step m => Term -> m Term
-unfold term@(App fix@(Fix {}) args) =
-  History.check "unf" term $ do
-    any_matched <- anyM Env.isMatched dec_args
-    -- No point unrolling unless a decreasing argument has a constructor
-    -- topmost, or has been matched to a constructor
-    Fail.unless (any (isCon . leftmost) dec_args || any_matched)
-    term' <- Transform.continue (app (Term.unfoldFix fix) args)
-    Fail.when (term Embed.<= term')
-    return term'
+unfold term@(App fix@(Fix {}) args) 
+  | any (isCon . leftmost) dec_args =
+    History.check Name.Unfold term $ do
+      term' <- Transform.continue (app (Term.unfoldFix fix) args)
+      Fail.when (term Embed.<= term')
+      return 
+      --  . trace ("\n\n[unfold] " ++ show term ++ "\n\n[into] " ++ show term') 
+        $ term'
   where
   dec_args = map (args !!) (Term.decreasingArgs fix)
   

@@ -1730,9 +1730,14 @@ lookupType (name, raw_ty_args) = do
     else Err.throw $ "Undefined inductive type: " ++ name
     
 parseAndCheckTerm :: RawTerm -> ParserMonad m Term
-parseAndCheckTerm = id
-  . Err.check Type.check 
-  . parseRawTerm
+parseAndCheckTerm rt = do
+  t <- parseRawTerm rt
+  valid <- Type.validM t
+  if valid
+  then return t
+  else do
+    ts <- showM t
+    error ("parsed term has invalid type: " ++ ts)
   
 parseRawType :: RawType -> ParserMonad m Type
 parseRawType (TyBase name) =

@@ -11,12 +11,14 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Show ( showM )
 import Elea.Unification ( Unifier )
+import qualified Elea.Foldable as Fold
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Height as Height
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.History as History
+import qualified Elea.Transform.Names as Name
 import qualified Elea.Transform.Evaluate as Eval
 import qualified Elea.Transform.Simplify as Simp
 import qualified Elea.Unification as Unifier
@@ -42,17 +44,13 @@ steps =
   , rewritePattern
   , rewriteFunction
   , expressConstructor
+  , expressMatch
   ] 
 
   
 
 rewritePattern :: Step m => Term -> m Term
-rewritePattern (Case cse_t alts)  = do
-  cse_t' <- Env.findMatch cse_t
-  -- Re-use the evaluation step which reduces case-of over constructors
-  Eval.caseOfCon cse_t'
-  
-rewritePattern _ = Fail.here
+rewritePattern = Env.findMatch
 
 
 rewriteFunction :: forall m . Step m => Term -> m Term
@@ -73,32 +71,31 @@ rewriteFunction _ = Fail.here
 expressConstructor :: forall m . Step m => Term -> m Term
 expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
   Fail.when (Set.null suggestions)
+  sugg_tys <- mapM Type.getM (Set.toList suggestions)
   Fail.assert "express-constructor suggestions not correctly typed"
-    . all ((== suggestion_ty) . Type.get)
-     $ Set.toList suggestions
+    $ all (== sugg_ty) sugg_tys
     -- ^ Check all the suggestions are correctly typed
     
-  
   ts <- showM term
   suggs <- showM suggestions 
     
   fix' <- id
     . Fail.choose 
-  --  . trace ("\n\n[expr-con] " ++ ts ++ "\n\n[suggested] " ++ suggs)
+    -- . trace ("\n\n[expr-con] " ++ ts ++ "\n\n[suggested] " ++ suggs)
     . map express 
     $ toList suggestions
     
   -- ts' <- showM (Eval.run (app fix' args))
     
   id
-    . History.check "exp-con" fix
+    . History.check Name.ExpressCon fix
     . Transform.continue
     $ app fix' args
   where
   (arg_bs, _) = Term.flattenLam fix_t
   gap_b = Bind "X" term_ty 
   term_ty = Type.get term
-  suggestion_ty = Type.Fun term_ty term_ty
+  sugg_ty = Type.Fun term_ty term_ty
     
   suggestions :: Set Term
   suggestions = id
@@ -198,6 +195,35 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
       [arg] <- Term.findArguments sugg term
       return arg
         
-    
-      
 expressConstructor _ = Fail.here
+
+
+expressMatch :: Step m => Term -> m Term
+expressMatch term@(App fix@(Fix {}) _) = do
+  free_cse@(Case cse_t _) <- id
+    . Fail.fromMaybe
+    . Env.trackOffset
+    $ Fold.findM freeCase fix
+    
+  History.check Name.ExpressMatch free_cse
+    $ Transform.continue free_cse
+  where
+  freeCase :: Term -> Env.TrackOffset (Maybe Term)
+  freeCase cse@(Case cse_t alts) = do
+    idx_offset <- Env.tracked
+    if any (< idx_offset) (Indices.free cse_t) 
+    then return Nothing
+    else return 
+       . Just
+       . Case (Indices.lowerMany (enum idx_offset) cse_t)
+       $ map applyAlt alts
+    where
+    applyAlt (Alt con bs alt_t) = 
+      Alt con bs (Indices.liftMany (length bs) term)
+      
+  freeCase _ = 
+    return Nothing
+    
+expressMatch _ = Fail.here
+
+

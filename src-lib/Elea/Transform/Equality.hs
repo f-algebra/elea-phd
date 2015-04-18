@@ -15,6 +15,7 @@ import qualified Elea.Term.Ext as Term
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.History as History
+import qualified Elea.Transform.Names as Name
 import qualified Elea.Transform.Evaluate as Eval
 import qualified Elea.Unification as Unifier
 import qualified Elea.Monad.Env as Env
@@ -28,7 +29,7 @@ import qualified Data.Set as Set
 import qualified Data.Poset as Partial
 
 type Step m = 
-  ( Env.Read m
+  ( Env.All m
   , Eval.Step m )
 
 
@@ -60,18 +61,20 @@ equality (Eql x y) = do
   reduce x y@(Lam {}) =
     reduce y x
     
-  reduce (flattenApp -> Con cx : xs) 
-         (flattenApp -> Con cy : ys)
+  reduce x@(flattenApp -> Con cx : xs) 
+         y@(flattenApp -> Con cy : ys)
     | cx /= cy =
       return Term.false
       
-    | otherwise = do
+    | otherwise = 
+      History.check Name.EqReduceCon (Eql x y) $ do
         eqs <- zipWithM reduce xs ys
         Transform.continue (foldr Term.and Term.true eqs)
        
-  reduce x@(flattenApp -> Con cx : xs) y = do
-    alts <- mapM getAlt all_cons
-    Transform.continue (Case y alts)
+  reduce x@(flattenApp -> Con cx : xs) y = 
+    History.check Name.EqMatchCon (Eql x y) $ do
+      alts <- mapM getAlt all_cons
+      Transform.continue (Case y alts)
     where
     all_cons = Type.constructors (get Type.constructorOf cx)
     
@@ -80,7 +83,7 @@ equality (Eql x y) = do
         return (Alt c alt_bs Term.false)
         
       | otherwise = do
-        alt_t <- reduce (altPattern c) x
+        let alt_t = Eql (altPattern c) (Indices.liftMany (length alt_bs) x)
         return (Alt c alt_bs alt_t)
       where
       alt_bs = Type.makeAltBindings c
@@ -103,24 +106,28 @@ equality (Eql x y) = do
     reduce y x
         
   reduce x y
-    | isFixPromoted x = do
-      x' <- fixInduction x y
-      reduce x' y
+    | isFixPromoted x
+    , not (failedFixPromotion y) = 
+      History.check Name.EqInduction (Eql x y) $ do
+        x' <- fixInduction x y
+        Type.assertEqM "[fix-induction]" x x'
+        reduce x' y
       
-    | isFixPromoted y = do
-      y' <- fixInduction y x
-      reduce x y'
+    | isFixPromoted y
+    , not (failedFixPromotion x) = 
+      History.check Name.EqInduction (Eql y x) $ do
+        y' <- fixInduction y x
+        Type.assertEqM "[fix-induction]" y y'
+        reduce x y'
     where
-    isFixPromoted :: Term -> Bool
-    isFixPromoted (App fix@(Fix {}) xs) =
-      all isVar xs 
-      && length x_vars == Set.size x_vars_set
-      && Set.null overlap
-      where
-      x_vars = map fromVar xs
-      x_vars_set = Set.fromList x_vars
-      overlap = Set.intersection (Indices.free fix) x_vars_set
-    isFixPromoted _ = False
+    -- There is really no point trying fixed-point induction if one
+    -- side of the equation failed to be converted to fixed-point
+    -- promoted form
+    failedFixPromotion :: Term -> Bool
+    failedFixPromotion t =
+      not (isFixPromoted t) 
+      && isFix (leftmost t)
+      
     
     -- > fixInduction ((fix F) x) y = F (\x -> y)
     fixInduction :: Term -> Term -> m Term
@@ -133,14 +140,7 @@ equality (Eql x y) = do
       x_vars = map fromVar xs
       x_bs = fst (flattenLam fix_t)
       
-    
-  -- | Saves me writing out the fix cases again twice    
-  reduce x y@(App (Fix {}) _) 
-    | not (isFix (leftmost x)) =
-      reduce y x
-
-  reduce x y = 
-    return (Eql x y)
+  reduce x y = return (Eql x y)
     
     
 equality _ = Fail.here

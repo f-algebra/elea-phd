@@ -48,31 +48,20 @@ mapStepT :: forall m a b . Monad m
 mapStepT f = StepT . mapReaderT (mapMaybeT f) . stepT
     
 
-fix :: forall m . History.Env m 
+fix :: forall m . (Env.Read m, History.Env m) 
   => (Term -> StepT m Term) -> Term -> m Term
 fix f t = do
   hist <- History.ask
-  mby_t' <- runMaybeT (runReaderT (stepT (f t)) (run hist))
+  mby_t' <- runMaybeT (runReaderT (stepT (f t)) (fix f))
   case mby_t' of
     Nothing -> return t
     Just t' -> do
-      if not (Type.has t)
-        || not (Type.has t')
-        || Type.get t == Type.get t'
-      then do
-       -- trace ("\n\n[simp from]" ++ show t ++ "\n\n[simp to]" ++ show t')
-          (return t')
-      else error
-          $ "[type error] transforming:\n"
-          ++ show t ++ " : " ++ show (Type.get t)
-          ++ "\ninto:\n" 
-          ++ show t' ++ " : " ++ show (Type.get t') 
-          ++ "\n"
+      Type.assertEqM "[fix]" t t' 
+      return t'
   where
   -- Our recursive transformation, a wrapper around 'f'
   run :: History.Repr -> Term -> m Term
-  run hist t' = continue
-    {- do
+  run hist t' = do
     hist' <- History.ask
     -- Check term size has shrunk
     if t' Partial.< t
@@ -89,7 +78,6 @@ fix f t = do
         ++ show (Height.get t) ++ "]\n" ++ show t
         ++ "\n\nGiven a larger term [" ++ show (Height.get t') 
         ++ "]:\n" ++ show t' ++ "\n"
-        -}
     where
     continue =
     --  trace ("\n\n[rec from]" ++ show t ++ "\n\n[rec call]" ++ show t')

@@ -13,10 +13,12 @@ import qualified Elea.Monad.Transform as Transform
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Unification as Unifier
+import qualified Elea.Transform.Names as Name
 import qualified Elea.Transform.Evaluate as Eval
 import qualified Elea.Transform.Simplify as Simp
 import qualified Elea.Transform.Rewrite as Rewrite
 import qualified Elea.Transform.Equality as Equality
+import qualified Elea.Term.Constraint as Constraint
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Term.Height as Height
@@ -53,8 +55,8 @@ run = Transform.fix (Transform.compose all_steps)
   where
   all_steps = []
     ++ Eval.transformSteps
-    ++ Eval.traverseSteps
     ++ Rewrite.steps
+    ++ Eval.traverseSteps
     ++ Simp.steps
     ++ steps
     ++ Equality.steps
@@ -81,11 +83,13 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = do
   temp_tag <- Tag.make (Tag.tags orig_t)
   let temp_i = set fixTag temp_tag fix_i
       temp_fix = Fix temp_i fix_b fix_t
-      rewrite_from = id
+      rewrite_from = id 
         . Simp.run
         . Indices.lift 
         . Eval.run 
         $ app ctx_t [temp_fix]
+
+  Type.assertEqM "[fixfix]" (Indices.lower rewrite_from) orig_t
          
   t_s' <- Env.bind new_fix_b $ showM rewrite_from
   t_s'' <- showM (Eval.run (app ctx_t [Term.unfoldFix temp_fix]))
@@ -95,7 +99,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = do
     . Rewrite.local temp_tag rewrite_from 0
     . Transform.continue
     . trace ("\n\n[fusing <" ++ show temp_tag ++ ">] " ++ t_s)
-  --  . trace ("\n\n[replacing] " ++ t_s')
+   -- . trace ("\n\n[replacing] " ++ t_s')
   --  . trace ("\n\n[transforming] " ++ show temp_tag ++ t_s'')
     -- Make room for our new variables we are rewriting to
     . Indices.lift
@@ -126,21 +130,13 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
               ++ show o_fix ++ "\n" ++ show (Type.argumentTypes (Type.get o_fix))
                 ++ ", " ++ show (fst (flattenLam o_fix_t)))
     $ Term.isLambdaFloated o_fix
-  
-  term' <- id
-    -- Pick the first one which does not fail
-    . Fail.choose
+    
+  -- Pick the first one which does not fail
+  Fail.choose
     -- Run fixfixArg on every decreasing fixpoint argument position
     . map fixArg
     . filter (Term.isFix . Term.leftmost . (o_args !!))
-    $ Term.decreasingArgs o_fix
-    
-  term_s <- showM o_term
-  term'' <- Transform.continue term'
-  term_s' <- showM term''
-  id
-   -- . trace ("\n\n[fxfx from] " ++ term_s ++ "\n\n[fxfx to] " ++ term_s') 
-    $ return term''  
+    $ Term.decreasingArgs o_fix 
   where  
   fixArg :: Int -> m Term
   -- Run fix-fix fusion on the argument at the given index
@@ -149,13 +145,12 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
     Fail.assert ("fixfix given non lambda floated inner fixed-point " 
                 ++ show i_fix)
       $ Term.isLambdaFloated i_fix
-    Fail.assert "fix-fix created an incorrectly typed context"
-        $ Type.get full_t == Type.get o_term
-        
-    History.check "fxfx" gen_t $ do
+    Type.assertEqM "fix-fix created an incorrectly typed context" o_term full_t
+
+    History.check Name.FixFixFusion gen_t $ do
       new_fix <- fusion ctx_t i_fix
       let new_term = app new_fix (o_args' ++ i_args)
-      return new_term
+      Transform.continue new_term
     where
     i_term@(App i_fix@(Fix _ i_fix_b i_fix_t) i_args) = o_args !! arg_i
     o_args' = removeAt arg_i o_args
@@ -224,9 +219,9 @@ decreasingFreeVar orig_t@(App fix@(Fix _ _ fix_t) args) = do
   fix_s <- showM expr_fix
   
   new_fix <- id
-    . History.check "dec-free" full_t
-    . trace ("\n\n[dec-free from] " ++ orig_s ++ "\n\n[context] " ++ ctx_s 
-      ++ "\n\n[expressed fix] " ++ fix_s)
+    . History.check Name.FreeArgFusion full_t
+  --  . trace ("\n\n[dec-free from] " ++ orig_s ++ "\n\n[context] " ++ ctx_s 
+   --   ++ "\n\n[expressed fix] " ++ fix_s)
     $ fusion ctx_t expr_fix
     
   Transform.continue (app new_fix args)
@@ -276,7 +271,7 @@ repeatedArg term@(App fix@(Fix _ fix_b fix_t) args) = do
     
     new_fix <- id
       . trace ("\n\n[rep-arg] " ++ full_s)
-      . History.check "rep-arg" full_t
+      . History.check Name.RepArgFusion full_t
       $ fusion ctx_t fix
       
     Transform.continue (app new_fix args')
@@ -305,8 +300,28 @@ repeatedArg term@(App fix@(Fix _ fix_b fix_t) args) = do
 
 repeatedArg _ = Fail.here
 
+
+matchFix :: Step m => Term -> m Term
+matchFix term@(App (Fix {}) xs)
+  | not (any (isFix . leftmost) xs) = do
+    ms <- Env.findMatches usefulMatch
+    foldrM fuseMatch ms term
+  where
+  usefulMatch :: (Term, Term) -> Bool
+  usefulMatch (App (Fix {}) ys, _) 
+    | not (any (isFix . leftmost) ys) =
+      not (Set.null (Set.intersection xs ys))
+  usefulMatch _ = False
   
-  
+  fuseMatch :: (Term, Term) -> Term -> m Term
+  fuseMatch (match_t, match_p) term = do
+    
+      
+    
+matchFix _ = Fail.here
+    
+
+
 {-
       
 

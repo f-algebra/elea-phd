@@ -27,6 +27,7 @@ import qualified Elea.Term.Height as Height
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Monad.Transform as Transform
+import qualified Elea.Transform.Names as Name
 import qualified Elea.Monad.History as History
 
 import qualified Data.Set as Set
@@ -37,6 +38,7 @@ import qualified Data.Poset as Partial
   -- the tallest branch downwards
   
 -- TODO URGENT remove var-branch and just use term-branch??
+-- TODO strictness needs Type.getM
 
 type Step m = 
   ( Transform.Step m
@@ -57,7 +59,6 @@ run = flip runReader ([] :: [Bind])
 transformSteps :: Step m => [Term -> m Term]
 transformSteps =
   [ normaliseApp
- -- , eta 
   , strictness
   , beta
   , caseOfCon 
@@ -106,7 +107,6 @@ reduce :: Term -> [Term] -> Term
 reduce (Lam _ rhs) (x:xs) = 
   reduce (subst x rhs) xs
 reduce f xs = 
-
   app f xs
     
   
@@ -138,25 +138,17 @@ normaliseApp _ =
 
 beta :: Step m => Term -> m Term
 beta t@(App f@(Lam _ rhs) xs) = id
-  . History.check "beta" t
+  . History.check Name.Beta t
   . Transform.continue
   $ reduce f xs
 beta _ = Fail.here
-  
-
-eta :: Step m => Term -> m Term
-eta (Lam _ (App f xs@(last -> Var 0)))
-  | not (0 `Set.member` Indices.free new_t) = 
-    Transform.continue (Indices.lower new_t)
-  where
-  new_t = app f (init xs)
-eta _ = Fail.here
 
 
 caseOfCon :: Step m => Term -> m Term
-caseOfCon (Case cse_t alts)
+caseOfCon term@(Case cse_t alts)
   | Con con : args <- flattenApp cse_t
   , Alt _ bs alt_t <- alts !! get Type.constructorIndex con = id
+    . History.check Name.CaseOfCon term
     . Transform.continue
     -- We fold substitute over the arguments to the constructor
     -- starting with the return value of the pattern match (alt_t).
@@ -173,7 +165,7 @@ caseOfCon _ = Fail.here
 
 traverseMatch :: Step m => Term -> m Term
 traverseMatch term@(Case cse_t alts) =
-  History.check "tm" cse_t $ do
+  History.check Name.TraverseMatch cse_t $ do
     cse_t' <- Transform.continue cse_t
     Fail.when (cse_t == cse_t')
     Transform.continue (Case cse_t' alts)
@@ -183,25 +175,25 @@ traverseMatch _ = Fail.here
 traverseBranches :: Step m => Term -> m Term
 
 traverseBranches term@(Case (Var x) alts) =
-  History.check "tv" term $ do
+  History.check Name.TraverseVarBranch term $ do
     alts' <- mapM traverseAlt alts
     Fail.when (alts' == alts)
     Transform.continue (Case (Var x) alts')
+  where
+  traverseAlt (Alt con bs t) = do
+    t' <- id
+      . Env.bindMany bs
+      . Transform.continue 
+      -- Substitute the variable we have just bound for the 
+      -- pattern it has been bound to
+      $ Indices.replaceAt x_here pat_t t
+    return (Alt con bs t')
     where
-    traverseAlt (Alt con bs t) = do
-      t' <- id
-        . Env.bindMany bs
-        . Transform.continue 
-        -- Substitute the variable we have just bound for the 
-        -- pattern it has been bound to
-        $ Indices.replaceAt x_here pat_t t
-      return (Alt con bs t')
-      where
-      x_here = Indices.liftMany (length bs) x
-      pat_t = altPattern con
+    x_here = Indices.liftMany (length bs) x
+    pat_t = altPattern con
     
 traverseBranches term@(Case cse_t alts) = 
-  History.check "tt" term $ do
+  History.check Name.TraverseBranch term $ do
     alts' <- mapM traverseAlt alts
     Fail.when (alts' == alts)
     Transform.continue (Case cse_t alts')
@@ -229,7 +221,7 @@ traverseFun _ = Fail.here
 
 traverseApp :: Step m => Term -> m Term
 traverseApp term@(App f xs) = 
-  History.check "ta" term $ do
+  History.check Name.TraverseApp term $ do
     xs' <- mapM Transform.continue xs
     f' <- Transform.continue f
     let term' = App f' xs'
@@ -243,7 +235,6 @@ traverseFix :: Step m => Term -> m Term
 traverseFix (Fix inf b t) = do
   t' <- id
     . Env.bind b
-    . History.check "tf" t
     $ Transform.continue t
   Fail.when (t' == t)
   return (Fix inf b t')

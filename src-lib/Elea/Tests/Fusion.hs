@@ -19,7 +19,6 @@ checkEquation :: Equation -> Test.M Test.Test
 checkEquation (Equals name bs t) = id
   . liftM (Test.label name)
   . Env.bindMany bs $ do
-    Err.noneM (Type.check t)
     t' <- Fusion.run t
     return (Test.assertTrue t')
     

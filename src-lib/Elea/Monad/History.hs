@@ -16,17 +16,17 @@ where
 
 import Elea.Prelude hiding ( ask, local )
 import Elea.Embed ( Code, Encodable )
+import Elea.Transform.Names ( Name )
 import qualified Elea.Embed as Embed
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Control.Monad.Reader.Class as Reader
 import qualified Control.Monad.Trans.Class as Trans 
 import qualified Data.Poset as Partial
-import qualified Data.Map as Map
+import qualified Data.IntMap as Map
 
-type Name = String
 data Repr 
   = Repr  { _reprSize :: !Nat
-          , _reprMap :: !(Map Name [Code]) }
+          , _reprMap :: !(IntMap [Code]) }
           
 instance Show Repr where
   show = show . _reprMap
@@ -34,13 +34,13 @@ instance Show Repr where
 mkLabels [ ''Repr ]
 
 embeds :: Name -> Code -> Repr -> Bool
-embeds name code repr = 
+embeds (fromEnum -> name) code repr = 
   case Map.lookup name (get reprMap repr) of
     Nothing -> False
     Just codes -> any (Partial.<= code) codes
     
 insert :: Name -> Code -> Repr -> Repr
-insert name code = id
+insert (fromEnum -> name) code = id
   . modify reprSize (+ 1)
   . modify reprMap (Map.alter add name)
   where
@@ -75,7 +75,7 @@ class Monad m => Env m where
   
 check :: (Fail.Can m, Env m, Encodable a) => Name -> a -> m b -> m b
 check name x continue = do
-  fail <- seenCode name (Embed.encode x)
+  fail <- seen name x
   Fail.when fail
   see name x continue
    

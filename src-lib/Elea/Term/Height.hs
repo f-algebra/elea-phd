@@ -30,7 +30,7 @@ get (Eql x y) = 1 + get x + get y
 get (Bot _) = 1
 get (Con _) = 1
 get (Lam _ t) = 1 + get t
-get (Fix inf b _) = 1
+get (Fix inf b t) = 1 + get t
 
 get (Case t alts) = 
   1 + getCase t + maximum (map (getAlt . Pre.get altInner) alts)
@@ -43,7 +43,7 @@ get (Case t alts) =
   getAlt :: Term -> Nat
   getAlt (Lam _ t) = 2 + getAlt t
   getAlt t = get t
-    
+    {-
 get (App f@(Fix _ _ f_t) xs) = 1     
   + length (screen isRep xs)
   + length (filter (not . isVar) xs)
@@ -56,7 +56,7 @@ get (App f@(Fix _ _ f_t) xs) = 1
     free_elsewhere = 
       Indices.free f ++ Indices.free left_xs ++ Indices.free right_xs
   isRep _ _ _  = False
-  
+  -}
   
 get (App f xs) = 
   getFun f 

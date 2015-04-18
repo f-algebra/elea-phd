@@ -11,7 +11,7 @@ module Elea.Type
   constructorOf, constructorIndex,
   empty, unit, tuple, bool, emptyTy,
   equation, isEquation, true, false,
-  returnType, argumentTypes, dropArgs,
+  returnType, argumentTypes, dropArgs, split,
   isInd, isFun, fromBase,
   unflatten, flatten, unfold, argumentCount,
   recursiveArgs, nonRecursiveArgs, recursiveArgIndices,
@@ -28,7 +28,7 @@ where
 import Elea.Prelude hiding ( get )
 import Elea.Term.Index
 import qualified Elea.Foldable as Fold
-import qualified Elea.Monad.Failure.Class as Fails
+import qualified Elea.Monad.Failure.Class as Fail
 
 -- | An argument to a constructor.
 data ConArg 
@@ -162,19 +162,34 @@ instance ContainsTypes Constructor where
 -- | Things that have a closed, always correct type. 
 -- This is not terms, they could be badly typed, or require a type environment
 -- to be typeable. This is for things like constructors, or names.
-class HasType a where
+class Show a => HasType a where
+  assign :: Fail.Can m => a -> m (Maybe Type) 
+
   get :: a -> Type
+  get (assign -> Just (Just ty)) = ty
+  get x = 
+    error ("[Type.get failed] " ++ show x) 
+  
   has :: a -> Bool
+  has x = 
+    case assign x of
+      Just (Just _) -> True
+      Just Nothing -> False
+      Nothing ->
+        error ("[Type.has failed] " ++ show x)
+  
+  valid :: a -> Bool
+  valid (assign -> Just _) = True
+  valid _ = False
+  
   
 instance HasType Constructor where
-  has = const True
-  get = get . constructorBind
+  assign = assign . constructorBind
   
 instance HasType Bind where
-  get = _bindType
-  has = const True
+  assign = return . Just . _bindType
   
-
+  
 -- | The 'empty' type, viz. the constructorless inductive type.
 empty :: Ind
 empty = Ind "empty" []
@@ -238,10 +253,15 @@ unflatten :: [Type] -> Type
 unflatten = foldr1 Fun
 
 returnType :: Type -> Type
-returnType = last . flatten
+returnType = snd . split
+
+split :: Type -> ([Type], Type)
+split (Fun x y) = 
+  first (x:) (split y)
+split ind = ([], ind)
 
 argumentTypes :: Type -> [Type]
-argumentTypes = init . flatten
+argumentTypes = fst . split
 
 argumentCount :: Type -> Int
 argumentCount = pred . length . flatten

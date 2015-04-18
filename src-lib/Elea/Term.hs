@@ -34,6 +34,7 @@ module Elea.Term
   stripTags,
   beingFused,
   recursiveId,
+  isFixPromoted,
 )
 where
 
@@ -526,6 +527,18 @@ stripTags = Fold.transform strip
   strip (Fix inf b t) = 
     Fix (set fixTag Tag.omega inf) b t
   strip other = other
+  
+
+isFixPromoted :: Indexed Term => Term -> Bool
+isFixPromoted (App fix@(Fix {}) xs) =
+  all isVar xs 
+  && length x_vars == Set.size x_vars_set
+  && Set.null overlap
+  where
+  x_vars = map fromVar xs
+  x_vars_set = Set.fromList x_vars
+  overlap = Set.intersection (Indices.free fix) x_vars_set
+isFixPromoted _ = False
   
     
 -- Some useful functions for encoding terms    

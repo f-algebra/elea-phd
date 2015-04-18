@@ -7,7 +7,7 @@
 -- > end
 -- The above is the term @x + y@, with the value of @x@ constrained to be
 -- less-than-or-equal-to the value of @y@.
-module Elea.Constraint
+module Elea.Term.Constraint
 (
   make,
   strip,
@@ -18,11 +18,12 @@ module Elea.Constraint
   removeAll,
   removeWhen,
   apply,
+  {-
   toContext,
   matchContext,
   makeContext,
   manyToContext,
-
+  -}
  -- unfold,
  -- unfoldAll,
 )
@@ -30,7 +31,6 @@ where
 
 import Elea.Prelude hiding ( replace, removeAll )
 import Elea.Term
-import Elea.Context ( Context )
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Term.Index as Indices
@@ -145,16 +145,16 @@ apply (Constraint con match_t) (on_t, on_ty) =
     alt_t | enum alt_n /= con_n = Bot on_ty
           | otherwise = on_t
 
-          
+          {-
 -- | Create a context from a constraint. Requires the return type of the gap.
-toContext :: Type -> Constraint -> Context
+toContext :: Type -> Constraint -> Term
 toContext result_ty constr =
   Context.make (\gap_t -> apply constr (gap_t, result_ty))
   
-manyToContext :: Type -> Set Constraint -> Context
+manyToContext :: Type -> Set Constraint -> Term
 manyToContext ty = 
   concatMap (toContext ty) . Set.toAscList
-
+-}
   {-
 -- | Unfolds all the fixpoints in all the constraints provided.
 -- Returns 'Nothing' if any of the constraints are unsatisfiable,
