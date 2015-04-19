@@ -6,6 +6,7 @@ where
 
 import Elea.Prelude hiding ( assert )
 import Test.HUnit ( Test (..), assert )
+import qualified Data.Set as Set
 
 tests = TestLabel "Prelude"
   $ TestList 
@@ -34,6 +35,6 @@ test_nubOrd = testList $
   , nubOrd [4, 7, 2, 4, 5, 7, 1] == [4, 7, 2, 5, 1] ]
   
 test_removeAll = testList $
-  [ removeAll [1, 3] [0..5] == [0, 2, 4, 5]
-  , removeAll [0..9] [1..10] == [] ]
+  [ removeAll (Set.fromList [1, 3]) [0..5] == [0, 2, 4, 5]
+  , removeAll (Set.fromList [0..9]) [1..10] == [] ]
 

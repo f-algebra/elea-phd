@@ -68,6 +68,7 @@ steps =
   , constantFix
   , identityFix
   , unfold
+  , floatVarMatch
   {-
   , uselessFix
   , propagateMatch
@@ -129,7 +130,7 @@ constArg (App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
     -- get a new fixed-point
     let fix' = id
         --  . trace ("\n\n[const-arg] trying position " ++ show pos) 
-          $ removeConstArg pos
+          $ removeConstArg (enum pos)
     
     -- Might as well simplify the constant argument before pushing it inside
     -- and possible duplicating it
@@ -176,7 +177,7 @@ constArg (App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
      
       
   -- Remove an argument to the function at the given position.
-  removeConstArg :: Int -> Term
+  removeConstArg :: Nat -> Term
   removeConstArg arg_i = id
     -- Add new outer lambdas to keep the type of the term the same
     . unflattenLam (left_bs ++ [dropped_b])
@@ -200,7 +201,7 @@ constArg (App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
     $ fix_body
     where
     -- Lambdas to the left and right of the removed lambda
-    (left_bs, dropped_b:right_bs) = splitAt arg_i arg_bs
+    (left_bs, dropped_b:right_bs) = splitAt (enum arg_i) arg_bs
     
     -- The arguments that will be applied outside the fix
     outer_args = id
@@ -467,29 +468,6 @@ caseCase outer_cse@(Case inner_cse@(Case inner_t inner_alts) outer_alts) =
     alts_here = map (Indices.liftMany (length bs)) outer_alts
 caseCase _ = Fail.here
 
-{-
--- | Need to unroll fixpoints where a recursive argument is a uninterpreted
--- function call. Useful sometimes for fixfix fusion, but can cause loops
--- if you give it weird functions.
-unsafeUnfoldFixInj :: Fail.Can m => Term -> m Term
-unsafeUnfoldFixInj (App fix@(Fix {}) args)
-  | any unfoldable args = id
-    . return
-    $ app (Term.unfoldFix fix) args
-  where 
-  rec_args = map (args !!) (Term.decreasingArgs fix)
-  
-  unfoldable (App (Con _) args) = 
-    any (Fold.any functionVar) args
-    where 
-    functionVar (App (Var _) (_:_)) = True
-    functionVar _ = False
-  unfoldable _ = False
-  
-unsafeUnfoldFixInj _ =
-  Fail.here
--}
-
 
 unfold :: Step m => Term -> m Term
 unfold term@(App fix@(Fix {}) args) 
@@ -502,8 +480,45 @@ unfold term@(App fix@(Fix {}) args)
         $ term'
   where
   dec_args = map (args !!) (Term.decreasingArgs fix)
-  
+  {-
+unfold term@(Case cse_t@(App fix@(Fix {}) xs) alts) =
+  History.check Name.UnfoldCase cse_t $ do
+    term' <- id
+      . Transform.continue 
+      $ Case (app (Term.unfoldFix fix) xs) alts
+    Fail.when (term Embed.<= term')
+    return term'
+  -}
 unfold _ = Fail.here
 
 
-
+floatVarMatch :: Step m => Term -> m Term
+floatVarMatch term@(Case (App fix@(Fix {}) xs) _)
+  | (not . any (isCon . leftmost)) dec_xs
+  , (not . Set.null) useful_ms =
+    History.check Name.FloatVarMatch term $ do
+      let term' = Case new_cse_t (map applyAlt new_alts)
+      Type.assertEqM "float var match invalidated type" term term'
+      Transform.continue term'
+  where
+  dec_xs = map (xs !!) (Term.decreasingArgs fix) 
+  dec_ixs = (map fromVar . filter isVar) dec_xs
+  
+  useful_ms = id
+    . Env.trackIndices dec_ixs
+    $ Term.collectM usefulVarMatch term
+    
+  Case new_cse_t new_alts = head (Set.toList useful_ms)
+    
+  applyAlt :: Alt -> Alt
+  applyAlt (Alt con bs _) = 
+    Alt con bs (Indices.liftMany (length bs) term)
+  
+  usefulVarMatch :: Term -> Env.TrackIndices [Index] Bool
+  usefulVarMatch (Case (Var x) _) = do
+    useful <- Env.tracked
+    return (x `elem` useful)
+  usefulVarMatch _ = 
+    return False
+    
+floatVarMatch _ = Fail.here

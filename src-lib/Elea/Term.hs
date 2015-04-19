@@ -53,6 +53,8 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Algebra.Lattice as Algebra
 
+-- TODO fixName is never used, remove or make useful
+
 
 data Term
   = Eql     { eqLeft :: !Term
@@ -539,8 +541,10 @@ isFixPromoted (App fix@(Fix {}) xs) =
   x_vars_set = Set.fromList x_vars
   overlap = Set.intersection (Indices.free fix) x_vars_set
 isFixPromoted _ = False
+
+
   
-    
+  
 -- Some useful functions for encoding terms    
 cantor :: Int -> Int -> Int
 cantor m n =

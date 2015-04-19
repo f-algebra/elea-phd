@@ -77,6 +77,22 @@ prop "count snoc": forall (n: nat) (xs: list<nat>) ->
 prop "count reverse": forall (n: nat) (xs: list<nat>) ->
   count_nat n xs = count_nat n (reverse<nat> xs)
   
+
+prop "eq_nat symmetric": forall (n m: nat) ->
+  implies (eq_nat n m) (eq_nat m n)
+  
+prop "eq_nat transitive": forall (i j k: nat) ->
+  implies (and (eq_nat i j) (eq_nat j k)) (eq_nat i k)
+  
+prop "leq_nat transitive": forall (i j k: nat) ->
+  implies (and (leq_nat i j) (leq_nat j k)) (leq_nat i k)
+  
+prop "leq_nat total": forall (n m: nat) ->
+  implies (not (leq_nat n m)) (leq_nat m n)
+  
+prop "leq_nat total 2": forall (f: nat -> nat) (n m: nat) ->
+  implies (not (leq_nat (f n) m)) (leq_nat m (f n))
+  
   /*
   
 
@@ -93,20 +109,6 @@ prop "id list"<A>:
       end
     end)
 
-prop "eq_nat symmetric": forall (n m: nat) ->
-  implies (eq_nat n m) (eq_nat m n)
-  
-prop "eq_nat transitive": forall (i j k: nat) ->
-  implies (and (eq_nat i j) (eq_nat j k)) (eq_nat i k)
-  
-prop "leq_nat transitive": forall (i j k: nat) ->
-  implies (and (leq_nat i j) (leq_nat j k)) (leq_nat i k)
-  
-prop "leq_nat total": forall (n m: nat) ->
-  implies (not (leq_nat n m)) (leq_nat m n)
-  
-prop "leq_nat total 2": forall (f: nat -> nat) (n m: nat) ->
-  implies (not (leq_nat (f n) m)) (leq_nat m (f n))
   
   
   

@@ -329,13 +329,13 @@ insertAt n x (y:ys) = y:(insertAt (n-1) x ys)
 insertAt _ _ [] = 
   error "Can't insert past the end of a list"
   
-removeAt :: Int -> [a] -> [a]
+removeAt :: Nat -> [a] -> [a]
 removeAt _ [] = error "Can't remove past the end of a list"
 removeAt 0 (x:xs) = xs
 removeAt n (x:xs) = x:(removeAt (n-1) xs)
 
-removeAll :: [Int] -> [a] -> [a]
-removeAll is x = 
+removeAll :: Set Nat -> [a] -> [a]
+removeAll (Set.toAscList -> is) x = 
   foldr removeAt x is
 
 replaceAt :: Int -> a -> [a] -> [a]

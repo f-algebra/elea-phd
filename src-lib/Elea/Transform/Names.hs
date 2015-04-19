@@ -17,10 +17,12 @@ data Name
   | EqMatchCon
   | EqInduction
   | Unfold
+  | FloatVarMatch
   | ExpressCon
   | ExpressMatch
   | FixFixFusion
   | RepArgFusion
   | FreeArgFusion
+  | MatchFixFusion
   deriving Enum
 

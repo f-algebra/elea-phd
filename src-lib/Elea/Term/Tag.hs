@@ -103,7 +103,7 @@ runGenT :: Monad m => GenT m a -> m a
 runGenT = flip evalStateT 1 . genT
 
 omega :: Tag
-omega = Tag 0 Set.empty
+omega = Tag (-1) Set.empty
 
   
 instance Monad m => Gen (GenT m) where

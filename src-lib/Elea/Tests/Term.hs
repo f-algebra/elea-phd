@@ -87,6 +87,21 @@ tests = Test.label "Terms"
   let id_nat = Eval.run (recursiveId nat)
   id_nat' <- Test.term def_nat_id
   let id1 = Test.assertTermEq id_nat' id_nat
+  
+  eqArgs <- Test.localVars "(f: nat -> nat -> nat -> nat -> nat)" $ do
+    t1 <- Test.term "fun (a b c d: nat) -> f a b c d"
+    t2 <- Test.term "fun (a b d: nat) -> f a b a d"
+    let t2' = equateArgs 0 2 t1
+        eq1 = Test.assertEq t2 t2' 
+    
+    t3 <- Test.term "fun (a b: nat) -> f a b a b"
+    let t3' = equateArgs 1 2 t2
+        eq2 = Test.assertEq t3 t3'
+        
+    let t3'' = equateArgsMany [(0, 2), (1, 3)] t1
+        eq3 = Test.assertEq t3 t3''
+        
+    return (Test.list [eq1, eq2, eq3])
     
     {-
   -- Testing out some restricted transformation term isomorphisms
@@ -115,6 +130,7 @@ tests = Test.label "Terms"
     , abstract1
     , findArgs1
     , id1
+    , eqArgs
   --  , iso1
   --  , strict1
     ]

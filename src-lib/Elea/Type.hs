@@ -353,14 +353,14 @@ isRecursive = not . all isBaseCase . constructors
   
 -- | Given a specific constructor index of an inductive type, return 
 -- appropriate bindings for a pattern match on that constructor.
--- > makeAltBindings nlist 1 = [Bind "B0" nat, Bind "B1" nlist]
+-- > makeAltBindings nlist 1 = [Bind "b0" nat, Bind "b1" nlist]
 makeAltBindings :: Constructor -> [Bind]
 makeAltBindings (Constructor ind con_n) =
   zipWith Bind arg_names arg_tys
   where
   Bind _ con_ty = unfold ind `nth` enum con_n
   arg_tys = init (flatten con_ty)
-  arg_names = map (\n -> "B" ++ show n) [0..]
+  arg_names = map (\n -> "b" ++ show n) [0..]
   
   
 -- | Things parameterised by types. 

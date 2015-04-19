@@ -42,7 +42,7 @@ steps :: Step m => [Term -> m Term]
 steps =
   [ const Fail.here
   , rewritePattern
-  , rewriteFunction
+  , rewrite
   , expressConstructor
   , expressMatch
   ] 
@@ -53,19 +53,20 @@ rewritePattern :: Step m => Term -> m Term
 rewritePattern = Env.findMatch
 
 
-rewriteFunction :: forall m . Step m => Term -> m Term
-rewriteFunction term@(App {}) = do
-  rs <- Rewrite.findTags (Tag.tags term)
+rewrite :: forall m . Step m => Term -> m Term
+rewrite term@(App {}) = do
+  rs <- Rewrite.findTags (Set.delete Tag.omega (Tag.tags term))
   Fail.choose (map apply rs)
   where
-  apply :: Fail.Can m => (Term, Index) -> m Term
+  apply :: (Env.MatchRead m, Fail.Can m) => (Term, Index) -> m Term
   apply (from_t, h) = do
     args <- id
-      -- . trace ("\n\n[unifying]" ++ show term ++ "\n\n[with]" ++ show from_t)
-      $ Term.findArguments from_t term
+    --  . trace ("\n\n[unifying]" ++ show term ++ "\n\n[with]" ++ show from_t)
+      $ Term.findConstrainedArgs from_t term
     return (app (Var h) args)
   
-rewriteFunction _ = Fail.here
+rewrite _ = Fail.here
+
 
 
 expressConstructor :: forall m . Step m => Term -> m Term

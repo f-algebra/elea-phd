@@ -33,9 +33,12 @@ module Elea.Term.Ext
   floatRecCallInwards,
   isLambdaFloated,
   findArguments,
+  findConstrainedArgs,
   abstractVar,
   abstractVars,
   mapFixInfo,
+  equateArgs,
+  equateArgsMany,
 )
 where
 
@@ -43,6 +46,7 @@ import Elea.Prelude hiding ( replace )
 import Elea.Term
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Term.Index as Indices
+import qualified Elea.Term.Constraint as Constraint
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Unification as Unifier
 import qualified Elea.Foldable as Fold
@@ -626,6 +630,29 @@ findArguments ctx term = do
   
   arg_idxs :: Set Index
   arg_idxs = (Set.fromList . map enum) [0..nlength arg_bs - 1]
+  
+  
+findConstrainedArgs :: forall m . (Env.MatchRead m, Fail.Can m) 
+  => Term -> Term -> m [Term]
+findConstrainedArgs ctx term
+  | not (Constraint.has ctx) = findArguments ctx term
+  -- ^ If this holds the term context is not actually constrained
+  -- and so we can use regular argument finding
+  
+  | otherwise = do
+    ms <- Env.findMatches usefulMatch
+    Fail.choose (map tryMatch ms)
+    
+  where
+  usefulMatch :: (Term, Term) -> Bool
+  usefulMatch (_, p) = 
+    Constraint.to ctx == constructor (leftmost p)
+    
+  tryMatch :: Fail.Can m => (Term, Term) -> m [Term]
+  tryMatch match = id
+    . findArguments ctx 
+   -- . traceMe "trying"
+    $ Constraint.fromMatch (Type.get term) match term
 
   
 -- | Beta-abstracts the given index
@@ -645,4 +672,24 @@ mapFixInfo f = Fold.transform mp
   where
   mp (Fix i b t) = Fix (f i) b t
   mp t = t
+  
+
+-- > equateArgs 0 2 (\a b c d -> C[a][b][c][d]) = (\a b d -> C[a][b][a][d])
+equateArgs :: Nat -> Nat -> Term -> Term 
+equateArgs i j orig_t
+  | assert (i < j) True
+  , assert (j < length bs) True =
+    unflattenLam new_bs new_body
+  where
+  (bs, body_t) = flattenLam orig_t
+  new_bs = removeAt j bs
+  new_body = Indices.substAt (toIdx j) (Var (pred (toIdx i))) body_t
+  
+  toIdx :: Nat -> Index
+  toIdx x = enum ((length bs - x) - 1)
+  
+  
+equateArgsMany :: [(Nat, Nat)] -> Term -> Term
+equateArgsMany ijs t =
+  foldr (uncurry equateArgs) t (sortBy (compare `on` snd) ijs)
   

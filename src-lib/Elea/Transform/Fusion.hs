@@ -11,14 +11,15 @@ import Elea.Show ( showM )
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Monad.Transform as Transform
 import qualified Elea.Term.Ext as Term
+import qualified Elea.Term.Constraint as Constraint
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Unification as Unifier
+import qualified Elea.Embed as Embed
 import qualified Elea.Transform.Names as Name
 import qualified Elea.Transform.Evaluate as Eval
 import qualified Elea.Transform.Simplify as Simp
 import qualified Elea.Transform.Rewrite as Rewrite
 import qualified Elea.Transform.Equality as Equality
-import qualified Elea.Term.Constraint as Constraint
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Term.Height as Height
@@ -68,6 +69,7 @@ steps =
   , fixfix
   , decreasingFreeVar
   , repeatedArg
+  , matchFix
   ]
 
 
@@ -92,7 +94,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = do
   Type.assertEqM "[fixfix]" (Indices.lower rewrite_from) orig_t
          
   t_s' <- Env.bind new_fix_b $ showM rewrite_from
-  t_s'' <- showM (Eval.run (app ctx_t [Term.unfoldFix temp_fix]))
+  t_s'' <- showM (Simp.run (app ctx_t [Term.unfoldFix temp_fix]))
   
   new_fix_t <- id  
     . Env.bind new_fix_b
@@ -100,7 +102,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = do
     . Transform.continue
     . trace ("\n\n[fusing <" ++ show temp_tag ++ ">] " ++ t_s)
    -- . trace ("\n\n[replacing] " ++ t_s')
-  --  . trace ("\n\n[transforming] " ++ show temp_tag ++ t_s'')
+   -- . trace ("\n\n[transforming] " ++ show temp_tag ++ t_s'')
     -- Make room for our new variables we are rewriting to
     . Indices.lift
     $ app ctx_t [Term.unfoldFix temp_fix]
@@ -153,7 +155,7 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
       Transform.continue new_term
     where
     i_term@(App i_fix@(Fix _ i_fix_b i_fix_t) i_args) = o_args !! arg_i
-    o_args' = removeAt arg_i o_args
+    o_args' = removeAt (enum arg_i) o_args
     
     gen_t = Eval.run (app ctx_t [i_fix])
     full_t = app ctx_t (i_fix:(o_args' ++ i_args))
@@ -175,7 +177,7 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
       i_args' = reverse (map (Var . enum) [0..i_arg_c - 1])
       i_fix' = Indices.liftMany (enum arg_c) (Var 0)
              
-      o_fix_bs = removeAt arg_i (fst (flattenLam o_fix_t))
+      o_fix_bs = removeAt (enum arg_i) (fst (flattenLam o_fix_t))
       i_fix_bs = fst (flattenLam i_fix_t)
         
       o_arg_c :: Int = length o_fix_bs
@@ -276,18 +278,21 @@ repeatedArg term@(App fix@(Fix _ fix_b fix_t) args) = do
       
     Transform.continue (app new_fix args')
     where
+    arg_set :: Set Nat
+    arg_set = Set.fromList (map enum arg_is)
+    
     full_t = Eval.reduce ctx_t [fix]
-    args' = (args !! head arg_is) : removeAll arg_is args
+    args' = (args !! head arg_is) : removeAll arg_set args
     
     ctx_t = id
       . unflattenLam (fix_b:ctx_bs)
       . app (Var (length ctx_bs))
       $ reverse ctx_args
       where
-      non_arg_is = removeAll arg_is [0..length args - 1]
+      non_arg_is = removeAll arg_set [0..length args - 1]
       
       arg_b = fix_bs !! ((length args - head arg_is) - 1)
-      ctx_bs = arg_b : removeAll arg_is fix_bs
+      ctx_bs = arg_b : removeAll arg_set fix_bs
       ctx_args = map getArg [0..length args - 1]
         where
         getArg i 
@@ -301,22 +306,96 @@ repeatedArg term@(App fix@(Fix _ fix_b fix_t) args) = do
 repeatedArg _ = Fail.here
 
 
-matchFix :: Step m => Term -> m Term
+matchFix :: forall m . Step m => Term -> m Term
 matchFix term@(App (Fix {}) xs)
-  | not (any (isFix . leftmost) xs) = do
-    ms <- Env.findMatches usefulMatch
-    foldrM fuseMatch ms term
+  | not (any (isFix . leftmost) xs) = 
+    History.check Name.MatchFixFusion term $ do
+      ms <- Env.findMatches usefulMatch
+      term' <- fuseMatches ms term
+      term'' <- Transform.continue term'
+      Fail.when (term Embed.<= term'')
+      -- ^ Make sure we progressed 
+      return term''
   where
   usefulMatch :: (Term, Term) -> Bool
   usefulMatch (App (Fix {}) ys, _) 
     | not (any (isFix . leftmost) ys) =
-      not (Set.null (Set.intersection xs ys))
+      not (Set.null (Set.intersection (Set.fromList xs) (Set.fromList ys)))
   usefulMatch _ = False
   
+  
+  fuseMatches :: [(Term, Term)] -> Term -> m Term
+  fuseMatches [] _ = Fail.here
+  fuseMatches _ t 
+    | (not . isFix . leftmost) t = Fail.here
+  fuseMatches (m:ms) t = do
+    mby_t' <- Fail.catch (fuseMatches ms t)
+    case mby_t' of
+      Nothing -> fuseMatch m t
+      Just t' -> fuseMatch m t'
+  
+  
   fuseMatch :: (Term, Term) -> Term -> m Term
-  fuseMatch (match_t, match_p) term = do
-    
+  fuseMatch (match_t, pat_t) oterm = do
+    Fail.assert "fix-match pattern fix not lambda floated"
+      $ Term.isLambdaFloated mfix
       
+    Fail.assert "fix-match somehow generated a null set of matching variables" 
+      $ length matched_is > 0
+      
+    m_s <- showM match_t
+    ctx_s <- showM (Eval.reduce ctx_t (ofix:new_args))
+    o_s <- showM oterm
+    
+    Type.assertEqM "match-fix created an incorrectly typed context"
+      (app ctx_t (ofix:new_args)) oterm
+    {-
+    trace ("\n\n[match-fix original] " ++ o_s 
+      ++ "\n\n[match] " ++ m_s 
+      ++ "\n\n[context] " ++ ctx_s)
+      (return ())
+      -}
+    fused_t <- fusion ctx_t ofix
+    return (app fused_t new_args)
+    where
+    App mfix@(Fix _ _ mfix_t) margs = match_t
+    Con con : pargs = flattenApp pat_t
+    App ofix@(Fix _ ofix_b ofix_t) oargs = oterm
+    
+    all_args = margs ++ oargs
+    (m_bs, _) = flattenLam mfix_t
+    (o_bs, _) = flattenLam ofix_t
+    
+    new_args = 
+      removeAll (Set.fromList (map (enum . snd) matched_is)) all_args
+      -- ^ Remove matching arguments
+    
+    -- The binding indices which match within the pattern 
+    matched_is :: [(Nat, Nat)]
+    matched_is = id
+      . concatMap (\(i:is) -> map (\j -> (i, j)) is)
+      . filter ((> 1) . length)
+      . groupBy ((==) `on` (all_args !!))
+      . sortBy (compare `on` (all_args !!))
+      $ [0..length all_args - 1]
+      
+    ctx_t = id
+      . unflattenLam [ofix_b]
+      . Term.equateArgsMany matched_is
+      . unflattenLam (m_bs ++ o_bs)
+      $ Constraint.fromMatch 
+          (Type.get term) 
+          (app mfix ctx_margs, pat_t) 
+          (app fix_var ctx_oargs)
+      where
+      toIdx :: Int -> Term
+      toIdx i = Var (enum ((length all_args - i) - 1)) 
+      
+      fix_var = Var (length all_args)
+      ctx_margs = map toIdx [0..length oargs-1]
+      ctx_oargs =
+        map toIdx [length oargs..length all_args - 1]
+        
     
 matchFix _ = Fail.here
     

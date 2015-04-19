@@ -44,7 +44,7 @@ fromEither (Right x) = return x
 {-# INLINE assert #-}
 assert :: Can m => String -> Bool -> m ()
 assert msg p
-  | not p = fail msg
+  | not p = error msg
   | otherwise = return ()
 
 has :: Maybe a -> Bool
