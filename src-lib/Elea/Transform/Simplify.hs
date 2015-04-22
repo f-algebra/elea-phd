@@ -37,6 +37,10 @@ import qualified Data.Map as Map
 import qualified Data.Poset as Partial
 import qualified Control.Monad.Trans as Trans
 
+-- TODO strip out Transform.continue where possible!
+-- TODO properly tweak step order
+-- TODO remove inverse embedding checks
+
 type Step m =
   ( Eval.Step m
   , Env.All m
@@ -47,10 +51,11 @@ run = id
   . Fedd.eval
   . Transform.fix (Transform.compose all_steps)
   where
-  all_steps = Eval.transformSteps 
-    ++ steps 
-    ++ Eval.traverseSteps
-    ++ Equality.steps                                    
+  all_steps = []
+    ++ Eval.transformSteps 
+    ++ Eval.traverseSteps   
+    ++ Equality.steps          
+    ++ steps                        
 
 quick :: Term -> Term
 quick = run
@@ -58,9 +63,6 @@ quick = run
 steps :: Step m => [Term -> m Term]
 steps =
   [ const Fail.here
-  , caseApp
-  , appCase
-  , caseCase
   , caseFun
   , constArg
   , identityCase
@@ -68,7 +70,7 @@ steps =
   , constantFix
   , identityFix
   , unfold
-  , floatVarMatch
+ -- , floatVarMatch
   {-
   , uselessFix
   , propagateMatch
@@ -86,13 +88,11 @@ steps =
 -- so we add a new lambda above one if this is the case.
 caseFun :: Step m => Term -> m Term
 caseFun cse@(Case t alts) 
-  | Just new_b <- potentialBinds alts = do
-    alts' <- id
-      . Env.bind new_b 
-      $ mapM (appAlt . Indices.lift) alts
-    Transform.continue
-      . Lam new_b
-      $ Case (Indices.lift t) alts'
+  | Just new_b <- potentialBinds alts = id
+    . Transform.continue
+    . Lam new_b
+    . Case (Indices.lift t) 
+    $ map appAlt alts
   where
   alt_ts = map (get altInner) alts
   
@@ -105,12 +105,9 @@ caseFun cse@(Case t alts)
     findLam (Alt _ _ (Case _ alts)) = potentialBinds alts
     findLam _ = Nothing
   
-  appAlt (Alt con bs alt_t) = do
-    alt_t' <- id
-      . Env.bindMany bs
-      . Transform.continue
-      $ app alt_t [arg]
-    return (Alt con bs alt_t')
+  appAlt (Alt con bs alt_t) = id
+    . Alt con bs
+    $ Term.reduce alt_t [arg]
     where
     arg = Var (length bs)
     
@@ -121,7 +118,7 @@ caseFun _ = Fail.here
 -- then we should float that lambda abstraction outside the 'Fix'.
 constArg :: Step m => Term -> m Term
 constArg (App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
-  | length arg_bs /= nlength args = Fail.here
+  | length arg_bs /= length args = Fail.here
   | otherwise = do
     -- Find if any arguments never change in any recursive calls
     pos <- Fail.fromMaybe (find isConstArg [0..length arg_bs - 1])
@@ -138,12 +135,12 @@ constArg (App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
     let args' = setAt pos arg' args
     
     -- Run evaluation to reduce all the new lambdas
-    let term' = Eval.reduce fix' args'
-    Transform.continue (Eval.reduce fix' args')
+    let term' = Term.reduce fix' args'
+    Transform.continue (Term.reduce fix' args')
   where
   -- Strip off the preceding lambdas of the function
   (arg_bs, fix_body) = flattenLam fix_t
-  arg_count = nlength (Type.flatten fix_ty) - 1
+  arg_count = length (Type.flatten fix_ty) - 1
   
   -- The index of the recursive call to the function within 'fix_body'
   fix_f = length arg_bs :: Index
@@ -320,7 +317,7 @@ identityFix _ = Fail.here
 -- inputs, just reduce it to that value.
 constantFix :: Step m => Term -> m Term
 constantFix t@(App (Fix _ fix_b fix_t) args)
-  | length args /= nlength arg_bs = Fail.here
+  | length args /= length arg_bs = Fail.here
    
   | Just [result] <- mby_results
   , correctGuess result = 
@@ -418,107 +415,66 @@ constantCase (Case _ alts) = do
 constantCase _ = Fail.here
 
 
-
--- | If we have a case statement on the left of term 'App'lication
--- then float it out.
-caseApp :: Step m => Term -> m Term
-caseApp (App (Case t alts) args) =
-  Transform.continue (Case t (map appArg alts))
-  where
-  appArg (Alt con bs alt_t) =
-    Alt con bs (app alt_t (Indices.liftMany (length bs) args))
-    
-caseApp _ = Fail.here
-
-
--- | If we have a case statement on the right of term 'App'lication
--- then float it out.
--- TODO check for strict args!!
-appCase :: Step m => Term -> m Term
-appCase term@(App f xs) = do
-  cse_i <- Fail.fromMaybe (findIndex isCase xs)
-  Transform.continue (applyCase cse_i)
-  where
-  applyCase cse_i = 
-    Case cse_t (map applyAlt alts)
-    where
-    Case cse_t alts = xs !! cse_i
-    
-    applyAlt (Alt con bs alt_t) = 
-      Alt con bs (app f' xs')
-      where
-      f' = Indices.liftMany (length bs) f
-      xs' = id 
-        . setAt cse_i alt_t
-        $ Indices.liftMany (length bs) xs
-      
-appCase _ = Fail.here
-
-
--- | If we are pattern matching on a pattern match then remove this 
--- using distributivity.
-caseCase :: Step m => Term -> m Term
-caseCase outer_cse@(Case inner_cse@(Case inner_t inner_alts) outer_alts) =
-  Transform.continue (Case inner_t (map newOuterAlt inner_alts))
-  where
-  newOuterAlt :: Alt -> Alt
-  newOuterAlt (Alt con bs t) = 
-    Alt con bs (Eval.run (Case t alts_here))
-    where
-    alts_here = map (Indices.liftMany (length bs)) outer_alts
-caseCase _ = Fail.here
-
-
 unfold :: Step m => Term -> m Term
 unfold term@(App fix@(Fix {}) args) 
   | any (isCon . leftmost) dec_args =
     History.check Name.Unfold term $ do
       term' <- Transform.continue (app (Term.unfoldFix fix) args)
-      Fail.when (term Embed.<= term')
+    --  when (term Embed.<= term') $ do
+      --  trace ("\n\n[failed unfold] " ++ show term ++ "\n\n[into] " ++ show term') 
+        --  Fail.here
       return 
-      --  . trace ("\n\n[unfold] " ++ show term ++ "\n\n[into] " ++ show term') 
+       $  trace ("\n\n[success unfold]" ++ show term   ++ "\n\n[into] " ++ show term')
         $ term'
   where
   dec_args = map (args !!) (Term.decreasingArgs fix)
-  {-
-unfold term@(Case cse_t@(App fix@(Fix {}) xs) alts) =
-  History.check Name.UnfoldCase cse_t $ do
-    term' <- id
-      . Transform.continue 
-      $ Case (app (Term.unfoldFix fix) xs) alts
-    Fail.when (term Embed.<= term')
-    return term'
-  -}
+  
+  -- matchOriginal (App fix'@(Fix {}) args') =
+    
+  
+  
+unfold term@(Case cse_t@(App fix@(Fix {}) xs) alts) 
+  | (not . Set.null) strict_overlap =
+    History.check Name.UnfoldCase cse_t $ do
+      term' <- id
+        . Transform.continue 
+        $ Case (app (Term.unfoldFix fix) xs) alts
+      Fail.when (term Embed.<= term')
+      return term'
+  where
+  strict_overlap = 
+    Set.intersection (Term.strictAcross alts) 
+                     (Term.strictWithin cse_t)
+    
 unfold _ = Fail.here
 
 
 floatVarMatch :: Step m => Term -> m Term
 floatVarMatch term@(Case (App fix@(Fix {}) xs) _)
   | (not . any (isCon . leftmost)) dec_xs
-  , (not . Set.null) useful_ms =
+  , (not . null) useful_ms =
     History.check Name.FloatVarMatch term $ do
-      let term' = Case new_cse_t (map applyAlt new_alts)
+      let term' = Term.applyCases useful_ms term
       Type.assertEqM "float var match invalidated type" term term'
       Transform.continue term'
-  where
+  where   
   dec_xs = map (xs !!) (Term.decreasingArgs fix) 
-  dec_ixs = (map fromVar . filter isVar) dec_xs
+  dec_ixs = (Set.fromList . map fromVar . filter isVar) dec_xs
   
   useful_ms = id
-    . Env.trackIndices dec_ixs
-    $ Term.collectM usefulVarMatch term
-    
-  Case new_cse_t new_alts = head (Set.toList useful_ms)
-    
-  applyAlt :: Alt -> Alt
-  applyAlt (Alt con bs _) = 
-    Alt con bs (Indices.liftMany (length bs) term)
+    . Set.toList
+    . Env.trackOffset
+    $ Fold.collectM usefulVarMatch term
   
-  usefulVarMatch :: Term -> Env.TrackIndices [Index] Bool
-  usefulVarMatch (Case (Var x) _) = do
-    useful <- Env.tracked
-    return (x `elem` useful)
+  usefulVarMatch :: Term -> MaybeT Env.TrackOffset Term
+  usefulVarMatch (Case (Var x) alts) = do
+    offset <- Env.tracked
+    x' <- Indices.tryLowerMany (enum offset) x
+    Fail.unless (x' `Set.member` dec_ixs)
+    return (Case (Var x') (map blank alts))
+    where
+    blank (Alt con bs _) = Alt con bs (Var 0)
   usefulVarMatch _ = 
-    return False
+    Fail.here
     
 floatVarMatch _ = Fail.here

@@ -21,7 +21,7 @@ tests = Test.list
   [ Prelude.tests
   , Type.tests
   , Term.tests
-  , Height.tests
+ -- , Height.tests
  -- , UMap.tests
 --  , Checker.tests 
    , Simplifier.tests

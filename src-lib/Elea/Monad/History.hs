@@ -53,6 +53,9 @@ empty = Repr 0 Map.empty
 size :: Repr -> Nat
 size = get reprSize
 
+forgetName :: Name -> Repr -> Repr
+forgetName k = modify reprMap (Map.delete (enum k))
+
 
 class Monad m => Env m where
   ask :: m Repr
@@ -72,12 +75,18 @@ class Monad m => Env m where
   see :: Encodable a => Name -> a -> m b -> m b
   see name = seeCode name . Embed.encode
   
+  forget :: Name -> m a -> m a
+  forget k = local (forgetName k)
   
-check :: (Fail.Can m, Env m, Encodable a) => Name -> a -> m b -> m b
+  
+check :: (Fail.Can m, Env m, Encodable a, Show a) => Name -> a -> m b -> m b
 check name x continue = do
   fail <- seen name x
-  Fail.when fail
-  see name x continue
+  if fail
+  then id
+   --  . trace ("\n\n[HISTORY BLOCKED <" ++ show name ++ ">] " ++ show x) 
+     $ Fail.here
+  else see name x continue
    
 
 newtype EnvT m a

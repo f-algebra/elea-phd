@@ -3,6 +3,8 @@ module Elea.Embed
 (
   Code,
   Encodable (..),
+  Atom (..),
+  cantor,
   code,
   encode,
   (<=)
@@ -26,11 +28,32 @@ instance Monoid Code where
   Code n xs `mappend` Code m ys = Code (n + m) (xs ++ ys)
   
 code :: [Int] -> Code
-code xs = Code (length xs) xs
+code xs = Code (elength xs) xs
 
 -- | Things which can be checked for embedding
 class Encodable a where
   encodeRaw :: a -> [Int]
+  
+class Atom a where
+  atom :: a -> Int
+  
+instance Atom Nat where  
+  atom = fromEnum
+
+instance Atom Char where
+  atom = ord
+  
+instance Atom Int where
+  atom = id
+  
+instance Atom a => Atom [a] where
+  atom [x] = atom x
+  atom (x:xs) = cantor (atom x, atom xs) 
+  
+cantor :: (Int, Int) -> Int
+cantor (x, y) = 
+  (x + y) * (x + y + 1) `quot` 2 + x
+
   
 encode :: Encodable a => a -> Code
 encode = code . encodeRaw

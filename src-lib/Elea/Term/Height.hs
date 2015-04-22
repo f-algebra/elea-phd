@@ -90,8 +90,7 @@ get (App f xs) =
 -- | Our partial well-order on term size (tag ordering + height ordering)
 instance Partial.Ord Term where
   compare t t' =
-    Partial.compare (Tag.tags t) (Tag.tags t')
-      ++  Partial.fromTotal (compare (get t) (get t'))
+    Partial.fromTotal (compare (get t) (get t'))
       -- ^ This monoid instance implements lexicographic ordering
     
       

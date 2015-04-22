@@ -3,7 +3,8 @@
 module Elea.Transform.Rewrite
 (
   Step,
-  steps
+  rewriteSteps,
+  expressSteps
 )
 where
 
@@ -38,19 +39,26 @@ type Step m =
   , Rewrite.Env m )
   
   
-steps :: Step m => [Term -> m Term]
-steps =
+rewriteSteps :: Step m => [Term -> m Term]
+rewriteSteps =
   [ const Fail.here
   , rewritePattern
   , rewrite
+  ] 
+
+expressSteps :: Step m => [Term -> m Term]
+expressSteps = 
+  [ const Fail.here
   , expressConstructor
   , expressMatch
   ] 
-
   
 
 rewritePattern :: Step m => Term -> m Term
-rewritePattern = Env.findMatch
+rewritePattern t = do
+  t' <- Env.findMatch
+  Transform.continue t'
+  -- ^ Might be variables in pattern which we can rewrite
 
 
 rewrite :: forall m . Step m => Term -> m Term
@@ -58,10 +66,15 @@ rewrite term@(App {}) = do
   rs <- Rewrite.findTags (Set.delete Tag.omega (Tag.tags term))
   Fail.choose (map apply rs)
   where
-  apply :: (Env.MatchRead m, Fail.Can m) => (Term, Index) -> m Term
+  apply :: (Term, Index) -> m Term
   apply (from_t, h) = do
+    ms <- Env.matches
+    term_s <- showM term
+    ms_s <- showM ms
     args <- id
-    --  . trace ("\n\n[unifying]" ++ show term ++ "\n\n[with]" ++ show from_t)
+     -- . trace ("\n\n[unifying] " ++ term_s
+      --  ++ "\n\n[with] " ++ show from_t 
+      --  ++ "\n\n[matches] " ++ ms_s) 
       $ Term.findConstrainedArgs from_t term
     return (app (Var h) args)
   
@@ -94,7 +107,7 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
     $ app fix' args
   where
   (arg_bs, _) = Term.flattenLam fix_t
-  gap_b = Bind "X" term_ty 
+  gap_b = Bind "gap" term_ty 
   term_ty = Type.get term
   sugg_ty = Type.Fun term_ty term_ty
     

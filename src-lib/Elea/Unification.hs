@@ -82,7 +82,7 @@ instance Indexed (Unifier a) where
     
 instance Unifiable t => Unifiable [t] where
   find xs ys = do
-    Fail.unless ((length xs :: Int) == length ys)
+    Fail.unless (length xs == length ys)
     unis <- zipWithM find xs ys
     unions unis
     
@@ -93,7 +93,7 @@ instance Unifiable t => Unifiable [t] where
     mconcat . zipWith gcompare xs
     
   alphaEq ts ts' = 
-    nlength ts == length ts'
+    length ts == length ts'
     && and (zipWith alphaEq ts ts')
 
     

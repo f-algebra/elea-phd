@@ -12,10 +12,10 @@ import Elea.Prelude
 import Elea.Type hiding ( get )
 import Elea.Term
 import Elea.Show ( showM )
+import qualified Elea.Term.Constraint as Constraint
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Type.Ext as Type
-import qualified Elea.Constraint as Constraint
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Foldable as Fold
 import qualified Elea.Transform.Simplify as Simp
@@ -441,8 +441,9 @@ parseRawTerm (TAssert pat ron_t rin_t) = do
   (con_n, var_bs) <- parsePattern ind pat
   in_t <- Env.bindMany var_bs (parseRawTerm rin_t)
   in_ty <- Env.bindMany var_bs (Type.getM in_t)
-  let assrt = Constraint.make (Constructor ind con_n) on_t
-  return (Constraint.apply assrt (in_t, in_ty))
+  let pat_t = Term.altPattern (Constructor ind con_n)
+      assrt = Constraint.make on_t pat_t
+  return (Constraint.apply in_ty assrt in_t)
 parseRawTerm (TCase rt ralts) = do
   t <- parseRawTerm rt
   ind_ty <- Type.getM t

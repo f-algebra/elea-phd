@@ -77,25 +77,49 @@ prop "count snoc": forall (n: nat) (xs: list<nat>) ->
 prop "count reverse": forall (n: nat) (xs: list<nat>) ->
   count_nat n xs = count_nat n (reverse<nat> xs)
   
-
 prop "eq_nat symmetric": forall (n m: nat) ->
   implies (eq_nat n m) (eq_nat m n)
   
+prop "leq_nat total": forall (n m: nat) ->
+  implies (not (leq_nat n m)) (leq_nat m n)
+ 
+
+/*
 prop "eq_nat transitive": forall (i j k: nat) ->
   implies (and (eq_nat i j) (eq_nat j k)) (eq_nat i k)
   
 prop "leq_nat transitive": forall (i j k: nat) ->
-  implies (and (leq_nat i j) (leq_nat j k)) (leq_nat i k)
+  implies (and (leq_nat i j) (leq_nat j k)) (leq_nat i k)  
   
-prop "leq_nat total": forall (n m: nat) ->
-  implies (not (leq_nat n m)) (leq_nat m n)
+
+  
   
 prop "leq_nat total 2": forall (f: nat -> nat) (n m: nat) ->
   implies (not (leq_nat (f n) m)) (leq_nat m (f n))
-  
+  */
   /*
+let half_fused_eq = 
+  fix (hfeq: nat -> nat -> nat -> bool) (x y z: nat) ->
+  match y with
+  | 0 ->
+    assert 0 <- x in
+      (match z with
+      | 0 -> True
+      | Suc z' -> False
+      end)
+  | Suc y' ->
+    assert Suc x' <- x in
+    (assert True <- eq_nat x' y' in
+      (match z with
+      | 0 -> False
+      | Suc z' -> hfeq x' y' z'
+      end))
+  end
   
-
+prop "half fused eq" : forall (i j k: nat) ->
+  implies (eq_nat k i) (half_fused_eq i j k)
+ */ 
+/*
 prop "id list"<A>:  
   (fun (n: nat) (xs: list<A>) -> xs)
   =
@@ -113,7 +137,7 @@ prop "id list"<A>:
   
   
 prop "filter reverse"<A>: forall (p: A -> bool) (xs: list<A>) ->
-  reverse<A> (filter<A> p xs) = filter<A> p (reverse<A> xs)
+  reverse<A> (filter<A> p x   s) = filter<A> p (reverse<A> xs)
 
 prop "insertsort sorted": forall (xs: list<nat>) ->
   is_sorted (insertsort xs)

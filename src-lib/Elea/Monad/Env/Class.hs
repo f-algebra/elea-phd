@@ -9,6 +9,7 @@ module Elea.Monad.Env.Class
   MatchRead (..), 
   findMatches,
   findMatch,
+  findConstraints,
   isMatched,
   
   Tracks (..), 
@@ -38,7 +39,10 @@ class Monad m => Write m where
   bindAt :: Index -> Bind -> m a -> m a
   
   -- | Declare that the first term has been pattern matched to the second
-  matched :: Term -> Term -> m a -> m a
+  matched :: Match -> m a -> m a
+  
+  forgetMatches :: (Match -> Bool) -> m a -> m a
+  
   
 bind :: Write m => Bind -> m a -> m a
 bind = bindAt 0
@@ -57,36 +61,45 @@ class Write m => Read m where
 boundAt :: Read m => Index -> m Bind
 boundAt at = do
   bs <- bindings
-  if at >= length bs
+  if at >= elength bs
   then error $ "Cannot retrieve the binding for index " ++ show at
-    ++ " in an environment with only " ++ show (length bs :: Int) 
+    ++ " in an environment with only " ++ show (length bs) 
     ++ " bindings."
   else return (nth bs (enum at))
   
 -- | Returns the number of indices that have been bound.
-bindingDepth :: Read m => m Int
+bindingDepth :: Read m => m Nat
 bindingDepth = liftM length bindings
 
 -- | Is a given index bound within this environment.
 isBound :: Read m => Index -> m Bool
 isBound at = do
   bs <- bindings
-  return (at < length bs)
+  return (at < elength bs)
 
 -- | Whether you can read locally bound pattern matches from
 -- an environment monad
 class Write m => MatchRead m where
-  matches :: m [(Term, Term)]
+  matches :: m [Match]
   
-findMatches :: MatchRead m => ((Term, Term) -> Bool) -> m [(Term, Term)]
+findMatches :: MatchRead m => (Match -> Bool) -> m [Match]
 findMatches p = liftM (filter p) matches
 
 findMatch :: (Fail.Can m, MatchRead m) => Term -> m Term
 findMatch t = do
-  ms <- findMatches ((== t) . fst) 
+  ms <- findMatches ((== t) . get matchTerm) 
   Fail.when (null ms)
-  return (snd (head ms))
+  return (matchedTo (head ms))
 
+findConstraints :: MatchRead m => (Constraint -> Bool) -> m [Constraint]
+findConstraints when = 
+  findMatches keep  
+  where
+  keep match = True
+    && (isFix . leftmost . get matchTerm) match
+    && when match
+
+  
 isMatched :: MatchRead m => Term -> m Bool
 isMatched = id
   . liftM isJust 
@@ -123,30 +136,35 @@ lowerableByOffset x = liftM (flip Indices.lowerableBy x) offset
 
 instance Write Identity where
   bindAt _ _ = id
-  matched _ _ = id
+  matched _ = id
+  forgetMatches _ = id
 
 instance Monad m => Write (IdentityT m) where
   -- The 'IdentityT' monad just ignores all the written type information
   bindAt _ _ = id
-  matched _ _ = id
+  matched _ = id
+  forgetMatches _ = id
 
 instance (Monoid w, Write m) => Write (WriterT w m) where
   bindAt at b = mapWriterT (bindAt at b)
-  matched t w = mapWriterT (matched t w)
+  matched m = mapWriterT (matched m)
+  forgetMatches w = mapWriterT (forgetMatches w)
   
 instance (Monoid w, Read m) => Read (WriterT w m) where
   bindings = Trans.lift bindings
              
 instance Monad m => Write (ReaderT [Bind] m) where
   bindAt at b = local (insertAt (enum at) b)
-  matched _ _ = id
+  matched _ = id
+  forgetMatches _ = id
   
 instance Monad m => Read (ReaderT [Bind] m) where 
   bindings = ask
   
 instance Write m => Write (MaybeT m) where
   bindAt at b = mapMaybeT (bindAt at b)
-  matched t w = mapMaybeT (matched t w)
+  matched m = mapMaybeT (matched m)
+  forgetMatches w = mapMaybeT (forgetMatches w)
   
 instance Read m => Read (MaybeT m) where
   bindings = Trans.lift bindings
@@ -156,14 +174,16 @@ instance MatchRead m => MatchRead (MaybeT m) where
   
 instance Write m => Write (EitherT e m) where
   bindAt at b = mapEitherT (bindAt at b)
-  matched t w = mapEitherT (matched t w)
+  matched m = mapEitherT (matched m)
+  forgetMatches w = mapEitherT (forgetMatches w)
   
 instance Read m => Read (EitherT e m) where
   bindings = Trans.lift bindings
 
 instance Write m => Write (StateT s m) where
   bindAt at b = mapStateT (bindAt at b)
-  matched t w = mapStateT (matched t w)
+  matched m = mapStateT (matched m)
+  forgetMatches w = mapStateT (forgetMatches w)
   
 instance Read m => Read (StateT s m) where
   bindings = Trans.lift bindings
@@ -182,7 +202,9 @@ instance Read m => Read (History.EnvT m) where
 
 instance Write m => Write (History.EnvT m) where
   bindAt at b = History.mapEnvT (bindAt at b)
-  matched t c = History.mapEnvT (matched t c)
+  matched m = History.mapEnvT (matched m)
+  forgetMatches w = History.mapEnvT (forgetMatches w)
+  
   
 instance MatchRead m => MatchRead (History.EnvT m) where
   matches = Trans.lift matches

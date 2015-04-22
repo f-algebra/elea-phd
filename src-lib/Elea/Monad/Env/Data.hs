@@ -4,7 +4,7 @@ module Elea.Monad.Env.Data
   bindAt, matched, 
   matches, bindings,
   rewrites, addRewrite,
-  history,
+  history, forgetMatches,
 )
 where
 
@@ -21,7 +21,7 @@ import qualified Elea.Type as Type
 
 data Data
   = Data  { _dbBinds :: [Bind]
-          , _dbMatches :: [(Term, Term)]
+          , _dbMatches :: [Match]
           , _dbRewrites :: [(Tag, Term, Index)] 
           , _dbHistory :: History.Repr }
           
@@ -30,7 +30,7 @@ mkLabels [ ''Data ]
 empty :: Data
 empty = Data mempty mempty mempty History.empty
 
-matches :: Data -> [(Term, Term)]
+matches :: Data -> [Match]
 matches = get dbMatches
 
 bindings :: Data -> [Bind]
@@ -39,15 +39,15 @@ bindings = get dbBinds
 bindAt :: Index -> Bind -> Data -> Data
 bindAt at b = id
   . liftRewritesAt (enum at)
-  . modify dbMatches (map (liftAt (enum at) *** liftAt (enum at)))
+  . modify dbMatches (map (liftAt (enum at)))
   . modify dbBinds (insertAt (enum at) b)
 
-matched :: Term -> Term -> Data -> Data
-matched t1 t2 = modify dbMatches ((++ [(t1, t2)]) . replace)
-  where
-  replace :: [(Term, Term)] -> [(Term, Term)]
-  replace | Var x <- t1 = map (Indices.replaceAt x t2)
-          | otherwise = id
+matched :: Match -> Data -> Data
+matched m = modify dbMatches (++ [m])
+          
+forgetMatches :: (Match -> Bool) -> Data -> Data
+forgetMatches when = 
+  modify dbMatches (filter when)
 
 rewrites :: Data -> [(Tag, Term, Index)]
 rewrites = get dbRewrites

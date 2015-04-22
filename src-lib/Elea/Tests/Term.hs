@@ -102,26 +102,23 @@ tests = Test.label "Terms"
         eq3 = Test.assertEq t3 t3''
         
     return (Test.list [eq1, eq2, eq3])
+
+  strict1 <- Test.localVars "(x y z: nat)" $ do
+    t1 <- Test.term def_strict_test
+    x <- Test.term "x"
+    y <- Test.term "y"
+    let strict1' = strictWithin t1
+        strict1 = Set.fromList [x, y]
+        
+    t2 <- Test.term "not (eq_nat x y)"
+    let strict2' = strictWithin t2
+        strict2 = strict1
+        
+    return
+      . Test.list
+      $ [ Test.assertEq strict1 strict1' 
+        , Test.assertEq strict2 strict2' ]
     
-    {-
-  -- Testing out some restricted transformation term isomorphisms
-  iso1 <- Test.localVars "(n: nat) (t: tree<nat>)" $ do
-    App is_sorted [App ins_n [xs]] <- 
-      Test.simplifiedTerm "sorted_tree (tree_insert n t)"
-    let new_t = id
-          . Simp.run
-          $ App is_sorted [App (unwrapFix 2 ins_n) [xs]]
-        counted_terms = 
-          Fold.isoCount recursionScheme (const True) new_t
-    return (Test.assertEq 6 counted_terms)
-    
-  strict1 <- Test.localVars "(t1 t2: tree<nat>) (x n: nat)" $ do
-    leftmost_t <- Test.simplifiedTerm 
-        "leq_leftmost n (Node<nat> t1 x (tree_insert n t2))"
-    t1 <- Test.term "t1"
-    let strict_ts = trace ("\n\n!!!!!\n\n" ++ show leftmost_t) $ Eval.strictTerms leftmost_t
-    return (Test.assertEq (Set.singleton t1) strict_ts)
-    -}
   return $ Test.list $  
     [ weird1
     -- , fold1, fold2 
@@ -131,8 +128,7 @@ tests = Test.label "Terms"
     , findArgs1
     , id1
     , eqArgs
-  --  , iso1
-  --  , strict1
+    , strict1
     ]
 
 def_eq_unit, def_eq_bool, def_eq_nat, def_eq_ntree :: String
@@ -162,4 +158,9 @@ def_add_raw =
 def_nat_id = 
   "fix (id: nat -> nat) (x: nat) -> "
   ++ "match x with | 0 -> 0 | Suc x' -> Suc (id x') end"
+  
+def_strict_test = 
+  "match x with "
+  ++ "| 0 -> match y with | 0 -> False | Suc y' -> eq_nat z z end "
+  ++ "| Suc x' -> eq_nat y z end"
     

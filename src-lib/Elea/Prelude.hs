@@ -53,12 +53,13 @@ module Elea.Prelude
   fromRight, fromLeft, traceMe, setAt, firstM, 
   takeIndices, isNub, foldl1M, seqStr, strSeq,
   isLeft, isRight, modifyM, removeAt,
-  insertAt, enum, indent, indentBy, debugNth,
+  insertAt, enum, elength, indent, indentBy, debugNth,
   arrowSum, supremum, (|>), ($>), replaceAt,
-  Maximum (..), Minimum (..), sconcatMap, nlength,
-  intersects, length, liftMaybe, maybeT, nth, drop, take, screen,
+  Maximum (..), Minimum (..), sconcatMap, length,
+  maximum, maximum1, invert,
+  intersects, liftMaybe, maybeT, nth, drop, take, screen,
   isSubsequenceOf, evalWriter, evalWriterT, 
-  maximum, removeAll
+  removeAll
 )
 where
 
@@ -167,12 +168,12 @@ concatMapM f = liftM concat . mapM f . toList
 intercalate :: Monoid m => m -> [m] -> m
 intercalate x = concat . intersperse x
 
--- | A more usefully typed 'length' function.
-length :: (Foldable f, Enum n) => f a -> n
+length :: Foldable f => f a -> Nat
 length = enum . Pre.length . toList
 
-nlength :: Foldable f => f a -> Nat
-nlength = length
+elength :: (Foldable f, Enum e) => f a -> e
+elength = enum . length
+
 
 partitionM :: Monad m => (a -> m Bool) -> [a] -> m ([a], [a])
 partitionM f = foldrM f' ([], [])  
@@ -360,12 +361,12 @@ xs !! e = (Pre.!!) xs (fromEnum e)
 
 debugNth :: String -> [a] -> Int -> a
 debugNth msg xs n 
-  | length xs <= n = error msg
+  | elength xs <= n = error msg
   | otherwise = xs !! n
   
 nth :: [a] -> Int -> a
 nth xs n = 
-  debugNth ("Index too large: " ++ show (nlength xs) ++ " > " ++ show n) xs n
+  debugNth ("Index too large: " ++ show (length xs) ++ " > " ++ show n) xs n
   
 arrowSum :: MonadPlus m => [a -> m b] -> a -> m b
 arrowSum ms x = msum (map ($ x) ms)
@@ -408,6 +409,12 @@ intersects x = not . Set.null . Set.intersection x
 
 maximum :: (Monoid (Maximum a), Foldable f) => f a -> a
 maximum = getMaximum . concat . map Maximum . toList
+
+maximum1 :: (Semigroup (Maximum a), Foldable f) => f a -> a
+maximum1 = getMaximum . foldl1 (<>) . map Maximum . toList
+
+invert :: (Semigroup (Maximum a), Foldable f, Functor f, Num a) => f a -> f a
+invert xs = map (\x -> maximum1 xs - x) xs
 
 
 -- | Like 'filter', but also supplying all 

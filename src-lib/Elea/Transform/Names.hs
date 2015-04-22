@@ -17,6 +17,7 @@ data Name
   | EqMatchCon
   | EqInduction
   | Unfold
+  | UnfoldCase
   | FloatVarMatch
   | ExpressCon
   | ExpressMatch
@@ -24,5 +25,5 @@ data Name
   | RepArgFusion
   | FreeArgFusion
   | MatchFixFusion
-  deriving Enum
+  deriving ( Enum, Show )
 

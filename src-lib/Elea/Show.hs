@@ -18,6 +18,7 @@ import qualified Elea.Type as Type
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Definitions as Defs
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 
 
 instance Show Term where
@@ -46,16 +47,12 @@ instance Show (Term' (Term, String)) where
     non_absurd_alts =
       filter (not . isBot . fst . get altInner') f_alts
       
-      
-  -- Special case for showing equation pairs
-  show (App' (Con (Constructor (Ind _ [("==", _)]) 0), _) 
-                  [(_, left_t), (_, right_t)]) = 
-    "(" ++ left_t ++ " == " ++ right_t ++ ")"
     
   -- Special case for showing /if/ expressions
   show (Case' (_, cse_t) 
           [Alt' con_t [] (_, true_t), Alt' con_f [] (_, false_t)]) 
-    | con_t == Type.true && con_f == Type.false =
+    | Tag.tagged con_t == Type.true
+    , Tag.tagged con_f == Type.false =
       "\nif " ++ indent cse_t 
       ++ "\nthen "++ indent true_t 
       ++ "\nelse " ++ indent false_t
@@ -82,11 +79,31 @@ instance Show (Term' String) where
       "\nmatch " ++ cse_t ++ " with"
     ++ concatMap show f_alts 
     ++ "\nend"
-    
+ 
+      
 instance Show FixInfo where
-  show (FixInfo _ tag)
-    | tag == Tag.omega = ""
-    | otherwise = "<" ++ show tag ++ ">"
+  show _ = ""
+  
+instance (Env.Read m, Defs.Read m) => ShowM m FixInfo where
+  showM (FixInfo cs tag) = do
+    cs_s <- id
+      . liftM (intercalate "\n, ")
+      . mapM showM 
+      $ Set.toList cs
+    if Set.null cs 
+    then return ""
+    else return ("[ " ++ cs_s ++ " ]")
+  
+
+instance Show Match where
+  show m = show (matchedTo m) ++ " <- " ++ show (matchedTerm m)
+  
+instance (Env.Read m, Defs.Read m) => ShowM m Constraint where
+  showM m = do
+    ts <- showM (matchedTerm m)
+    ps <- showM (matchedTo m)
+    return (ps ++ " <- " ++ ts)
+    
     
 instance Show (Alt' String) where
   show (Alt' con bs t) = 
@@ -97,7 +114,7 @@ instance Show (Alt' String) where
 instance (Env.Read m, Defs.Read m) => ShowM m (Term' (Term, String)) where
   showM (Var' idx) = do
     bs <- Env.bindings                   
-    if idx >= length bs
+    if idx >= elength bs
     -- If we don't have a binding for this index 
     -- just display the index itself
     then return (show idx)
@@ -119,15 +136,15 @@ instance (Env.Read m, Defs.Read m) => ShowM m (Term' (Term, String)) where
       if same_lbl_count > 0
       then return (lbl' ++ "[" ++ show (same_lbl_count + 1) ++ "]")
       else return lbl'
+  
+  showM (Fix' fix_i fix_b (_, fix_t)) 
+    | (not . Set.null . get fixDomain) fix_i = do
+      fix_is <- showM fix_i
+      return ("\n" ++ fix_is 
+        ++ "\nfix"
+        ++ " " ++ show fix_b 
+        ++ " -> " ++ indent fix_t)
       
-  {-
-  DEBUG CODE
-  fshow (Fix' info (show -> b) (t, _)) = do
-    inf_s <- showM info
-    return 
-      $ "\nfix " ++ b ++ " " ++ inf_s ++ " -> " ++ indent t
-    -}  
-    
   showM term' = do
     -- Attempt to find an alias for this function in our definition database
     mby_name <- Defs.lookupName (Fold.recover term')

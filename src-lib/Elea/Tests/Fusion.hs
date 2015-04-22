@@ -27,6 +27,6 @@ tests = Test.label "Fusion"
   Test.loadPrelude
   eqs <- Test.loadFile "src-lib/Elea/Tests/fusion.elea"
   mapM checkEquation
-   -- . filter ((== "add double") . get equationName)
+   -- . filter ((== "leq_nat transitive") . get equationName)
     $ eqs
 

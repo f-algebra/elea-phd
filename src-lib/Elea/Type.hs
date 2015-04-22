@@ -27,6 +27,8 @@ where
 
 import Elea.Prelude hiding ( get )
 import Elea.Term.Index
+import Elea.Term.Tag ( Tagged (..) )
+import qualified Elea.Term.Tag as Tag
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Failure.Class as Fail
 
@@ -157,7 +159,9 @@ instance ContainsTypes Ind where
     
 instance ContainsTypes Constructor where
   mapTypesM f = modifyM constructorOf (mapTypesM f)
-  
+ 
+instance ContainsTypes a => ContainsTypes (Tagged a) where
+  mapTypesM f = mapM (mapTypesM f)
   
 -- | Things that have a closed, always correct type. 
 -- This is not terms, they could be badly typed, or require a type environment
@@ -185,6 +189,9 @@ class Show a => HasType a where
   
 instance HasType Constructor where
   assign = assign . constructorBind
+  
+instance HasType a => HasType (Tagged a) where
+  assign = assign . Tag.tagged
   
 instance HasType Bind where
   assign = return . Just . _bindType
@@ -263,7 +270,7 @@ split ind = ([], ind)
 argumentTypes :: Type -> [Type]
 argumentTypes = fst . split
 
-argumentCount :: Type -> Int
+argumentCount :: Type -> Nat
 argumentCount = pred . length . flatten
 
 -- | Drops arguments from a type.
@@ -305,9 +312,10 @@ constructorBind (Constructor ind n) =
 
     
 -- | Return the positions of the recursive arguments of a given constructor
-recursiveArgs :: Constructor -> [Int]
+recursiveArgs :: Constructor -> [Nat]
 recursiveArgs (Constructor (Ind _ cons) n) = id
   . assert (length cons > n)
+  . map enum
   $ findIndices (== IndVar) con_args
   where
   (_, con_args) = cons !! n
@@ -333,7 +341,7 @@ recursiveArgIndices con@(Constructor ind@(Ind _ cons) n) = id
 -- | Returns the opposite indices to 'recursiveArgs'
 nonRecursiveArgs :: Constructor -> [Int]
 nonRecursiveArgs (Constructor (Ind _ cons) n) = id
-  . assert (length cons > n)
+  . assert (elength cons > n)
   $ findIndices (/= IndVar) con_args
   where
   (_, con_args) = cons `nth` enum n
@@ -377,7 +385,7 @@ instance Indexed a => Indexed (Polymorphic a) where
   shift f (Poly ns a) = Poly ns (shift f a)
   
 typeArgCount :: Polymorphic t -> Nat
-typeArgCount (Poly ns _) = length ns
+typeArgCount (Poly ns _) = elength ns
   
 -- | Make a polymorphic instance of something which contains types.
 -- Also propagates a monad, because that's always useful.
@@ -404,7 +412,7 @@ polymorphic ns f =
 -- | Apply type arguments to a polymorphic instance to get a monomorphic one
 monomorphic :: (Show t, ContainsTypes t) => [Type] -> Polymorphic t -> t
 monomorphic args poly@(Poly ns _)
-  | length ns /= (length args :: Int) = 
+  | length ns /= length args = 
     error 
        $ "Tried to make a monomorphic instance of " ++ show poly
        ++ " supplying types " ++ show args

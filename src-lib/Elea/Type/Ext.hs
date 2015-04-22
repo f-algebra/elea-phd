@@ -18,6 +18,7 @@ import Elea.Show ()
 import Elea.Show.Class ( ShowM (..) )
 import qualified Elea.Term as Term
 import qualified Elea.Prelude as Prelude
+import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Type as Type
 import qualified Elea.Foldable as Fold
@@ -26,6 +27,7 @@ import qualified Elea.Monad.Env as Env
 import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
+import qualified Data.Set as Set
 
 
 -- | Return the type of something given a type environment. 
@@ -71,7 +73,7 @@ instance HasTypeM Term where
     check (App' Nothing _) =
       return Nothing
     check (App' (Just fty) xs) = do
-      Fail.unless (nlength arg_tys >= length xs)
+      Fail.unless (length arg_tys >= length xs)
       Fail.unless (Prelude.and (zipWith checkArg xs arg_tys))
       return 
         . Just 
@@ -84,10 +86,10 @@ instance HasTypeM Term where
       checkArg (Just ty) arg_ty = 
         ty == arg_ty
         
-    check (Fix' _ (Bind _ fix_ty) Nothing) = 
-      return (Just fix_ty)
-    check (Fix' _ (Bind _ fix_ty) (Just fix_ty')) = do
-      Fail.unless (fix_ty == fix_ty')
+    check (Fix' fix_i (Bind _ fix_ty) mby_ty) = do
+   --   valid_cts <- (allM validM . Set.toList . Prelude.get fixDomain) fix_i
+   --   Fail.unless valid_cts
+      Fail.unless (isNothing mby_ty || fix_ty == fromJust mby_ty)
       return (Just fix_ty)
     check (Con' con) = 
       return (Just (get con))
@@ -108,13 +110,21 @@ instance HasTypeM Term where
           -- ^ Branches disagree on type
       where
       checkAlt :: Alt' (Maybe Type) -> m (Maybe Type)
-      checkAlt (Alt' con _ ty) = do
+      checkAlt (Alt' tcon _ ty) = do
         Fail.unless (isNothing cse_ty 
-          || cse_ind == Prelude.get constructorOf con)
+          || cse_ind == Prelude.get constructorOf (Tag.tagged tcon))
         return ty
         where
         Just (Base cse_ind) = cse_ty
-      
+        
+instance HasTypeM Match where
+  assignM m = do
+    mby_mty <- assignM (matchedTerm m)
+    mby_pty <- assignM (matchedTo m)
+    case (mby_mty, mby_pty) of
+      (Just ty, _) -> return (Just ty)
+      (_, Just ty) -> return (Just ty)
+      _ -> return Nothing
     
 
 -- | I know I said that terms shouldn't have a 'HasType' instance, but

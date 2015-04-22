@@ -55,13 +55,7 @@ prop "eq1": forall (x: nat) ->
     | 0 -> False
     | Suc x' -> True
     end
-   
-  /*
-  This one no longer applies
-prop "expand-rev"<A>: forall (xs: list<A>) (x: A) ->
-  reverse<A> (Cons<A> x xs) = append<A> (reverse<A> xs) (Cons<A> x Nil<A>)
-  */
-  
+    
 let append3<A> =
   fix (app3: list<A> -> list<A> -> list<A> -> list<A>) ->
     fun (xs: list<A>) (ys: list<A>) (zs: list<A>) ->

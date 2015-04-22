@@ -2,14 +2,23 @@ module Elea.Term.Constraint
 (
   has, 
   to,
-  fromMatch,
+  add,
+  apply,
+  alreadyFused,
+  subsume,
+  forget,
 )
 where
 
 import Elea.Prelude
-import Elea.Term
+import Elea.Term hiding ( constructor )
+import qualified Elea.Monad.Env as Env
+import qualified Elea.Term as Term
 import qualified Elea.Type as Type
+import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Index as Indices
+import qualified Data.Set as Set
+
 
 
 has :: Term -> Bool
@@ -20,7 +29,7 @@ has term
   | otherwise = False
   
   
-to :: Term -> Constructor
+to :: Term -> Tagged Constructor
 to = id
   . get altConstructor
   . head
@@ -30,18 +39,48 @@ to = id
   . flattenLam
   
   
-fromMatch :: (Type.HasType Term, Indexed Term)
-  => Type -> (Term, Term) -> Term -> Term
-fromMatch ret_ty (match_t, flattenApp -> Con con : _) term = 
-  Case match_t (map mkAlt cs)
-  where
-  cs = Type.constructors (get Type.constructorOf con)
+alreadyFused :: Constraint -> Term -> Bool
+alreadyFused ct = id
+  . Set.member ct
+  . get fixDomain
+  . fixInfo
   
-  mkAlt :: Constructor -> Alt
-  mkAlt con' = 
-    Alt con' bs alt_t
+add :: Constraint -> Term -> Term
+add ct (Fix fix_i fix_b fix_t) = 
+  Fix (modify fixDomain (Set.insert ct) fix_i) fix_b fix_t
+ 
+
+apply :: Type -> Constraint -> Term -> Term
+apply ret_ty match term = 
+  Case (matchedTerm match) 
+       (zipWith mkAlt [0..] (get matchPatterns match))
+  where
+  idx = get matchIndex match
+  
+  mkAlt :: Nat -> Pattern -> Alt
+  mkAlt n (Pattern tcon bs _) =
+    Alt tcon bs alt_t
     where
-    bs = Type.makeAltBindings con'
     alt_t
-      | con' == con = Indices.liftMany (length bs) term
+      | n == idx = Indices.liftMany (length bs) term
       | otherwise = Bot ret_ty
+      
+      
+subsume :: [Constraint] -> [Constraint]
+subsume (Set.fromList -> cts) = 
+  Set.toList (cts Set.\\ subsumed)
+  where
+  subsumed :: Set Constraint
+  subsumed = id
+    . Set.unions 
+    . map innerCt
+    $ Set.toList cts
+  
+  innerCt :: Constraint -> Set Constraint
+  innerCt (matchedTerm -> App (Fix fix_i _ _) _) =
+    get fixDomain fix_i
+    
+    
+forget :: Env.Write m => Set Constraint -> m a -> m a
+forget cts = Env.forgetMatches (`Set.member` cts)
+

@@ -23,7 +23,6 @@ module Elea.Monad.Env
   ignoreClosed,
   isoFree, isoShift,
   empty, emptyT,
-  variableMatches,
   isBaseCase,
   
   TrackSmallerTermsT, TrackSmallerTerms, 
@@ -43,6 +42,7 @@ import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Discovery.Class as Discovery
 import qualified Elea.Monad.History as History
 import qualified Elea.Term.Index as Indices
+import qualified Elea.Term.Tag as Tag
 import qualified Elea.Unification as Unifier 
 import qualified Elea.Unification.Map as UMap
 import qualified Elea.Foldable as Fold
@@ -59,15 +59,18 @@ instance Write m => Fold.FoldableM m Term where
     return (Lam' b) `ap` bind b mt
   distM (Fix' i b (mt, _)) =
     return (Fix' i b) `ap` bind b mt
-  distM (Case' (mt, cse_t) malts) = do
+  distM term'@(Case' (mt, cse_t) malts) = do
     t <- mt
-    alts <- mapM distAltM malts
+    alts <- zipWithM distAltM [0..] malts
     return (Case' t alts)
     where
-    distAltM (Alt' con bs (mt, _)) = do
+    mkMatch n = 
+      matchFromCase n (Fold.embed (map snd term'))
+    
+    distAltM n (Alt' con bs (mt, _)) = do
       t <- id
         . bindMany bs
-        . matched (Indices.liftMany (length bs) cse_t) (altPattern con)
+        . matched (mkMatch n)
         $ mt
       return (Alt' con bs t)
   distM other = 
@@ -95,15 +98,17 @@ isoShift :: (Fold.TransformableM (TrackIndices Index) t) =>
   Fold.Iso Term t -> (Index -> Index) -> Term -> Term
 isoShift iso f = id
   . trackIndices 0
-  . Fold.isoTransformM iso shiftVar
+  . Fold.isoTransformM iso shift
   where
-  shiftVar :: Term -> TrackIndices Index Term
-  shiftVar (Var x) = do
+  shift :: Term -> TrackIndices Index Term
+  shift (Var x) = do
     at <- tracked
     let x' | x >= at = f (x - at) + at
            | otherwise = x
     return (Var x')
-  shiftVar other = 
+  shift (Fix i b t) =
+    return (Fix (Indices.shift f i) b t)
+  shift other = 
     return other
     
 -- | A wrapper around 'Term' for the 'ignoreClosed' isomorphism.
@@ -158,17 +163,13 @@ instance Indexed Alt where
     where
     -- The first index not bound by the alt
     min_idx :: Index
-    min_idx = length bs
+    min_idx = elength bs
     
     -- The shifting function, altered to be within the alt bindings
     f' idx 
       | idx < min_idx = idx
       | otherwise = f (idx - min_idx) + min_idx
       
-instance Indexed FixInfo where
-  free = mempty
-  shift f = id
-
 instance Substitutable Term where
   type Inner Term = Term
 
@@ -187,6 +188,8 @@ instance Substitutable Term where
         -- Substitution does not occur
         LT -> Var (pred var)
         GT -> Var var
+    substVar (Fix i b t) =
+      return (Fix (Indices.lowerAt at i) b t)
     substVar other = 
       return other
 
@@ -203,9 +206,9 @@ instance ContainsTypes Term where
     mapTy (Fix i b t) = do
       b' <- mapTypesM f' b
       return (Fix i b' t)
-    mapTy (Con con) = do
-      con' <- mapTypesM f' con
-      return (Con con')
+    mapTy (Con tcon) = do
+      tcon' <- mapTypesM f' tcon
+      return (Con tcon')
     mapTy (Case cse_t alts) = do
       alts' <- mapM mapAlt alts
       return (Case cse_t alts')
@@ -233,35 +236,20 @@ empty = runIdentity . emptyT
 emptyT :: Monad m => ReaderT [Bind] m a -> m a
 emptyT = flip runReaderT mempty
 
-
--- | Create a 'Unifier' from just the pattern matches over variables.
--- Requires the 'Substitutable' instance for 'Term'. Hence why it's here.
-variableMatches :: MatchRead m => m (Unifier Term)
-variableMatches =
-  liftM (foldl addMatch mempty) matches
-  where
-  addMatch :: Unifier Term -> (Term, Term) -> Unifier Term
-  addMatch uni (Var x, t) = id
-    . Map.insert x t 
-    -- Apply this substitution to earlier matches.
-    -- This is why we use 'foldl' as opposed to 'foldr', 
-    -- as the leftmost element is the first match.
-    $ map (substAt x t) uni
-  addMatch uni _ = uni
-
   
 -- | Whether a given term has been matched to a base case
 -- down this branch.
 isBaseCase :: MatchRead m => Term -> m Bool
 isBaseCase term = do
-  ms <- matches
-  case lookup term ms of
+  mby_p <- runMaybeT (findMatch term)
+  case mby_p of
     Nothing -> return False
     Just con_term -> do
       let Con con : args = flattenApp con_term
       allM isBaseCase
-        . map (args `nth`)
-        $ Type.recursiveArgs con
+        . map (args !!)
+        . Type.recursiveArgs 
+        $ Tag.tagged con
 
   
 -- Place 'AlsoTrack' over the top of a 'Write' environment monad.
@@ -296,8 +284,11 @@ instance (Write m, Indexed r) => Write (AlsoTrack r m) where
     . runAlsoTrack 
     . mapAlsoTrack (bindAt at b)
     
-  matched t w = 
-    mapAlsoTrack (matched t w)
+  matched m = 
+    mapAlsoTrack (matched m)
+    
+  forgetMatches w = 
+    mapAlsoTrack (forgetMatches w)
     
 instance (Read m, Indexed r) => Read (AlsoTrack r m) where
   bindings = Trans.lift bindings
@@ -351,7 +342,7 @@ trackOffset = runIdentity . trackOffsetT
 
 
 newtype TrackMatches m a
-  = TrackMatches { runTrackMatches :: ReaderT [(Term, Term)] m a }
+  = TrackMatches { runTrackMatches :: ReaderT [Match] m a }
   deriving ( Monad, MonadTrans )
   
 mapTrackMatches :: Monad m => (m a -> n b) -> 
@@ -362,17 +353,22 @@ trackMatches :: TrackMatches m a -> m a
 trackMatches = flip runReaderT mempty . runTrackMatches
 
 localMatches :: Monad m =>
-  ([(Term, Term)] -> [(Term, Term)]) -> TrackMatches m a -> TrackMatches m a
+  ([Match] -> [Match]) -> TrackMatches m a -> TrackMatches m a
 localMatches f = TrackMatches . local f . runTrackMatches
 
 instance Write m => Write (TrackMatches m) where
   bindAt at b = id
-    . localMatches (map (liftAt at *** liftAt at))
+    . localMatches (map (liftAt at))
     . mapTrackMatches (bindAt at b)
   
-  matched t con_t = id
-    . localMatches (++ [(t, con_t)])
-    . mapTrackMatches (matched t con_t)
+  matched m = id
+    . localMatches (++ [m])
+    . mapTrackMatches (matched m)
+    
+  forgetMatches w = id
+    . localMatches (filter w)
+    . mapTrackMatches (forgetMatches w)
+    
     
 instance Read m => Read (TrackMatches m) where
   bindings = Trans.lift bindings
@@ -435,12 +431,17 @@ instance (Monad m, Substitutable r, Inner r ~ Term)
     . local (liftAt at)
     . runTrackAllT
     
-  matched (Var x) w = id
-    . TrackAllT
-    . local (Indices.replaceAt x w)
-    . runTrackAllT
-  matched _ _ = id
+  matched match
+    | Var x <- get matchTerm match = id
+      . TrackAllT
+      . local (Indices.replaceAt x w)
+      . runTrackAllT
+      where
+      w = matchedTo match
+  matched m = id
     
+  forgetMatches _ = id
+  
   
 instance Fail.Can m => Fail.Can (TrackAllT r m) where
   here = Trans.lift Fail.here
@@ -488,14 +489,19 @@ instance (Show Term, Write m) => Write (TrackSmallerTermsT m) where
     . mapReaderT (bindAt idx t)
     . local (liftAt idx)
     
-  matched term with@(flattenApp -> Con con : args) = id
-    . mapReaderT (matched term with) 
+  matched match = id
+    . mapReaderT (matched match) 
     . local addMatch
     where
+    with@(flattenApp -> Con con : args) = matchedTo match
+      
+    term = get matchTerm match
+    
     rec_args = id
       . Set.fromList
-      . map (args `nth`) 
-      $ Type.recursiveArgs con
+      . map (args !!) 
+      . Type.recursiveArgs 
+      $ Tag.tagged con
      
     addMatch (Smaller than set) = 
       Smaller than set'
@@ -504,6 +510,8 @@ instance (Show Term, Write m) => Write (TrackSmallerTermsT m) where
            | term `Set.member` set = Set.insert with (set ++ rec_args)
            | otherwise = set
 
+  forgetMatches _ = id
+           
         
 -- Other stuff
 
@@ -616,7 +624,8 @@ instance Unifiable Term where
       return (c1 ++ c2)
     comp (App {}) _ = return LT
     comp _ (App {}) = return GT
-    comp (Fix _ _ t) (Fix _ _ t') = liftTracked (comp t t')
+    comp (Fix i _ t) (Fix i' _ t') = 
+      liftM (compare i i' ++) (liftTracked (comp t t'))
     comp (Fix {}) _ = return LT
     comp _ (Fix {}) = return GT
     comp (Lam _ t) (Lam _ t') = liftTracked (comp t t')
@@ -641,26 +650,19 @@ instance Unifiable Term where
   alphaEq _ _ = False
 
         
-instance Indexed Constraint where
-  free = free . get constrainedTerm
-  shift f = modify constrainedTerm (shift f)
-      
-instance Substitutable Constraint where 
-  type Inner Constraint = Term
-  substAt x t = 
-    modify constrainedTerm (substAt x t)
-  
-instance Unifiable Constraint where
-  apply uni =
-    modify constrainedTerm (Unifier.apply uni)
+instance Indexed Match where
+  free = free . get matchTerm
+  shift f = id
+    . modify matchTerm (shift f)
+    . modify matchPatterns (map (shift f))
     
-  find (Constraint con1 t1) (Constraint con2 t2) = do
-    Fail.unless (con1 == con2)
-    Unifier.find t1 t2
+instance Indexed FixInfo where
+  free = id
+    . Set.unions 
+    . Set.toList 
+    . Set.map free 
+    . get fixDomain
     
-  gcompare (Constraint con1 t1) (Constraint con2 t2) =
-    compare con1 con2 ++ Unifier.gcompare t1 t2
-    
-  alphaEq (Constraint con1 t1) (Constraint con2 t2) =
-    con1 == con2 && Unifier.alphaEq t1 t2
+  shift f = 
+    modify fixDomain (Set.map (shift f))
 

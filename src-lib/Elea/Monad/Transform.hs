@@ -21,6 +21,7 @@ import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Rewrite as Rewrite
 import qualified Elea.Monad.Discovery.Class as Discovery
 import qualified Elea.Monad.History as History
+import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Embed as Embed
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Height as Height
@@ -120,6 +121,7 @@ instance Env.Read m => Env.Read (StepT m) where
 instance Env.Write m => Env.Write (StepT m) where
   bindAt at b = mapStepT (Env.bindAt at b)
   matched t c = mapStepT (Env.matched t c)
+  forgetMatches w = mapStepT (Env.forgetMatches w)
 
 instance Defs.Read m => Defs.Read (StepT m) where
   lookupTerm n = Trans.lift . Defs.lookupTerm n
@@ -143,4 +145,13 @@ instance History.Env m => History.Env (StepT m) where
   ask = Trans.lift History.ask
   local f = mapStepT (History.local f)
   
-
+instance Memo.Can m => Memo.Can (StepT m) where
+  maybeMemo n t = mapStepT instep
+    where
+    instep :: m (Maybe (Maybe Term)) -> m (Maybe (Maybe Term))
+    instep mx =
+      liftM return (Memo.maybeMemo n t (liftM join mx))
+        
+        
+        
+      

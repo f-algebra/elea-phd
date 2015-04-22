@@ -72,7 +72,8 @@ instance (Show Term, Monad m) => Write (DBStateT m) where
   
 instance Env.Write m => Env.Write (DBStateT m) where
   bindAt at b = mapDBStateT (Env.bindAt at b)
-  matched t w = mapDBStateT (Env.matched t w)
+  matched m = mapDBStateT (Env.matched m)
+  forgetMatches w = mapDBStateT (Env.forgetMatches w)
   
 instance Env.Read m => Env.Read (DBStateT m) where
   bindings = Trans.lift Env.bindings

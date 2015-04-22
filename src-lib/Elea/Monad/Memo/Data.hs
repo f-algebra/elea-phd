@@ -1,14 +1,10 @@
--- | A database on ongoing, completed and failed fusion attempts.
--- Threaded as state through Elea.
+-- | A memoiser for steps
 module Elea.Monad.Memo.Data
 (
   Data,
   empty,
   lookup,
   insert,
-  
-  Outcome (..),
-  maybeToOutcome
 )
 where
 
@@ -18,46 +14,42 @@ import Elea.Term
 import Elea.Unification ( Unifier )
 import Elea.Monad.Env ()
 import Elea.Show
+import Elea.Transform.Names ( Name )
 import qualified Elea.Type as Type
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Unification as Unifier
 import qualified Elea.Unification.Map as UMap
 import qualified Elea.Monad.Failure.Class as Fail
 
-data Outcome
-  = Pending
-  | Failure
-  | Success !Term
-  deriving ( Eq, Ord, Show )
+import qualified Data.IntMap as Map
+import qualified Data.Set as Set
 
-data Data
-  = Data { _dbFusions :: UMap.UMap Term Outcome }
+newtype Data
+  = Data (IntMap (UMap.UMap Term (Maybe Term)))
   deriving ( Show )
 
 mkLabels [ ''Data ]
 
 empty :: Data
-empty = Data UMap.empty
-
-isSuccess :: Outcome -> Bool
-isSuccess (Success _) = True
-isSuccess _ = False
+empty = Data Map.empty
   
-lookup :: Fail.Can m => Term -> Data -> m Outcome
-lookup term db = do
-  (uni, outcome) <- UMap.lookupAlphaEq term (get dbFusions db) 
-  return (mapTerms (Unifier.apply uni) outcome)
+-- | Failure means there is no entry. Returning Nothing means
+-- that this step failed and this failure was memoised.
+lookup :: Fail.Can m => Name -> Term -> Data -> m (Maybe Term)
+lookup (enum -> name) term (Data map) = 
+  case Map.lookup name map of
+    Nothing -> Fail.here
+    Just umap -> do
+      (uni, mby_t) <- UMap.lookupAlphaEq term umap
+      return (fmap (Unifier.apply uni) mby_t)
 
-insert :: Term -> Outcome -> Data -> Data
-insert term outcome = modify dbFusions (UMap.insert term outcome)
+insert :: Name -> Term -> Maybe Term -> Data -> Data
+insert _ term _ db
+  | (not . Set.null . Indices.free) term = db
+insert (enum -> name) term outcome (Data map) = 
+  Data (Map.alter ins name map)
+  where
+  ins Nothing = Just (UMap.singleton term outcome)
+  ins (Just umap) = Just (UMap.insert term outcome umap)
 
-maybeToOutcome :: Maybe Term -> Outcome
-maybeToOutcome Nothing = Failure
-maybeToOutcome (Just t) = Success t
-
-instance ContainsTerms Outcome where
-  mapTermsM _ Pending = return Pending
-  mapTermsM _ Failure = return Failure
-  mapTermsM f (Success t) =
-    liftM Success (f t)
 

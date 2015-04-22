@@ -4,10 +4,8 @@ module Elea.Transform.Evaluate
 (
   Step,
   run, 
-  reduce,
   transformSteps, 
   traverseSteps,
-  strictTerms,
   --floatVarMatches,
   
   caseOfCon,
@@ -17,10 +15,12 @@ where
 import Elea.Prelude
 import Elea.Term.Index
 import Elea.Term
+import qualified Elea.Embed as Embed
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Unification as Unifier
+import qualified Elea.Term.Constraint as Constraint
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Foldable as Fold
 import qualified Elea.Term.Height as Height
@@ -53,7 +53,9 @@ run = flip runReader ([] :: [Bind])
     -- ^ Use the Reader [Bind] instance for type environments
     . Transform.fix (Transform.compose all_steps)
   where
-  all_steps = transformSteps ++ traverseSteps
+  all_steps = []
+    ++ transformSteps 
+    ++ traverseSteps
   
   
 transformSteps :: Step m => [Term -> m Term]
@@ -62,6 +64,9 @@ transformSteps =
   , strictness
   , beta
   , caseOfCon 
+  , caseApp
+  , appCase
+  , caseCase
   ]
 
 traverseSteps :: Step m => [Term -> m Term]
@@ -76,39 +81,6 @@ traverseSteps =
 unwrapDepth :: Nat
 unwrapDepth = 2
   
--- | The variables or uninterpreted function application terms
--- whose value must be known in order to evaluate the given term.
-strictTerms :: Term -> Set Term
-strictTerms (Case cse_t@(App (Fix {}) _) _) = 
-  strictTerms cse_t
-strictTerms (App fix@(Fix _ _ fix_t) args) = id
-  . collectTerms 
-  $ run (App fix_t' args)
-  where
-  fix_t' = Term.unwrapFix unwrapDepth fix
-
-  collectTerms (Case cse_t alts)
-    | isVar (leftmost cse_t) = Set.insert cse_t alt_terms
-    | otherwise = alt_terms
-    where
-    alt_terms = concatMap altVars alts
-      where
-      altVars (Alt _ bs alt_t) = id
-        . Set.map (Indices.lowerMany (length bs))
-        . Set.filter (Indices.lowerableBy (length bs))
-        $ collectTerms alt_t 
-  collectTerms _ = Set.empty
-  
-strictTerms _ = 
-  Set.empty
-  
-  
-reduce :: Term -> [Term] -> Term
-reduce (Lam _ rhs) (x:xs) = 
-  reduce (subst x rhs) xs
-reduce f xs = 
-  app f xs
-    
   
 -- | Finds terms that are undefined and sets them that way.
 -- So far it detects applying arguments to an absurd function.
@@ -140,7 +112,7 @@ beta :: Step m => Term -> m Term
 beta t@(App f@(Lam _ rhs) xs) = id
   . History.check Name.Beta t
   . Transform.continue
-  $ reduce f xs
+  $ Term.reduce f xs
 beta _ = Fail.here
 
 
@@ -164,9 +136,10 @@ caseOfCon _ = Fail.here
 
 
 traverseMatch :: Step m => Term -> m Term
-traverseMatch term@(Case cse_t alts) =
-  History.check Name.TraverseMatch cse_t $ do
-    cse_t' <- Transform.continue cse_t
+traverseMatch term@(Case cse_t alts) = 
+  History.check Name.TraverseMatch term $ do 
+    cse_t' <- Transform.continue cse_t  
+   -- Fail.when (cse_t Embed.<= cse_t')
     Fail.when (cse_t == cse_t')
     Transform.continue (Case cse_t' alts)
 traverseMatch _ = Fail.here
@@ -177,7 +150,9 @@ traverseBranches :: Step m => Term -> m Term
 traverseBranches term@(Case (Var x) alts) =
   History.check Name.TraverseVarBranch term $ do
     alts' <- mapM traverseAlt alts
-    Fail.when (alts' == alts)
+    let term' = Case (Var x) alts'
+   -- Fail.when (term Embed.<= term')
+    Fail.when (term == term')
     Transform.continue (Case (Var x) alts')
   where
   traverseAlt (Alt con bs t) = do
@@ -195,7 +170,9 @@ traverseBranches term@(Case (Var x) alts) =
 traverseBranches term@(Case cse_t alts) = 
   History.check Name.TraverseBranch term $ do
     alts' <- mapM traverseAlt alts
-    Fail.when (alts' == alts)
+    let term' = Case cse_t alts'
+    -- Fail.when (term Embed.<= term')
+    Fail.when (term == term')
     Transform.continue (Case cse_t alts')
   where
   traverseAlt (Alt con bs t) = do
@@ -214,7 +191,8 @@ traverseBranches _ = Fail.here
 traverseFun :: Step m => Term -> m Term
 traverseFun (Lam b t) = do
   t' <- Env.bind b (Transform.continue t)
-  Fail.when (t' == t)
+  -- Fail.when (t Embed.<= t')
+  Fail.when (t == t')
   return (Lam b t')
 traverseFun _ = Fail.here
 
@@ -225,19 +203,23 @@ traverseApp term@(App f xs) =
     xs' <- mapM Transform.continue xs
     f' <- Transform.continue f
     let term' = App f' xs'
-    Fail.when (term' == term)
+   -- Fail.when (term Embed.<= term')
+    Fail.when (term == term')
     Transform.continue term'
   
 traverseApp _ = Fail.here
 
 
 traverseFix :: Step m => Term -> m Term
-traverseFix (Fix inf b t) = do
+traverseFix fix@(Fix inf b t) = do
   t' <- id
+   -- . Constraint.forget (get fixDomain inf)
+  --  . (if show inf /= "" then trace ("\n\n !!FORGETTING " ++ show inf) else id)
     . Env.bind b
     $ Transform.continue t
-  Fail.when (t' == t)
+  Fail.when (t Embed.<= t')
   return (Fix inf b t')
+    
 traverseFix _ = Fail.here
 
 
@@ -274,4 +256,55 @@ floatVarMatches = id
       
   float _ = Fail.here
 -}
+
+
+
+-- | If we have a case statement on the left of term 'App'lication
+-- then float it out.
+caseApp :: Step m => Term -> m Term
+caseApp (App (Case t alts) args) =
+  Transform.continue (Case t (map appArg alts))
+  where
+  appArg (Alt con bs alt_t) =
+    Alt con bs (app alt_t (Indices.liftMany (length bs) args))
+    
+caseApp _ = Fail.here
+
+
+-- | If we have a case statement on the right of term 'App'lication
+-- then float it out.
+-- TODO check for strict args!!
+appCase :: Step m => Term -> m Term
+appCase term@(App f xs) = do
+  cse_i <- Fail.fromMaybe (findIndex isCase xs)
+  Transform.continue (applyCase cse_i)
+  where
+  applyCase cse_i = 
+    Case cse_t (map applyAlt alts)
+    where
+    Case cse_t alts = xs !! cse_i
+    
+    applyAlt (Alt con bs alt_t) = 
+      Alt con bs (app f' xs')
+      where
+      f' = Indices.liftMany (length bs) f
+      xs' = id 
+        . setAt cse_i alt_t
+        $ Indices.liftMany (length bs) xs
+      
+appCase _ = Fail.here
+
+
+-- | If we are pattern matching on a pattern match then remove this 
+-- using distributivity.
+caseCase :: Step m => Term -> m Term
+caseCase outer_cse@(Case inner_cse@(Case inner_t inner_alts) outer_alts) =
+  Transform.continue (Case inner_t (map newOuterAlt inner_alts))
+  where
+  newOuterAlt :: Alt -> Alt
+  newOuterAlt (Alt con bs t) = 
+    Alt con bs (Case t alts_here)
+    where
+    alts_here = map (Indices.liftMany (length bs)) outer_alts
+caseCase _ = Fail.here
 

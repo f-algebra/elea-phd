@@ -12,24 +12,20 @@ module Elea.Term.Ext
   decreasingArgs,
   decreasingAppArgs,
   applyCase,
+  applyCases,
+  reduce,
   generaliseArgs,
   generaliseTerms,
   generaliseUninterpreted,
   tuple,
-  equation,
-  isEquation,
   isFiniteMatch,
   expressFreeVariable,
   expressFreeVariables,
-  revertMatchesWhenM, 
-  revertMatchesWhen, 
-  revertMatches,
   commuteMatchesWhenM,
   occurrences,
   isSubterm,
   removeSubterms,
   freeSubtermsOf,
-  revertEnvMatches,
   floatRecCallInwards,
   isLambdaFloated,
   findArguments,
@@ -39,6 +35,9 @@ module Elea.Term.Ext
   mapFixInfo,
   equateArgs,
   equateArgsMany,
+  strictWithin,
+  strictAcross,
+  strictArgs
 )
 where
 
@@ -176,6 +175,66 @@ collectM p = Env.alsoTrack 0 . Fold.collectM collect
 -- | See 'collectM'
 collect :: (Term -> Bool) -> Term -> Set Term
 collect p = runIdentity . collectM (Identity . p)
+
+
+-- | The variables or uninterpreted function application terms
+-- whose value must be known in order to evaluate the given term.
+strictWithin :: Term -> Set Term
+strictWithin term
+  | (isVar . leftmost) term = Set.singleton term
+strictWithin (Case cse_t alts) = 
+  Set.union (strictWithin cse_t) (strictAcross alts)
+strictWithin (App fix@(Fix {}) args) = 
+  Set.unions (map strictWithin strict_args)
+  where
+  strict_args = map (args !!) (strictArgs fix)
+strictWithin (Eql x y) = 
+  Set.union (strictWithin x) (strictWithin y)
+strictWithin _ = Set.empty
+
+
+-- | Terms which are strict in every supplied branch
+strictAcross :: [Alt] -> Set Term
+strictAcross alts = id
+  . fromMaybe Set.empty
+  . foldl1 merge
+  $ map withinAlt alts
+  where
+  merge :: Maybe (Set Term) -> Maybe (Set Term) -> Maybe (Set Term)
+  merge Nothing ys = ys
+  merge xs Nothing = xs
+  merge (Just xs) (Just ys) = 
+    Just (Set.intersection xs ys)
+  
+  -- 'Nothing' means the universe of all terms
+  -- so if an Alt returns _|_ then it is strict in every term
+  withinAlt :: Alt -> Maybe (Set Term)
+  withinAlt (Alt c bs (Bot _)) = Nothing
+  withinAlt (Alt c bs alt_t) = id
+    . Just
+    . Set.mapMonotonic (Indices.lowerMany (length bs))
+    . Set.filter (Indices.lowerableBy (length bs))
+    $ strictWithin alt_t
+
+
+-- | Return the argument indices which are strict for the given fixed-point
+strictArgs :: Term -> [Nat]
+strictArgs (Fix _ _ fix_t) = 
+  map toArgPos strict_vars
+  where
+  (arg_bs, fix_body) = flattenLam fix_t
+  
+  -- Take the index of the strict argument in the term and convert it into
+  -- the integer position index of that argument
+  toArgPos :: Index -> Nat
+  toArgPos idx = (length arg_bs - enum idx) - 1
+  
+  strict_vars :: [Index]
+  strict_vars = id
+    . map fromVar
+    . filter isVar
+    . Set.toList
+    $ strictWithin fix_body
     
 
 -- | Replace all instances of one term with another within a term.
@@ -246,18 +305,20 @@ applyCase (Case cse_t alts) inner_t =
   Case cse_t (map mkAlt alts)
   where
   mkAlt :: Alt -> Alt
-  mkAlt (Alt con bs _) = Alt con bs alt_t
-    where
-    -- Takes a term from outside the pattern match and lifts the 
-    -- indices to what they should be within this branch
-    liftHere = Indices.liftMany (length bs)
+  mkAlt (Alt con bs _) = 
+    Alt con bs (Indices.liftMany (length bs) inner_t)
     
-    -- The new alt-term is the given inner_t, with all occurrences of
-    -- the pattern matched term replaced with the pattern it is matched
-    -- to down this branch.
-    pat = altPattern con
-    alt_t = replace (liftHere cse_t) pat (liftHere inner_t)
+applyCases :: [Term] -> Term -> Term
+applyCases cs t = foldr applyCase t cs  
 
+
+reduce :: Term -> [Term] -> Term
+reduce (Lam _ rhs) (x:xs) = 
+  reduce (Indices.subst x rhs) xs
+reduce (Bot (Type.Fun _ res_ty)) (x:xs) =
+  reduce (Bot res_ty) xs
+reduce f xs = 
+  app f xs    
  
 -- | Generalise all the arguments of a term to fresh variables.
 -- The first argument of the inner computation to run will lift 
@@ -302,7 +363,7 @@ generaliseTerms :: forall m a t .
     , Substitutable a, Inner a ~ Term ) =>
   Set Term -> t -> (Indices.Shift -> t -> m a) -> m a
 generaliseTerms (toList -> terms) target run
-  | nlength terms == 0 = run id target
+  | length terms == 0 = run id target
   | otherwise = do
     gen_bs <- mapM makeBind [0..length terms - 1]
           
@@ -324,11 +385,11 @@ generaliseTerms (toList -> terms) target run
     . liftHere
     where
     terms' = map liftHere terms
-    new_vars = map Var [0..length terms - 1]
+    new_vars = map (Var . enum) [0..length terms - 1]
     
-  makeBind :: Int -> m Bind
+  makeBind :: Nat -> m Bind
   makeBind n
-    | Var x <- terms `nth` n = Env.boundAt x
+    | Var x <- terms !! n = Env.boundAt x
   makeBind n = do
     ty <- Type.getM (terms `nth` n)
     let name = "_" ++ show ty
@@ -356,24 +417,13 @@ generaliseUninterpreted target =
 -- the constructor.
 tuple :: (Defs.Read m, Env.Read m) => [Term]-> m Term
 tuple ts
-  | nlength ts > 1 = do
+  | length ts > 1 = do
     ind <- id
       . liftM Type.tuple
       $ mapM Type.getM ts
-    return (app (Con (Type.Constructor ind 0)) ts)
+    return (app (Con (Tag.with Tag.null (Type.Constructor ind 0))) ts)
  
-equation :: (Defs.Read m, Env.Read m) => Term -> Term -> m Term
-equation left right = do
-  ty <- Type.getM left
-  let eq_con = Type.equation ty
-  return (app (Con eq_con) [left, right])
-  
-isEquation :: Fail.Can m => Term -> m (Term, Term)
-isEquation (App (Con eq_con) [left, right]) 
-  | isJust (Type.isEquation eq_con) = return (left, right)
-isEquation _ = Fail.here
-          
-            
+    
 -- | Take a free variable of a fixpoint and express it as a new first argument
 -- of that fixpoint.
 -- It can reverse the @constArg@ step from "Elea.Transform.Simplify".
@@ -428,47 +478,14 @@ isFiniteMatch :: [Alt] -> Bool
 isFiniteMatch = all recArgsUsed
   where
   recArgsUsed :: Alt -> Bool
-  recArgsUsed (Alt con _ alt_t) = 
+  recArgsUsed (Alt tcon _ alt_t) = 
     Set.null (Set.intersection (Indices.free alt_t) rec_args)
     where
-    rec_args = Set.fromList (Type.recursiveArgIndices con)
+    rec_args = id
+      . Set.fromList 
+      . Type.recursiveArgIndices 
+      $ Tag.tagged tcon
     
-
--- | Reverting a pattern match is to replace the pattern it was matched to
--- with the term that was matched.
--- > revertMatches (match n with | 0 -> 0 | Suc x' -> Suc x' end)
--- >   = match n with | 0 -> 0 | Suc x' -> n end
--- TODO revert all matches over variables of the pattern first, otherwise
--- this function will only work for single depth matches
-revertMatchesWhenM :: forall m . Env.Write m 
-  -- | A predicate that will be passed terms matched upon to ask whether
-  -- they should be reverted
-  => (Term -> m Bool) 
-  -> Term 
-  -> m Term
-revertMatchesWhenM when = Fold.transformM revert
-  where
-  revert term@(Case cse_t alts) = do
-    here <- when cse_t
-    if not here
-    then return term
-    else return (Case cse_t (map revertAlt alts))
-    where
-    revertAlt alt
-      | Type.isBaseCase (get altConstructor alt) = alt
-    revertAlt (Alt con bs alt_t) = 
-      Alt con bs alt_t'
-      where
-      cse_t' = Indices.liftMany (length bs) cse_t
-      alt_t' = replace (altPattern con) cse_t' alt_t
-  revert other = 
-    return other
-    
-revertMatchesWhen :: (Term -> Bool) -> Term -> Term
-revertMatchesWhen when = runIdentity . revertMatchesWhenM (return . when)
-    
-revertMatches :: Term -> Term
-revertMatches = revertMatchesWhen (const True)
 
 commuteMatchesWhenM :: forall m . Env.Write m 
   => (Term -> Term -> m Bool) -> Term -> m Term
@@ -542,32 +559,6 @@ freeSubtermsOf term = id
   . collect (const True)
   $ term
     
-
--- | I wrote this after 'revertMatchesWhenM' and associated methods. I think
--- this way would be cleaner for that's use case as well, but for now I'll
--- keep both functions.
-revertEnvMatches :: Env.MatchRead m => Term -> m Term
-revertEnvMatches term = id
-  . liftM (foldl (\t (m, k) -> replace k m t) term)
-  . liftM (sortBy revertOrd)
-  . liftM (filter revertMe)
-  $ Env.matches
-  where
-  -- Only revert matches whose constructors have arguments
-  -- otherwise we cannot tell them apart
-  revertMe :: (Term, Term) -> Bool
-  revertMe = not . null . arguments . snd
-  
-  -- We sort the matches such that any that will rewrite the thing rewritten
-  -- by another match will go before that other match... 
-  -- An awful explanantion but that's all you get
-  revertOrd :: (Term, Term) -> (Term, Term) -> Ordering
-  revertOrd (Var x, _) (_, k) 
-    | x `Indices.freeWithin` k = LT
-  revertOrd (_, k) (_, Var x) 
-    | x `Indices.freeWithin` k = GT
-  revertOrd p1 p2 = 
-    compare p1 p2 
   
     
 -- | If we pattern match on the result of recursive call to a fixpoint
@@ -596,14 +587,14 @@ instance Tag.Has Term where
   tags = Fold.collect tags'
     where
     tags' :: Term -> Maybe Tag 
-    tags' (Fix inf _ _) = Just (get fixTag inf)
+    tags' (Fix inf _ _) = Just (get fixIndex inf)
     tags' _ = Nothing
     
   map f = Fold.transform rep 
     where
     rep :: Term -> Term
     rep (Fix inf b t) = 
-      Fix (modify fixTag f inf) b t
+      Fix (modify fixIndex f inf) b t
     rep t = t
     
 
@@ -612,8 +603,8 @@ isLambdaFloated :: Term -> Bool
 isLambdaFloated fix@(Fix _ _ fix_t) = 
   ty_arg_count == lam_count
   where
-  ty_arg_count = nlength (Type.argumentTypes (Type.get fix))
-  lam_count = nlength (fst (flattenLam fix_t))
+  ty_arg_count = length (Type.argumentTypes (Type.get fix))
+  lam_count = length (fst (flattenLam fix_t))
       
   
 -- | Attempt to find a list of arguments for the first term that
@@ -629,7 +620,7 @@ findArguments ctx term = do
   (arg_bs, ctx_body) = flattenLam ctx
   
   arg_idxs :: Set Index
-  arg_idxs = (Set.fromList . map enum) [0..nlength arg_bs - 1]
+  arg_idxs = (Set.fromList . map enum) [0..length arg_bs - 1]
   
   
 findConstrainedArgs :: forall m . (Env.MatchRead m, Fail.Can m) 
@@ -640,19 +631,19 @@ findConstrainedArgs ctx term
   -- and so we can use regular argument finding
   
   | otherwise = do
-    ms <- Env.findMatches usefulMatch
-    Fail.choose (map tryMatch ms)
+    cs <- Env.findConstraints usefulConstraint
+    Fail.choose (map tryConstraint cs)
     
   where
-  usefulMatch :: (Term, Term) -> Bool
-  usefulMatch (_, p) = 
-    Constraint.to ctx == constructor (leftmost p)
+  usefulConstraint :: Constraint -> Bool
+  usefulConstraint ct = 
+    Constraint.to ctx == get patternConstructor (matchedPattern ct)
     
-  tryMatch :: Fail.Can m => (Term, Term) -> m [Term]
-  tryMatch match = id
+  tryConstraint :: Fail.Can m => Constraint -> m [Term]
+  tryConstraint ct = id
     . findArguments ctx 
    -- . traceMe "trying"
-    $ Constraint.fromMatch (Type.get term) match term
+    $ Constraint.apply (Type.get term) ct term
 
   
 -- | Beta-abstracts the given index
@@ -686,7 +677,7 @@ equateArgs i j orig_t
   new_body = Indices.substAt (toIdx j) (Var (pred (toIdx i))) body_t
   
   toIdx :: Nat -> Index
-  toIdx x = enum ((length bs - x) - 1)
+  toIdx x = enum ((elength bs - x) - 1)
   
   
 equateArgsMany :: [(Nat, Nat)] -> Term -> Term

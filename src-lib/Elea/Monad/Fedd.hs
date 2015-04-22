@@ -10,7 +10,6 @@ where
 import Elea.Prelude
 import Elea.Term
 import Elea.Show
-import Elea.Monad.Memo.Data ( Outcome (..) )
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Monad.History as History
 import qualified Elea.Term.Tag as Tag
@@ -40,8 +39,7 @@ type Fedd = FeddT Identity
 
 data FeddState 
   = FS  { _fsDefs :: !Defs.Data
-        , _fsFusions :: !MemoDB.Data
-        , _fsConstraintFusions :: !MemoDB.Data
+        , _fsMemo :: !MemoDB.Data
         , _fsTagGen :: !Int }
         
 mkLabels [ ''FeddState ]
@@ -55,14 +53,15 @@ evalT = id
   fst3 (x, _, _) = x
 
 emptyState :: FeddState
-emptyState = FS Defs.empty MemoDB.empty MemoDB.empty 0
+emptyState = FS Defs.empty MemoDB.empty 1
   
 eval :: Fedd a -> a
 eval = runIdentity . evalT
   
 instance Monad m => Env.Write (FeddT m) where
   bindAt at b = local (EnvDB.bindAt at b)
-  matched t1 t2 = local (EnvDB.matched t1 t2)
+  matched m = local (EnvDB.matched m)
+  forgetMatches w = local (EnvDB.forgetMatches w)
   
 instance Monad m => Env.Read (FeddT m) where
   bindings = asks EnvDB.bindings
@@ -91,62 +90,24 @@ instance Monad m => Defs.Read (FeddT m) where
       (t, def_db') <- Defs.getTerm n tys (get fsDefs db)
       State.put (set fsDefs def_db' db)
       return t
-  
--- Memoise our fixpoint fusion calculations to improve speed
--- and stop potential loops.
-memoise :: Monad m 
-  => (FeddState :-> MemoDB.Data)
-  -> Term 
-  -> FeddT m (Maybe Term) 
-  -> FeddT m (Maybe Term)
-memoise lens term run = do
-  fusion_db <- State.gets (get lens)
-  case MemoDB.lookup term fusion_db of
-    -- If we are in the process of fusing this then we need to fail
-    -- to prevent infinite loops
-    Just Pending -> id
-     -- . trace ("[memo] stopped a loop") 
-      $ return Nothing
-    
-    -- If fusion failed previously then it will fail again
-    Just Failure -> id
-    --  . trace ("[memo] improved efficiency (failure)") 
-      $ return Nothing
-    
-    -- If fusion succeeded previously then we can be efficient 
-    -- and return the previous result
-    Just (Success t) -> id
-     -- . trace ("[memo] improved efficiency (success)")
-      $ return (Just t)
-    
-    -- If we have not yet tried this fusion then...
-    Nothing -> do
-      -- Set that we are performing this fusion
-      let fusion_db' = MemoDB.insert term Pending fusion_db
-      State.modify (modify lens (const fusion_db'))
-      
-      -- Run the fusion step
-      mby_t <- run
-      let outcome = MemoDB.maybeToOutcome mby_t
-      
-      -- Store the result of this fusion
-      let fusion_db'' =
-            MemoDB.insert term outcome fusion_db
-      State.modify (modify lens (const fusion_db''))
-      return mby_t
 
-      {-
+      
 instance Monad m => Memo.Can (FeddT m) where
-  maybeFusion ctx term = 
-    memoise fsFusions (Context.apply ctx term)
-  
-  maybeConstraintFusion cons term = 
-    memoise fsConstraintFusions (Context.apply ctx term)
-    where
-    ctx = Constraint.manyToContext (Type.get term) cons
-    
-  maybeFission _ _ = id
-  -}
+  maybeMemo name term cont = do
+    memo_db <- State.gets (get fsMemo)
+    case MemoDB.lookup name term memo_db of
+      Nothing -> do
+        mby_t <- cont
+        let memo_db' = MemoDB.insert name term mby_t memo_db
+        State.modify (set fsMemo memo_db')
+        return mby_t
+        
+      Just memo_t -> do
+        mby_t' <- cont
+        if isJust mby_t' && memo_t /= mby_t'
+        then error (show memo_t ++ "\n\nactually\n\n" ++ show mby_t')
+        else return memo_t
+
   
 instance Monad m => Rewrite.Env (FeddT m) where
   rewrites = asks EnvDB.rewrites

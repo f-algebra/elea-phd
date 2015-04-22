@@ -89,7 +89,8 @@ instance Monad m => Listens (ListenerT m) where
   
 instance Env.Write m => Env.Write (ListenerT m) where
   bindAt at b = mapListenerT (Env.bindAt at b)
-  matched t w = mapListenerT (Env.matched t w)
+  matched m = mapListenerT (Env.matched m)
+  forgetMatches w = mapListenerT (Env.forgetMatches w)
  
 instance Env.Read m => Env.Read (ListenerT m) where
   bindings = lift Env.bindings
