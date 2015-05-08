@@ -12,7 +12,6 @@ import qualified Elea.Testing as Test
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Transform.Fusion as Fusion
-import qualified Elea.Equality as Equality
 import qualified Elea.Monad.Definitions as Defs
 
 checkEquation :: Equation -> Test.M Test.Test
@@ -27,6 +26,6 @@ tests = Test.label "Fusion"
   Test.loadPrelude
   eqs <- Test.loadFile "src-lib/Elea/Tests/fusion.elea"
   mapM checkEquation
-   -- . filter ((== "leq_nat transitive") . get equationName)
+    . filter ((== "bleh") . get equationName)
     $ eqs
 

@@ -191,7 +191,7 @@ instance HasType Constructor where
   assign = assign . constructorBind
   
 instance HasType a => HasType (Tagged a) where
-  assign = assign . Tag.tagged
+  assign = assign . Tag.untag
   
 instance HasType Bind where
   assign = return . Just . _bindType
@@ -271,7 +271,7 @@ argumentTypes :: Type -> [Type]
 argumentTypes = fst . split
 
 argumentCount :: Type -> Nat
-argumentCount = pred . length . flatten
+argumentCount = pred . nlength . flatten
 
 -- | Drops arguments from a type.
 -- > dropArgs 2 (A -> B -> C -> D) = C -> D
@@ -314,7 +314,7 @@ constructorBind (Constructor ind n) =
 -- | Return the positions of the recursive arguments of a given constructor
 recursiveArgs :: Constructor -> [Nat]
 recursiveArgs (Constructor (Ind _ cons) n) = id
-  . assert (length cons > n)
+  . assert (nlength cons > n)
   . map enum
   $ findIndices (== IndVar) con_args
   where
@@ -329,13 +329,10 @@ recursiveArgs (Constructor (Ind _ cons) n) = id
 -- > recursiveArgIndices nlist 1 == [0]
 recursiveArgIndices :: Constructor -> [Index]
 recursiveArgIndices con@(Constructor ind@(Ind _ cons) n) = id
-  . assert (length cons > n)
+  . assert (nlength cons > n)
   . map enum
-  . map (\x -> (arg_count - x) - 1)
+  . invert
   $ recursiveArgs con
-  where
-  -- The number of arguments this constructor has
-  arg_count = length (snd (cons !! n))
   
   
 -- | Returns the opposite indices to 'recursiveArgs'

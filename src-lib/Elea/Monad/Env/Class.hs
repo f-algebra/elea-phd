@@ -5,6 +5,7 @@ module Elea.Monad.Env.Class
   Write (..), Read (..), All,
   bind, bindMany, isBound,
   boundAt, bindingDepth,
+  forgetMatch,
   
   MatchRead (..), 
   findMatches,
@@ -43,6 +44,8 @@ class Monad m => Write m where
   
   forgetMatches :: (Match -> Bool) -> m a -> m a
   
+forgetMatch :: Write m => Match -> m a -> m a
+forgetMatch m = forgetMatches (== m)
   
 bind :: Write m => Bind -> m a -> m a
 bind = bindAt 0
@@ -69,7 +72,7 @@ boundAt at = do
   
 -- | Returns the number of indices that have been bound.
 bindingDepth :: Read m => m Nat
-bindingDepth = liftM length bindings
+bindingDepth = liftM nlength bindings
 
 -- | Is a given index bound within this environment.
 isBound :: Read m => Index -> m Bool

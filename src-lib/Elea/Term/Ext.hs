@@ -212,8 +212,8 @@ strictAcross alts = id
   withinAlt (Alt c bs (Bot _)) = Nothing
   withinAlt (Alt c bs alt_t) = id
     . Just
-    . Set.mapMonotonic (Indices.lowerMany (length bs))
-    . Set.filter (Indices.lowerableBy (length bs))
+    . Set.mapMonotonic (Indices.lowerMany (nlength bs))
+    . Set.filter (Indices.lowerableBy (nlength bs))
     $ strictWithin alt_t
 
 
@@ -227,7 +227,7 @@ strictArgs (Fix _ _ fix_t) =
   -- Take the index of the strict argument in the term and convert it into
   -- the integer position index of that argument
   toArgPos :: Index -> Nat
-  toArgPos idx = (length arg_bs - enum idx) - 1
+  toArgPos idx = enum ((length arg_bs - enum idx) - 1)
   
   strict_vars :: [Index]
   strict_vars = id
@@ -259,20 +259,20 @@ replace me with = id
 -- of the arguments.
 -- Helps stop 'decreasingArgs' causing errors on partially applied 
 -- fixpoints.
-decreasingAppArgs :: Term -> [Int]
+decreasingAppArgs :: Term -> [Nat]
 decreasingAppArgs (App fix args) = 
-  filter (length args >) (decreasingArgs fix)
+  filter (nlength args >) (decreasingArgs fix)
   
 
 -- | Returns the indices of the strictly decreasing arguments for
 -- a given function. Undefined if not given a 'Fix'.
-decreasingArgs :: Term -> [Int]
+decreasingArgs :: Term -> [Nat]
 decreasingArgs (Fix _ fix_b fix_t) = 
-  filter isDecreasing [0..length arg_bs - 1]
+  filter isDecreasing (range arg_bs)
   where
   (arg_bs, fix_body) = flattenLam fix_t
   
-  isDecreasing :: Int -> Bool
+  isDecreasing :: Nat -> Bool
   isDecreasing arg_i = id
     . Env.trackIndices fix_f
     
@@ -282,18 +282,18 @@ decreasingArgs (Fix _ fix_b fix_t) =
     $ Fold.allM decreasing fix_body
     where
     -- The deBrujin index of the lambda bound variable we are tracking
-    arg_idx = enum (length arg_bs - (arg_i + 1))
+    arg_idx = enum (length arg_bs - (enum arg_i + 1))
     
     -- The deBrujin index of the fix bound function variable
-    fix_f = length arg_bs
+    fix_f = elength arg_bs
     
     decreasing :: 
       Term -> Env.TrackSmallerTermsT (Env.TrackIndices Index) Bool
     decreasing t@(App (Var f) args) = do
       fix_f <- Trans.lift Env.tracked
-      if fix_f /= f || arg_i >= length args
+      if fix_f /= f || arg_i >= nlength args
       then return True
-      else Env.isSmaller (args `nth` arg_i)
+      else Env.isSmaller (args !! arg_i)
     decreasing _ = 
       return True
       
@@ -306,7 +306,7 @@ applyCase (Case cse_t alts) inner_t =
   where
   mkAlt :: Alt -> Alt
   mkAlt (Alt con bs _) = 
-    Alt con bs (Indices.liftMany (length bs) inner_t)
+    Alt con bs (Indices.liftMany (nlength bs) inner_t)
     
 applyCases :: [Term] -> Term -> Term
 applyCases cs t = foldr applyCase t cs  
@@ -329,7 +329,7 @@ generaliseArgs :: forall m a .
 generaliseArgs (App func args) run = do
   -- Use the type of every arguments to generate bindings for our new 
   -- generalised variables.
-  gen_bs <- mapM makeBind [0..length args - 1] 
+  gen_bs <- mapM makeBind (range args) 
         
   -- Run the inner computation
   done_t <- id
@@ -342,18 +342,18 @@ generaliseArgs (App func args) run = do
     . zipWith Indices.liftMany [0..]
     $ reverse args
   where
-  new_vars = map Var [0..length args - 1]
+  new_vars = map (Var . enum) [0..length args - 1]
   
-  makeBind :: Int -> m Bind
+  makeBind :: Nat -> m Bind
   makeBind n
-    | Var x <- args `nth` n = Env.boundAt x
+    | Var x <- args !! n = Env.boundAt x
   makeBind n = do
-    ty <- Type.getM (args `nth` n)
+    ty <- Type.getM (args !! n)
     let name = "_" ++ show ty
     return (Bind name ty)
   
   liftHere :: Indexed b => b -> b
-  liftHere = Indices.liftMany (length args)
+  liftHere = Indices.liftMany (nlength args)
   
   
 -- | Like 'generaliseArgs' but generalises /every/ occurrence of a set of terms
@@ -365,7 +365,7 @@ generaliseTerms :: forall m a t .
 generaliseTerms (toList -> terms) target run
   | length terms == 0 = run id target
   | otherwise = do
-    gen_bs <- mapM makeBind [0..length terms - 1]
+    gen_bs <- mapM makeBind (range terms)
           
     -- Run the inner computation
     done_t <- id
@@ -391,12 +391,12 @@ generaliseTerms (toList -> terms) target run
   makeBind n
     | Var x <- terms !! n = Env.boundAt x
   makeBind n = do
-    ty <- Type.getM (terms `nth` n)
+    ty <- Type.getM (terms !! n)
     let name = "_" ++ show ty
     return (Bind name ty)
   
   liftHere :: Indexed b => b -> b
-  liftHere = Indices.liftMany (length terms)
+  liftHere = Indices.liftMany (nlength terms)
   
   
 -- | Finds uninterpreted function calls and generalises them.
@@ -484,7 +484,7 @@ isFiniteMatch = all recArgsUsed
     rec_args = id
       . Set.fromList 
       . Type.recursiveArgIndices 
-      $ Tag.tagged tcon
+      $ Tag.untag tcon
     
 
 commuteMatchesWhenM :: forall m . Env.Write m 
@@ -503,12 +503,12 @@ commuteMatchesWhenM when = Fold.rewriteM commute
     where
     commutable :: Alt -> MaybeT m Term
     commutable (Alt con bs (Case inner_t inner_as))
-      | Indices.lowerableBy (length bs) inner_t = do
+      | Indices.lowerableBy (nlength bs) inner_t = do
         here <- lift (when outer_t inner_t')
         Fail.unless here
         return (Case inner_t' inner_as)
       where
-      inner_t' = Indices.lowerMany (length bs) inner_t
+      inner_t' = Indices.lowerMany (nlength bs) inner_t
     commutable _ = 
       Fail.here
   commute _ = 
@@ -611,10 +611,10 @@ isLambdaFloated fix@(Fix _ _ fix_t) =
 -- will make it equal the second
 findArguments :: Fail.Can m => Term -> Term -> m [Term]
 findArguments ctx term = do
-  uni <- Unifier.find ctx_body (Indices.liftMany (length arg_bs) term)
+  uni <- Unifier.find ctx_body (Indices.liftMany (nlength arg_bs) term)
   Fail.unless (Indices.free uni `Set.isSubsetOf` arg_idxs)
   return 
-    . map (Indices.lowerMany (length arg_bs) . snd)
+    . map (Indices.lowerMany (nlength arg_bs) . snd)
     $ Map.toDescList uni
   where
   (arg_bs, ctx_body) = flattenLam ctx
@@ -669,7 +669,7 @@ mapFixInfo f = Fold.transform mp
 equateArgs :: Nat -> Nat -> Term -> Term 
 equateArgs i j orig_t
   | assert (i < j) True
-  , assert (j < length bs) True =
+  , assert (j < nlength bs) True =
     unflattenLam new_bs new_body
   where
   (bs, body_t) = flattenLam orig_t
@@ -677,7 +677,9 @@ equateArgs i j orig_t
   new_body = Indices.substAt (toIdx j) (Var (pred (toIdx i))) body_t
   
   toIdx :: Nat -> Index
-  toIdx x = enum ((elength bs - x) - 1)
+  toIdx x = id
+    . assert (x < nlength bs) 
+    $ enum ((nlength bs - x) - 1)
   
   
 equateArgsMany :: [(Nat, Nat)] -> Term -> Term

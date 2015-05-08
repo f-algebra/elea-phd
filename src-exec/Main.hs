@@ -4,6 +4,7 @@ module Main
   main,
   test,
   run,
+  run2,
   height
 )
 where
@@ -41,9 +42,19 @@ run term_def = id
     Test.loadPrelude
     term <- Test.term term_def
     term' <- Fusion.run term
-    term_s' <- showM term'
-    term_s <- showM term
-    return term_s'
+    term_s <- showM term'
+    return term_s
+    
+run2 :: String -> IO ()
+run2 term_def = id
+  . putStrLn
+  . Fedd.eval $ do
+    Test.loadPrelude
+    term <- Test.term term_def
+    term' <- Fusion.run term
+    term'' <- Fusion.run term'
+    term_s <- showM term''
+    return term_s
     
 height :: String -> IO ()
 height term_def = id

@@ -56,7 +56,7 @@ expressSteps =
 
 rewritePattern :: Step m => Term -> m Term
 rewritePattern t = do
-  t' <- Env.findMatch
+  t' <- Env.findMatch t
   Transform.continue t'
   -- ^ Might be variables in pattern which we can rewrite
 
@@ -127,21 +127,21 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
       where
       suggestAlt :: Alt -> MaybeT Env.TrackOffset (Set Term)
       suggestAlt (Alt _ bs alt_t) =
-        Env.liftTrackedMany (length bs) (suggest alt_t)
+        Env.liftTrackedMany (nlength bs) (suggest alt_t)
         
-    suggest con_t@(App (Con con) args) = do
-      free_limit <- Env.tracked
+    suggest con_t@(App (Con tcon@(Tag.untag -> con)) args) = do
+      free_limit :: Nat <- liftM enum Env.tracked
       -- We cannot keep an argument to the constructor if it contains
       -- variables which are not free outside the fixpoint,
       -- because we cannot float these variables out.
-      let not_keepable = 
-            findIndices (any (< free_limit) . Indices.free) args
+      let not_keepable =
+            findIndices (any (< enum free_limit) . Indices.free) args
             
       -- If we have more than one not keepable argument then none
       -- of them can be the gap, so we fail.
       Fail.when (length not_keepable > 1)
       
-      let idx_offset = enum (free_limit - length arg_bs)
+      let idx_offset = free_limit - nlength arg_bs
       
       if length not_keepable == 1
       then do
@@ -152,7 +152,7 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
         Fail.when (arg_i `elem` Type.nonRecursiveArgs con)
         return
           . Set.singleton
-          $ gapContext idx_offset arg_i
+          $ gapContext idx_offset (enum arg_i)
       else return
          . Set.unions
          . map (Set.singleton . gapContext idx_offset) 
@@ -160,14 +160,14 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
       where
       -- Construct a context which is the constructor term with
       -- a gap at the given argument position
-      gapContext :: Nat -> Int -> Term
+      gapContext :: Nat -> Nat -> Term
       gapContext idx_offset gap_i = id
         . Indices.lowerMany idx_offset
         . Lam gap_b
-        . app (Con con)
+        . app (Con tcon)
         $ left ++ [Var 0] ++ right
         where
-        (left, _:right) = splitAt gap_i args
+        (left, _:right) = splitAt (enum gap_i) args
             
     suggest term = do
       fix_f <- liftM pred Env.offset
@@ -188,7 +188,7 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
     where
     ctx_comp = id
       . unflattenLam arg_bs
-      . app (Indices.liftMany (length arg_bs + 1) ctx_t)
+      . app (Indices.liftMany (nlength arg_bs + 1) ctx_t)
       . (return :: a -> [a])
       . unflattenApp 
       . reverse 
@@ -202,7 +202,7 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
       return (Case t) `ap` mapM stripAlt alts
       where
       stripAlt (Alt con bs t) = do
-        t' <- Env.liftTrackedMany (length bs) (strip t)
+        t' <- Env.liftTrackedMany (nlength bs) (strip t)
         return (Alt con bs t')
     strip term = do
       sugg <- Env.tracked
@@ -233,7 +233,7 @@ expressMatch term@(App fix@(Fix {}) _) = do
        $ map applyAlt alts
     where
     applyAlt (Alt con bs alt_t) = 
-      Alt con bs (Indices.liftMany (length bs) term)
+      Alt con bs (Indices.liftMany (nlength bs) term)
       
   freeCase _ = 
     return Nothing

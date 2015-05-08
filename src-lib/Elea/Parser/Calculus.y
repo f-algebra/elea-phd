@@ -14,6 +14,7 @@ import Elea.Term
 import Elea.Show ( showM )
 import qualified Elea.Term.Constraint as Constraint
 import qualified Elea.Term.Index as Indices
+import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Monad.Env as Env
@@ -24,60 +25,6 @@ import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Error.Class as Err
 import qualified Data.Map as Map
 
-type TypeArgs = [String]
-
--- A parameterised variable call can have type arguments.
--- > append<list<nat>>
-type ParamCall = (String, [RawType])
-
-type ParamName = (String, [String])
-
--- Inductive data types
-type TypeDef = (ParamName, [[String]])
-
--- Let bindings of terms
-type TermDef = (ParamName, RawTerm)
-
--- Declarations to decide equality between terms
-type PropDef = (ParamName, [RawBind], RawTerm)
-
-data RawProgram 
-  = RawProgram  { _programTypes :: [TypeDef]
-                , _programTerms :: [TermDef]
-                , _programProps :: [PropDef] }
-
-data RawType 
-  = TyBase ParamCall
-  | TyFun RawType RawType
-  | TyTuple [RawType]
-
-data RawBind 
-  = TBind { _rawLabel :: String
-          , _rawType :: RawType }
-
-data RawTerm
-  = TVar ParamCall
-  | TApp RawTerm RawTerm
-  | TFix [RawBind] RawTerm
-  | TLam [RawBind] RawTerm
-  | TCon Nat RawType
-  | TUnr RawType
-  | TCase RawTerm [RawAlt]
-  | TLet String RawTerm RawTerm
-  | TEql RawTerm RawTerm
-  | TFold RawType
-  | TTuple [RawTerm]
-  | TAssert [String] RawTerm RawTerm
-  
-data RawAlt
-  = TAlt [String] RawTerm
-  
-data Scope 
-  = Scope { _bindMap :: Map String Term
-          , _bindStack :: [Bind]
-          , _typeArgs :: Map String Type }
-  
-mkLabels [''Scope, ''RawBind, ''RawProgram]
 }
 
 %name happyProgram Program
@@ -218,6 +165,88 @@ Program :: { RawProgram }
 
 {
 
+
+type TypeArgs = [String]
+
+-- A parameterised variable call can have type arguments.
+-- > append<list<nat>>
+type ParamCall = (String, [RawType])
+
+type ParamName = (String, [String])
+
+-- Inductive data types
+type TypeDef = (ParamName, [[String]])
+
+-- Let bindings of terms
+type TermDef = (ParamName, RawTerm)
+
+-- Declarations to decide equality between terms
+type PropDef = (ParamName, [RawBind], RawTerm)
+
+data RawProgram 
+  = RawProgram  { _programTypes :: [TypeDef]
+                , _programTerms :: [TermDef]
+                , _programProps :: [PropDef] }
+
+data RawType 
+  = TyBase ParamCall
+  | TyFun RawType RawType
+  | TyTuple [RawType]
+
+data RawBind 
+  = TBind { rawLabel :: String
+          , rawType :: RawType }
+
+data RawTerm
+  = TVar ParamCall
+  | TApp RawTerm RawTerm
+  | TFix [RawBind] RawTerm
+  | TLam [RawBind] RawTerm
+  | TCon Nat RawType
+  | TUnr RawType
+  | TCase RawTerm [RawAlt]
+  | TLet String RawTerm RawTerm
+  | TEql RawTerm RawTerm
+  | TFold RawType
+  | TTuple [RawTerm]
+  | TAssert [String] RawTerm RawTerm
+  
+data RawAlt
+  = TAlt [String] RawTerm
+  
+data Scope 
+  = Scope { _bindMap :: Map String Term
+          , _bindStack :: [Bind]
+          , _typeArgs :: Map String Type }
+          
+      
+-- mkLabels wasn't working with Happy, so here I am deriving my lenses
+-- myself like a scrub
+programTypes :: RawProgram :-> [TypeDef]
+programTypes = lens _programTypes 
+  (\f x -> x { _programTypes = f (_programTypes x) }) 
+  
+programTerms :: RawProgram :-> [TermDef]
+programTerms = lens _programTerms
+  (\f x -> x { _programTerms = f (_programTerms x) })  
+  
+programProps :: RawProgram :-> [PropDef]
+programProps = lens _programProps
+  (\f x -> x { _programProps = f (_programProps x) }) 
+  
+bindMap :: Scope :-> Map String Term
+bindMap = lens _bindMap
+  (\f x -> x { _bindMap = f (_bindMap x) }) 
+  
+bindStack :: Scope :-> [Bind]
+bindStack = lens _bindStack
+  (\f x -> x { _bindStack = f (_bindStack x) }) 
+  
+typeArgs :: Scope :-> Map String Type
+typeArgs = lens _typeArgs
+  (\f x -> x { _typeArgs = f (_typeArgs x) }) 
+  
+
 withEmptyScope :: ReaderT Scope m a -> m a
 withEmptyScope = flip runReaderT (Scope mempty mempty mempty)
 
@@ -230,12 +259,17 @@ instance Monad m => Env.Write (ReaderT Scope m) where
     addToStack = insertAt (enum at) b
     addToMap = Map.insert (get bindLabel b) (Var at)
     
-  matched _ _ = id
+  matched _ = id
+  forgetMatches _ = id
   
 instance Err.Throws m => Env.Read (ReaderT Scope m) where
   bindings = asks (get bindStack)
   
-type ParserMonad m a = (Err.Throws m, Defs.Has m) => ReaderT Scope m a
+type ParserMonad m a = 
+  ParserEnv m => ReaderT Scope m a
+  
+type ParserEnv m = 
+  (Err.Throws m, Defs.Has m, Tag.Gen m)
 
 localTypeArgs :: ContainsTypes t => 
   [String] -> ParserMonad m t -> ParserMonad m (Polymorphic t)
@@ -254,7 +288,7 @@ localDef name term = id
   $ modify bindMap 
   $ Map.insert name term
   
-term :: (Err.Throws m, Defs.Has m, Env.Read m) => String -> m Term
+term :: (ParserEnv m, Env.Read m) => String -> m Term
 term str = do
   bs <- Env.bindings
   withEmptyScope
@@ -265,21 +299,21 @@ term str = do
     . lexer
     $ str
   
-_type :: (Err.Throws m, Defs.Has m) => String -> m Type
+_type :: ParserEnv m => String -> m Type
 _type = id
   . withEmptyScope
   . parseRawType
   . happyType 
   . lexer
   
-bindings :: (Err.Throws m, Defs.Has m) => String -> m [Bind]
+bindings :: ParserEnv m => String -> m [Bind]
 bindings = id
   . withEmptyScope
   . mapM parseRawBind
   . happyBindings
   . lexer
   
-program :: forall m . (Err.Throws m, Defs.Has m) 
+program :: forall m . ParserEnv m 
   => String -> m [Polymorphic Equation]
 program text = 
   withEmptyScope $ do
@@ -304,7 +338,7 @@ program text =
       cons <- mapM mkCon raw_cons
       return (Type.Ind ind_name cons)
     Defs.defineType ind_name ind_ty
-    mapM_ (defCon ind_ty) [0..length raw_cons - 1]
+    mapM_ (defCon ind_ty) (range raw_cons)
     where
     mkCon :: [String] -> ParserMonad m (String, [Type.ConArg])
     mkCon (con_name:ty_names) = do
@@ -316,12 +350,13 @@ program text =
         | arg_name == ind_name = return Type.IndVar
         | otherwise = liftM ConArg (lookupType (arg_name, []))
         
-    defCon :: Polymorphic Ind -> Int -> ParserMonad m ()
+    defCon :: Polymorphic Ind -> Nat -> ParserMonad m ()
     defCon poly_ind n =
       Defs.defineTerm name poly_con 
       where
-      poly_con = fmap (\ind -> Con (Constructor ind (enum n))) poly_ind
-      name = head (raw_cons !! n)
+      poly_con = fmap untaggedCon poly_ind
+      name = head (raw_cons !! n)   
+      untaggedCon ind = Con (Tag.with Tag.null (Constructor ind (enum n)))
   
   defineTerm ((name, ty_args), raw_term) = do
     p_term <- localTypeArgs ty_args (parseAndCheckTerm raw_term)
@@ -335,9 +370,12 @@ lookupTerm (name, raw_ty_args) = do
   else do
     ty_args <- mapM parseRawType raw_ty_args
     mby_term <- Defs.lookupTerm name ty_args
-    if isJust mby_term
-    then return (fromJust mby_term)
-    else Err.throw $ "Undefined term: " ++ name
+    case mby_term of
+      Nothing -> Err.throw ("Undefined term: " ++ name)
+      Just (Con null_tcon) -> do
+        tcon <- Tag.tag (Tag.untag null_tcon)
+        return (Con tcon)
+      Just other_t -> return other_t
     
 lookupType :: ParamCall -> ParserMonad m Type
 lookupType (name, raw_ty_args) = do
@@ -439,11 +477,11 @@ parseRawTerm (TAssert pat ron_t rin_t) = do
   on_t <- parseRawTerm ron_t
   on_ty@(Type.Base ind) <- Type.getM on_t
   (con_n, var_bs) <- parsePattern ind pat
+  tcon <- Tag.tag (Constructor ind con_n)
   in_t <- Env.bindMany var_bs (parseRawTerm rin_t)
   in_ty <- Env.bindMany var_bs (Type.getM in_t)
-  let pat_t = Term.altPattern (Constructor ind con_n)
-      assrt = Constraint.make on_t pat_t
-  return (Constraint.apply in_ty assrt in_t)
+  let ct = Term.matchFromConstructor tcon on_t
+  return (Constraint.apply in_ty ct in_t)
 parseRawTerm (TCase rt ralts) = do
   t <- parseRawTerm rt
   ind_ty <- Type.getM t
@@ -458,7 +496,7 @@ parseRawTerm (TCase rt ralts) = do
     | otherwise = do
       (con_n, var_bs) <- parsePattern ind pat
       t <- Env.bindMany var_bs (parseRawTerm ralt_t)
-      let con = Constructor ind con_n
+      con <-  Tag.tag (Constructor ind con_n)
       return (con_n, Alt con var_bs t)
     where 
     Type.Base ind = ind_ty

@@ -13,7 +13,8 @@ module Elea.Term.Tag
   replace,
   runGenT,
   uniqueId,
-  with
+  with,
+  tag
 )
 where
 
@@ -32,8 +33,8 @@ newtype Tag
   = Tag { _uniqueId :: Int }
   
 data Tagged a
-  = Tagged  { tag :: !Tag
-            , tagged :: !a }
+  = Tagged  { getTag :: !Tag
+            , untag :: !a }
   deriving ( Functor, Foldable, Traversable )
         
 mkLabels [ ''Tag ]
@@ -45,13 +46,13 @@ instance Ord Tag where
   compare = Prelude.compare `on` _uniqueId
 
 instance Eq a => Eq (Tagged a) where
-  (==) = (==) `on` tagged
+  (==) = (==) `on` untag
   
 instance Ord a => Ord (Tagged a) where
-  compare = Prelude.compare `on` tagged
+  compare = Prelude.compare `on` untag
   
 instance Show Tag where
-  show = show . _uniqueId
+  show t = "<" ++ (show . _uniqueId) t ++ ">"
   
 class Monad m => Gen m where
   generateId :: m Int
@@ -61,6 +62,11 @@ make = liftM Tag generateId
 
 with :: Tag -> a -> Tagged a
 with = Tagged
+
+tag :: Gen m => a -> m (Tagged a)
+tag x = do
+  t <- make
+  return (with t x)
   
 class Has a where
   tags :: a -> Set Tag
@@ -80,7 +86,7 @@ omega :: Tag
 omega = Tag (-2)
 
 null :: Tag 
-null = Tag (-1)
+null = Tag 0
 
   
 instance Monad m => Gen (GenT m) where
@@ -100,6 +106,12 @@ instance (Monoid w, Gen m) => Gen (WriterT w m) where
 instance Gen m => Gen (MaybeT m) where
   generateId = Trans.lift generateId
   
+instance Gen m => Gen (ReaderT r m) where
+  generateId = Trans.lift generateId
+  
+instance Gen m => Gen (EitherT e m) where
+  generateId = Trans.lift generateId
+  
 
 instance Atom a => Atom (Tagged a) where
   atom (Tagged x t) = atom [11, atom x, atom t]
@@ -107,8 +119,7 @@ instance Atom a => Atom (Tagged a) where
 instance Atom Tag where
   atom (Tag x) = cantor (10, x)
   
-  
 
 instance Show a => Show (Tagged a) where
-  show = show . tagged
+  show (Tagged t x) = show x
   

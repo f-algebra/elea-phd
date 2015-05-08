@@ -71,22 +71,27 @@ equality (Eql x y) = do
         eqs <- zipWithM reduce xs ys
         Transform.continue (foldr Term.and Term.true eqs)
        
-  reduce x@(flattenApp -> Con cx : xs) y = 
+  reduce x@(flattenApp -> Con tcx : xs) y = 
     History.check Name.EqMatchCon (Eql x y) $ do
       alts <- mapM getAlt all_cons
       Transform.continue (Case y alts)
     where
-    all_cons = Type.constructors (get Type.constructorOf cx)
+    all_cons = id
+      . Type.constructors 
+      . get Type.constructorOf 
+      $ Tag.untag tcx
     
-    getAlt c 
-      | c /= cx =   
-        return (Alt c alt_bs Term.false)
+    getAlt con
+      | con /= Tag.untag tcx =   
+        return (Alt tcon alt_bs Term.false)
         
       | otherwise = do
-        let alt_t = Eql (altPattern c) (Indices.liftMany (length alt_bs) x)
-        return (Alt c alt_bs alt_t)
+        let alt_t = Eql (Indices.liftMany (nlength alt_bs) x) pat_t 
+        return (Alt tcon alt_bs alt_t)
       where
-      alt_bs = Type.makeAltBindings c
+      tcon = Tag.with Tag.null con
+      pat_t = (patternTerm . makePattern tcon) alt_bs
+      alt_bs = Type.makeAltBindings con
  
   reduce x y
     | isCon (leftmost y)
@@ -100,7 +105,7 @@ equality (Eql x y) = do
     reduceAlt (Alt con bs alt_t) = 
       Alt con bs (Eql alt_t y')
       where
-      y' = Indices.liftMany (length bs) y
+      y' = Indices.liftMany (nlength bs) y
   
   reduce x y@(Case {}) =
     reduce y x

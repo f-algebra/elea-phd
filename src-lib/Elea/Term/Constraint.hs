@@ -62,7 +62,7 @@ apply ret_ty match term =
     Alt tcon bs alt_t
     where
     alt_t
-      | n == idx = Indices.liftMany (length bs) term
+      | n == idx = Indices.liftMany (nlength bs) term
       | otherwise = Bot ret_ty
       
       
@@ -81,6 +81,6 @@ subsume (Set.fromList -> cts) =
     get fixDomain fix_i
     
     
-forget :: Env.Write m => Set Constraint -> m a -> m a
-forget cts = Env.forgetMatches (`Set.member` cts)
+forget :: Env.Write m => FixInfo -> m a -> m a
+forget inf = Env.forgetMatches (`Set.member` get fixDomain inf)
 

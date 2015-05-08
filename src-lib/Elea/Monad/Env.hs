@@ -91,6 +91,13 @@ isoFree iso = id
     if x >= at
     then return (Set.singleton (x - at))
     else return mempty
+  freeR (Fix i _ _) = do
+    at <- liftM enum tracked
+    return
+      . Set.map (Indices.lowerMany at)
+      . Set.filter (Indices.lowerableBy at)
+      $ free i
+    -- ^ terms in here are not covered by traversal, so we add them manually
   freeR _ = 
     return mempty
     
@@ -151,12 +158,10 @@ instance Indexed Term where
 instance Indexed Alt where
   free (Alt _ bs alt_t) = id
     -- Drop the remaining variables to their value outside of the alt bindings
-    . Set.map (Indices.lowerMany (length bs))
+    . Set.map (Indices.lowerMany (nlength bs))
+    . Set.filter (Indices.lowerableBy (nlength bs))
     -- Take the free variables of the term, minus those bound by the alt
-    $ Indices.free alt_t `Set.difference` not_free
-    where
-    not_free :: Set Index
-    not_free = Set.fromList (map enum [0..length bs - 1])
+    $ Indices.free alt_t
     
   shift f (Alt con bs alt_t) = 
     Alt con bs (Indices.shift f' alt_t)
@@ -249,7 +254,7 @@ isBaseCase term = do
       allM isBaseCase
         . map (args !!)
         . Type.recursiveArgs 
-        $ Tag.tagged con
+        $ Tag.untag con
 
   
 -- Place 'AlsoTrack' over the top of a 'Write' environment monad.
@@ -501,7 +506,7 @@ instance (Show Term, Write m) => Write (TrackSmallerTermsT m) where
       . Set.fromList
       . map (args !!) 
       . Type.recursiveArgs 
-      $ Tag.tagged con
+      $ Tag.untag con
      
     addMatch (Smaller than set) = 
       Smaller than set'
@@ -568,7 +573,7 @@ instance Unifiable Term where
       uniAlt :: Alt -> Alt -> TrackIndicesT Index m (Unifier Term)
       uniAlt (Alt con1 bs1 t1) (Alt con2 bs2 t2) = do
         Fail.when (con1 /= con2)
-        liftTrackedMany (length bs1) (uni t1 t2)
+        liftTrackedMany (nlength bs1) (uni t1 t2)
     uni _ _ = Fail.here 
     
   apply uni = id
@@ -641,7 +646,7 @@ instance Unifiable Term where
       return (ct ++ calts)
       where 
       compAlts (Alt con1 bs1 t1) (Alt con2 bs2 t2) = 
-        liftTrackedMany (length bs1) (comp t1 t2)
+        liftTrackedMany (nlength bs1) (comp t1 t2)
       
   alphaEq t t'
     | Just u1 <- Unifier.find t t'
@@ -651,7 +656,9 @@ instance Unifiable Term where
 
         
 instance Indexed Match where
-  free = free . get matchTerm
+  free m = 
+    free (matchedTerm m) ++ free (matchedTo m)
+    
   shift f = id
     . modify matchTerm (shift f)
     . modify matchPatterns (map (shift f))

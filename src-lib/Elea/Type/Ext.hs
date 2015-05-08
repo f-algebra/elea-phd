@@ -77,7 +77,7 @@ instance HasTypeM Term where
       Fail.unless (Prelude.and (zipWith checkArg xs arg_tys))
       return 
         . Just 
-        $ dropArgs (length xs) fty
+        $ dropArgs (nlength xs) fty
       where
       (arg_tys, res_ty) = split fty
       
@@ -112,7 +112,7 @@ instance HasTypeM Term where
       checkAlt :: Alt' (Maybe Type) -> m (Maybe Type)
       checkAlt (Alt' tcon _ ty) = do
         Fail.unless (isNothing cse_ty 
-          || cse_ind == Prelude.get constructorOf (Tag.tagged tcon))
+          || cse_ind == Prelude.get constructorOf (Tag.untag tcon))
         return ty
         where
         Just (Base cse_ind) = cse_ty

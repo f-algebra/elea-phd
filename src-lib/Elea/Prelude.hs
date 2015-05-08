@@ -53,7 +53,8 @@ module Elea.Prelude
   fromRight, fromLeft, traceMe, setAt, firstM, 
   takeIndices, isNub, foldl1M, seqStr, strSeq,
   isLeft, isRight, modifyM, removeAt,
-  insertAt, enum, elength, indent, indentBy, debugNth,
+  insertAt, enum, elength, nlength, range,
+  indent, indentBy, debugNth,
   arrowSum, supremum, (|>), ($>), replaceAt,
   Maximum (..), Minimum (..), sconcatMap, length,
   maximum, maximum1, invert,
@@ -94,7 +95,7 @@ import Control.Monad.Fix
 import Control.Exception ( assert )
 
 import Data.Nat ( Nat, CoNat )
-import Data.Label ( (:->), get, set, modify, mkLabels )
+import Data.Label ( (:->), get, set, modify, mkLabels, lens )
 import Data.Maybe
 import Data.Either ( lefts, rights, partitionEithers )
 import Data.Monoid hiding ( Sum, All, (<>) )
@@ -168,11 +169,17 @@ concatMapM f = liftM concat . mapM f . toList
 intercalate :: Monoid m => m -> [m] -> m
 intercalate x = concat . intersperse x
 
-length :: Foldable f => f a -> Nat
-length = enum . Pre.length . toList
+length :: Foldable f => f a -> Int
+length = Pre.length . toList
 
 elength :: (Foldable f, Enum e) => f a -> e
 elength = enum . length
+
+nlength :: Foldable f => f a -> Nat
+nlength = elength
+
+range :: Foldable f => f a -> [Nat]
+range xs = map enum [0..length xs - 1]
 
 
 partitionM :: Monad m => (a -> m Bool) -> [a] -> m ([a], [a])
@@ -438,4 +445,5 @@ evalWriter = fst . runWriter
 
 evalWriterT :: Monad m => WriterT w m a -> m a
 evalWriterT = liftM fst . runWriterT
+
                                

@@ -15,7 +15,7 @@ module Elea.Term
   altBindings', altInner', altConstructor',
   matchTerm, matchPatterns, matchIndex, 
   matchedPattern, matchedTo, matchedTerm,
-  matchFromCase,
+  matchFromCase, matchFromConstructor,
   patternConstructor, patternBindings, patternVars,
   fixIndex, fixDomain,
   flattenApp, leftmost, arguments,
@@ -28,6 +28,7 @@ module Elea.Term
   fromVar, 
   and, conjunction, true, false,
   altPattern, recursivePatternVars,
+  makePattern,
   patternTerm,
   isSimple,
   isFinite,
@@ -299,7 +300,7 @@ emptyInfo = FixInfo Set.empty Tag.omega
 -- has every argument applied to it.
 inductivelyTyped :: Term -> Bool
 inductivelyTyped (App (Fix _ (Bind _ fix_ty) _) args) =
-  Type.argumentCount fix_ty == length args
+  Type.argumentCount fix_ty == nlength args
   
 
 -- | If a fixed-point is in the process of being fused into a context.
@@ -315,11 +316,15 @@ matchedPattern (Match _ pts n) = pts !! n
 matchedTerm :: Match -> Term
 matchedTerm = get matchTerm
   
+-- | Keeps alt binding names and constructor tags from the case, as
+-- opposed to 'matchFromConstructor' which uses null tags
 matchFromCase :: Indexed Term => Nat -> Term -> Match
 matchFromCase n (Case cse_t alts) =
   Match match_t (map altPattern alts) n
   where
-  match_t = Indices.liftMany (length bs) cse_t
+  match_t = Indices.liftMany (nlength bs) cse_t
+  -- ^ matches exist down the branch where the match occurred, so we must
+  -- lift the matched term to what it would be down this branch
   Alt _ bs _ = alts !! n
   pats = zipWith stripVars [0..] (map altPattern alts)
   
@@ -328,17 +333,39 @@ matchFromCase n (Case cse_t alts) =
     | i == enum n = p
     | otherwise = Pattern tc bs []
     
+matchFromConstructor :: Indexed Term 
+  => Tagged Constructor -> Term -> Match
+matchFromConstructor tcon cse_t =
+  matchFromCase (enum n) (Case cse_t (map mkAlt cons))
+  where
+  Just n = findIndex (Tag.untag tcon ==) cons
+  cons = (Type.constructors . get Type.constructorOf . Tag.untag) tcon
+  
+  mkAlt :: Constructor -> Alt
+  mkAlt con
+    | con == Tag.untag tcon = Alt tcon bs (Var 0)
+    | otherwise = Alt (Tag.with Tag.null con) bs (Var 0)
+    where
+    bs = Type.makeAltBindings con
+    
+    
 matchedTo :: Match -> Term
 matchedTo = patternTerm . matchedPattern
   
   
 altPattern :: Alt -> Pattern
 altPattern (Alt tcon bs _) =
+  makePattern tcon bs
+  
+  
+makePattern :: Tagged Constructor -> [Bind] -> Pattern
+makePattern tcon bs = 
   Pattern tcon bs vars
   where
-  Constructor (Type.Ind _ cons) n = Tag.tagged tcon
+  Constructor (Type.Ind _ cons) n = Tag.untag tcon
   vars = (reverse . map enum) [0..arg_count-1]
   arg_count = (length . snd . (cons !!)) n
+  
     
 patternTerm :: Pattern -> Term
 patternTerm (Pattern tcon _ xs) =
@@ -364,7 +391,7 @@ isFinite (App (Con tcon) args) = id
   . all isFinite 
   . map (args !!)
   . Type.recursiveArgs 
-  $ Tag.tagged tcon
+  $ Tag.untag tcon
 isFinite _ = False
 
 
@@ -379,11 +406,11 @@ isSimple _ = False
 
 lowerableAltInner :: Indexed Term => Alt -> Bool
 lowerableAltInner (Alt _ bs alt_t) =
-  Indices.lowerableBy (length bs) alt_t
+  Indices.lowerableBy (nlength bs) alt_t
 
 loweredAltInner :: Indexed Term => Alt -> Term
 loweredAltInner (Alt _ bs alt_t) =
-  Indices.lowerMany (length bs) alt_t
+  Indices.lowerMany (nlength bs) alt_t
   
 -- | Build a fold function. 
 buildFold :: Indexed Term 
@@ -421,7 +448,7 @@ buildFold ind@(Type.Ind _ cons) result_ty =
         where
         (_, con_args) = cons !! con_n
         con = Tag.with Tag.null (Constructor ind con_n)
-        liftHere = Indices.liftMany (length con_args)
+        liftHere = Indices.liftMany (nlength con_args)
         
         -- The index of the fix variable
         outer_f = liftHere (Var 1)
@@ -502,7 +529,7 @@ buildEq ind@(Ind _ cons) =
   app (buildFold ind fold_ty) cases
   where
   fold_ty = Fun (Base ind) (Base Type.bool)
-  cases = map buildCase [0..length cons - 1]
+  cases = map (buildCase . enum) [0..length cons - 1]
   
   buildCase :: Nat -> Term
   buildCase case_n = id 
@@ -518,7 +545,7 @@ buildEq ind@(Ind _ cons) =
       getArgTy IndVar = fold_ty
       getArgTy (ConArg ty) = ty
 
-    alts = map makeAlt [0..length cons - 1]
+    alts = map (makeAlt . enum) [0..length cons - 1]
       where 
       makeAlt :: Nat -> Alt
       makeAlt match_n = 
@@ -534,7 +561,7 @@ buildEq ind@(Ind _ cons) =
         
         alt_t 
           | case_n /= match_n = false
-          | otherwise = app (conjunction (length eq_checks)) eq_checks 
+          | otherwise = app (conjunction (nlength eq_checks)) eq_checks 
           
         eq_checks = 
           zipWith getEqCheck (reverse [0..length con_args - 1]) con_args
@@ -575,26 +602,28 @@ isFixPromoted (App fix@(Fix {}) xs) =
   overlap = Set.intersection (Indices.free fix) x_vars_set
 isFixPromoted _ = False
 
-  
 
 instance Encodable Term where
   encodeRaw (Bot _) = [cantor (8, 0)]
+  encodeRaw (Var _) = [cantor (2, 0)]
+  encodeRaw (Fix fix_i _ fix_t) = []
+    ++ [atom fix_i] 
+    ++ encodeRaw fix_t 
+    ++ [cantor (1, 2)]
   encodeRaw (Eql x y) = []
     ++ [cantor (1, 0)] 
     ++ encodeRaw x 
-    ++ [cantor (1, 0)] 
+    ++ [cantor (1, 1)] 
     ++ encodeRaw y
-  encodeRaw (Var _) = [cantor (2, 0)]
   encodeRaw (Lam _ t) = []
     ++ [cantor (3, 0)] 
     ++ encodeRaw t
   encodeRaw (Con tcon) = [atom tcon]
   encodeRaw (App f xs) = []
     ++ encodeRaw f 
-    ++ concatMap (([cantor (4, 0)] ++) . encodeRaw) xs
-  encodeRaw (Fix fix_i _ fix_t) = []
-    ++ [atom fix_i]
-    ++ encodeRaw fix_t
+    ++ concat (zipWith bracket [0..] (map encodeRaw xs))
+    where
+    bracket n enc = [cantor (4, n)] ++ enc
   encodeRaw (Case cse_t alts) = []
     ++ [cantor (9, 0)]
     ++ encodeRaw cse_t 
@@ -603,8 +632,7 @@ instance Encodable Term where
     
 instance Atom Constructor where
   atom (Constructor ind idx) = 
-    atom [20, atom (get Type.indName ind), atom idx]
-    
+    atom [14, atom (get Type.indName ind), atom idx]
     
 instance Encodable Alt where
   encodeRaw (Alt tcon bs t) = []
@@ -613,7 +641,6 @@ instance Encodable Alt where
     
 instance Atom FixInfo where
   atom (FixInfo _ idx)
-    | idx == Tag.omega = cantor (5, 0)
-    | otherwise = cantor (5, 1)
-      
+    | idx == Tag.omega = cantor (12, 0)
+    | otherwise = cantor (12, 1)
 

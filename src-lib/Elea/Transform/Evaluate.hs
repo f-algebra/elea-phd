@@ -18,6 +18,7 @@ import Elea.Term
 import qualified Elea.Embed as Embed
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Term.Ext as Term
+import qualified Elea.Term.Tag as Tag
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Unification as Unifier
 import qualified Elea.Term.Constraint as Constraint
@@ -118,8 +119,7 @@ beta _ = Fail.here
 
 caseOfCon :: Step m => Term -> m Term
 caseOfCon term@(Case cse_t alts)
-  | Con con : args <- flattenApp cse_t
-  , Alt _ bs alt_t <- alts !! get Type.constructorIndex con = id
+  | (isCon . leftmost) cse_t = id
     . History.check Name.CaseOfCon term
     . Transform.continue
     -- We fold substitute over the arguments to the constructor
@@ -132,6 +132,14 @@ caseOfCon term@(Case cse_t alts)
     -- depending on their position in the order of substitution, 
     -- viz. those substituted first are lifted the most.
     $ zipWith liftMany [0..] args
+  where
+  Con tcon : args = flattenApp cse_t
+  Alt _ bs alt_t = id
+    . (alts !!)
+    . get Type.constructorIndex
+    $ Tag.untag tcon
+    
+    
 caseOfCon _ = Fail.here
 
 
@@ -155,35 +163,35 @@ traverseBranches term@(Case (Var x) alts) =
     Fail.when (term == term')
     Transform.continue (Case (Var x) alts')
   where
-  traverseAlt (Alt con bs t) = do
+  traverseAlt alt@(Alt tcon bs t) = do
     t' <- id
       . Env.bindMany bs
       . Transform.continue 
       -- Substitute the variable we have just bound for the 
       -- pattern it has been bound to
       $ Indices.replaceAt x_here pat_t t
-    return (Alt con bs t')
+    return (Alt tcon bs t')
     where
-    x_here = Indices.liftMany (length bs) x
-    pat_t = altPattern con
+    x_here = Indices.liftMany (nlength bs) x
+    pat_t = (patternTerm . altPattern) alt
     
 traverseBranches term@(Case cse_t alts) = 
   History.check Name.TraverseBranch term $ do
-    alts' <- mapM traverseAlt alts
+    alts' <- zipWithM traverseAlt [0..] alts
     let term' = Case cse_t alts'
     -- Fail.when (term Embed.<= term')
     Fail.when (term == term')
     Transform.continue (Case cse_t alts')
   where
-  traverseAlt (Alt con bs t) = do
+  traverseAlt n alt@(Alt con bs t) = do
     t' <- id
       . Env.bindMany bs
-      . Env.matched cse_t_here pat_t
+      . Env.matched (Term.matchFromCase n term)
       $ Transform.continue t
     return (Alt con bs t')
     where
-    cse_t_here = Indices.liftMany (length bs) cse_t
-    pat_t = altPattern con
+    cse_t_here = Indices.liftMany (nlength bs) cse_t
+    pat_t = (patternTerm . altPattern) alt
     
 traverseBranches _ = Fail.here
 
@@ -213,8 +221,10 @@ traverseApp _ = Fail.here
 traverseFix :: Step m => Term -> m Term
 traverseFix fix@(Fix inf b t) = do
   t' <- id
-   -- . Constraint.forget (get fixDomain inf)
   --  . (if show inf /= "" then trace ("\n\n !!FORGETTING " ++ show inf) else id)
+    . Constraint.forget inf
+    -- ^ if we have fused a constraint into a term we do not need
+    -- it in the set of constraints
     . Env.bind b
     $ Transform.continue t
   Fail.when (t Embed.<= t')
@@ -266,7 +276,7 @@ caseApp (App (Case t alts) args) =
   Transform.continue (Case t (map appArg alts))
   where
   appArg (Alt con bs alt_t) =
-    Alt con bs (app alt_t (Indices.liftMany (length bs) args))
+    Alt con bs (app alt_t (Indices.liftMany (nlength bs) args))
     
 caseApp _ = Fail.here
 
@@ -287,10 +297,10 @@ appCase term@(App f xs) = do
     applyAlt (Alt con bs alt_t) = 
       Alt con bs (app f' xs')
       where
-      f' = Indices.liftMany (length bs) f
+      f' = Indices.liftMany (nlength bs) f
       xs' = id 
         . setAt cse_i alt_t
-        $ Indices.liftMany (length bs) xs
+        $ Indices.liftMany (nlength bs) xs
       
 appCase _ = Fail.here
 
@@ -305,6 +315,6 @@ caseCase outer_cse@(Case inner_cse@(Case inner_t inner_alts) outer_alts) =
   newOuterAlt (Alt con bs t) = 
     Alt con bs (Case t alts_here)
     where
-    alts_here = map (Indices.liftMany (length bs)) outer_alts
+    alts_here = map (Indices.liftMany (nlength bs)) outer_alts
 caseCase _ = Fail.here
 

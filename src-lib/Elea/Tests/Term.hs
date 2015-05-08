@@ -41,12 +41,7 @@ tests = Test.label "Terms"
   let fold1 = Test.assertSimpEq fold_nat_nat (buildFold nat (Base nat))
       fold2 = Test.assertSimpEq fold_ntree_nlist (buildFold ntree (Base nlist))
       
-  -- A weird problem I had at one point
-  let eq_ind = Ind "__EQ" [("==", [ConArg (Base nat), ConArg (Base nat)])]
-      eq_con = Constructor eq_ind 0
-      weird_free = Indices.free (Alt Type.true [] (App (Con eq_con) [Var 0, Var 1]))
-      weird1 = Test.assertEq (Set.fromList [0, 1]) weird_free
-      
+
   let conj3_t = Simp.run (conjunction 3)
   conj3_t' <- Test.simplifiedTerm "fun (p q r: bool) -> and p (and q r)"
   let conj1 = Test.assertEq conj3_t' conj3_t
@@ -120,9 +115,7 @@ tests = Test.label "Terms"
         , Test.assertEq strict2 strict2' ]
     
   return $ Test.list $  
-    [ weird1
-    -- , fold1, fold2 
-    , conj1
+    [ conj1
     , subterms1
     , abstract1
     , findArgs1

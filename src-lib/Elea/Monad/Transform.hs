@@ -120,7 +120,7 @@ instance Env.Read m => Env.Read (StepT m) where
   
 instance Env.Write m => Env.Write (StepT m) where
   bindAt at b = mapStepT (Env.bindAt at b)
-  matched t c = mapStepT (Env.matched t c)
+  matched m = mapStepT (Env.matched m)
   forgetMatches w = mapStepT (Env.forgetMatches w)
 
 instance Defs.Read m => Defs.Read (StepT m) where

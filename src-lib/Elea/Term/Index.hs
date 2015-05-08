@@ -66,7 +66,7 @@ lowerManyAt :: Indexed a => Nat -> Index -> a -> a
 lowerManyAt n at = shift lower
   where
   lower x
-    | at <= x = x - enum n
+    | at <= x = assert (x >= enum n) (x - enum n)
     | otherwise = x
     
 lowerAt :: Indexed a => Index -> a -> a

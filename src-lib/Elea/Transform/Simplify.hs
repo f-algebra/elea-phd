@@ -109,7 +109,7 @@ caseFun cse@(Case t alts)
     . Alt con bs
     $ Term.reduce alt_t [arg]
     where
-    arg = Var (length bs)
+    arg = Var (elength bs)
     
 caseFun _ = Fail.here
   
@@ -121,7 +121,7 @@ constArg (App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
   | length arg_bs /= length args = Fail.here
   | otherwise = do
     -- Find if any arguments never change in any recursive calls
-    pos <- Fail.fromMaybe (find isConstArg [0..length arg_bs - 1])
+    pos <- (Fail.fromMaybe . find isConstArg . range) arg_bs
     
     -- Then we run the 'removeConstArg' function on that position to
     -- get a new fixed-point
@@ -132,7 +132,7 @@ constArg (App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
     -- Might as well simplify the constant argument before pushing it inside
     -- and possible duplicating it
     arg' <- Transform.continue (args !! pos)
-    let args' = setAt pos arg' args
+    let args' = setAt (enum pos) arg' args
     
     -- Run evaluation to reduce all the new lambdas
     let term' = Term.reduce fix' args'
@@ -143,10 +143,10 @@ constArg (App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
   arg_count = length (Type.flatten fix_ty) - 1
   
   -- The index of the recursive call to the function within 'fix_body'
-  fix_f = length arg_bs :: Index
+  fix_f = elength arg_bs :: Index
   
   -- Does the given argument position never change in any recursive call?
-  isConstArg :: Int -> Bool
+  isConstArg :: Nat -> Bool
 --  isConstArg arg_i
  --   | isVar (args !! arg_i) = False
   isConstArg arg_i = id
@@ -156,7 +156,7 @@ constArg (App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
     where
     -- The index of the argument we are tracking as it was bound
     -- by the lambdas of the function
-    arg_x = enum (length arg_bs - (arg_i + 1))
+    arg_x = enum (nlength arg_bs - (arg_i + 1))
     
     -- Whether this given argument changes at a recursive call site
     isntConst :: Term -> Env.TrackIndices (Index, Term) Bool
@@ -168,7 +168,7 @@ constArg (App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
         -- in the correct shape for this process. So we fail by saying
         -- the argument changed.
         && (length args /= arg_count
-        || arg_t /= (args `nth` arg_i))
+        || arg_t /= (args !! arg_i))
     isntConst _ = 
       return False
      
@@ -181,7 +181,7 @@ constArg (App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
     . flip app outer_args
     
     -- Need to make sure no variables are captured by these new outer lambdas
-    . Indices.liftManyAt (length left_bs) 1 
+    . Indices.liftManyAt (nlength left_bs) 1 
     . Fix fix_info fix_b'
     
     -- Remove the argument everywhere it appears
@@ -231,8 +231,8 @@ identityCase (Case cse_t alts)
   | all isIdAlt alts = Transform.continue cse_t
   where
   isIdAlt :: Alt -> Bool
-  isIdAlt (Alt con _ alt_t) = 
-    alt_t == altPattern con
+  isIdAlt alt@(Alt con _ alt_t) = 
+    alt_t == (patternTerm . altPattern) alt
 identityCase _ = Fail.here
 
 
@@ -364,7 +364,7 @@ constantFix t@(App (Fix _ fix_b fix_t) args)
     where
     rec_f = id
       . unflattenLam arg_bs
-      . Indices.liftMany (length arg_bs)
+      . Indices.liftMany (nlength arg_bs)
       $ guess_t
       
     fix_t' = Eval.run (Indices.substAt 0 rec_f fix_t)
@@ -410,7 +410,7 @@ constantCase (Case _ alts) = do
   where
   loweredAltTerm :: Alt -> m Term
   loweredAltTerm (Alt _ bs alt_t) = 
-    Indices.tryLowerMany (length bs) alt_t
+    Indices.tryLowerMany (nlength bs) alt_t
     
 constantCase _ = Fail.here
 
@@ -420,16 +420,19 @@ unfold term@(App fix@(Fix {}) args)
   | any (isCon . leftmost) dec_args =
     History.check Name.Unfold term $ do
       term' <- Transform.continue (app (Term.unfoldFix fix) args)
-    --  when (term Embed.<= term') $ do
-      --  trace ("\n\n[failed unfold] " ++ show term ++ "\n\n[into] " ++ show term') 
-        --  Fail.here
+      when (Fold.any embedded term') $ do
+        trace ("\n\n[failed unfold] " ++ show term ++ "\n\n[into] " ++ show term') 
+          Fail.here
       return 
-       $  trace ("\n\n[success unfold]" ++ show term   ++ "\n\n[into] " ++ show term')
+      --   $  trace ("\n\n[success unfold]" ++ show term   ++ "\n\n[into] " ++ show term')
         $ term'
   where
   dec_args = map (args !!) (Term.decreasingArgs fix)
   
-  -- matchOriginal (App fix'@(Fix {}) args') =
+  embedded (App fix'@(Fix {}) args')
+    | fix' == fix
+    , App (Var 0) args Embed.<= App (Var 0) args' = True
+  embedded _ = False
     
   
   
@@ -439,12 +442,20 @@ unfold term@(Case cse_t@(App fix@(Fix {}) xs) alts)
       term' <- id
         . Transform.continue 
         $ Case (app (Term.unfoldFix fix) xs) alts
-      Fail.when (term Embed.<= term')
+      when (Fold.any embedded term') $ do
+        trace ("\n\n[failed case-unfold] " ++ show term ++ "\n\n[into] " ++ show term') 
+          Fail.here
       return term'
   where
   strict_overlap = 
     Set.intersection (Term.strictAcross alts) 
                      (Term.strictWithin cse_t)
+                     
+  embedded (Case (App fix'@(Fix {}) xs') alts') 
+    | fix' == fix
+    , Case (App (Var 0) xs) alts 
+        Embed.<= Case (App (Var 0) xs') alts' = True
+  embedded _ = False
     
 unfold _ = Fail.here
 

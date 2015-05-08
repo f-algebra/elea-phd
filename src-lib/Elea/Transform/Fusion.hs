@@ -105,7 +105,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = do
       . Env.bind new_fix_b
       . Rewrite.local temp_idx rewrite_from 0
       . Transform.continue
-     . trace ("\n\n[fusing <" ++ show temp_tag ++ ">] " ++ t_s)
+     . trace ("\n\n[fusing <" ++ show temp_idx   ++ ">] " ++ t_s)
      -- . trace ("\n\n[replacing] " ++ t_s')
      -- . trace ("\n\n[transforming< " ++ show temp_tag ++ ">] " ++ t_s'')
       -- Make room for our new variables we are rewriting to
@@ -116,12 +116,12 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = do
     t_s''' <- showM (Simp.run (Fix fix_i new_fix_b new_fix_t))
     -- Check we actually performed a rewrite
     unless (Indices.freeWithin 0 new_fix_t) $ do
-      trace ("\n\n[failing with <" ++ show temp_tag ++ ">] " ++ t_s''') 
+      trace ("\n\n[failing with <" ++ show temp_idx ++ ">] " ++ t_s''') 
         Fail.here
       
     return
       . Simp.run
-      . trace ("\n\n[yielding <" ++ show temp_tag ++ ">] " ++ t_s''') 
+      . trace ("\n\n[yielding <" ++ show temp_idx ++ ">] " ++ t_s''') 
       . Fix fix_i new_fix_b 
       $ Tag.replace temp_idx orig_idx new_fix_t
   where
@@ -145,7 +145,7 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
   -- Pick the first one which does not fail
   Fail.choose
     -- Run fixfixArg on every decreasing fixpoint argument position
-    . map fixArg
+    . map (fixArg . enum)
     . filter (Term.isFix . Term.leftmost . (o_args !!))
     $ Term.decreasingArgs o_fix 
   where  
@@ -190,8 +190,8 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
       o_fix_bs = removeAt (enum arg_i) (fst (flattenLam o_fix_t))
       i_fix_bs = fst (flattenLam i_fix_t)
         
-      o_arg_c :: Int = length o_fix_bs
-      i_arg_c :: Int = length i_fix_bs   
+      o_arg_c  = length o_fix_bs
+      i_arg_c = length i_fix_bs   
       arg_c = o_arg_c + i_arg_c
       
 fixfix _ = Fail.here
@@ -216,9 +216,9 @@ decreasingFreeVar orig_t@(App fix@(Fix _ _ fix_t) args) = do
   let (orig_bs, _) = flattenLam fix_t
       ctx_t = id
         . unflattenLam (expr_b:orig_bs)
-        . app (Var (length orig_bs))
+        . app (Var (elength orig_bs))
         . map (Var . enum) 
-        $ map (\v -> (length orig_bs - v) - 1) var_arg_is
+        $ map (\v -> (length orig_bs - enum v) - 1) var_arg_is
         ++ reverse [0..length orig_bs - 1]
         
       full_t = Term.reduce ctx_t (expr_fix:args)
@@ -240,14 +240,14 @@ decreasingFreeVar orig_t@(App fix@(Fix _ _ fix_t) args) = do
   where
   -- The variable arguments we should attempt this technique on.
   -- They must be a decreasing argument, and free within the fixpoint itself. 
-  var_arg_is :: [Int]
+  var_arg_is :: [Nat]
   var_arg_is = id
     . sort
     . filter isFreeVar 
     $ Term.decreasingArgs fix
     where
     isFreeVar arg_i 
-      | Var x <- args `nth` arg_i =
+      | Var x <- args !! arg_i =
         x `Indices.freeWithin` fix
     isFreeVar _ = False
     
@@ -266,13 +266,15 @@ repeatedArg term@(App fix@(Fix _ fix_b fix_t) args) = do
   Fail.when (Term.beingFused fix)
   Fail.choose (map fuseRepeated rep_arg_is)
   where
+  rep_arg_is :: [[Int]]
   rep_arg_is = id 
+    . map (map enum)
     -- We only care about ones with at least a single repetition
     . filter ((> 1) . length)
     -- Group up all decreasing arguments which are equal
-    . groupBy ((==) `on` (args `nth`))
+    . groupBy ((==) `on` (args !!))
     -- We only care about variable arguments
-    . filter (Term.isVar . (args `nth`))
+    . filter (Term.isVar . (args !!))
     $ Term.decreasingArgs fix
     
   (fix_bs, _) = flattenLam fix_t
@@ -296,22 +298,23 @@ repeatedArg term@(App fix@(Fix _ fix_b fix_t) args) = do
     
     ctx_t = id
       . unflattenLam (fix_b:ctx_bs)
-      . app (Var (length ctx_bs))
+      . app (Var (elength ctx_bs))
       $ reverse ctx_args
       where
       non_arg_is = removeAll arg_set [0..length args - 1]
       
       arg_b = fix_bs !! ((length args - head arg_is) - 1)
       ctx_bs = arg_b : removeAll arg_set fix_bs
-      ctx_args = map getArg [0..length args - 1]
+      ctx_args = map getArg (range args)
         where
-        getArg i 
-          | i `elem` arg_is = Var (length ctx_bs - 1)
+        getArg :: Nat -> Term
+        getArg n 
+          | enum n `elem` arg_is = Var (enum (length ctx_bs - 1))
           | otherwise = id
               . Var
               . enum
               . fromJust
-              $ findIndex (== i) non_arg_is
+              $ findIndex (== enum n) non_arg_is
 
 repeatedArg _ = Fail.here
 
@@ -323,17 +326,20 @@ matchFix term@(App fix@(Fix {}) xs)
     cs <- Env.findConstraints usefulConstraint
     term' <- fuseConstraints (Constraint.subsume cs) term
     ts <- showM term'
-    if False && term Embed.<= term'
+    if term Embed.<= term'
     then trace ("\n\n[match-fix failed on] " ++ ts) Fail.here
  --   Fail.when (term Embed.<= term')
     -- ^ Make sure we progressed 
     else return term'
   where
   usefulConstraint :: Constraint -> Bool
-  usefulConstraint ct@(Constraint (App fix@(Fix {}) ys) _) 
+  usefulConstraint ct 
     | not (any (isFix . leftmost) ys)
     , not (Set.null (Set.intersection (Set.fromList xs) (Set.fromList ys)))
-    , not (Constraint.alreadyFused ct fix) = True 
+    , not (Constraint.alreadyFused ct fix) = True
+    where
+    App fix@(Fix {}) ys = matchedTerm ct
+    
   usefulConstraint _ = False
   
   
@@ -356,7 +362,7 @@ matchFix term@(App fix@(Fix {}) xs)
   
   
   fuseConstraint :: Constraint -> Term -> m Term
-  fuseConstraint ct@(Constraint match_t pat_t) oterm = do
+  fuseConstraint ct oterm = do
     Fail.assert "fix-match pattern fix not lambda floated"
       $ Term.isLambdaFloated mfix
       
@@ -379,17 +385,16 @@ matchFix term@(App fix@(Fix {}) xs)
       (return ())
       
     History.check Name.MatchFixFusion full_t
-      . History.forget Name.TraverseBranch $ do
-      -- ^ match-fix naturally produces something which a previous
-      -- traverse-branch will embed into, blocking this traversal
-      -- within the fusion step
+       . Env.forgetMatch ct $ do
+      -- ^ forget the constraint we are currently fusing in
+      -- otherwise it might attempt to fuse it within itself
         fused_t <- fusion ctx_t (Constraint.add ct ofix) 
         new_term <- Transform.continue (app fused_t new_args)
         t_s <- showM new_term
         trace ("\n\n[success] " ++ t_s) (return new_term)
     where
-    App mfix@(Fix _ _ mfix_t) margs = match_t
-    Con con : pargs = flattenApp pat_t
+    App mfix@(Fix _ _ mfix_t) margs = matchedTerm ct
+    Con con : pargs = (flattenApp . matchedTo) ct
     App ofix@(Fix _ ofix_b ofix_t) oargs = oterm
     full_t = Term.reduce ctx_t [ofix]
     
@@ -408,7 +413,7 @@ matchFix term@(App fix@(Fix {}) xs)
       . filter ((> 1) . length)
       . groupBy ((==) `on` (all_args !!))
       . sortBy (compare `on` (all_args !!))
-      $ [0..length all_args - 1]
+      $ range all_args
       
     ctx_t = id
       . unflattenLam [ofix_b]
@@ -420,10 +425,10 @@ matchFix term@(App fix@(Fix {}) xs)
       toIdx :: Int -> Term
       toIdx i = Var (enum ((length all_args - i) - 1)) 
       
-      fix_var = Var (length all_args)
+      fix_var = Var (elength all_args)
       ctx_margs = map toIdx [0..length margs-1]
       ctx_oargs = map toIdx [length margs..length all_args - 1]
-      ct' = Constraint (app mfix ctx_margs) pat_t
+      ct' = set matchTerm (app mfix ctx_margs) ct
         
     
 matchFix _ = Fail.here
@@ -473,7 +478,7 @@ fixMatch inner_t@(App (Fix {}) args) = do
       makeAlt :: Constructor -> Alt
       makeAlt con = Alt con alt_bs alt_t
         where
-        App inner_f' args' = Indices.liftMany (length alt_bs) inner_t
+        App inner_f' args' = Indices.liftMany (nlength alt_bs) inner_t
         inner_t' = App inner_f' (setAt inner_i pat_var args')
         
         alt_bs = Type.makeAltBindings con

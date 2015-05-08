@@ -51,8 +51,8 @@ instance Show (Term' (Term, String)) where
   -- Special case for showing /if/ expressions
   show (Case' (_, cse_t) 
           [Alt' con_t [] (_, true_t), Alt' con_f [] (_, false_t)]) 
-    | Tag.tagged con_t == Type.true
-    , Tag.tagged con_f == Type.false =
+    | Tag.untag con_t == Type.true
+    , Tag.untag con_f == Type.false =
       "\nif " ++ indent cse_t 
       ++ "\nthen "++ indent true_t 
       ++ "\nelse " ++ indent false_t
@@ -85,7 +85,7 @@ instance Show FixInfo where
   show _ = ""
   
 instance (Env.Read m, Defs.Read m) => ShowM m FixInfo where
-  showM (FixInfo cs tag) = do
+  showM (FixInfo cs idx) = do
     cs_s <- id
       . liftM (intercalate "\n, ")
       . mapM showM 

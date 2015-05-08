@@ -3,11 +3,15 @@ ind unit = Unit
 
 let fst<A, B> = 
   fun (p: (A, B)) -> 
-  assert (x, y) <- p in x
+  match p with
+  | (x, y) -> x
+  end
 
 let snd<A, B> = 
   fun (p: (A, B)) -> 
-  assert (x, y) <- p in y
+  match p with
+  | (x, y) -> y
+  end
   
 /* Booleans */ 
 
@@ -58,15 +62,35 @@ let eq_nat =
     
 let leq_nat = 
   fix (leq_nat: nat -> nat -> bool) (x y: nat) -> 
+  match y with
+  | 0 -> 
+    match x with
+    | 0 -> True
+    | Suc x' -> False
+    end
+  | Suc y' ->
+    match x with
+    | 0 -> True
+    | Suc x' -> leq_nat x' y'
+    end
+  end
+  
+    
+let lt_nat = 
+  fix (lt: nat -> nat -> bool) (x y: nat) -> 
   match x with
-  | 0 -> True
+  | 0 -> 
+    match y with
+    | 0 -> False
+    | Suc y' -> True
+    end
   | Suc x' ->
     match y with
     | 0 -> False
-    | Suc y' -> leq_nat x' y'
+    | Suc y' -> lt x' y'
     end
   end
-    
+  
 let max =
   fix (max: nat -> nat -> nat) (x y: nat) ->
   match x with
