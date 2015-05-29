@@ -11,7 +11,6 @@ where
 import Elea.Prelude
 import Elea.Term
 import Elea.Term.Index
-import Elea.Embed ( Code )
 import Elea.Monad.Env ()
 import qualified Elea.Monad.History as History
 import qualified Elea.Term.Index as Indices

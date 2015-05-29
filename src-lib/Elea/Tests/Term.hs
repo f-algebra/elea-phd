@@ -10,7 +10,6 @@ import Elea.Term.Ext
 import Elea.Type
 import Elea.Show
 import qualified Elea.Type as Type
-import qualified Elea.Embed as Embed
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Unification as Unifier
@@ -115,8 +114,8 @@ tests = Test.label "Terms"
         , Test.assertEq strict2 strict2' ]
     
   return $ Test.list $  
-    [ conj1
-    , subterms1
+    [ subterms1
+    -- , conj1
     , abstract1
     , findArgs1
     , id1

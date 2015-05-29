@@ -1,6 +1,9 @@
 
 ind unit = Unit
 
+let ff = Unit
+let tt = _|_ unit
+
 let fst<A, B> = 
   fun (p: (A, B)) -> 
   match p with

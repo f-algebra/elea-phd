@@ -4,8 +4,7 @@ module Main
   main,
   test,
   run,
-  run2,
-  height
+  run2
 )
 where
 
@@ -14,9 +13,7 @@ import Elea.Tests.All ( runTests )
 import Elea.Show ( showM )
 import Text.Printf
 import System.CPUTime
-import qualified Elea.Term.Height as Height
 import qualified Elea.Testing as Test
---import qualified Elea.Tests.Fusion as Test
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Transform.Fusion as Fusion
 import qualified Elea.Monad.Fedd as Fedd
@@ -55,14 +52,6 @@ run2 term_def = id
     term'' <- Fusion.run term'
     term_s <- showM term''
     return term_s
-    
-height :: String -> IO ()
-height term_def = id
-  . putStrLn
-  . Fedd.eval $ do
-    Test.loadPrelude
-    term <- Test.term term_def
-    return (show (Height.get term))
   
   
     

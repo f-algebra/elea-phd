@@ -22,13 +22,11 @@ import qualified Elea.Monad.Rewrite as Rewrite
 import qualified Elea.Monad.Discovery.Class as Discovery
 import qualified Elea.Monad.History as History
 import qualified Elea.Monad.Memo.Class as Memo
-import qualified Elea.Embed as Embed
 import qualified Elea.Term.Tag as Tag
-import qualified Elea.Term.Height as Height
 import qualified Control.Monad.Reader.Class as Reader
 import qualified Control.Monad.Trans.Class as Trans
 
-import qualified Data.Poset as Partial
+import qualified Data.Poset as Quasi
 import qualified Data.Map as Map
 
 {-# INLINEABLE fix #-}
@@ -55,35 +53,12 @@ fix f t = do
   hist <- History.ask
   mby_t' <- runMaybeT (runReaderT (stepT (f t)) (fix f))
   case mby_t' of
-    Nothing -> return t
     Just t' -> do
       Type.assertEqM "[fix]" t t' 
       return t'
-  where
-  -- Our recursive transformation, a wrapper around 'f'
-  run :: History.Repr -> Term -> m Term
-  run hist t' = do
-    hist' <- History.ask
-    -- Check term size has shrunk
-    if t' Partial.< t
-    then continue
-    else do
-      hist' <- History.ask
-      if History.size hist' > History.size hist 
-      then continue
-      -- ^ We can only shrink the term in the recursive call
-      -- if we add a term to the history. Otherwise we
-      -- have an increasing recursive call and should throw an error.
-      else error
-        $ "\n\n[error] Recursive call triggered by [" 
-        ++ show (Height.get t) ++ "]\n" ++ show t
-        ++ "\n\nGiven a larger term [" ++ show (Height.get t') 
-        ++ "]:\n" ++ show t' ++ "\n"
-    where
-    continue =
-    --  trace ("\n\n[rec from]" ++ show t ++ "\n\n[rec call]" ++ show t')
-        (fix f t')
-    
+    _ -> 
+      return t
+  
 
 traceCont :: Step m => String -> Term -> Term -> m Term
 traceCont step_name orig new = 

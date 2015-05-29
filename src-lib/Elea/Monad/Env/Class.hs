@@ -10,6 +10,7 @@ module Elea.Monad.Env.Class
   MatchRead (..), 
   findMatches,
   findMatch,
+  forgetAllMatches,
   findConstraints,
   isMatched,
   
@@ -46,6 +47,9 @@ class Monad m => Write m where
   
 forgetMatch :: Write m => Match -> m a -> m a
 forgetMatch m = forgetMatches (== m)
+
+forgetAllMatches :: Write m => m a -> m a
+forgetAllMatches = forgetMatches (const True)
   
 bind :: Write m => Bind -> m a -> m a
 bind = bindAt 0

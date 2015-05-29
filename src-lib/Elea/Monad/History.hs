@@ -1,3 +1,4 @@
+{-# LANGUAGE UndecidableInstances #-}
 module Elea.Monad.History
 (
   Repr, 
@@ -11,41 +12,42 @@ module Elea.Monad.History
   emptyEnvT,
   mapEnvT,
   check,
+  memoCheck,
 )
 where
 
 import Elea.Prelude hiding ( ask, local )
-import Elea.Embed ( Code, Encodable )
 import Elea.Transform.Names ( Name )
-import qualified Elea.Embed as Embed
-import qualified Elea.Monad.Failure.Class as Fail
+import Elea.Term
+import qualified Elea.Monad.Failure.Class as Fail 
+import qualified Elea.Monad.Memo.Class as Memo
 import qualified Control.Monad.Reader.Class as Reader
-import qualified Control.Monad.Trans.Class as Trans 
-import qualified Data.Poset as Partial
+import qualified Control.Monad.Trans.Class as Trans
+import qualified Data.Poset as Quasi
 import qualified Data.IntMap as Map
 
 data Repr 
   = Repr  { _reprSize :: !Nat
-          , _reprMap :: !(IntMap [Code]) }
+          , _reprMap :: !(IntMap [Term]) }
           
-instance Show Repr where
+instance Show Term => Show Repr where
   show = show . _reprMap
           
 mkLabels [ ''Repr ]
 
-embeds :: Name -> Code -> Repr -> Bool
-embeds (fromEnum -> name) code repr = 
+embeds :: Name -> Term -> Repr -> Bool
+embeds (fromEnum -> name) t repr = 
   case Map.lookup name (get reprMap repr) of
     Nothing -> False
-    Just codes -> any (Partial.<= code) codes
+    Just codes -> any (Quasi.<= t) codes
     
-insert :: Name -> Code -> Repr -> Repr
-insert (fromEnum -> name) code = id
+insert :: Name -> Term -> Repr -> Repr
+insert (fromEnum -> name) t = id
   . modify reprSize (+ 1)
   . modify reprMap (Map.alter add name)
   where
-  add (Just codes) = Just (code:codes)
-  add Nothing = Just [code]
+  add (Just ts) = Just (t:ts)
+  add Nothing = Just [t]
   
 empty :: Repr
 empty = Repr 0 Map.empty
@@ -61,32 +63,29 @@ class Monad m => Env m where
   ask :: m Repr
   local :: (Repr -> Repr) -> m a -> m a
   
-  seeCode :: Name -> Code -> m a -> m a
-  seeCode name code = local (insert name code)
+  see :: Name -> Term -> m a -> m a
+  see name t = local (insert name t)
   
   -- | Use our partial order on codes to check for embedding.
   -- The first argument is the step name that invoked this.
-  seenCode :: Name -> Code -> m Bool
-  seenCode name code = liftM (embeds name code) ask
-
-  seen :: Encodable a => Name -> a -> m Bool
-  seen name = seenCode name . Embed.encode
-  
-  see :: Encodable a => Name -> a -> m b -> m b
-  see name = seeCode name . Embed.encode
+  seen :: Name -> Term -> m Bool
+  seen name t = liftM (embeds name t) ask
   
   forget :: Name -> m a -> m a
   forget k = local (forgetName k)
   
   
-check :: (Fail.Can m, Env m, Encodable a, Show a) => Name -> a -> m b -> m b
-check name x continue = do
-  fail <- seen name x
-  if fail
-  then id
-   --  . trace ("\n\n[HISTORY BLOCKED <" ++ show name ++ ">] " ++ show x) 
-     $ Fail.here
-  else see name x continue
+check :: (Fail.Can m, Env m) => Name -> Term -> m b -> m b
+check name t continue = do
+  fail <- seen name t
+  Fail.when fail
+  see name t continue
+  
+-- | History check + memoisation
+memoCheck :: (Fail.Can m, Env m, Memo.Can m) => Name -> Term -> m Term -> m Term
+memoCheck name t = id
+  . check name t
+  . Memo.memo name t 
    
 
 newtype EnvT m a

@@ -48,10 +48,10 @@ newtype ListenerT m a
   
 type Listener = ListenerT Identity
   
-listenerT :: Monad m => ListenerT m a -> m (a, [Equation])
+listenerT :: Monad m => ListenerT m a -> m (a, [Prop])
 listenerT = liftM (second EqSet.toList) . runWriterT . runListenerT
 
-listener :: Listener a -> (a, [Equation])
+listener :: Listener a -> (a, [Prop])
 listener = runIdentity . listenerT
 
 trace :: forall m a . (Defs.Read m, Env.Read m, Listens m) 
@@ -64,7 +64,7 @@ trace run = do
     . Prelude.trace "[Discovered Equations]"
     $ foldrM traceEq x eqs
   where
-  traceEq :: Equation -> a -> m a
+  traceEq :: Prop -> a -> m a
   traceEq eq x = do
     eq_s <- showM eq
     Prelude.trace ("\n" ++ eq_s) (return x)

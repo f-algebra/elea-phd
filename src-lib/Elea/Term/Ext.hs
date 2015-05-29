@@ -6,6 +6,7 @@ module Elea.Term.Ext
   branches,
   recursionScheme,
   replace,
+  replaceAll,
   unfoldFix,
   unwrapFix,
   collectM, collect,
@@ -21,6 +22,7 @@ module Elea.Term.Ext
   isFiniteMatch,
   expressFreeVariable,
   expressFreeVariables,
+  revertMatches,
   commuteMatchesWhenM,
   occurrences,
   isSubterm,
@@ -53,6 +55,7 @@ import qualified Elea.Term.Tag as Tag
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs
+import qualified Elea.Monad.Rewrite as Rewrite
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
@@ -188,7 +191,7 @@ strictWithin (App fix@(Fix {}) args) =
   Set.unions (map strictWithin strict_args)
   where
   strict_args = map (args !!) (strictArgs fix)
-strictWithin (Eql x y) = 
+strictWithin (Leq x y) = 
   Set.union (strictWithin x) (strictWithin y)
 strictWithin _ = Set.empty
 
@@ -239,20 +242,19 @@ strictArgs (Fix _ _ fix_t) =
 
 -- | Replace all instances of one term with another within a term.
 replace :: Term -> Term -> Term -> Term
-replace me with = id
-  . Env.trackIndices (me, with)
+replace me with = replaceAll [(me, with)]
+
+replaceAll :: [(Term, Term)] -> Term -> Term
+replaceAll repls = id
+  . Env.trackIndices repls
   . Fold.transformM doReplace
   where
-  -- 'Env.TrackIndices' is needed to make sure indices
-  -- are properly updated as we move inside 
-  -- the term, e.g. if we pass inside a lambda.
-  doReplace :: Term -> Env.TrackIndices (Term, Term) Term
+  doReplace :: Term -> Env.TrackIndices [(Term, Term)] Term
   doReplace term = do
-    (me, with) <- Env.tracked
-    if term == me
-    then return with
-    else return term
-  
+    repls <- Env.tracked
+    case find ((== term) . fst) repls of
+      Nothing -> return term
+      Just (_, term') -> return term'
 
 -- | A wrapped around 'decreasingArgs' which takes a fixpoint with arguments
 -- applied and removes any return indices which are greater than the length
@@ -685,4 +687,17 @@ equateArgs i j orig_t
 equateArgsMany :: [(Nat, Nat)] -> Term -> Term
 equateArgsMany ijs t =
   foldr (uncurry equateArgs) t (sortBy (compare `on` snd) ijs)
+  
+  
+revertMatches :: Env.MatchRead m => Term -> m Term
+revertMatches term = do
+  ms <- Env.matches
+  let unambig_ms = id
+        . filter (\(from, _) -> (not . null . arguments) from)
+        -- ^ Without this we could rewrite things like "True", which would
+        -- be ambiguous
+        . map (\m -> (matchedTo m, matchedTerm m))
+        $ ms
+  return (replaceAll unambig_ms term)
+
   

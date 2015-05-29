@@ -41,6 +41,7 @@ import qualified Data.Map as Map
   '->'        { TokenRArr }
   '<-'        { TokenLArr }
   '=>'        { TokenDRArr }
+  '=<'        { TokenLeq }
   '*'         { TokenSet }
   '='         { TokenEq }
   '['         { TokenOS }
@@ -131,14 +132,14 @@ Term :: { RawTerm }
   | '(' Term ',' TermList ')'         { TTuple ($2:$4) }
   | fun Bindings '->' Term            { TLam $2 $4 }
   | fix Bindings '->' Term            { TFix $2 $4 }
-  | Term '=' Term                     { TEql $1 $3 }
+  | Term '=<' Term                    { TLeq $1 $3 }
   | let name '=' Term in Term         { TLet $2 $4 $6 }
   | 'fold[' Type ']'                  { TFold $2 }
   | match Term with Matches end       { TCase $2 $4 }
   | assert Pattern '<-' Term in Term  { TAssert $2 $4 $6 }
   | if Term then Term else Term       { TCase $2 [ TAlt ["True"] $4
                                                  , TAlt ["False"] $6] }
-
+                                                 
 TermDef :: { TermDef }
   : let ParamName '=' Term            { ($2, $4) }
   
@@ -148,14 +149,11 @@ ParamCall :: { ParamCall }
   
 ParamName :: { ParamName }
   : name                              { ($1, []) }
-  | name '<' NameList '>'             { ($1, $3) }
- 
+  | name '<' NameList '>'             { ($1, $3) } 
   
 PropDef :: { PropDef }
-  : prop ParamName ':' all Bindings '->' Term   
-                                      { ($2, $5, $7) }
-  | prop ParamName ':' Term
-                                      { ($2, [], $4) }
+  : prop ParamName Bindings '->' Term  { ($2, $3, $5) }
+  | prop ParamName '->' Term           { ($2, [], $4) }
 
 Program :: { RawProgram }
   : {- empty -}                       { RawProgram [] [] [] }
@@ -206,7 +204,7 @@ data RawTerm
   | TUnr RawType
   | TCase RawTerm [RawAlt]
   | TLet String RawTerm RawTerm
-  | TEql RawTerm RawTerm
+  | TLeq RawTerm RawTerm
   | TFold RawType
   | TTuple [RawTerm]
   | TAssert [String] RawTerm RawTerm
@@ -314,7 +312,7 @@ bindings = id
   . lexer
   
 program :: forall m . ParserEnv m 
-  => String -> m [Polymorphic Equation]
+  => String -> m [Polymorphic Prop]
 program text = 
   withEmptyScope $ do
     mapM_ defineType types
@@ -323,14 +321,12 @@ program text =
   where
   RawProgram types terms props = happyProgram (lexer text)
     
-  parseProp :: PropDef -> ParserMonad m (Polymorphic Equation)
+  parseProp :: PropDef -> ParserMonad m (Polymorphic Prop)
   parseProp ((name, ty_args), rbs, rt) = 
     localTypeArgs ty_args $ do
       bs <- mapM parseRawBind rbs
       t <- Env.bindMany bs (parseAndCheckTerm rt)
-      if isQuantifiedEql t
-      then return (Equals name bs t)
-      else return (Equals name bs (Eql t Term.true))
+      return (Prop name (unflattenLam bs t)) 
   
   defineType :: TypeDef -> ParserMonad m ()
   defineType ((ind_name, ty_args), raw_cons) = do
@@ -447,10 +443,10 @@ parseRawTerm (TTuple rts) = do
 parseRawTerm (TFold raw_ty) = do
   Fun (Base ind) res_ty <- parseRawType raw_ty
   return (buildFold ind res_ty)
-parseRawTerm (TEql rt1 rt2) = do
+parseRawTerm (TLeq rt1 rt2) = do
   t1 <- parseRawTerm rt1
   t2 <- parseRawTerm rt2
-  return (Term.Eql t1 t2)
+  return (Term.Leq t1 t2)
 parseRawTerm (TVar var) = 
   lookupTerm var
 parseRawTerm (TUnr rty) = do
@@ -509,6 +505,7 @@ data Token
   | TokenLArr
   | TokenRArr
   | TokenDRArr
+  | TokenLeq
   | TokenEq
   | TokenOS
   | TokenCS
@@ -554,6 +551,8 @@ lexer (' ':cs) = lexer cs
 lexer ('\n':cs) = lexer cs
 lexer ('-':'>':cs) = TokenRArr : lexer cs
 lexer ('<':'-':cs) = TokenLArr : lexer cs
+lexer ('=':'<':cs) = TokenLeq : lexer cs
+lexer ('=':cs) = TokenEq : lexer cs
 lexer ('_':'|':'_':cs) = TokenUnr : lexer cs
 lexer (':':cs) = TokenTypeOf : lexer cs
 lexer ('(':cs) = TokenOP : lexer cs
@@ -603,6 +602,7 @@ instance Show Token where
   show TokenTypeOf = ":"
   show TokenRArr = "->"
   show TokenLArr = "<-"
+  show TokenLeq = "=<"
   show TokenEq = "="
   show TokenUnr = "_|_"
   show TokenOS = "["

@@ -9,7 +9,7 @@ module Elea.Type
   indName, indConstructors, 
   bindLabel, bindType, 
   constructorOf, constructorIndex,
-  empty, unit, tuple, bool, emptyTy,
+  empty, prop, unit, tuple, bool, emptyTy,
   equation, isEquation, true, false,
   returnType, argumentTypes, dropArgs, split,
   isInd, isFun, fromBase,
@@ -207,6 +207,9 @@ emptyTy = Base empty
 -- | The unit type, viz. the single parameterless constructor inductive type.
 unit :: Ind
 unit = Ind "unit" [("()", [])]
+
+prop :: Ind 
+prop = unit
 
 -- | Cartesian n-product.
 tuple :: [Type] -> Ind

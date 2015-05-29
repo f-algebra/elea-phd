@@ -1,31 +1,33 @@
 module Elea.Term
 (
   module Elea.Term.Index,
-  Tag, Tagged (..),
+  Tag, Tagged,
   Term (..), Alt (..),
   Match (..), Pattern (..), Constraint,
   Term' (..), Alt' (..),
   Type, Bind (..), Constructor (..),
-  FixInfo (..),
+  FixInfo (..), Prop (..),
   ContainsTerms (..), mapTerms, containedTerms,
-  Equation (..), equationName, equationTerm,
   app,
   projectAlt, embedAlt,
   altBindings, altInner, altConstructor,
   altBindings', altInner', altConstructor',
-  matchTerm, matchPatterns, matchIndex, 
+  propName, propTerm,
+  matchTerm, matchPatterns, matchIndex, matchInd,
   matchedPattern, matchedTo, matchedTerm,
   matchFromCase, matchFromConstructor,
   patternConstructor, patternBindings, patternVars,
-  fixIndex, fixDomain,
+  patternInd,
+  fixIndex,
   flattenApp, leftmost, arguments,
   flattenLam, unflattenLam, unflattenApp,
   isCon, isLam, isVar,
   isFix, isBot, isCase, 
-  isEql, isQuantifiedEql,
+  isLeq, isQuantifiedLeq,
   emptyInfo,
   inductivelyTyped, 
   fromVar, 
+  truth, falsity,
   and, conjunction, true, false,
   altPattern, recursivePatternVars,
   makePattern,
@@ -47,22 +49,21 @@ import Elea.Prelude hiding ( and )
 import Elea.Term.Index ( Index, Indexed, Substitutable, Inner )
 import Elea.Type ( Type (..), Ind (..), ConArg (..)
                  , Bind (..), Constructor (..) )
-import Elea.Term.Tag ( Tag, Tagged (..) )
-import Elea.Embed ( Encodable (..), Atom (..), cantor )
+import Elea.Term.Tag ( Tag, Tagged )
+import qualified Elea.Prelude as Prelude
 import qualified Elea.Type as Type
-import qualified Elea.Embed as Embed
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 import qualified Data.Map as Map
-import qualified Algebra.Lattice as Algebra
-
+import qualified Data.Poset as Quasi
+  
 
 data Term
-  = Eql     { eqLeft :: !Term
-            , eqRight :: !Term } 
+  = Leq     { leqLeft :: !Term
+            , leqRight :: !Term } 
             
   | Bot     { botType :: !Type }
   
@@ -95,6 +96,7 @@ data Match
   = Match   { _matchTerm :: !Term
             , _matchPatterns :: ![Pattern]
             , _matchIndex :: !Nat }
+  deriving ( Eq, Ord )
             
 data Pattern
   = Pattern { _patternConstructor :: !(Tagged Constructor)
@@ -106,34 +108,18 @@ data Pattern
 -- It is intended to be used in the context of constraining the domain
 -- of a fixed-point. See 'FixInfo' and 'Elea.Term.Constraint'.
 type Constraint = Match
+
+
+-- | Properties are just named terms of unit type
+data Prop 
+  = Prop  { _propName :: !String
+          , _propTerm :: !Term }
+          
             
 -- | Information stored about fixpoints, to add efficiency.
 data FixInfo
-  = FixInfo { _fixDomain :: !(Set Constraint)
-            , _fixIndex :: !Tag }
-            
-              
--- Fixpoint information does not change the meaning of a fixpoint, so
--- it does not effect equality between terms.
-instance Eq FixInfo where
-  (==) = (==) `on` _fixIndex
-  
-instance Ord FixInfo where
-  compare = compare `on` _fixIndex
-  
-instance Eq Match where
-  Match t _ n == Match t' _ n' =
-    n == n' && t == t'
-    
-instance Ord Match where
-  Match t _ n `compare` Match t' _ n' = 
-    n `compare` n' ++ t `compare` t'
-  
--- | Equations between terms
-data Equation
-  = Equals  { _equationName :: String
-            , _equationVars :: [Bind]
-            , _equationTerm :: Term }
+  = FixInfo { _fixIndex :: !Tag }
+  deriving ( Eq, Ord )
 
  
 -- * Base types for generalised cata/para morphisms.
@@ -141,7 +127,7 @@ data Equation
 type instance Fold.Base Term = Term'
 
 data Term' a 
-  = Eql' a a
+  = Leq' a a
   | Bot' !Type
   | Var' !Index
   | App' a [a]
@@ -158,7 +144,7 @@ data Alt' a
   deriving ( Functor, Foldable, Traversable )
   
   
-mkLabels [ ''Alt, ''Alt', ''Equation, ''Pattern, ''Match, ''FixInfo ]
+mkLabels [ ''Alt, ''Alt', ''Pattern, ''Match, ''FixInfo, ''Prop ]
 
 projectAlt :: Alt -> Alt' Term
 projectAlt (Alt c bs t) = Alt' c bs t
@@ -174,7 +160,7 @@ instance Fold.Foldable Term where
   project (Fix i b t) = Fix' i b t
   project (Con tc) = Con' tc
   project (Case t alts) = Case' t (map projectAlt alts)
-  project (Eql t t') = Eql' t t'
+  project (Leq t t') = Leq' t t'
   project (Bot ty) = Bot' ty
 
 instance Fold.Unfoldable Term where
@@ -184,7 +170,7 @@ instance Fold.Unfoldable Term where
   embed (Fix' i b t) = Fix i b t
   embed (Con' tc) = Con tc
   embed (Case' t alts) = Case t (map embedAlt alts)
-  embed (Eql' t t') = Eql t t'
+  embed (Leq' t t') = Leq t t'
   embed (Bot' ty) = Bot ty
   
 class ContainsTerms t where
@@ -200,9 +186,6 @@ containedTerms = execWriter . mapTermsM tellTerm
   
 instance ContainsTerms Term where
   mapTermsM = ($)
-  
-instance ContainsTerms Equation where
-  mapTermsM f = modifyM equationTerm f
   
 instance (ContainsTerms a, ContainsTerms b) => ContainsTerms (a, b) where
   mapTermsM f (t1, t2) = do
@@ -224,7 +207,7 @@ instance Zip Term' where
   zip (Lam' b t) (Lam' _ t') = Lam' b (t, t')
   zip (Fix' i b t) (Fix' _ _ t') = Fix' i b (t, t')
   zip (Con' con) (Con' {}) = Con' con
-  zip (Eql' x y) (Eql' x' y') = Eql' (x, x') (y, y')
+  zip (Leq' x y) (Leq' x' y') = Leq' (x, x') (y, y')
   zip (Bot' ty) (Bot' _) = Bot' ty
   zip (Case' t alts) (Case' t' alts') =
     Case' (t, t') (zipWith zip alts alts')
@@ -253,13 +236,13 @@ isFix :: Term -> Bool
 isFix (Fix {}) = True
 isFix _ = False
 
-isEql :: Term -> Bool
-isEql (Eql _ _) = True
-isEql _ = False
+isLeq :: Term -> Bool
+isLeq (Leq _ _) = True
+isLeq _ = False
 
-isQuantifiedEql :: Term -> Bool
-isQuantifiedEql = 
-  isEql . snd . flattenLam
+isQuantifiedLeq :: Term -> Bool
+isQuantifiedLeq = 
+  isLeq . snd . flattenLam
 
 isCase :: Term -> Bool
 isCase (Case {}) = True
@@ -293,7 +276,7 @@ arguments :: Term -> [Term]
 arguments = tail . flattenApp
 
 emptyInfo :: FixInfo
-emptyInfo = FixInfo Set.empty Tag.omega
+emptyInfo = FixInfo Tag.omega
 
   
 -- | This should maybe be called @fullyApplied@ but it checks whether a fixpoint
@@ -315,6 +298,18 @@ matchedPattern (Match _ pts n) = pts !! n
 
 matchedTerm :: Match -> Term
 matchedTerm = get matchTerm
+
+matchInd :: Match -> Ind
+matchInd = id
+  . patternInd
+  . head 
+  . get matchPatterns
+
+patternInd :: Pattern -> Ind
+patternInd = id
+  . get Type.constructorOf 
+  . Tag.untag 
+  . get patternConstructor
   
 -- | Keeps alt binding names and constructor tags from the case, as
 -- opposed to 'matchFromConstructor' which uses null tags
@@ -501,7 +496,12 @@ recursiveId ind@(Ind _ cons) =
   where
   id_fold = buildFold ind (Type.Base ind)
   fold_cons = map (Con . Tag.with Tag.null) (Type.constructors ind)
-   
+
+  
+truth, falsity :: Term
+truth = Bot (Type.Base Type.prop)
+falsity = Con (Tag.with Tag.null (Constructor Type.prop 0))
+  
     
 false, true :: Term
 true = Con (Tag.with Tag.null Type.true)
@@ -603,44 +603,44 @@ isFixPromoted (App fix@(Fix {}) xs) =
 isFixPromoted _ = False
 
 
-instance Encodable Term where
-  encodeRaw (Bot _) = [cantor (8, 0)]
-  encodeRaw (Var _) = [cantor (2, 0)]
-  encodeRaw (Fix fix_i _ fix_t) = []
-    ++ [atom fix_i] 
-    ++ encodeRaw fix_t 
-    ++ [cantor (1, 2)]
-  encodeRaw (Eql x y) = []
-    ++ [cantor (1, 0)] 
-    ++ encodeRaw x 
-    ++ [cantor (1, 1)] 
-    ++ encodeRaw y
-  encodeRaw (Lam _ t) = []
-    ++ [cantor (3, 0)] 
-    ++ encodeRaw t
-  encodeRaw (Con tcon) = [atom tcon]
-  encodeRaw (App f xs) = []
-    ++ encodeRaw f 
-    ++ concat (zipWith bracket [0..] (map encodeRaw xs))
-    where
-    bracket n enc = [cantor (4, n)] ++ enc
-  encodeRaw (Case cse_t alts) = []
-    ++ [cantor (9, 0)]
-    ++ encodeRaw cse_t 
-    ++ concatMap encodeRaw alts 
-    ++ [cantor (9, 1)]
+-- | An instance to compare the "symbols" of terms, used
+-- for checking homeomorphic embedding
+instance Eq (Term' ()) where
+  Leq' {} == Leq' {} = True
+  Bot' {} == Bot' {} = True
+  Var' {} == Var' {} = True
+  App' _ xs == App' _ xs' = 
+    length xs == length xs'
+  Lam' {} == Lam' {} = True
+  Fix' {} == Fix' {} = True
+  Con' tc == Con' tc' = 
+    Tag.get tc == Tag.get tc'
+  Case' _ alts == Case' _ alts'
+    | length alts == length alts' =
+      Prelude.and (zipWith (==) alts alts')
+  _ == _ = False
     
-instance Atom Constructor where
-  atom (Constructor ind idx) = 
-    atom [14, atom (get Type.indName ind), atom idx]
+instance Eq (Alt' ()) where
+  Alt' tc _ _ == Alt' tc' _ _ =
+    Tag.get tc == Tag.get tc'
     
-instance Encodable Alt where
-  encodeRaw (Alt tcon bs t) = []
-    ++ [atom tcon]
-    ++ encodeRaw t
+
+-- | Homemorphic embedding
+instance Quasi.Ord Term where
+  a <= b
+    | any (a Quasi.<=) b_subterms = True
+    | a_symbol == b_symbol
+    , Prelude.and (zipWith (Quasi.<=) a_subterms b_subterms) = True
+    where    
+    a_subterms, b_subterms :: [Term]
+    a_subterms = toList (Fold.project a)
+    b_subterms = toList (Fold.project b)
     
-instance Atom FixInfo where
-  atom (FixInfo _ idx)
-    | idx == Tag.omega = cantor (12, 0)
-    | otherwise = cantor (12, 1)
+    a_symbol, b_symbol :: Term' ()
+    a_symbol = fmap (const ()) (Fold.project a)
+    b_symbol = fmap (const ()) (Fold.project b)
+    
+  _ <= _ = False
+    
+    
 

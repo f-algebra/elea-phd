@@ -18,8 +18,7 @@ module Elea.Term.Tag
 )
 where
 
-import Elea.Prelude hiding ( compare, map, null )
-import Elea.Embed ( Encodable (..), Atom (..), cantor )
+import Elea.Prelude hiding ( compare, map, null, get )
 import qualified Elea.Prelude as Prelude
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Control.Monad.State.Class as State
@@ -33,7 +32,7 @@ newtype Tag
   = Tag { _uniqueId :: Int }
   
 data Tagged a
-  = Tagged  { getTag :: !Tag
+  = Tagged  { get :: !Tag
             , untag :: !a }
   deriving ( Functor, Foldable, Traversable )
         
@@ -111,13 +110,6 @@ instance Gen m => Gen (ReaderT r m) where
   
 instance Gen m => Gen (EitherT e m) where
   generateId = Trans.lift generateId
-  
-
-instance Atom a => Atom (Tagged a) where
-  atom (Tagged x t) = atom [11, atom x, atom t]
-  
-instance Atom Tag where
-  atom (Tag x) = cantor (10, x)
   
 
 instance Show a => Show (Tagged a) where

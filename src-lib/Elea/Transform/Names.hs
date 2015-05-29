@@ -13,11 +13,10 @@ data Name
   | TraverseVarBranch
   | TraverseBranch
   | TraverseApp
-  | EqReduceCon
-  | EqMatchCon
-  | EqInduction
   | Unfold
   | UnfoldCase
+  | ConstArg
+  | FiniteCaseFix
   | FloatVarMatch
   | ExpressCon
   | ExpressMatch
@@ -25,5 +24,12 @@ data Name
   | RepArgFusion
   | FreeArgFusion
   | MatchFixFusion
+  | CaseFun
+  | Fusion
+  | RewriteEq
+  | RewriteLeq
+  | Forall
+  | LFP
+  | CaseSplit
   deriving ( Enum, Show )
 

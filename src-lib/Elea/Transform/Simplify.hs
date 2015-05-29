@@ -5,7 +5,7 @@ module Elea.Transform.Simplify
 (
   Step,
   run, 
-  quick,
+  equivSteps,
   steps,
 )
 where
@@ -13,33 +13,31 @@ where
 import Elea.Prelude
 import Elea.Term
 import Elea.Show ( showM )
-import qualified Elea.Embed as Embed
 import qualified Elea.Term.Ext as Term
-import qualified Elea.Term.Height as Height
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Term.Index as Indices
+import qualified Elea.Term.Constraint as Constraint
 import qualified Elea.Monad.History as History
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Unification as Unifier
 import qualified Elea.Transform.Names as Name
 import qualified Elea.Transform.Evaluate as Eval
-import qualified Elea.Transform.Equality as Equality
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs
+import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Monad.Transform as Transform
 import qualified Elea.Monad.Fedd as Fedd  
 
 import qualified Data.Monoid as Monoid
 import qualified Data.Set as Set
 import qualified Data.Map as Map
-import qualified Data.Poset as Partial
+import qualified Data.Poset as Quasi
 import qualified Control.Monad.Trans as Trans
 
 -- TODO strip out Transform.continue where possible!
 -- TODO properly tweak step order
--- TODO remove inverse embedding checks
 
 type Step m =
   ( Eval.Step m
@@ -53,12 +51,14 @@ run = id
   where
   all_steps = []
     ++ Eval.transformSteps 
-    ++ Eval.traverseSteps   
-    ++ Equality.steps          
+    ++ Eval.traverseSteps     
     ++ steps                        
+    
+    
+equivSteps :: Step m => [Term -> m Term]
+equivSteps = [ constArg, unfold, identityCase ]
 
-quick :: Term -> Term
-quick = run
+    
 
 steps :: Step m => [Term -> m Term]
 steps =
@@ -82,13 +82,13 @@ steps =
   , unsafeUnfoldFixInj
   -}
   ] 
-    
 
 -- | We do not want pattern matches to return function typed values,
 -- so we add a new lambda above one if this is the case.
 caseFun :: Step m => Term -> m Term
 caseFun cse@(Case t alts) 
   | Just new_b <- potentialBinds alts = id
+    . History.check Name.CaseFun cse 
     . Transform.continue
     . Lam new_b
     . Case (Indices.lift t) 
@@ -117,17 +117,11 @@ caseFun _ = Fail.here
 -- | If an argument to a 'Fix' never changes in any recursive call
 -- then we should float that lambda abstraction outside the 'Fix'.
 constArg :: Step m => Term -> m Term
-constArg (App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
+constArg term@(App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
   | length arg_bs /= length args = Fail.here
   | otherwise = do
-    -- Find if any arguments never change in any recursive calls
     pos <- (Fail.fromMaybe . find isConstArg . range) arg_bs
-    
-    -- Then we run the 'removeConstArg' function on that position to
-    -- get a new fixed-point
-    let fix' = id
-        --  . trace ("\n\n[const-arg] trying position " ++ show pos) 
-          $ removeConstArg (enum pos)
+    let fix' = removeConstArg (enum pos)
     
     -- Might as well simplify the constant argument before pushing it inside
     -- and possible duplicating it
@@ -245,62 +239,6 @@ uselessFix (Fix _ _ fix_t)
 uselessFix _ = Fail.here
 
 
-
-
-{-
--- | Unfolds a 'Fix' which is being pattern matched upon if that pattern
--- match only uses a finite amount of information from the 'Fix'.
--- Currently only works for a single unrolling, but otherwise we'd need an 
--- arbitrary amount of unrolling, which seems difficult.
-finiteCaseFix :: Fail.Can m => Term -> m Term
-finiteCaseFix term@(Case (App fix@(Fix _ _ fix_t) args) alts) = do
-  -- I don't think this will ever apply to non-recursive data types...
-  Fail.when (all Type.isBaseCase (map (get altConstructor) alts))
-  Fail.unless (all finiteAlt alts)
-  
-  -- Check that unrolling the function removed recursive calls 
-  Fail.when (0 `Indices.freeWithin` simp_t)
- 
-  return  
-   -- . traceMe "[finite case-fix] after"
-    . extendedEval
-   -- . traceMe "[finite case-fix] before"
-    $ Case (App (Term.unfoldFix fix) args) alts
-  where
-  simp_t = id
-    . extendedEval
-    . Case (App fix_t (Indices.lift args))
-    $ map simplifyAlt alts
-    
-  extendedEval :: Term -> Term
-  extendedEval = 
-    Fold.rewriteSteps (Transform.steps ++ [constantCase, finiteCaseFix])
-    
-  -- A branch in which a recursive pattern variable is used
-  finiteAlt :: Alt -> Bool
-  finiteAlt (Alt con bs alt_t) =
-    Set.null (Indices.free alt_t `Set.intersection` rec_vars)
-    where
-    rec_vars = Set.fromList (Type.recursiveArgIndices con)
-    
-  simplifyAlt :: Alt -> Alt
-  simplifyAlt (Alt con bs alt_t) =
-    Alt con bs (app (Con con) p_args)
-    where
-    free_vars = Indices.free alt_t
-    
-    p_args = id
-      . map removeUnused
-      . Term.arguments 
-      $ Term.altPattern con
-      where
-      removeUnused (Var x)
-        | Set.member x free_vars = Var x
-        | otherwise = Var Indices.omega
-  
-finiteCaseFix _ = Fail.here
--}
-
 identityFix :: Step m => Term -> m Term
 identityFix (App fix@(Fix _ _ fix_t@(Lam lam_b _)) [arg]) 
   | Type.get fix == new_ty
@@ -312,6 +250,7 @@ identityFix (App fix@(Fix _ _ fix_t@(Lam lam_b _)) [arg])
   id_fun = Lam lam_b (Var 0)
   
 identityFix _ = Fail.here
+
 
 -- | If a recursive function just returns the same value, regardless of its
 -- inputs, just reduce it to that value.
@@ -373,7 +312,7 @@ constantFix t@(App (Fix _ fix_b fix_t) args)
 constantFix _ = 
   Fail.here
   
-  
+  {-
 -- | Unfolds a 'Fix' within itself if it can be unrolled at
 -- at a point it is called recursively.
 unfoldWithinFix :: Fail.Can m => Term -> m Term
@@ -399,7 +338,7 @@ unfoldWithinFix fix@(Fix fix_i fix_b fix_t) = do
     return other
   
 unfoldWithinFix _ = Fail.here
-          
+          -}
 
 -- | Removes a pattern match if every branch returns the same value.
 constantCase :: forall m . Step m => Term -> m Term
@@ -414,49 +353,24 @@ constantCase (Case _ alts) = do
     
 constantCase _ = Fail.here
 
-
+   
 unfold :: Step m => Term -> m Term
 unfold term@(App fix@(Fix {}) args) 
   | any (isCon . leftmost) dec_args =
+  -- ^ Speed improvement
     History.check Name.Unfold term $ do
-      term' <- Transform.continue (app (Term.unfoldFix fix) args)
-      when (Fold.any embedded term') $ do
-        trace ("\n\n[failed unfold] " ++ show term ++ "\n\n[into] " ++ show term') 
-          Fail.here
+      term' <- id
+        . Transform.continue 
+        $ Term.reduce (Term.unfoldFix fix) args
+      when (term Quasi.<= term') $ do
+     --   trace ("\n\n[failed unfold] " ++ show term ++ "\n\n[into] " ++ show term') 
+          Fail.here 
       return 
-      --   $  trace ("\n\n[success unfold]" ++ show term   ++ "\n\n[into] " ++ show term')
+     --    $  trace ("\n\n[success unfold]" ++ show term   ++ "\n\n[into] " ++ show term')
         $ term'
   where
   dec_args = map (args !!) (Term.decreasingArgs fix)
   
-  embedded (App fix'@(Fix {}) args')
-    | fix' == fix
-    , App (Var 0) args Embed.<= App (Var 0) args' = True
-  embedded _ = False
-    
-  
-  
-unfold term@(Case cse_t@(App fix@(Fix {}) xs) alts) 
-  | (not . Set.null) strict_overlap =
-    History.check Name.UnfoldCase cse_t $ do
-      term' <- id
-        . Transform.continue 
-        $ Case (app (Term.unfoldFix fix) xs) alts
-      when (Fold.any embedded term') $ do
-        trace ("\n\n[failed case-unfold] " ++ show term ++ "\n\n[into] " ++ show term') 
-          Fail.here
-      return term'
-  where
-  strict_overlap = 
-    Set.intersection (Term.strictAcross alts) 
-                     (Term.strictWithin cse_t)
-                     
-  embedded (Case (App fix'@(Fix {}) xs') alts') 
-    | fix' == fix
-    , Case (App (Var 0) xs) alts 
-        Embed.<= Case (App (Var 0) xs') alts' = True
-  embedded _ = False
-    
 unfold _ = Fail.here
 
 
@@ -489,3 +403,4 @@ floatVarMatch term@(Case (App fix@(Fix {}) xs) _)
     Fail.here
     
 floatVarMatch _ = Fail.here
+

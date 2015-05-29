@@ -1,21 +1,19 @@
     
 
-prop "add 0": forall (n: nat) -> add n 0 = n
+prop "add 0" (n: nat) ->
+  add n 0 =< n
+  
+prop "add associative" (x y z: nat) -> 
+  add (add x y) z =< add x (add y z)
 
-prop "add associative": forall (x y z: nat) -> 
-  add (add x y) z = add x (add y z)
-
-prop "add double": forall (x: nat) ->
-  double x = add x x
+prop "add double" (x: nat) ->
+  add x x =< double x
   
-prop "add commutative": forall (x y: nat) -> 
-  add x y = add y x
+prop "append nil"<A> (xs: list<A>) ->
+  append<A> xs Nil<A> =< xs
   
-prop "append nil"<A>: forall (xs: list<A>) ->
-  append<A> xs Nil<A> = xs
-  
-prop "append associative"<A>: forall (xs ys zs: list<A>) ->
-  append<A> (append<A> xs ys) zs = append<A> xs (append<A> ys zs)
+prop "append associative"<A> (xs ys zs: list<A>) ->
+  append<A> (append<A> xs ys) zs =< append<A> xs (append<A> ys zs)
   
 let revapp<A> = 
   fix (rap: A -> list<A> -> list<A>) (n: A) (xs: list<A>) ->
@@ -24,22 +22,22 @@ let revapp<A> =
     | Cons y ys -> append<A> (rap n ys) (Cons<A> y Nil<A>)
     end
     
-prop "revapp def"<A>: forall (n: A) (xs: list<A>) ->
-  reverse<A> (append<A> xs (Cons<A> n Nil<A>)) = revapp<A> n xs
+prop "revapp def"<A> (n: A) (xs: list<A>) ->
+  reverse<A> (append<A> xs (Cons<A> n Nil<A>)) =< revapp<A> n xs
  
-prop "revapp cons"<A>: forall (n: A) (xs: list<A>) ->
-  reverse<A> (append<A> xs (Cons<A> n Nil<A>)) = Cons<A> n (reverse<A> xs)
+prop "revapp cons"<A> (n: A) (xs: list<A>) ->
+  reverse<A> (append<A> xs (Cons<A> n Nil<A>)) =< Cons<A> n (reverse<A> xs)
  
-prop "revrev"<A>: forall (xs: list<A>) ->
-  xs = reverse<A> (reverse<A> xs) 
+prop "revrev"<A> (xs: list<A>) ->
+  reverse<A> (reverse<A> xs) =< xs
 
-prop "eq_nat reflexive": forall (n: nat) -> 
-  eq_nat n n
+prop "eq_nat reflexive" (n: nat) -> 
+  eq_nat n n =< True
   
 let eq_nat3 = 
   fix (eq3: nat -> nat -> nat -> bool) (x y z: nat) ->
   match x with
-  | 0 -> and (y = 0) (z = 0)
+  | 0 -> and (eq_nat y 0) (eq_nat z 0)
   | Suc x ->
     match y with
     | 0 -> False
@@ -51,52 +49,56 @@ let eq_nat3 =
     end
   end
 
-prop "eq_nat3": fun (x: nat) -> eq_nat3 x x x = True
+prop "eq_nat3" (x: nat) ->
+  eq_nat3 x x x =< True
   
-prop "eq_nat3 1":
-  fun (x y: nat) -> eq_nat3 x x y = eq_nat x y
+prop "eq_nat3 1" (x y: nat) ->
+  eq_nat3 x x y =< eq_nat x y
   
-prop "eq_nat3 2":
-  fun (x y: nat) -> eq_nat3 x y y = eq_nat x y
+prop "eq_nat3 2" (x y: nat) -> 
+  eq_nat3 x y y =< eq_nat x y
 
-prop "leq_nat reflexive": forall (n: nat) ->
-  leq_nat n n
+prop "leq_nat reflexive" (n: nat) ->
+  leq_nat n n =< True
   
-prop "drop add"<A>: forall (n: nat) (m: nat) (xs: list<A>) ->
-  drop<A> (add m n) xs = drop<A> n (drop<A> m xs)
+prop "drop add"<A> (n m: nat) (xs: list<A>) ->
+  drop<A> m (drop<A> n xs) =< drop<A> (add n m) xs
   
-prop "drop take"<A>: forall (n: nat) (xs: list<A>) ->
-  xs = append<A> (take<A> n xs) (drop<A> n xs)
+prop "drop take"<A> (n: nat) (xs: list<A>) ->
+  append<A> (take<A> n xs) (drop<A> n xs) =< xs
  
-prop "count append": forall (n: nat) (xs ys: list<nat>) ->
-  count_nat n (append<nat> xs ys) = add (count_nat n xs) (count_nat n ys)
-  
-prop "count snoc": forall (n: nat) (xs: list<nat>) ->
-  count_nat n (append<nat> xs (Cons<nat> n Nil<nat>)) = Suc (count_nat n xs)
-  
+prop "count append" (n: nat) (xs ys: list<nat>) ->
+  count_nat n (append<nat> xs ys) =< add (count_nat n xs) (count_nat n ys)
+ 
+prop "count snoc" (n: nat) (xs: list<nat>) ->
+  count_nat n (append<nat> xs (Cons<nat> n Nil<nat>)) =< Suc (count_nat n xs)
+  /*
 prop "count reverse": forall (n: nat) (xs: list<nat>) ->
   count_nat n xs = count_nat n (reverse<nat> xs)
-  
-prop "eq_nat symmetric": forall (n m: nat) ->
-  implies (eq_nat n m) (eq_nat m n)
-  
-prop "leq_nat total": forall (n m: nat) ->
-  implies (not (leq_nat n m)) (leq_nat m n)
- 
-
-/*
-prop "eq_nat transitive": forall (i j k: nat) ->
-  implies (and (eq_nat i j) (eq_nat j k)) (eq_nat i k)
-  
-prop "leq_nat transitive": forall (i j k: nat) ->
-  implies (and (leq_nat i j) (leq_nat j k)) (leq_nat i k)  
-  
-
-  
-  
-prop "leq_nat total 2": forall (f: nat -> nat) (n m: nat) ->
-  implies (not (leq_nat (f n) m)) (leq_nat m (f n))
   */
+  
+prop "eq_nat symmetric" (n m: nat) ->
+  implies (eq_nat n m) (eq_nat m n) =< True
+  
+prop "leq_nat total" (n m: nat) ->
+  implies (not (leq_nat n m)) (leq_nat m n) =< True
+ 
+prop "eq_nat transitive" (i j k: nat) ->
+  implies (and (eq_nat i j) (eq_nat j k)) (eq_nat i k) =< True
+  
+prop "leq_nat transitive" (i j k: nat) ->
+  implies (and (leq_nat i j) (leq_nat j k)) (leq_nat i k) =< True
+  
+prop "leq_nat total 2" (f: nat -> nat) (n m: nat) ->
+  implies (not (leq_nat (f n) m)) (leq_nat m (f n)) =< True
+  
+prop "test" (xs: list<nat>) (n: nat) (f: bool -> bool) ->
+  is_sorted (insert_nat n xs) =< f (is_sorted xs)
+  
+ /*
+prop "insertsort sorted": forall (xs: list<nat>) (n: nat) ->
+  implies (is_sorted xs) (is_sorted (insert_nat n xs))
+ */
   /*
 let half_fused_eq = 
   fix (hfeq: nat -> nat -> nat -> bool) (x y z: nat) ->
@@ -139,8 +141,6 @@ prop "id list"<A>:
 prop "filter reverse"<A>: forall (p: A -> bool) (xs: list<A>) ->
   reverse<A> (filter<A> p x   s) = filter<A> p (reverse<A> xs)
 
-prop "insertsort sorted": forall (xs: list<nat>) ->
-  is_sorted (insertsort xs)
   */
 /*  
 prop "take append"<A>: forall (n: nat) (xs ys: list<A>) ->

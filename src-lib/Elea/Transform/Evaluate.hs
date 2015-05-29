@@ -15,7 +15,6 @@ where
 import Elea.Prelude
 import Elea.Term.Index
 import Elea.Term
-import qualified Elea.Embed as Embed
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Term.Tag as Tag
@@ -24,7 +23,6 @@ import qualified Elea.Unification as Unifier
 import qualified Elea.Term.Constraint as Constraint
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Foldable as Fold
-import qualified Elea.Term.Height as Height
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Monad.Transform as Transform
@@ -32,14 +30,12 @@ import qualified Elea.Transform.Names as Name
 import qualified Elea.Monad.History as History
 
 import qualified Data.Set as Set
-import qualified Data.Poset as Partial
+import qualified Data.Poset as Quasi
 
 -- TODO absurdity needs to properly evaluate strictness of arguments
 -- TODO traverses should be successively applied to 
   -- the tallest branch downwards
   
--- TODO URGENT remove var-branch and just use term-branch??
--- TODO strictness needs Type.getM
 
 type Step m = 
   ( Transform.Step m
@@ -89,13 +85,15 @@ unwrapDepth = 2
 strictness :: Step m => Term -> m Term
 strictness term 
   | Type.has term
-  , evalsToBot term = 
+  , isUndef term = 
     return (Bot (Type.get term))
   where 
-  evalsToBot t | Term.isBot t = True
-  evalsToBot (App f xs) = evalsToBot f || any evalsToBot xs
-  evalsToBot (Case t _) = evalsToBot t
-  evalsToBot _ = False
+  isUndef (App (Bot _) _) = True
+  isUndef (Case (Bot _) _) = True
+  isUndef (Case _ alts)
+    | all (isBot . get altInner) alts = True
+  isUndef (Lam _ (Bot _)) = True
+  isUndef _ = False
 strictness _ =
   Fail.here
   
@@ -147,7 +145,6 @@ traverseMatch :: Step m => Term -> m Term
 traverseMatch term@(Case cse_t alts) = 
   History.check Name.TraverseMatch term $ do 
     cse_t' <- Transform.continue cse_t  
-   -- Fail.when (cse_t Embed.<= cse_t')
     Fail.when (cse_t == cse_t')
     Transform.continue (Case cse_t' alts)
 traverseMatch _ = Fail.here
@@ -155,11 +152,10 @@ traverseMatch _ = Fail.here
 
 traverseBranches :: Step m => Term -> m Term
 
-traverseBranches term@(Case (Var x) alts) =
+traverseBranches term@(Case (Var x) alts) = 
   History.check Name.TraverseVarBranch term $ do
     alts' <- mapM traverseAlt alts
     let term' = Case (Var x) alts'
-   -- Fail.when (term Embed.<= term')
     Fail.when (term == term')
     Transform.continue (Case (Var x) alts')
   where
@@ -179,7 +175,6 @@ traverseBranches term@(Case cse_t alts) =
   History.check Name.TraverseBranch term $ do
     alts' <- zipWithM traverseAlt [0..] alts
     let term' = Case cse_t alts'
-    -- Fail.when (term Embed.<= term')
     Fail.when (term == term')
     Transform.continue (Case cse_t alts')
   where
@@ -199,9 +194,11 @@ traverseBranches _ = Fail.here
 traverseFun :: Step m => Term -> m Term
 traverseFun (Lam b t) = do
   t' <- Env.bind b (Transform.continue t)
-  -- Fail.when (t Embed.<= t')
   Fail.when (t == t')
-  return (Lam b t')
+  case t' of
+    Bot ty -> return (Bot (Type.Fun (get Type.bindType b) ty))
+    -- ^ Better than repeating everything
+    _ -> return (Lam b t')
 traverseFun _ = Fail.here
 
 
@@ -211,7 +208,6 @@ traverseApp term@(App f xs) =
     xs' <- mapM Transform.continue xs
     f' <- Transform.continue f
     let term' = App f' xs'
-   -- Fail.when (term Embed.<= term')
     Fail.when (term == term')
     Transform.continue term'
   
@@ -221,13 +217,9 @@ traverseApp _ = Fail.here
 traverseFix :: Step m => Term -> m Term
 traverseFix fix@(Fix inf b t) = do
   t' <- id
-  --  . (if show inf /= "" then trace ("\n\n !!FORGETTING " ++ show inf) else id)
-    . Constraint.forget inf
-    -- ^ if we have fused a constraint into a term we do not need
-    -- it in the set of constraints
     . Env.bind b
     $ Transform.continue t
-  Fail.when (t Embed.<= t')
+  Fail.when (t == t')
   return (Fix inf b t')
     
 traverseFix _ = Fail.here

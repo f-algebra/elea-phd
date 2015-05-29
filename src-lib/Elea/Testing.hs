@@ -11,7 +11,7 @@ module Elea.Testing
  -- assertProvablyEq,
   assertTermEq,
   assertTermEqM,
-  assertTrue,
+  assertTruth,
   localVars,
 ) 
 where
@@ -64,15 +64,25 @@ assertSimpEq :: Term -> Term -> Test
 assertSimpEq (Simp.run -> t1) (Simp.run -> t2) = 
   assertTermEq t1 t2
   
-assertTrue :: Term -> Test
-assertTrue (flattenLam -> (_, t)) = 
-  assertEq Term.true t
+assertTruth :: (Env.Read m, Defs.Has m) => Term -> m Test
+assertTruth term 
+  | isBot term = id
+    . return 
+    . HUnit.TestCase 
+    $ HUnit.assertBool "" True
+    
+  | otherwise = do
+    term_s <- showM term
+    let msg = "Property failed with: " ++ term_s
+    return  
+      . HUnit.TestCase
+      $ HUnit.assertFailure msg
 
 prelude :: String
 prelude = unsafePerformIO
   $ readFile "prelude.elea"
   
-loadFile :: (Tag.Gen m, Defs.Has m) => String -> m [Equation]
+loadFile :: (Tag.Gen m, Defs.Has m) => String -> m [Prop]
 loadFile = id
   . Err.noneM 
   . liftM (map uninterpreted) 

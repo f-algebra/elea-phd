@@ -3,6 +3,7 @@
 module Elea.Transform.Rewrite
 (
   Step,
+  equivSteps,
   rewriteSteps,
   expressSteps
 )
@@ -14,9 +15,9 @@ import Elea.Show ( showM )
 import Elea.Unification ( Unifier )
 import qualified Elea.Foldable as Fold
 import qualified Elea.Term.Tag as Tag
-import qualified Elea.Term.Height as Height
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Type.Ext as Type
+import qualified Elea.Term.Constraint as Constraint
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.History as History
 import qualified Elea.Transform.Names as Name
@@ -28,16 +29,21 @@ import qualified Elea.Monad.Transform as Transform
 import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Rewrite as Rewrite
 import qualified Elea.Monad.Failure.Class as Fail
+import qualified Elea.Monad.Memo.Class as Memo
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import qualified Data.Poset as Partial
+import qualified Data.Poset as Quasi
 
 
 type Step m = 
   ( Simp.Step m
-  , Rewrite.Env m )
+  , Rewrite.Env m
+  , Memo.Can m )
   
+  
+equivSteps :: Step m => [Term -> m Term]
+equivSteps = [ rewritePattern ]
   
 rewriteSteps :: Step m => [Term -> m Term]
 rewriteSteps =
@@ -50,7 +56,10 @@ expressSteps :: Step m => [Term -> m Term]
 expressSteps = 
   [ const Fail.here
   , expressConstructor
-  , expressMatch
+  -- , expressMatch
+  -- ^ Unsound cos I'm an idiot
+  , commuteConstraint
+  , finiteCaseFix
   ] 
   
 
@@ -63,20 +72,21 @@ rewritePattern t = do
 
 rewrite :: forall m . Step m => Term -> m Term
 rewrite term@(App {}) = do
-  rs <- Rewrite.findTags (Set.delete Tag.omega (Tag.tags term))
-  Fail.choose (map apply rs)
+  term' <- Term.revertMatches term
+  rs <- Rewrite.findTags (Set.delete Tag.omega (Tag.tags term'))
+  Fail.choose (map (apply term') rs)
   where
-  apply :: (Term, Index) -> m Term
-  apply (from_t, h) = do
+  apply :: Term -> (Term, Index) -> m Term
+  apply term (from_t, h) = do
     ms <- Env.matches
     term_s <- showM term
-    ms_s <- showM ms
-    args <- id
-     -- . trace ("\n\n[unifying] " ++ term_s
-      --  ++ "\n\n[with] " ++ show from_t 
-      --  ++ "\n\n[matches] " ++ ms_s) 
-      $ Term.findConstrainedArgs from_t term
-    return (app (Var h) args)
+    args <- Term.findConstrainedArgs from_t term
+    args_s <- showM args
+    return
+   --   . trace ("\n\n[unifying] " ++ term_s
+    --    ++ "\n\n[with] " ++ show from_t 
+     --   ++ "\n\n[gives] " ++ args_s) 
+      $ app (Var h) args
   
 rewrite _ = Fail.here
 
@@ -84,6 +94,7 @@ rewrite _ = Fail.here
 
 expressConstructor :: forall m . Step m => Term -> m Term
 expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
+  Fail.when (Tag.tags term == Set.singleton Tag.omega) 
   Fail.when (Set.null suggestions)
   sugg_tys <- mapM Type.getM (Set.toList suggestions)
   Fail.assert "express-constructor suggestions not correctly typed"
@@ -101,10 +112,13 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
     
   -- ts' <- showM (Eval.run (app fix' args))
     
-  id
+  term' <- id
     . History.check Name.ExpressCon fix
     . Transform.continue
     $ app fix' args
+    
+  Fail.when (term Quasi.<= term')
+  return term'
   where
   (arg_bs, _) = Term.flattenLam fix_t
   gap_b = Bind "gap" term_ty 
@@ -218,22 +232,28 @@ expressMatch term@(App fix@(Fix {}) _) = do
     . Fail.fromMaybe
     . Env.trackOffset
     $ Fold.findM freeCase fix
-    
+      
   History.check Name.ExpressMatch free_cse
     $ Transform.continue free_cse
   where
   freeCase :: Term -> Env.TrackOffset (Maybe Term)
   freeCase cse@(Case cse_t alts) = do
     idx_offset <- Env.tracked
-    if any (< idx_offset) (Indices.free cse_t) 
+    if not (Indices.lowerableBy (enum idx_offset) cse_t) 
     then return Nothing
     else return 
        . Just
        . Case (Indices.lowerMany (enum idx_offset) cse_t)
-       $ map applyAlt alts
+       $ map (makeAlt idx_offset) alts
     where
-    applyAlt (Alt con bs alt_t) = 
-      Alt con bs (Indices.liftMany (nlength bs) term)
+    makeAlt offset alt@(Alt con bs _) = 
+      Alt con bs (Term.replace cse_t' pat_t term')
+      where
+      pat_t = patternTerm (altPattern alt)
+      term' = Indices.liftMany (nlength bs) term
+      cse_t' = id
+        . Indices.shift (\i -> (i - offset) + elength bs)
+        $ cse_t
       
   freeCase _ = 
     return Nothing
@@ -241,3 +261,103 @@ expressMatch term@(App fix@(Fix {}) _) = do
 expressMatch _ = Fail.here
 
 
+commuteConstraint :: Step m => Term -> m Term
+commuteConstraint term@(Case (leftmost -> Fix {}) _)
+  | Constraint.splittable term
+  , isCase inner_t 
+  , not looping = 
+    Transform.continue (Case cse_t (map applyCt alts))
+  where
+  (ct, inner_t, ty) = Constraint.split term
+  Case cse_t alts = inner_t
+  looping = Constraint.has inner_t && isFix (leftmost inner_t)
+  
+  applyCt (Alt tc bs alt_t) = 
+    Alt tc bs (Constraint.apply ty ct' alt_t)
+    where
+    ct' = Indices.liftMany (nlength bs) ct
+  
+commuteConstraint _ = Fail.here
+  
+
+
+-- | Unfolds a 'Fix' which is being pattern matched upon if that pattern
+-- match only uses a finite amount of information from the 'Fix'.
+finiteCaseFix :: Step m => Term -> m Term
+finiteCaseFix term@(Case cse_t@(App fix@(Fix _ _ fix_t) args) alts) = do
+  -- I don't think this will ever usefully apply to non-recursive data types
+  Fail.when (Term.beingFused fix)
+  Fail.unless (Type.isRecursive cse_ind)
+  Fail.unless (all finiteAlt alts)
+ 
+  History.memoCheck Name.FiniteCaseFix term $ do
+    ts <- showM term
+    term' <- id
+      . Transform.continue 
+      . trace ("\n\n[unfold finite] " ++ ts)
+      $ Case (Term.reduce (Term.unfoldFix fix) args) alts
+    -- standard progress check
+    ts' <- showM term'
+    Fail.when $ trace ("\n\n[finite yield] " ++ ts') (term Quasi.<= term')
+    return term'
+  where  
+  cse_ind = Type.fromBase (Type.get cse_t)
+  
+  -- A branch in which a recursive pattern variable is used
+  finiteAlt :: Alt -> Bool
+  finiteAlt (Alt tcon bs alt_t) =
+    Set.null (Indices.free alt_t `Set.intersection` rec_vars)
+    where
+    con = Tag.untag tcon
+    rec_vars = Set.fromList (Type.recursiveArgIndices con)
+  
+finiteCaseFix _ = Fail.here
+
+
+{-
+unfoldCase :: Step m => Term -> m Term
+unfoldCase term@(Case cse_t@(App fix@(Fix {}) xs) alts) = id
+  . Memo.memo Name.UnfoldCase term 
+  . History.check Name.UnfoldCase term $ do
+      term' <- id
+        . Transform.continue 
+        $ Case (app (Term.unfoldFix fix) xs) alts
+      when (term Quasi.<= term') $ do
+      --  trace ("\n\n[failed case-unfold] " ++ show term ++ "\n\n[into] " ++ show term') 
+          Fail.here
+      return   
+      -- $ trace ("\n\n[success case-unfold]" ++ show term   ++ "\n\n[into] " ++ show term')
+        $ term'
+  where
+  strict_overlap = 
+    Set.intersection (Term.strictAcross alts) 
+                     (Term.strictWithin cse_t)
+    
+unfoldCase _ = Fail.here
+-}
+
+{-
+expressConstraint :: Step m => Term -> m Term 
+expressConstraint term@(App {}) = do
+  ms <- liftM unfoldableMatches Env.matches
+  
+  try applying them, and checking for this:
+  Fail.when (term Quasi.<= term')
+  return term'
+  
+  where
+  unfoldableMatches :: [Match] -> [Match]
+  unfoldableMatches ms =
+    filter (unfoldableFix . matchedTerm) ms
+    where 
+    unfoldableFix (App fix@(Fix {}) xs) =
+      (not . Set.null . Set.intersection matched_vars) dec_xs
+      where
+      dec_xs = map (xs !!) (Term.decreasingArgs fix)
+  
+    matched_vars = id
+      . Set.fromList
+      . filter isVar
+      . map matchedTerm 
+      $ ms
+      -}

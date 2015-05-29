@@ -63,7 +63,7 @@ instance Show (Term' (Term, String)) where
 
 
 instance Show (Term' String) where
-  show (Eql' x y) = "(" ++ x ++ " = " ++ y ++ ")"
+  show (Leq' x y) = "(" ++ x ++ " =< " ++ y ++ ")"
   show (Bot' _) = "_|_"
   show (App' f xs) = f' ++ " " ++ xs'
     where 
@@ -85,15 +85,7 @@ instance Show FixInfo where
   show _ = ""
   
 instance (Env.Read m, Defs.Read m) => ShowM m FixInfo where
-  showM (FixInfo cs idx) = do
-    cs_s <- id
-      . liftM (intercalate "\n, ")
-      . mapM showM 
-      $ Set.toList cs
-    if Set.null cs 
-    then return ""
-    else return ("[ " ++ cs_s ++ " ]")
-  
+  showM _ = return "" 
 
 instance Show Match where
   show m = show (matchedTo m) ++ " <- " ++ show (matchedTerm m)
@@ -136,15 +128,15 @@ instance (Env.Read m, Defs.Read m) => ShowM m (Term' (Term, String)) where
       if same_lbl_count > 0
       then return (lbl' ++ "[" ++ show (same_lbl_count + 1) ++ "]")
       else return lbl'
-  
+  {-
   showM (Fix' fix_i fix_b (_, fix_t)) 
-    | (not . Set.null . get fixDomain) fix_i = do
+    | (not . null . get fixFailedAttempts) fix_i = do
       fix_is <- showM fix_i
       return ("\n" ++ fix_is 
         ++ "\nfix"
         ++ " " ++ show fix_b 
         ++ " -> " ++ indent fix_t)
-      
+   -}   
   showM term' = do
     -- Attempt to find an alias for this function in our definition database
     mby_name <- Defs.lookupName (Fold.recover term')
@@ -174,25 +166,13 @@ instance Show Constraint where
   show = Defs.readEmpty . Env.emptyT . showM
   -}
       
-instance (Env.Read m, Defs.Read m) => ShowM m Equation where
-  showM (Equals n bs (Eql t1 t2)) = 
-    Env.bindMany bs $ do
-      t1' <- liftM (dropWhile (== '\n')) (showM t1)
-      t2' <- showM t2
-      return 
-        $ name_s ++ vars_s ++ t1' ++ "\n=\n" ++ t2'
-    where
-    free_vars = Indices.free t1 ++ Indices.free t2
-    useful_bs = map ((reverse bs `nth`) . enum) (toList free_vars)
-    bs_s = intercalate " " (map show useful_bs)
-    
-    vars_s | bs == [] = ""
-           | otherwise = "forall " ++ bs_s ++ " ->\n"
-    
-    name_s | n == "" = ""
-           | otherwise = "prop " ++ n ++ ": "
-         
-    
-instance Show Equation where
-  show = Defs.readEmpty . Env.emptyT . showM
+instance (Env.Read m, Defs.Read m) => ShowM m Prop where
+  showM (Prop name t) = do
+    ts <- showM t
+    return
+      $ "prop " ++ name ++ " = " ++ ts
+      
+instance Show Prop where
+  show (Prop name t) = 
+    "prop " ++ name ++ " = " ++ show t
     

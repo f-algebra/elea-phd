@@ -12,21 +12,24 @@ import Elea.Term
 import Elea.Monad.Env ()
 import qualified Elea.Unification.Map as UMap
 
--- | A set of equations which have been discovered.
+-- | A set of rewrites which have been discovered.
 newtype EqSet
-  = EqSet { runEqSet :: [Equation] }
+  = EqSet { runEqSet :: [Prop] }
   
-singleton :: Equation -> EqSet
+singleton :: Prop -> EqSet
 singleton eq = EqSet [eq]
 
-toList :: EqSet -> [Equation]
+toList :: EqSet -> [Prop]
 toList = collapse . runEqSet
   where
-  collapse :: [Equation] -> [Equation]
+  collapse :: [Prop] -> [Prop]
+  collapse = id
+  {-
   collapse eqs = id
     . UMap.elems
     . foldr (uncurry UMap.insert) UMap.empty  
     $ map (get equationTerm) eqs `zip` eqs
+    -}
   
 instance Monoid EqSet where
   mempty = EqSet mempty

@@ -1,6 +1,6 @@
 module Elea.Tests.Fusion
 (
-  tests, checkEquation
+  tests, checkProp  
 )
 where
 
@@ -14,18 +14,17 @@ import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Transform.Fusion as Fusion
 import qualified Elea.Monad.Definitions as Defs
 
-checkEquation :: Equation -> Test.M Test.Test
-checkEquation (Equals name bs t) = id
-  . liftM (Test.label name)
-  . Env.bindMany bs $ do
+checkProp :: Prop -> Test.M Test.Test
+checkProp (Prop name t) = 
+  liftM (Test.label name) $ do
     t' <- Fusion.run t
-    return (Test.assertTrue t')
+    Test.assertTruth t'
     
 tests = Test.label "Fusion"
     $ Test.run $ do
   Test.loadPrelude
   eqs <- Test.loadFile "src-lib/Elea/Tests/fusion.elea"
-  mapM checkEquation
-    . filter ((== "bleh") . get equationName)
+  mapM checkProp
+    . filter ((== "test") . get propName)
     $ eqs
 

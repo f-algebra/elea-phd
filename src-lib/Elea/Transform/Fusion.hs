@@ -14,15 +14,13 @@ import qualified Elea.Term.Ext as Term
 import qualified Elea.Term.Constraint as Constraint
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Unification as Unifier
-import qualified Elea.Embed as Embed
 import qualified Elea.Transform.Names as Name
 import qualified Elea.Transform.Evaluate as Eval
 import qualified Elea.Transform.Simplify as Simp
 import qualified Elea.Transform.Rewrite as Rewrite
-import qualified Elea.Transform.Equality as Equality
+import qualified Elea.Transform.Prover as Prover
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Index as Indices
-import qualified Elea.Term.Height as Height
 import qualified Elea.Monad.History as History
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
@@ -34,7 +32,11 @@ import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
-import qualified Data.Poset as Partial
+import qualified Data.Poset as Quasi
+
+-- TODO match fix needs global memoisation of (Set Constraint, Term) pairs,
+-- since the rising (==) check in the traverse rules is wiping
+-- the failed constraint memory. It's also just faster.
 
 
 type Env m = 
@@ -63,8 +65,8 @@ run = Transform.fix (Transform.compose all_steps)
     -- ^ Prioritising rewrites over descending into terms
     -- speeds things up a bit
     ++ Simp.steps
+    ++ Prover.steps
     ++ steps
-    ++ Equality.steps
     
   
 steps :: Step m => [Term -> m Term]
@@ -73,66 +75,66 @@ steps =
   , fixfix
   , decreasingFreeVar
   , repeatedArg
-  , matchFix
+ -- , matchFix
   ]
 
 
 fusion :: Step m => Term -> Term -> m Term
-fusion ctx_t fix@(Fix fix_i fix_b fix_t) = do
- -- Memo.memo Name.Unfold orig_t $ do
+fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
+  . Env.forgetAllMatches 
+  . Memo.memo Name.Fusion orig_t $ do
     Fail.assert "trying to fuse the unfusable"
       $ not (Term.beingFused fix)
   
     t_s <- showM orig_t
   
-    -- Generate a new tag, larger than all others in the term
-    -- to prioritise rewrites that remove it
     temp_idx <- Tag.make
     let temp_i = set fixIndex temp_idx fix_i
         temp_fix = Fix temp_i fix_b fix_t
         rewrite_from = id 
           . Simp.run
+        --  . traceMe "\n\n!![rewrite_from]"
           . Indices.lift 
-          . Eval.run 
           $ app ctx_t [temp_fix]
   
     Type.assertEqM "[fixfix]" (Indices.lower rewrite_from) orig_t
            
     t_s' <- Env.bind new_fix_b $ showM rewrite_from
-    t_s'' <- showM (Simp.run (app ctx_t [Term.unfoldFix temp_fix]))
+   -- t_s'' <- showM (Eval.run (app ctx_t [Term.unfoldFix temp_fix]))
     
     new_fix_t <- id  
       . Env.bind new_fix_b
       . Rewrite.local temp_idx rewrite_from 0
       . Transform.continue
-     . trace ("\n\n[fusing <" ++ show temp_idx   ++ ">] " ++ t_s)
+      . trace ("\n\n[fusing <" ++ show temp_idx   ++ ">] " ++ t_s)
      -- . trace ("\n\n[replacing] " ++ t_s')
-     -- . trace ("\n\n[transforming< " ++ show temp_tag ++ ">] " ++ t_s'')
-      -- Make room for our new variables we are rewriting to
-     -- . Simp.run
+      -- . trace ("\n\n[transforming< " ++ show temp_idx ++ ">] " ++ t_s'')
       . Indices.lift
+      -- ^ Make room for our new variables we are rewriting to
       $ app ctx_t [Term.unfoldFix temp_fix]
       
-    t_s''' <- showM (Simp.run (Fix fix_i new_fix_b new_fix_t))
-    -- Check we actually performed a rewrite
-    unless (Indices.freeWithin 0 new_fix_t) $ do
-      trace ("\n\n[failing with <" ++ show temp_idx ++ ">] " ++ t_s''') 
-        Fail.here
+    t_s''' <- showM (Eval.run (Fix fix_i new_fix_b new_fix_t))
       
-    return
+    if not (0 `Indices.freeWithin` new_fix_t) 
+    then do 
+      when (Set.member temp_idx (Tag.tags new_fix_t)) $ do
+        trace ("\n\n[failing <" ++ show temp_idx ++ ">] " ++ t_s''')
+          Fail.here
+      return 
+        . Simp.run
+        $ Indices.lower new_fix_t
+    else return
       . Simp.run
       . trace ("\n\n[yielding <" ++ show temp_idx ++ ">] " ++ t_s''') 
       . Fix fix_i new_fix_b 
       $ Tag.replace temp_idx orig_idx new_fix_t
   where
-  orig_t = Eval.run (app ctx_t [fix])
+  orig_t = Term.reduce ctx_t [fix]
   orig_idx = get fixIndex fix_i
   
   new_fix_b = set Type.bindType (Type.get orig_t) fix_b
   
     
-  
-  
 fixfix :: forall m . Step m => Term -> m Term
 fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
   -- ^ o_ is outer, i_ is inner
@@ -158,11 +160,13 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
       $ Term.isLambdaFloated i_fix
     Type.assertEqM "fix-fix created an incorrectly typed context" o_term full_t
 
-    History.check Name.FixFixFusion gen_t 
-      . History.forget Name.Unfold $ do
+    History.check Name.FixFixFusion gen_t $ do
       new_fix <- fusion ctx_t i_fix
       let new_term = app new_fix (o_args' ++ i_args)
-      Transform.continue new_term
+      new_term' <- Transform.continue new_term
+      ts <- showM new_term'
+      trace ("\n\n[fixfix yielded]\n" ++ ts)
+        $ return new_term'
     where
     i_term@(App i_fix@(Fix _ i_fix_b i_fix_t) i_args) = o_args !! arg_i
     o_args' = removeAt (enum arg_i) o_args
@@ -232,8 +236,8 @@ decreasingFreeVar orig_t@(App fix@(Fix _ _ fix_t) args) = do
   
   new_fix <- id
     . History.check Name.FreeArgFusion full_t
-  --  . trace ("\n\n[dec-free from] " ++ orig_s ++ "\n\n[context] " ++ ctx_s 
-   --   ++ "\n\n[expressed fix] " ++ fix_s)
+    -- . trace ("\n\n[dec-free from] " ++ orig_s ++ "\n\n[context] " ++ ctx_s 
+   --     ++ "\n\n[expressed fix] " ++ fix_s)
     $ fusion ctx_t expr_fix
     
   Transform.continue (app new_fix args)
@@ -323,44 +327,48 @@ matchFix :: forall m . Step m => Term -> m Term
 matchFix term@(App fix@(Fix {}) xs)
   | Term.beingFused fix = Fail.here
   | not (any (isFix . leftmost) xs) =  do
-    cs <- Env.findConstraints usefulConstraint
-    term' <- fuseConstraints (Constraint.subsume cs) term
-    ts <- showM term'
-    if term Embed.<= term'
-    then trace ("\n\n[match-fix failed on] " ++ ts) Fail.here
- --   Fail.when (term Embed.<= term')
-    -- ^ Make sure we progressed 
-    else return term'
+    cts <- Env.findConstraints usefulConstraint
+    ctss <- showM cts
+    let ct_set = Set.fromList cts
+    Fail.when (null cts)
+    
+    term' <- fuseConstraints cts term
+    Fail.unless (term' Quasi.< term)
+    
+    ts <- showM term
+    ts' <- showM term'
+    
+    trace ("\n\n[match fix from] "
+        ++ ts ++ "\n\n[context] " 
+        ++ ctss ++ "\n\n[to] " ++ ts') $ 
+      return term'
   where
-  usefulConstraint :: Constraint -> Bool
+  usefulConstraint :: Constraint -> Bool 
   usefulConstraint ct 
     | not (any (isFix . leftmost) ys)
+    -- ^ Only applicable to matches on functions applied to variables
     , not (Set.null (Set.intersection (Set.fromList xs) (Set.fromList ys)))
-    , not (Constraint.alreadyFused ct fix) = True
+    -- ^ Skip if no variables match
+    , not (Type.isRecursive (matchInd ct)) =
+      True
     where
-    App fix@(Fix {}) ys = matchedTerm ct
+    App (Fix {}) ys = matchedTerm ct
     
   usefulConstraint _ = False
   
   
+  -- | Fuse all constraints in from left to right (foldl style), 
+  -- ignoring failure and stopping if we reach
+  -- a non fixed-point term, since we can only fuse into fixed-points
   fuseConstraints :: [Constraint] -> Term -> m Term
-  fuseConstraints [] _ = Fail.here
+  fuseConstraints [] t = return t
   fuseConstraints _ t 
-    | (not . isFix . leftmost) t = Fail.here
-  fuseConstraints (ct:cts) t@(App fix _)
-    | Constraint.alreadyFused ct fix = 
-      fuseConstraints cts t
-  fuseConstraints (ct:cts) t@(App fix@(Fix {}) xs) = do 
-    mby_t' <- Fail.catch (fuseConstraints cts t)
-    case mby_t' of
-      Nothing -> fuseConstraint ct t
-      Just t' -> do
-        mby_t'' <- Fail.catch (fuseConstraint ct t')
-        case mby_t'' of
-          Nothing -> return t'
-          Just t'' -> return t''
-  
-  
+    | (not . isFix . leftmost) t = return t
+  fuseConstraints (ct:cts) t@(App fix@(Fix {}) xs) = do
+      mby_t' <- Fail.catch (fuseConstraint ct t)
+      fuseConstraints cts (fromMaybe t mby_t')
+      
+      
   fuseConstraint :: Constraint -> Term -> m Term
   fuseConstraint ct oterm = do
     Fail.assert "fix-match pattern fix not lambda floated"
@@ -370,7 +378,7 @@ matchFix term@(App fix@(Fix {}) xs)
       $ length matched_is > 0
       
     m_s <- showM ct
-    ctx_s <- showM (Term.reduce ctx_t (Constraint.add ct ofix:new_args))
+    ctx_s <- showM (Term.reduce ctx_t (ofix:new_args))
     o_s <- showM oterm
     
     Type.assertEqM 
@@ -379,19 +387,21 @@ matchFix term@(App fix@(Fix {}) xs)
         ++ "\ntarget term: " ++ o_s)
       (app ctx_t (ofix:new_args)) oterm
     
-    trace ("\n\n[match-fix original] " ++ o_s 
-      ++ "\n\n[match] " ++ m_s 
-      ++ "\n\n[context] " ++ ctx_s)
-      (return ())
+   -- trace ("\n\n[match-fix original] " ++ o_s 
+    --  ++ "\n\n[match] " ++ m_s 
+    --  ++ "\n\n[context] " ++ ctx_s)
+    --  (return ())
       
-    History.check Name.MatchFixFusion full_t
-       . Env.forgetMatch ct $ do
-      -- ^ forget the constraint we are currently fusing in
-      -- otherwise it might attempt to fuse it within itself
-        fused_t <- fusion ctx_t (Constraint.add ct ofix) 
-        new_term <- Transform.continue (app fused_t new_args)
-        t_s <- showM new_term
-        trace ("\n\n[success] " ++ t_s) (return new_term)
+    fused_t <- History.check Name.MatchFixFusion full_t $ do
+      new_fix <- fusion ctx_t ofix  
+      let new_fix' 
+           -- | isFix (leftmost new_fix) = Constraint.restrictFixDomain ct new_fix
+            | otherwise = cleanupResult new_fix
+      return new_fix'
+ 
+    return
+      . Simp.run
+      $ app fused_t new_args
     where
     App mfix@(Fix _ _ mfix_t) margs = matchedTerm ct
     Con con : pargs = (flattenApp . matchedTo) ct
@@ -429,6 +439,11 @@ matchFix term@(App fix@(Fix {}) xs)
       ctx_margs = map toIdx [0..length margs-1]
       ctx_oargs = map toIdx [length margs..length all_args - 1]
       ct' = set matchTerm (app mfix ctx_margs) ct
+      
+    -- Remove residual constraints on fixed-point results  
+    cleanupResult = Constraint.removeWhen recFix
+      where
+      recFix ct _ = isFix (leftmost (matchedTerm ct))
         
     
 matchFix _ = Fail.here

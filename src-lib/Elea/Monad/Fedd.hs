@@ -103,10 +103,11 @@ instance Monad m => Memo.Can (FeddT m) where
         return mby_t
         
       Just memo_t -> do
-        mby_t' <- cont
-        if isJust mby_t' && memo_t /= mby_t'
-        then error (show memo_t ++ "\n\nactually\n\n" ++ show mby_t')
-        else return memo_t
+        trace ("\n[memoised]") (return memo_t)
+       -- mby_t' <- cont
+       -- if isJust mby_t' && memo_t /= mby_t'
+        -- then error (show memo_t ++ "\n\nactually\n\n" ++ show mby_t')
+       -- else return memo_t
 
   
 instance Monad m => Rewrite.Env (FeddT m) where

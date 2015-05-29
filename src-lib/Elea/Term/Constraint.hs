@@ -2,29 +2,32 @@ module Elea.Term.Constraint
 (
   has, 
   to,
-  add,
+  fromCase,
+  splittable,
+  split,
   apply,
-  alreadyFused,
-  subsume,
-  forget,
+  applyAll,
+  removeWhen,
 )
 where
 
 import Elea.Prelude
 import Elea.Term hiding ( constructor )
+import qualified Elea.Prelude as Prelude
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Term as Term
 import qualified Elea.Type as Type
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Index as Indices
+import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
-
 
 
 has :: Term -> Bool
 has term
   | Case _ alts <- snd (flattenLam term) =
-    length (filter (not . isBot . get altInner) alts) == 1
+    let (bot, not_bot) = partition (isBot . get altInner) alts in
+    length bot >= 1 && length not_bot == 1
     
   | otherwise = False
   
@@ -37,19 +40,46 @@ to = id
   . caseAlts
   . snd
   . flattenLam
-  
-  
-alreadyFused :: Constraint -> Term -> Bool
-alreadyFused ct = id
-  . Set.member ct
-  . get fixDomain
-  . fixInfo
-  
-add :: Constraint -> Term -> Term
-add ct (Fix fix_i fix_b fix_t) = 
-  Fix (modify fixDomain (Set.insert ct) fix_i) fix_b fix_t
- 
 
+  
+fromCase :: Term -> Constraint
+fromCase (Case cse_t alts) = 
+  Match cse_t pats (enum alt_i)
+  where
+  [alt_i] = findIndices (not . isBot . get altInner) alts
+  pats = zipWith stripVars [0..] (map altPattern alts)
+  
+  stripVars :: Int -> Pattern -> Pattern
+  stripVars i p@(Pattern tc bs _)
+    | i == enum alt_i = p
+    | otherwise = Pattern tc bs []
+  
+splittable :: Term -> Bool
+splittable term@(Case _ alts)
+  | length non_abs == 1 
+  , length abs >= 1 =
+    lowerableAltInner (head non_abs)
+  where
+  (non_abs, abs) = partition (not . isBot . get altInner) alts
+  
+splittable _ = False
+
+
+split :: Term -> (Constraint, Term, Type)
+split term@(Case _ alts) = 
+  ( fromCase term
+  , loweredAltInner (alts !! alt_i) 
+  , res_ty )
+  where
+  [alt_i] = findIndices (not . isBot . get altInner) alts
+  Just (Alt _ _ (Bot res_ty)) = find (isBot . get altInner) alts
+
+  
+applyAll :: Type -> Set Constraint -> Term -> Term
+applyAll ret_ty cts term =
+  foldr (apply ret_ty) term (Set.toAscList cts)
+  
+  
 apply :: Type -> Constraint -> Term -> Term
 apply ret_ty match term = 
   Case (matchedTerm match) 
@@ -64,23 +94,14 @@ apply ret_ty match term =
     alt_t
       | n == idx = Indices.liftMany (nlength bs) term
       | otherwise = Bot ret_ty
-      
-      
-subsume :: [Constraint] -> [Constraint]
-subsume (Set.fromList -> cts) = 
-  Set.toList (cts Set.\\ subsumed)
-  where
-  subsumed :: Set Constraint
-  subsumed = id
-    . Set.unions 
-    . map innerCt
-    $ Set.toList cts
-  
-  innerCt :: Constraint -> Set Constraint
-  innerCt (matchedTerm -> App (Fix fix_i _ _) _) =
-    get fixDomain fix_i
-    
-    
-forget :: Env.Write m => FixInfo -> m a -> m a
-forget inf = Env.forgetMatches (`Set.member` get fixDomain inf)
 
+removeWhen :: (Constraint -> Term -> Bool) -> Term -> Term
+removeWhen when = Fold.transform remove
+  where
+  remove term
+    | splittable term
+    , when ct term' = term'
+    | otherwise = term
+    where
+    (ct, term', _) = split term
+      

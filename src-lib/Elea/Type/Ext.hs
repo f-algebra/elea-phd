@@ -65,11 +65,11 @@ instance HasTypeM Term where
       then return Nothing
       else liftM (Just . Prelude.get Type.bindType) (Env.boundAt x)
     check (Bot' ty) = return (Just ty)
-    check (Eql' (Just xt) (Just yt)) = do
+    check (Leq' (Just xt) (Just yt)) = do
       Fail.when (xt /= yt)
-      return (Just (Base bool))
-    check (Eql' _ _) = 
-      return (Just (Base bool))
+      return (Just (Base prop))
+    check (Leq' _ _) = 
+      return (Just (Base prop))
     check (App' Nothing _) =
       return Nothing
     check (App' (Just fty) xs) = do
@@ -103,9 +103,9 @@ instance HasTypeM Term where
       
       mby_alt_tys <- mapM checkAlt alts
       let alt_tys = nubOrd (catMaybes mby_alt_tys)
-      case length alt_tys of
-        0 -> return Nothing
-        1 -> return (Just (head alt_tys))
+      case alt_tys of
+        [] -> return Nothing
+        [ty] -> return (Just ty)
         _ -> Fail.here
           -- ^ Branches disagree on type
       where

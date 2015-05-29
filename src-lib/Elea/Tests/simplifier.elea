@@ -1,17 +1,23 @@
 
-prop "beta1": forall (x: nat) ->
+prop "beta1" (x: nat) ->
   (fun (y: nat) -> add x y) x
-  =
+  =<
   add x x
   
-prop "beta2": 
+prop "undef case" (x: nat) ->
+  match x with 
+  | 0 -> tt
+  | Suc x' -> tt
+  end
+
+prop "beta2" -> 
   (fun (x: nat) (y: nat) -> True)
-  =
+  =<
   (fun (f: nat -> bool) (x: nat) -> f) (fun (y: nat) -> True)
   
-prop "unr1":
+prop "unr1" ->
   (fun (x: nat) -> assert 0 <- x in True)
-  =
+  =<
   (fun (x: nat) ->
     match x with
     | 0 -> True
@@ -20,42 +26,42 @@ prop "unr1":
       then False
       else False
     end)
+    
+prop "1+1=2" ->
+  add 1 1 =< 2
 
-prop "1+1=2": 
-  add 1 1 = 2
+prop "2*2=2+2" ->
+  mul 2 2 =< add 2 2
 
-prop "2*2=2+2":
-  mul 2 2 = add 2 2
-
-prop "1<=2": 
-  leq_nat 1 2
+prop "1<=2" ->
+  True =< leq_nat 1 2
  
-prop "not-not": forall (p: bool) ->
-  not (not p) = p
+prop "not-not" (p: bool) ->
+  not (not p) =< p
   
-prop "case-app" : forall (x: nat) ->
+prop "case-app" (x: nat) ->
   Suc (match x with | 0 -> 0 | Suc x -> x end)
-  =
+  =<
   (match x with | 0 -> Suc 0 | Suc x -> Suc x end)
   
-prop "unfold1"<A>: fun (xs: list<A>) (n: A) ->
+prop "unfold1"<A> (xs: list<A>) (n: A) ->
   reverse<A> (Cons<A> n xs)
-  = 
+  =<
   append<A> (reverse<A> xs) (Cons<A> n Nil<A>)
   
-prop "eq1": forall (x: nat) ->
-  if (x = 0)
+prop "eq1" (x: nat) ->
+  if (eq_nat x 0)
   then 
     match x with
-    | 0 -> True
-    | Suc x' -> False
+    | 0 -> tt
+    | Suc x' -> ff
     end
   else
     match x with
-    | 0 -> False
-    | Suc x' -> True
+    | 0 -> ff
+    | Suc x' -> tt
     end
-    
+ 
 let append3<A> =
   fix (app3: list<A> -> list<A> -> list<A> -> list<A>) ->
     fun (xs: list<A>) (ys: list<A>) (zs: list<A>) ->
@@ -64,19 +70,23 @@ let append3<A> =
     | Cons x xs' -> Cons<A> x (app3 xs' ys zs)
     end
     
-prop "append3-simp"<A>: forall (xs ys zs: list<A>) ->
-  append3<A> xs ys zs = append<A> xs (append<A> ys zs) 
+prop "append3-simp"<A> (xs ys zs: list<A>) ->
+  append3<A> xs ys zs 
+  =< 
+  append<A> xs (append<A> ys zs) 
     
   
-let dneppa<A> = 
+let dneppa<A> =
   fix (ppa: list<A> -> list<A> -> list<A>) (zs xs: list<A>) ->
     match xs with
     | Nil -> zs
     | Cons y ys -> Cons<A> y (ppa zs ys)
     end
    
-prop "non-rec first arg"<A>: forall (xs ys: list<A>) ->
-  dneppa<A> ys xs = append<A> xs ys
+prop "non-rec first arg"<A> (xs ys: list<A>) ->
+  dneppa<A> ys xs 
+  =<
+  append<A> xs ys
     
   
 let always_true = 
@@ -90,31 +100,33 @@ let always_true =
       end
     end
 
-prop "always true": forall (n m: nat) ->
-  always_true n m
+prop "always true" (n m: nat) -> 
+  always_true n m =< True 
  
-prop "constant fix 1": forall (n m x: nat) ->
+prop "constant fix 1" (n m x: nat) ->
   (fix (f: nat -> bool) (x: nat) ->
   match x with
   | 0 -> eq_nat n m
   | Suc x' -> f x'
   end) x 
-  = eq_nat n m
+  =<
+  eq_nat n m
   
-prop "constant fix 2": forall (xs: list<nat>) ->
+prop "constant fix 2" (xs: list<nat>) ->
   (fix (f: list<nat> -> bool) (xs: list<nat>) ->
   match xs with
   | Nil -> True
   | Cons y ys ->
     or (f ys) (eq_nat 1 y)
   end) xs
+  =< 
+  True
  
-prop "id nat": forall (n: nat) ->
-  n
-  = 
+prop "id nat" (n: nat) ->
   (fix (id: nat -> nat) (n: nat) -> 
     match n with | 0 -> 0 | Suc n' -> Suc (id n') end) n
-    
+  =< 
+  n
 
   /*
 let is_sorted2 = 

@@ -40,6 +40,7 @@ import qualified Elea.Type as Type
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Discovery.Class as Discovery
+import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Monad.History as History
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Term.Tag as Tag
@@ -197,6 +198,10 @@ instance Substitutable Term where
       return (Fix (Indices.lowerAt at i) b t)
     substVar other = 
       return other
+      
+instance ContainsTypes Prop where
+  mapTypesM f (Prop n t) = 
+    return (Prop n) `ap` mapTypesM f t
 
 instance ContainsTypes Term where
   mapTypesM f = runIdentityT . Fold.transformM mapTy
@@ -224,12 +229,6 @@ instance ContainsTypes Term where
         return (Alt con' bs' alt_t)
     mapTy term =
       return term
-      
-instance ContainsTypes Equation where
-  mapTypesM f (Equals name bs t) = do
-    bs' <- mapM (mapTypesM f) bs
-    t' <- mapTypesM f t
-    return (Equals name bs' t')
       
       
 -- | If you just need a simple type environment, use the reader
@@ -319,8 +318,16 @@ instance Discovery.Listens m => Discovery.Listens (AlsoTrack r m) where
 instance History.Env m => History.Env (AlsoTrack r m) where
   ask = Trans.lift History.ask
   local f = mapAlsoTrack (History.local f)
+  
+instance Memo.Can m => Memo.Can (TrackMatches m) where
+  maybeMemo n t = 
+    mapTrackMatches (Memo.maybeMemo n t)
+    
+instance (Indexed r, Memo.Can m) => Memo.Can (AlsoTrack r m) where
+  maybeMemo n t = 
+    mapAlsoTrack (Memo.maybeMemo n t)
 
-
+  
 -- | To stop effects reaching the inner monad we
 -- just wrap it in an 'IdentityT'.
 -- TODO change this to a new IgnoreT monad, the current behaviour is 
@@ -530,7 +537,7 @@ instance Unifiable Term where
     where
     uni :: forall m . Fail.Can m => 
       Term -> Term -> TrackIndicesT Index m (Unifier Term)
-    uni (Eql x y) (Eql x' y') = do
+    uni (Leq x y) (Leq x' y') = do
       uni_x <- uni x x'
       uni_y <- uni y y'
       Unifier.union uni_x uni_y
@@ -612,7 +619,7 @@ instance Unifiable Term where
       if free_y && free_t
       then return EQ
       else return GT
-    comp (Eql x y) (Eql x' y') = do
+    comp (Leq x y) (Leq x' y') = do
       cx <- comp x x'
       cy <- comp y y'
       return (cx ++ cy)
@@ -620,8 +627,8 @@ instance Unifiable Term where
       return EQ
     comp (Bot _) _ = return LT
     comp _ (Bot _) = return GT
-    comp (Eql _ _) _ = return LT
-    comp _ (Eql _ _) = return GT
+    comp (Leq _ _) _ = return LT
+    comp _ (Leq _ _) = return GT
     comp (App t1 t2) (App t1' t2') = do
       -- We use the lexicographical ordering monoid append operation.
       c1 <- comp t1 t1'
@@ -664,12 +671,6 @@ instance Indexed Match where
     . modify matchPatterns (map (shift f))
     
 instance Indexed FixInfo where
-  free = id
-    . Set.unions 
-    . Set.toList 
-    . Set.map free 
-    . get fixDomain
-    
-  shift f = 
-    modify fixDomain (Set.map (shift f))
+  free _ = mempty
+  shift _ = id
 
