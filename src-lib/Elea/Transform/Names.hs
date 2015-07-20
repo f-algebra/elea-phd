@@ -24,10 +24,11 @@ data Name
   | RepArgFusion
   | FreeArgFusion
   | MatchFixFusion
+  | IdFix
   | CaseFun
   | Fusion
-  | RewriteEq
-  | RewriteLeq
+  | LeftTrans
+  | RightTrans
   | Forall
   | LFP
   | CaseSplit

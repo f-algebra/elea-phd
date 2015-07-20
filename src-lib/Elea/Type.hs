@@ -262,13 +262,14 @@ flatten ty = [ty]
 unflatten :: [Type] -> Type
 unflatten = foldr1 Fun
 
-returnType :: Type -> Type
+returnType :: Type -> Ind
 returnType = snd . split
 
-split :: Type -> ([Type], Type)
-split (Fun x y) = 
-  first (x:) (split y)
-split ind = ([], ind)
+split :: Type -> ([Type], Ind)
+split (Fun x y) = (x:xs, r) 
+  where
+  (xs, r) = split y
+split (Base ind) = ([], ind)
 
 argumentTypes :: Type -> [Type]
 argumentTypes = fst . split

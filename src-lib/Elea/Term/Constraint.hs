@@ -8,10 +8,11 @@ module Elea.Term.Constraint
   apply,
   applyAll,
   removeWhen,
+  removeAll,
 )
 where
 
-import Elea.Prelude
+import Elea.Prelude hiding ( removeAll )
 import Elea.Term hiding ( constructor )
 import qualified Elea.Prelude as Prelude
 import qualified Elea.Monad.Env as Env
@@ -105,3 +106,5 @@ removeWhen when = Fold.transform remove
     where
     (ct, term', _) = split term
       
+removeAll :: Term -> Term
+removeAll = removeWhen (\_ _ -> True)

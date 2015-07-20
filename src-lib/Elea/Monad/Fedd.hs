@@ -23,6 +23,7 @@ import qualified Elea.Monad.Discovery.Class as Disc
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Monad.Env.Data as EnvDB
+import qualified Elea.Monad.Direction as Direction
 import qualified Control.Monad.RWS.Strict as RWS
 import qualified Control.Monad.State.Class as State
 
@@ -103,7 +104,7 @@ instance Monad m => Memo.Can (FeddT m) where
         return mby_t
         
       Just memo_t -> do
-        trace ("\n[memoised]") (return memo_t)
+        return memo_t
        -- mby_t' <- cont
        -- if isJust mby_t' && memo_t /= mby_t'
         -- then error (show memo_t ++ "\n\nactually\n\n" ++ show mby_t')
@@ -125,3 +126,6 @@ instance Monad m => Tag.Gen (FeddT m) where
     State.modify (set fsTagGen (new_i + 1))
     return new_i
   
+instance Monad m => Direction.Has (FeddT m) where
+  get = asks (get EnvDB.direction)
+  local d = local (set EnvDB.direction d)

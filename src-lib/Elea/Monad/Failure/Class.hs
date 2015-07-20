@@ -156,10 +156,6 @@ instance Can m => Can (IdentityT m) where
   here = lift here
   catch = mapIdentityT catch
   
-instance Monad Monoid.First where
-  return = Monoid.First . return
-  Monoid.First x >>= f = Monoid.First (x >>= (getFirst . f))
-  
 instance Can Monoid.First where
   here = Monoid.First mzero
   catch = Monoid.First . catch . Monoid.getFirst

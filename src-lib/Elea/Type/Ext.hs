@@ -95,8 +95,11 @@ instance HasTypeM Term where
       return (Just (get con))
     check (Lam' _ Nothing) = 
       return Nothing
-    check (Lam' (Bind _ arg_ty) (Just res_ty)) = 
-      return (Just (Fun arg_ty res_ty))
+    check (Lam' (Bind _ arg_ty) (Just res_ty))  
+      | res_ty == Type.Base Type.prop = 
+        return (Just (Type.Base Type.prop))
+      | otherwise =
+        return (Just (Fun arg_ty res_ty))
     check (Case' cse_ty alts) = do
       -- Check the pattern match term is inductively typed
       Fail.unless (isNothing cse_ty || (isInd . fromJust) cse_ty)

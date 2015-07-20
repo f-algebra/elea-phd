@@ -1,8 +1,6 @@
 
-ind unit = Unit
-
-let ff = Unit
-let tt = _|_ unit
+ind prop_ty = ff
+let tt = _|_ prop_ty
 
 let fst<A, B> = 
   fun (p: (A, B)) -> 
@@ -48,8 +46,8 @@ ind nat = 0 | Suc nat
 let 1 = Suc 0
 let 2 = Suc 1
 
-let eq_nat = 
-  fix (eq_nat: nat -> nat -> bool) (x y:nat) ->
+let eq = 
+  fix (eq: nat -> nat -> bool) (x y:nat) ->
   match x with
   | 0 ->
     match y with
@@ -59,12 +57,12 @@ let eq_nat =
   | Suc x' ->
     match y with
     | 0 -> False
-    | Suc y' -> eq_nat x' y'
+    | Suc y' -> eq x' y'
     end
   end
     
-let leq_nat = 
-  fix (leq_nat: nat -> nat -> bool) (x y: nat) -> 
+let le = 
+  fix (le: nat -> nat -> bool) (x y: nat) -> 
   match y with
   | 0 -> 
     match x with
@@ -74,12 +72,12 @@ let leq_nat =
   | Suc y' ->
     match x with
     | 0 -> True
-    | Suc x' -> leq_nat x' y'
+    | Suc x' -> le x' y'
     end
   end
   
     
-let lt_nat = 
+let lt = 
   fix (lt: nat -> nat -> bool) (x y: nat) -> 
   match x with
   | 0 -> 
@@ -184,7 +182,7 @@ let count_nat =
   match xs with
   | Nil -> 0
   | Cons y ys ->
-    if eq_nat n y 
+    if eq n y 
     then Suc (c n ys)
     else c n ys
   end
@@ -250,7 +248,7 @@ let any<A> =
   end
 
 let elem_nat = 
-  fun (x: nat) -> any<nat> (eq_nat x)
+  fun (x: nat) -> any<nat> (eq x)
   
     
 let insert_nat = 
@@ -258,7 +256,7 @@ let insert_nat =
   match xs with
   | Nil -> Cons<nat> n Nil<nat>
   | Cons y ys -> 
-    if leq_nat n y
+    if le n y
     then Cons<nat> n xs
     else Cons<nat> y (ins n ys)
   end
@@ -278,7 +276,7 @@ let is_sorted =
     match ys with
     | Nil -> True
     | Cons z zs -> 
-      and (leq_nat y z) (srtd ys)
+      and (le y z) (srtd ys)
     end
   end
   
@@ -324,7 +322,7 @@ let tree_insert =
   match t with
   | Leaf -> Node<nat> Leaf<nat> n Leaf<nat>
   | Node t1 x t2 ->
-    if leq_nat n x 
+    if le n x 
     then Node<nat> (ins n t1) x t2
     else Node<nat> t1 x (ins n t2)
   end
@@ -368,7 +366,7 @@ let rightmost_leq =
   | Leaf -> True
   | Node t1 x t2 ->
     match t2 with
-    | Leaf -> leq_nat x n
+    | Leaf -> le x n
     | Node t1' x' t2' -> rleq t2
     end
   end) t
@@ -377,7 +375,7 @@ let leq_leftmost =
   fun (n: nat) (t: tree<nat>) ->
   match flatten<nat> t with
   | Nil -> True
-  | Cons x xs -> leq_nat n x
+  | Cons x xs -> le n x
   end
   
   /*
@@ -387,7 +385,7 @@ let leq_leftmost =
   | Leaf -> True 
   | Node t1 x t2 ->
     match t1 with
-    | Leaf -> leq_nat n x
+    | Leaf -> le n x
     | Node t1' y t2' -> lm n t1
     end
   end

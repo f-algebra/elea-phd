@@ -238,9 +238,6 @@ concatEndos = appEndo . mconcat . map Endo . toList
 concatEndosM :: (Monad m, Foldable f) => f (a -> m a) -> a -> m a
 concatEndosM = runKleisli . mconcat . map Kleisli . toList
 
-instance Functor First where
-  fmap f = First . fmap f . getFirst
-
 minimalBy :: (a -> a -> Ordering) -> [a] -> [a]
 minimalBy _ [] = []
 minimalBy ord xs = y : (takeWhile ((== EQ) . ord y) ys)

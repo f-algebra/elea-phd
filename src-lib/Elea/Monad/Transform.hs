@@ -22,6 +22,7 @@ import qualified Elea.Monad.Rewrite as Rewrite
 import qualified Elea.Monad.Discovery.Class as Discovery
 import qualified Elea.Monad.History as History
 import qualified Elea.Monad.Memo.Class as Memo
+import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Term.Tag as Tag
 import qualified Control.Monad.Reader.Class as Reader
 import qualified Control.Monad.Trans.Class as Trans
@@ -119,6 +120,10 @@ instance Discovery.Tells m => Discovery.Tells (StepT m) where
 instance History.Env m => History.Env (StepT m) where
   ask = Trans.lift History.ask
   local f = mapStepT (History.local f)
+  
+instance Direction.Has m => Direction.Has (StepT m) where
+  get = Trans.lift Direction.get
+  local d = mapStepT (Direction.local d)
   
 instance Memo.Can m => Memo.Can (StepT m) where
   maybeMemo n t = mapStepT instep

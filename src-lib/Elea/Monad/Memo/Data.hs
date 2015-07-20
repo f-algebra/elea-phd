@@ -51,5 +51,3 @@ insert (enum -> name) term outcome (Data map) =
   where
   ins Nothing = Just (UMap.singleton term outcome)
   ins (Just umap) = Just (UMap.insert term outcome umap)
-
-

@@ -4,7 +4,7 @@ module Main
   main,
   test,
   run,
-  run2
+  run2,
 )
 where
 
@@ -27,10 +27,19 @@ time a = do
   printf "Computation time: %0.3f sec\n" (diff :: Double)
   return v
     
-test :: IO ()
-test = time runTests
+test2 :: IO ()
+test2 = time runTests
 
 main = test
+
+test :: IO ()
+test = time
+  $ Test.execute
+  . Fedd.eval $ do
+    Test.loadPrelude
+    phd_props <- Test.loadFile "phd_tests.elea"
+    tests <- mapM Test.checkProp phd_props 
+    return (Test.list tests)
 
 run :: String -> IO ()
 run term_def = id

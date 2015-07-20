@@ -7,8 +7,7 @@ module Elea.Testing
   loadPrelude, loadFile,
   term, _type,
   simplifiedTerm,
---  fusedTerm,
- -- assertProvablyEq,
+  checkProp,
   assertTermEq,
   assertTermEqM,
   assertTruth,
@@ -77,6 +76,11 @@ assertTruth term
     return  
       . HUnit.TestCase
       $ HUnit.assertFailure msg
+      
+checkProp :: Prop -> M Test
+checkProp (Prop name prop_t) = do
+  prop_t' <- Fusion.run prop_t
+  assertTruth prop_t'
 
 prelude :: String
 prelude = unsafePerformIO

@@ -28,6 +28,7 @@ module Elea.Term
   inductivelyTyped, 
   fromVar, 
   truth, falsity,
+  implies, neg, conj,
   and, conjunction, true, false,
   altPattern, recursivePatternVars,
   makePattern,
@@ -520,6 +521,17 @@ conjunction n = id
   . foldr and true
   . reverse
   $ map (Var . enum) [0..n-1]
+  
+  
+implies :: Term -> Term -> Term
+implies = flip Leq
+    
+neg :: Term -> Term
+neg p = implies p falsity
+    
+conj :: [Term] -> Term
+conj [] = truth
+conj (p:ps) = neg (implies p (neg (conj ps)))
   
     
 -- | Build an equality function for a given inductive type.

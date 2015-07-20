@@ -92,7 +92,6 @@ strictness term
   isUndef (Case (Bot _) _) = True
   isUndef (Case _ alts)
     | all (isBot . get altInner) alts = True
-  isUndef (Lam _ (Bot _)) = True
   isUndef _ = False
 strictness _ =
   Fail.here
@@ -195,10 +194,9 @@ traverseFun :: Step m => Term -> m Term
 traverseFun (Lam b t) = do
   t' <- Env.bind b (Transform.continue t)
   Fail.when (t == t')
-  case t' of
-    Bot ty -> return (Bot (Type.Fun (get Type.bindType b) ty))
-    -- ^ Better than repeating everything
-    _ -> return (Lam b t')
+  if t' == Term.truth || t' == Term.falsity
+  then return t'
+  else return (Lam b t')
 traverseFun _ = Fail.here
 
 

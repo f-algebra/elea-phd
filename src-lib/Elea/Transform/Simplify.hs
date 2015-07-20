@@ -5,7 +5,6 @@ module Elea.Transform.Simplify
 (
   Step,
   run, 
-  equivSteps,
   steps,
 )
 where
@@ -28,6 +27,7 @@ import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Monad.Transform as Transform
+import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.Fedd as Fedd  
 
 import qualified Data.Monoid as Monoid
@@ -42,7 +42,8 @@ import qualified Control.Monad.Trans as Trans
 type Step m =
   ( Eval.Step m
   , Env.All m
-  , Defs.Read m )
+  , Defs.Read m
+  , Direction.Has m )
 
 run :: Term -> Term
 run = id
@@ -55,9 +56,6 @@ run = id
     ++ steps                        
     
     
-equivSteps :: Step m => [Term -> m Term]
-equivSteps = [ constArg, unfold, identityCase ]
-
     
 
 steps :: Step m => [Term -> m Term]
@@ -68,7 +66,6 @@ steps =
   , identityCase
   , constantCase
   , constantFix
-  , identityFix
   , unfold
  -- , floatVarMatch
   {-
@@ -239,19 +236,6 @@ uselessFix (Fix _ _ fix_t)
 uselessFix _ = Fail.here
 
 
-identityFix :: Step m => Term -> m Term
-identityFix (App fix@(Fix _ _ fix_t@(Lam lam_b _)) [arg]) 
-  | Type.get fix == new_ty
-  , run (Indices.subst id_fun fix_t) == id_fun = 
-    Transform.continue arg
-  where
-  arg_ty = get Type.bindType lam_b
-  new_ty = Type.Fun arg_ty arg_ty
-  id_fun = Lam lam_b (Var 0)
-  
-identityFix _ = Fail.here
-
-
 -- | If a recursive function just returns the same value, regardless of its
 -- inputs, just reduce it to that value.
 constantFix :: Step m => Term -> m Term
@@ -259,17 +243,19 @@ constantFix t@(App (Fix _ fix_b fix_t) args)
   | length args /= length arg_bs = Fail.here
    
   | Just [result] <- mby_results
-  , correctGuess result = 
+  , correctGuess result = do
+    Direction.requireInc
     Transform.continue result
   
   | Just [] <- mby_results
-  , correctGuess (Bot result_ty) = 
+  , correctGuess (Bot result_ty) = do
+    Direction.requireInc
     return (Bot result_ty)
   
   where
   (arg_bs, _) = flattenLam fix_t
   fix_ty = get Type.bindType fix_b
-  result_ty = Type.returnType fix_ty
+  result_ty = Type.Base (Type.returnType fix_ty)
   
   mby_results = id
     . potentialResults
@@ -343,6 +329,7 @@ unfoldWithinFix _ = Fail.here
 -- | Removes a pattern match if every branch returns the same value.
 constantCase :: forall m . Step m => Term -> m Term
 constantCase (Case _ alts) = do
+  Direction.requireInc
   (alt_t:alt_ts) <- mapM loweredAltTerm alts
   Fail.unless (all (== alt_t) alt_ts)
   Transform.continue alt_t

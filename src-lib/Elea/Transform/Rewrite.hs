@@ -3,7 +3,7 @@
 module Elea.Transform.Rewrite
 (
   Step,
-  equivSteps,
+  run,
   rewriteSteps,
   expressSteps
 )
@@ -23,28 +23,48 @@ import qualified Elea.Monad.History as History
 import qualified Elea.Transform.Names as Name
 import qualified Elea.Transform.Evaluate as Eval
 import qualified Elea.Transform.Simplify as Simp
+import qualified Elea.Transform.Prover as Prover
 import qualified Elea.Unification as Unifier
 import qualified Elea.Monad.Env as Env
+import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Monad.Transform as Transform
 import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Rewrite as Rewrite
 import qualified Elea.Monad.Failure.Class as Fail
+import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.Memo.Class as Memo
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Poset as Quasi
 
-
-type Step m = 
-  ( Simp.Step m
+type Env m = 
+  ( Defs.Read m
+  , Env.All m
+  , Tag.Gen m
+  , History.Env m 
   , Rewrite.Env m
-  , Memo.Can m )
+  , Memo.Can m
+  , Direction.Has m )
+
+type Step m = Prover.Step m
   
-  
-equivSteps :: Step m => [Term -> m Term]
-equivSteps = [ rewritePattern ]
-  
+
+run :: Env m => Term -> m Term
+run = id
+  . Transform.fix (Transform.compose all_steps)
+  where
+  all_steps = []
+    ++ Eval.transformSteps
+    ++ rewriteSteps
+    ++ Eval.traverseSteps
+    ++ expressSteps
+    -- ^ Prioritising rewrites over descending into terms
+    -- speeds things up a bit
+    ++ Simp.steps
+    ++ Prover.steps
+    
+    
 rewriteSteps :: Step m => [Term -> m Term]
 rewriteSteps =
   [ const Fail.here
@@ -56,10 +76,9 @@ expressSteps :: Step m => [Term -> m Term]
 expressSteps = 
   [ const Fail.here
   , expressConstructor
-  -- , expressMatch
-  -- ^ Unsound cos I'm an idiot
   , commuteConstraint
   , finiteCaseFix
+  , identityFix
   ] 
   
 
@@ -90,6 +109,50 @@ rewrite term@(App {}) = do
   
 rewrite _ = Fail.here
 
+{-
+discoverFold :: forall m . Step m => Term -> m Term
+discoverFold 
+-}
+
+
+identityFix :: forall m . Step m => Term -> m Term
+identityFix orig_t@(App fix@(Fix _ _ fix_t) xs) = do
+  Direction.requireInc
+  Fail.unless (worthATry fix_t) 
+  Memo.memo Name.IdFix orig_t $ do    
+    Fail.choose 
+      . map tryArg
+      . filter potentialArg
+      $ [0..length xs - 1]
+  where
+  (arg_bs, body_t) = flattenLam fix_t
+  (arg_tys, body_ty) = Type.split (Type.get fix)
+  
+  worthATry :: Term -> Bool
+  worthATry (Lam _ t) = worthATry t
+  worthATry (Case cse_t alts) = 
+    worthATry cse_t && all (worthATry . get altInner) alts
+  worthATry (Bot _) = True
+  worthATry (flattenApp -> f : xs) = 
+    (isCon f || isVar f) && all worthATry xs
+  worthATry _ = False
+  
+  potentialArg :: Int -> Bool
+  potentialArg n = 
+    (arg_tys !! n) == Type.Base body_ty
+  
+  tryArg :: Int -> m Term
+  tryArg n = do
+    Prover.check (Leq (Indices.subst id_n fix_t) id_n)
+    return (xs !! n)
+    where       
+    id_n = id
+      . unflattenLam arg_bs 
+      . Var 
+      . enum
+      $ (length arg_bs - n) - 1
+  
+identityFix _ = Fail.here
 
 
 expressConstructor :: forall m . Step m => Term -> m Term
@@ -225,7 +288,7 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
         
 expressConstructor _ = Fail.here
 
-
+-- | Unsound cos I'm an idiot
 expressMatch :: Step m => Term -> m Term
 expressMatch term@(App fix@(Fix {}) _) = do
   free_cse@(Case cse_t _) <- id
@@ -265,7 +328,7 @@ commuteConstraint :: Step m => Term -> m Term
 commuteConstraint term@(Case (leftmost -> Fix {}) _)
   | Constraint.splittable term
   , isCase inner_t 
-  , not looping = 
+  , not looping =
     Transform.continue (Case cse_t (map applyCt alts))
   where
   (ct, inner_t, ty) = Constraint.split term

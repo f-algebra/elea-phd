@@ -42,6 +42,7 @@ import qualified Data.Map as Map
   '<-'        { TokenLArr }
   '=>'        { TokenDRArr }
   '=<'        { TokenLeq }
+  '=='        { TokenEqEq }
   '*'         { TokenSet }
   '='         { TokenEq }
   '['         { TokenOS }
@@ -68,8 +69,8 @@ import qualified Data.Map as Map
   then        { TokenThen }
   else        { TokenElse }
   'fold['     { TokenFold  }
-  'eq['       { TokenEqEq  }
   assert      { TokenAssert }
+  assertBool  { TokenAssBool }
   
 %right '->'
   
@@ -133,10 +134,12 @@ Term :: { RawTerm }
   | fun Bindings '->' Term            { TLam $2 $4 }
   | fix Bindings '->' Term            { TFix $2 $4 }
   | Term '=<' Term                    { TLeq $1 $3 }
+  | Term '==' Term                    { TEq $1 $3 }
   | let name '=' Term in Term         { TLet $2 $4 $6 }
   | 'fold[' Type ']'                  { TFold $2 }
   | match Term with Matches end       { TCase $2 $4 }
   | assert Pattern '<-' Term in Term  { TAssert $2 $4 $6 }
+  | assertBool Term in Term           { TAssert [] $2 $4 }
   | if Term then Term else Term       { TCase $2 [ TAlt ["True"] $4
                                                  , TAlt ["False"] $6] }
                                                  
@@ -154,6 +157,9 @@ ParamName :: { ParamName }
 PropDef :: { PropDef }
   : prop ParamName Bindings '->' Term  { ($2, $3, $5) }
   | prop ParamName '->' Term           { ($2, [], $4) }
+  | prop '<' NameList '>' Bindings '->' Term 
+                                       { (("", $3), $5, $7) }
+  | prop Bindings '->' Term            { (("", []), $2, $4) }
 
 Program :: { RawProgram }
   : {- empty -}                       { RawProgram [] [] [] }
@@ -205,6 +211,7 @@ data RawTerm
   | TCase RawTerm [RawAlt]
   | TLet String RawTerm RawTerm
   | TLeq RawTerm RawTerm
+  | TEq RawTerm RawTerm
   | TFold RawType
   | TTuple [RawTerm]
   | TAssert [String] RawTerm RawTerm
@@ -326,7 +333,10 @@ program text =
     localTypeArgs ty_args $ do
       bs <- mapM parseRawBind rbs
       t <- Env.bindMany bs (parseAndCheckTerm rt)
-      return (Prop name (unflattenLam bs t)) 
+      ty <- Type.getM t
+      let t' | Type.returnType ty == Type.bool = Term.Leq t (Term.true)
+             | otherwise = t
+      return (Prop name (unflattenLam bs t'))
   
   defineType :: TypeDef -> ParserMonad m ()
   defineType ((ind_name, ty_args), raw_cons) = do
@@ -441,12 +451,21 @@ parseRawTerm (TTuple rts) = do
   ts <- mapM parseRawTerm rts
   Term.tuple ts
 parseRawTerm (TFold raw_ty) = do
-  Fun (Base ind) res_ty <- parseRawType raw_ty
-  return (buildFold ind res_ty)
+  ty <- parseRawType raw_ty
+  case ty of
+    Fun (Base ind) res_ty ->
+      return (buildFold ind res_ty)
+    _ -> error 
+      $ "Fold syntax given invalid type [" ++ show ty ++ "]."
+      ++ "This must be a function from an inductive type."
 parseRawTerm (TLeq rt1 rt2) = do
   t1 <- parseRawTerm rt1
   t2 <- parseRawTerm rt2
   return (Term.Leq t1 t2)
+parseRawTerm (TEq rt1 rt2) = do
+  t1 <- parseRawTerm rt1
+  t2 <- parseRawTerm rt2 
+  return (conj [Term.Leq t1 t2, Term.Leq t2 t1])
 parseRawTerm (TVar var) = 
   lookupTerm var
 parseRawTerm (TUnr rty) = do
@@ -472,12 +491,16 @@ parseRawTerm (TLet name rt1 rt2) = do
 parseRawTerm (TAssert pat ron_t rin_t) = do
   on_t <- parseRawTerm ron_t
   on_ty@(Type.Base ind) <- Type.getM on_t
-  (con_n, var_bs) <- parsePattern ind pat
+  (con_n, var_bs) <- parsePattern ind pat'
   tcon <- Tag.tag (Constructor ind con_n)
   in_t <- Env.bindMany var_bs (parseRawTerm rin_t)
   in_ty <- Env.bindMany var_bs (Type.getM in_t)
   let ct = Term.matchFromConstructor tcon on_t
   return (Constraint.apply in_ty ct in_t)
+  where
+  pat' | pat == [] = ["True"]
+       | otherwise = pat
+  
 parseRawTerm (TCase rt ralts) = do
   t <- parseRawTerm rt
   ind_ty <- Type.getM t
@@ -533,6 +556,7 @@ data Token
   | TokenFold
   | TokenEqEq
   | TokenAssert
+  | TokenAssBool
   
 happyError :: [Token] -> a
 happyError tokens = error $ "Parse error\n" ++ (show tokens)
@@ -551,6 +575,7 @@ lexer (' ':cs) = lexer cs
 lexer ('\n':cs) = lexer cs
 lexer ('-':'>':cs) = TokenRArr : lexer cs
 lexer ('<':'-':cs) = TokenLArr : lexer cs
+lexer ('=':'=':cs) = TokenEqEq : lexer cs
 lexer ('=':'<':cs) = TokenLeq : lexer cs
 lexer ('=':cs) = TokenEq : lexer cs
 lexer ('_':'|':'_':cs) = TokenUnr : lexer cs
@@ -591,7 +616,7 @@ lexer (c:cs)
       ("prop", rest) -> TokenProp : lexer rest
       ("forall", rest) -> TokenAll : lexer rest
       ("fold", '[':rest) -> TokenFold : lexer rest
-      ("eq", '[':rest) -> TokenEqEq : lexer rest
+      ("assertBool", rest) -> TokenAssBool : lexer rest
       ("assert", rest) -> TokenAssert : lexer rest
       (name, rest) -> TokenName name : lexer rest
 lexer cs = error $ "Unrecognized symbol " ++ take 1 cs
@@ -627,7 +652,7 @@ instance Show Token where
   show TokenThen = "then"
   show TokenElse = "else"
   show TokenFold = "fold["
-  show TokenEqEq = "eq["
+  show TokenEqEq = "=="
   show (TokenInj n) = "inj" ++ show n
   show TokenAssert = "assert"
   

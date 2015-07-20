@@ -28,6 +28,7 @@ import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Discovery.Class as Discovery
 import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Monad.Rewrite as Rewrite
+import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 import qualified Data.Map as Map
@@ -46,11 +47,12 @@ type Env m =
   , Tag.Gen m
   , History.Env m 
   , Rewrite.Env m
-  , Memo.Can m )
+  , Memo.Can m
+  , Direction.Has m )
   
   
 type Step m =
-  ( Rewrite.Step m
+  ( Prover.Step m
   , Env m )
  
   
@@ -60,12 +62,12 @@ run = Transform.fix (Transform.compose all_steps)
   all_steps = []
     ++ Eval.transformSteps
     ++ Rewrite.rewriteSteps
+    ++ Prover.steps
     ++ Eval.traverseSteps
     ++ Rewrite.expressSteps
     -- ^ Prioritising rewrites over descending into terms
     -- speeds things up a bit
     ++ Simp.steps
-    ++ Prover.steps
     ++ steps
     
   
@@ -75,7 +77,7 @@ steps =
   , fixfix
   , decreasingFreeVar
   , repeatedArg
- -- , matchFix
+  , matchFix
   ]
 
 
@@ -106,7 +108,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
       . Env.bind new_fix_b
       . Rewrite.local temp_idx rewrite_from 0
       . Transform.continue
-      . trace ("\n\n[fusing <" ++ show temp_idx   ++ ">] " ++ t_s)
+    --  . trace ("\n\n[fusing <" ++ show temp_idx   ++ ">] " ++ t_s)
      -- . trace ("\n\n[replacing] " ++ t_s')
       -- . trace ("\n\n[transforming< " ++ show temp_idx ++ ">] " ++ t_s'')
       . Indices.lift
@@ -118,14 +120,14 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
     if not (0 `Indices.freeWithin` new_fix_t) 
     then do 
       when (Set.member temp_idx (Tag.tags new_fix_t)) $ do
-        trace ("\n\n[failing <" ++ show temp_idx ++ ">] " ++ t_s''')
+     --   trace ("\n\n[failing <" ++ show temp_idx ++ ">] " ++ t_s''')
           Fail.here
       return 
         . Simp.run
         $ Indices.lower new_fix_t
     else return
       . Simp.run
-      . trace ("\n\n[yielding <" ++ show temp_idx ++ ">] " ++ t_s''') 
+   --   . trace ("\n\n[yielding <" ++ show temp_idx ++ ">] " ++ t_s''') 
       . Fix fix_i new_fix_b 
       $ Tag.replace temp_idx orig_idx new_fix_t
   where
@@ -322,6 +324,30 @@ repeatedArg term@(App fix@(Fix _ fix_b fix_t) args) = do
 
 repeatedArg _ = Fail.here
 
+{-
+matchFix :: forall m . Step m => Term -> m Term
+matchFix leq@(Leq x y) = do
+  Direction.requireInc
+  History.check Name.MatchFixFusion leq $ do
+    x' <- doMatchFix x
+    let leq' = Leq x' y
+    t_s <- showM leq
+    t_s' <- showM leq'
+    trace ("\n\n[mfix from]\n" ++ t_s ++ "\n\n[mfix to]\n" ++ t_s')
+      $ Transform.continue (Leq x' y)
+matchFix cse_t@(Case x xs) = do
+  x' <- doMatchFix x
+  x_s <- showM x'
+  let x'' = Constraint.removeAll x'
+  Fail.unless (isCon (leftmost x''))
+  cse_t' <- Transform.continue (Case x'' xs)
+  
+  cse_s <- showM cse_t
+  cse_s' <- showM cse_t'
+  trace ("\n\n[mfix from]\n" ++ cse_s ++ "\n\n[mfix to]\n" ++ cse_s')
+    $ return cse_t'
+matchFix _ = Fail.here
+-}
 
 matchFix :: forall m . Step m => Term -> m Term
 matchFix term@(App fix@(Fix {}) xs)
@@ -333,15 +359,19 @@ matchFix term@(App fix@(Fix {}) xs)
     Fail.when (null cts)
     
     term' <- fuseConstraints cts term
-    Fail.unless (term' Quasi.< term)
+    term'' <- id  
+      . Direction.prover
+      . Rewrite.run 
+      $ Constraint.removeAll term'
     
     ts <- showM term
-    ts' <- showM term'
-    
+    ts' <- showM term''
     trace ("\n\n[match fix from] "
         ++ ts ++ "\n\n[context] " 
-        ++ ctss ++ "\n\n[to] " ++ ts') $ 
-      return term'
+        ++ ctss ++ "\n\n[to] " ++ ts') 
+        $ Fail.unless (term'' Quasi.< term)
+        
+    return term''
   where
   usefulConstraint :: Constraint -> Bool 
   usefulConstraint ct 
@@ -386,22 +416,17 @@ matchFix term@(App fix@(Fix {}) xs)
         ++ "\nmatch term: " ++ m_s 
         ++ "\ntarget term: " ++ o_s)
       (app ctx_t (ofix:new_args)) oterm
-    
-   -- trace ("\n\n[match-fix original] " ++ o_s 
-    --  ++ "\n\n[match] " ++ m_s 
-    --  ++ "\n\n[context] " ++ ctx_s)
-    --  (return ())
       
-    fused_t <- History.check Name.MatchFixFusion full_t $ do
-      new_fix <- fusion ctx_t ofix  
-      let new_fix' 
-           -- | isFix (leftmost new_fix) = Constraint.restrictFixDomain ct new_fix
-            | otherwise = cleanupResult new_fix
-      return new_fix'
+    fused_t <- id
+      . History.check Name.MatchFixFusion full_t $ do
+        new_fix <- fusion ctx_t ofix  
+        let new_fix' 
+             -- | isFix (leftmost new_fix) = Constraint.restrictFixDomain ct new_fix
+              | otherwise = cleanupResult new_fix
+        Fail.when (ofix Quasi.<= new_fix')
+        return new_fix'
  
-    return
-      . Simp.run
-      $ app fused_t new_args
+    return (Term.reduce fused_t new_args)
     where
     App mfix@(Fix _ _ mfix_t) margs = matchedTerm ct
     Con con : pargs = (flattenApp . matchedTo) ct
@@ -445,7 +470,6 @@ matchFix term@(App fix@(Fix {}) xs)
       where
       recFix ct _ = isFix (leftmost (matchedTerm ct))
         
-    
 matchFix _ = Fail.here
     
 

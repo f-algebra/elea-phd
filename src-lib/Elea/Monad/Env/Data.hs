@@ -5,6 +5,7 @@ module Elea.Monad.Env.Data
   matches, bindings,
   rewrites, addRewrite,
   history, forgetMatches,
+  direction
 )
 where
 
@@ -12,22 +13,25 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Term.Index
 import Elea.Monad.Env ()
+import Elea.Monad.Direction ( Direction )
 import qualified Elea.Monad.History as History
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Monad.Rewrite as Rewrite
+import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Type as Type
 
 data Data
   = Data  { _dbBinds :: [Bind]
           , _dbMatches :: [Match]
           , _dbRewrites :: [(Tag, Term, Index)] 
-          , _dbHistory :: History.Repr }
+          , _dbHistory :: History.Repr
+          , _dbDirection :: Direction }
           
 mkLabels [ ''Data ]
 
 empty :: Data
-empty = Data mempty mempty mempty History.empty
+empty = Data mempty mempty mempty History.empty Direction.Inc
 
 matches :: Data -> [Match]
 matches = get dbMatches
@@ -62,5 +66,7 @@ liftRewritesAt at =
   modify dbRewrites (map liftR)
   where
   liftR (a, t, x) = (a, liftAt at t, liftAt at x)
-
+  
+direction :: (Data :-> Direction)
+direction = dbDirection
 

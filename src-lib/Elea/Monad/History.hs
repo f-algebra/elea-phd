@@ -58,7 +58,6 @@ size = get reprSize
 forgetName :: Name -> Repr -> Repr
 forgetName k = modify reprMap (Map.delete (enum k))
 
-
 class Monad m => Env m where
   ask :: m Repr
   local :: (Repr -> Repr) -> m a -> m a

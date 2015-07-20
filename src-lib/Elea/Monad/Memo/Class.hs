@@ -19,7 +19,3 @@ memo :: (Fail.Can m, Can m) => Name -> Term -> m Term -> m Term
 memo n t = 
   Fail.joinMaybe . maybeMemo n t . Fail.catch
   
-instance Can m => Can (MaybeT m) where
-  maybeMemo n t = 
-    mapMaybeT (liftM Just . maybeMemo n t . liftM join)
-    
