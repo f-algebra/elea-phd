@@ -1,4 +1,4 @@
-module Elea.Monad.Rewrite
+module Elea.Monad.Fusion
 (
   Env (..),
   findTags,

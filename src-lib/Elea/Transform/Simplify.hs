@@ -5,6 +5,7 @@ module Elea.Transform.Simplify
 (
   Step,
   run, 
+  runM,
   steps,
 )
 where
@@ -39,25 +40,27 @@ import qualified Control.Monad.Trans as Trans
 -- TODO strip out Transform.continue where possible!
 -- TODO properly tweak step order
 
-type Step m =
-  ( Eval.Step m
-  , Env.All m
+type Env m = 
+  ( Env.All m
   , Defs.Read m
-  , Direction.Has m )
+  , Direction.Has m
+  , History.Env m )
+
+
+type Step m = (Eval.Step m, Env m)
 
 run :: Term -> Term
-run = id
-  . Fedd.eval
-  . Transform.fix (Transform.compose all_steps)
+run = Fedd.eval . runM        
+    
+runM :: Env m => Term -> m Term
+runM = Transform.fix (Transform.compose all_steps)
   where
   all_steps = []
     ++ Eval.transformSteps 
     ++ Eval.traverseSteps     
-    ++ steps                        
+    ++ steps       
     
-    
-    
-
+ 
 steps :: Step m => [Term -> m Term]
 steps =
   [ const Fail.here
@@ -117,8 +120,8 @@ constArg :: Step m => Term -> m Term
 constArg term@(App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
   | length arg_bs /= length args = Fail.here
   | otherwise = do
-    pos <- (Fail.fromMaybe . find isConstArg . range) arg_bs
-    let fix' = removeConstArg (enum pos)
+    Fail.when (length arg_idxs == 0)
+    let fix' = removeConstArg pos
     
     -- Might as well simplify the constant argument before pushing it inside
     -- and possible duplicating it
@@ -129,41 +132,16 @@ constArg term@(App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
     let term' = Term.reduce fix' args'
     Transform.continue (Term.reduce fix' args')
   where
+  arg_idxs = Term.constantArgs fix
+  pos = head arg_idxs
+  
   -- Strip off the preceding lambdas of the function
   (arg_bs, fix_body) = flattenLam fix_t
   arg_count = length (Type.flatten fix_ty) - 1
   
   -- The index of the recursive call to the function within 'fix_body'
   fix_f = elength arg_bs :: Index
-  
-  -- Does the given argument position never change in any recursive call?
-  isConstArg :: Nat -> Bool
---  isConstArg arg_i
- --   | isVar (args !! arg_i) = False
-  isConstArg arg_i = id
-    . not
-    . Env.trackIndices (fix_f, Var arg_x)
-    $ Fold.anyM isntConst fix_body
-    where
-    -- The index of the argument we are tracking as it was bound
-    -- by the lambdas of the function
-    arg_x = enum (nlength arg_bs - (arg_i + 1))
-    
-    -- Whether this given argument changes at a recursive call site
-    isntConst :: Term -> Env.TrackIndices (Index, Term) Bool
-    isntConst (App (Var f) args) = do
-      (fix_f, arg_t) <- Env.tracked
-      return 
-        $ fix_f == f
-        -- If the number of arguments differs then this function is not
-        -- in the correct shape for this process. So we fail by saying
-        -- the argument changed.
-        && (length args /= arg_count
-        || arg_t /= (args !! arg_i))
-    isntConst _ = 
-      return False
-     
-      
+
   -- Remove an argument to the function at the given position.
   removeConstArg :: Nat -> Term
   removeConstArg arg_i = id
@@ -347,12 +325,12 @@ unfold term@(App fix@(Fix {}) args)
   -- ^ Speed improvement
     History.check Name.Unfold term $ do
       term' <- id
-        . Transform.continue 
+        . runM
         $ Term.reduce (Term.unfoldFix fix) args
       when (term Quasi.<= term') $ do
      --   trace ("\n\n[failed unfold] " ++ show term ++ "\n\n[into] " ++ show term') 
           Fail.here 
-      return 
+      Transform.continue 
      --    $  trace ("\n\n[success unfold]" ++ show term   ++ "\n\n[into] " ++ show term')
         $ term'
   where

@@ -29,7 +29,7 @@ import qualified Elea.Monad.Env as Env
 import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Monad.Transform as Transform
 import qualified Elea.Monad.Definitions.Class as Defs
-import qualified Elea.Monad.Rewrite as Rewrite
+import qualified Elea.Monad.Fusion as Fusion
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.Memo.Class as Memo
@@ -43,7 +43,7 @@ type Env m =
   , Env.All m
   , Tag.Gen m
   , History.Env m 
-  , Rewrite.Env m
+  , Fusion.Env m
   , Memo.Can m
   , Direction.Has m )
 
@@ -92,7 +92,7 @@ rewritePattern t = do
 rewrite :: forall m . Step m => Term -> m Term
 rewrite term@(App {}) = do
   term' <- Term.revertMatches term
-  rs <- Rewrite.findTags (Set.delete Tag.omega (Tag.tags term'))
+  rs <- Fusion.findTags (Set.delete Tag.omega (Tag.tags term'))
   Fail.choose (map (apply term') rs)
   where
   apply :: Term -> (Term, Index) -> m Term
@@ -108,11 +108,6 @@ rewrite term@(App {}) = do
       $ app (Var h) args
   
 rewrite _ = Fail.here
-
-{-
-discoverFold :: forall m . Step m => Term -> m Term
-discoverFold 
--}
 
 
 identityFix :: forall m . Step m => Term -> m Term

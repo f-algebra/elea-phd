@@ -410,8 +410,8 @@ loweredAltInner (Alt _ bs alt_t) =
   
 -- | Build a fold function. 
 buildFold :: Indexed Term 
-  => Type.Ind  -- ^ The inductive argument type of the fold function 
-  -> Type      -- ^ The return type of the fold function
+  => Type.Ind  -- The inductive argument type of the fold function 
+  -> Type      -- The return type of the fold function
   -> Term
 buildFold ind@(Type.Ind _ cons) result_ty = 
   unflattenLam lam_bs fix_t

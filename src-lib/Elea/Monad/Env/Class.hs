@@ -18,6 +18,7 @@ module Elea.Monad.Env.Class
   trackeds, liftTracked, 
   offset, liftByOffset, 
   lowerByOffset, lowerableByOffset,
+  tryLowerByOffset,
 )
 where
 
@@ -134,6 +135,11 @@ liftByOffset x = liftM (flip Indices.liftMany x) offset
 
 lowerByOffset :: (Enum e, Tracks e m, Indexed a) => a -> m a
 lowerByOffset x = liftM (flip Indices.lowerMany x) offset
+
+tryLowerByOffset :: (Enum e, Tracks e m, Indexed a, Fail.Can m) => a -> m a
+tryLowerByOffset x = do
+  n <- offset
+  Indices.tryLowerMany n x 
 
 lowerableByOffset :: (Enum e, Tracks e m, Indexed a) => a -> m Bool
 lowerableByOffset x = liftM (flip Indices.lowerableBy x) offset 

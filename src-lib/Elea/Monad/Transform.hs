@@ -18,7 +18,7 @@ import qualified Elea.Type.Ext as Type
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Monad.Definitions.Class as Defs
-import qualified Elea.Monad.Rewrite as Rewrite
+import qualified Elea.Monad.Fusion as Fusion
 import qualified Elea.Monad.Discovery.Class as Discovery
 import qualified Elea.Monad.History as History
 import qualified Elea.Monad.Memo.Class as Memo
@@ -107,9 +107,9 @@ instance Defs.Read m => Defs.Read (StepT m) where
 instance Tag.Gen m => Tag.Gen (StepT m) where
   generateId = Trans.lift Tag.generateId
   
-instance Rewrite.Env m => Rewrite.Env (StepT m) where
-  rewrites = Trans.lift Rewrite.rewrites
-  local a t x = mapStepT (Rewrite.local a t x)
+instance Fusion.Env m => Fusion.Env (StepT m) where
+  rewrites = Trans.lift Fusion.rewrites
+  local a t x = mapStepT (Fusion.local a t x)
 
 instance Env.MatchRead m => Env.MatchRead (StepT m) where
   matches = Trans.lift Env.matches

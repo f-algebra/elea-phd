@@ -82,7 +82,9 @@ instance Show (Term' String) where
  
       
 instance Show FixInfo where
-  show _ = ""
+  show (FixInfo tag)
+    | tag == Tag.omega = ""
+    | otherwise = show tag
   
 instance (Env.Read m, Defs.Read m) => ShowM m FixInfo where
   showM _ = return "" 

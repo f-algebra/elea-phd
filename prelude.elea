@@ -176,6 +176,13 @@ let reverse<A> =
   | Nil -> Nil<A>
   | Cons y ys -> append<A> (rev ys) (Cons<A> y Nil<A>)
   end
+  
+let it_rev<A> =
+  fix (it_rev: list<A> -> list<A> -> list<A>) (xs ys: list<A>) ->
+  match xs with
+  | Nil -> ys
+  | Cons x xs' -> it_rev xs' (Cons<A> x ys)
+  end
     
 let count_nat = 
   fix (c: nat -> list<nat> -> nat) (n: nat) (xs: list<nat>) ->
@@ -251,7 +258,7 @@ let elem_nat =
   fun (x: nat) -> any<nat> (eq x)
   
     
-let insert_nat = 
+let insert = 
   fix (ins: nat -> list<nat> -> list<nat>) (n: nat) (xs: list<nat>) ->
   match xs with
   | Nil -> Cons<nat> n Nil<nat>
@@ -265,7 +272,7 @@ let insertsort =
   fix (isort: list<nat> -> list<nat>) (xs: list<nat>) ->
   match xs with
   | Nil -> Nil<nat>
-  | Cons y ys -> insert_nat y (isort ys)
+  | Cons y ys -> insert y (isort ys)
   end
   
 let is_sorted = 

@@ -32,5 +32,6 @@ data Name
   | Forall
   | LFP
   | CaseSplit
+  | FoldDiscovery
   deriving ( Enum, Show )
 

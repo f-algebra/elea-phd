@@ -43,7 +43,8 @@ test = time
 
 run :: String -> IO ()
 run term_def = id
-  . putStrLn
+  . time
+  $ putStrLn
   . Fedd.eval $ do
     Test.loadPrelude
     term <- Test.term term_def

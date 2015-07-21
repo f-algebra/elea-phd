@@ -8,6 +8,7 @@ where
 import Elea.Prelude
 import Elea.Term
 import Elea.Show ( showM )
+import Elea.Unification ( Unifier )
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Monad.Transform as Transform
 import qualified Elea.Term.Ext as Term
@@ -27,17 +28,13 @@ import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Discovery.Class as Discovery
 import qualified Elea.Monad.Memo.Class as Memo
-import qualified Elea.Monad.Rewrite as Rewrite
+import qualified Elea.Monad.Fusion as Fusion
 import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
 import qualified Data.Poset as Quasi
-
--- TODO match fix needs global memoisation of (Set Constraint, Term) pairs,
--- since the rising (==) check in the traverse rules is wiping
--- the failed constraint memory. It's also just faster.
 
 
 type Env m = 
@@ -46,7 +43,7 @@ type Env m =
   , Discovery.Tells m
   , Tag.Gen m
   , History.Env m 
-  , Rewrite.Env m
+  , Fusion.Env m
   , Memo.Can m
   , Direction.Has m )
   
@@ -78,6 +75,7 @@ steps =
   , decreasingFreeVar
   , repeatedArg
   , matchFix
+  , discoverFold
   ]
 
 
@@ -106,7 +104,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
     
     new_fix_t <- id  
       . Env.bind new_fix_b
-      . Rewrite.local temp_idx rewrite_from 0
+      . Fusion.local temp_idx rewrite_from 0
       . Transform.continue
     --  . trace ("\n\n[fusing <" ++ show temp_idx   ++ ">] " ++ t_s)
      -- . trace ("\n\n[replacing] " ++ t_s')
@@ -363,15 +361,14 @@ matchFix term@(App fix@(Fix {}) xs)
       . Direction.prover
       . Rewrite.run 
       $ Constraint.removeAll term'
+    Fail.unless (term'' Quasi.< term)
     
     ts <- showM term
     ts' <- showM term''
     trace ("\n\n[match fix from] "
         ++ ts ++ "\n\n[context] " 
         ++ ctss ++ "\n\n[to] " ++ ts') 
-        $ Fail.unless (term'' Quasi.< term)
-        
-    return term''
+        $ return term''
   where
   usefulConstraint :: Constraint -> Bool 
   usefulConstraint ct 
@@ -473,89 +470,108 @@ matchFix term@(App fix@(Fix {}) xs)
 matchFix _ = Fail.here
     
 
-
-{-
+accumulation :: Step m => Term -> m Term
+accumulation (App (Fix {}) xs) = do
+  Fail.here
+accumulation _ = Fail.here
   
 
-fixMatch :: forall m . (FusionM m, Fail.Can m, Env.MatchRead m) 
-  => Term -> m Term
-fixMatch inner_t@(App (Fix {}) args) = do
-  arg_ms <- Env.findMatches argVarMatch
-  Fail.when (null arg_ms)
-  fuseMatch (head arg_ms)
-  where
-  -- Any pattern match which has a pattern variable as an argument to 
-  -- the inner fixpoint.
-  argVarMatch :: (Term, Term) -> Bool
-  argVarMatch (App (Fix {}) _, App (Con {}) xs) = 
-    any (`elem` args) xs
-  argVarMatch _ = False
+discoverFold :: forall m . Step m => Term -> m Term
+discoverFold orig_t@(App (Fix {}) _) =
+  Env.forgetAllMatches $ do
+    Direction.requireInc
+    Fail.unless (Set.size tags == 1)
+    Fail.unless (Type.has orig_t)
+    Fail.when (orig_t == to_call)
+    [(from_f, to_var)] <- Fusion.findTags tags
+    args <- findArgs from_f
+    let from_t = Term.reduce from_f args
+    fold_t <- findFold from_t
+    let new_t = App fold_t [App (Var to_var) args]
+    return new_t
+  where                    
+  tags = Set.delete Tag.omega (Tag.tags orig_t)
+  tag = (head . Set.toList) tags
+  orig_ty = Type.get orig_t
   
-  -- Fuse the fixpoint of that match
-  fuseMatch :: (Term, Term) -> m Term
-  fuseMatch match@(App match_fix _, App (Con p_con) p_args) = 
-    Fix.fusion simplify ctx match_fix
-    where 
-    ctx = Context.make (buildContext inner_t match)
-    Just inner_i = findIndex (`elem` p_args) args
-    Just pat_i = findIndex (== (args !! inner_i)) p_args 
-    orig_t = Context.apply ctx (Var 0)
+  taggedFixCall (App (Fix fix_i _ _) _) =
+    get fixIndex fix_i == tag
+  taggedFixCall _ = False
+  
+  to_calls = Term.collect taggedFixCall orig_t
+  to_call@(App _ to_args) = (head . Set.toList) to_calls
+  
+  -- | Finds a context such that the original term is equal to the given
+  -- term within this context
+  findFold :: Term -> m Term
+  findFold from_t = do
+    Fail.unless (Type.has from_t)
+    Fail.unless (Type.isInd from_ty)
+    prop' <- id
+      . Env.bindMany c_bs
+      . Memo.memo Name.FoldDiscovery prop 
+      . Direction.prover
+      $ Transform.continue prop
+    unis <- id
+      . Env.trackOffsetT
+      $ Fold.isoFoldM Term.branches solve prop'
+    uni <- Unifier.unions unis
     
-    buildContext :: Term -> (Term, Term) -> Term -> Term
-    buildContext 
-        inner_t@(App _ args)
-        (App _ match_args, App (Con p_con) p_args) 
-        gap_t = 
-      Case (App gap_t match_args) alts
+    prop_s <- Env.bindMany c_bs (showM prop')
+    return  
+      . trace ("\n\n[discovered fold]\n" ++ prop_s)
+      . Unifier.apply uni
+      $ Term.reduce fold_t c_vars
+    where
+    from_ty = Type.get from_t
+    fold_t = Term.buildFold (Type.fromBase from_ty) orig_ty
+    fold_tys = init (Type.argumentTypes (Type.get fold_t))
+    c_bs = zipWith (\i ty -> Bind ("c" ++ show i) ty) [0..] fold_tys
+    c_vars = (reverse . map (Var . enum)) [0..length c_bs - 1]
+    from_t' = liftHere from_t
+    orig_t' = liftHere orig_t
+    prop = id
+      . Term.tryGeneralise (liftHere to_call)
+      . Leq orig_t' 
+      $ Term.reduce fold_t (c_vars ++ [from_t'])
+     
+    liftHere = Indices.liftMany (nlength c_bs)
+    
+    solve :: Term -> Env.TrackOffsetT m [Unifier Term]
+    solve (Bot {}) = return [Map.empty]
+    solve (Leq t (Var x)) = do
+      x' <- Env.tryLowerByOffset x
+      t' <- Env.tryLowerByOffset t
+      Fail.unless (Var x' `elem` c_vars)
+      return [Map.singleton x' t']
+    solve _ = Fail.here
+    
+  
+  -- | Find arguments to our rewrite term which make fold discovery
+  -- applicable
+  findArgs :: Term -> m [Term]
+  findArgs from_f = do
+    Fail.when (Constraint.has from_t)
+    -- ^ This technique doesn't work for match-fix fusion
+    from_s <- showM from_f
+    to_s <- showM orig_t
+    Fail.unless (Set.size from_calls == 1)
+    Fail.unless (Set.size to_calls == 1)
+    Fail.unless (check_args == [0..length arg_bs - 1])
+    return (map (to_args !!) from_idxs)
+    where
+    (arg_bs, from_t) = flattenLam from_f
+    from_calls = Term.collect taggedFixCall from_t
+    App _ from_args = (head . Set.toList) from_calls
+    
+    from_idxs = reverse (findIndices argIdx from_args)
       where
-      pat_var = arguments (Term.altPattern p_con) !! pat_i
-      alts = id
-        . map makeAlt
-        . Type.constructors
-        $ get Type.constructorOf p_con
+      argIdx (Var x) = enum x < length arg_bs
+      argIdx _ = False
       
-      makeAlt :: Constructor -> Alt
-      makeAlt con = Alt con alt_bs alt_t
-        where
-        App inner_f' args' = Indices.liftMany (nlength alt_bs) inner_t
-        inner_t' = App inner_f' (setAt inner_i pat_var args')
-        
-        alt_bs = Type.makeAltBindings con
-        alt_t | con /= p_con = Unr (Type.get inner_t)
-              | otherwise = inner_t'
-              
-          
-    -- Our custom inner simplification which will get run during fixpoint fusion.
-    -- It runs the simplifier then expresses the pattern match wherever possible.
-    simplify :: Term -> m Term
-    simplify term = do
-      term' <- run term
-      Env.alsoTrack 0 
-        $ Fold.transformM express term'
-      where
-      express :: Term -> Env.AlsoTrack Index m Term
-      express term@(App (Fix {}) i_args)
-        | Unifier.exists term inner_t = do
-          fix_f <- Env.tracked
-          ms <- Env.findMatches (correctMatch fix_f)
-          if null ms
-          then return term
-          else do
-            let ctx = Context.make (buildContext term (head ms))
-                term' = Context.apply ctx (Var fix_f)
-                orig_t' = Indices.liftMany (succ (enum fix_f)) orig_t
-            if Unifier.exists term' orig_t'
-            then return term'
-            else return term
-        where
-        correctMatch :: Index -> (Term, Term) -> Bool
-        correctMatch fix_f (App (Var f) _, App (Con p_con') p_args') = 
-          fix_f == f 
-          && p_con == p_con' 
-          && p_args' !! pat_i == i_args !! inner_i
-        correctMatch _ _ = False
-      express other = 
-        return other
-            
-fixMatch _ = Fail.here
-          -}
+    check_args :: [Int]
+    check_args = map (enum . fromVar . (from_args !!)) from_idxs
+    
+  
+discoverFold _ = Fail.here
+    

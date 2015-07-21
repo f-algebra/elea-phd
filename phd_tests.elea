@@ -13,18 +13,12 @@ prop (k m n: nat) -> max (max k m) n == max k (max m n)
 prop (n m: nat) -> eq n m == eq m n
 prop (k m n: nat) -> 
   assertBool le n m in (max m n == m)
-  
-*/
-
-    
 prop (n: nat) -> assertBool le n 0 in (n == 0)
-
 prop (n m: nat) -> le n (add n m)
+*/
+prop<A> (xs: list<nat>) -> it_reverse<nat> xs Nil<nat>
 
 /*
-
-
-
 prop (n: nat) (xs: list<nat>) -> 
 	append (take n xs) (drop n xs) =< xs
 prop (n: nat) (xs ys: list<nat>) -> 

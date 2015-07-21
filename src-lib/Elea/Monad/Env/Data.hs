@@ -17,7 +17,7 @@ import Elea.Monad.Direction ( Direction )
 import qualified Elea.Monad.History as History
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.Env.Class as Env
-import qualified Elea.Monad.Rewrite as Rewrite
+import qualified Elea.Monad.Fusion as Fusion
 import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Type as Type
 

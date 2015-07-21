@@ -24,7 +24,7 @@ import qualified Elea.Unification as Unifier
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Monad.Transform as Transform
 import qualified Elea.Monad.Definitions.Class as Defs
-import qualified Elea.Monad.Rewrite as Rewrite
+import qualified Elea.Monad.Fusion as Fusion
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.Memo.Class as Memo
@@ -36,7 +36,7 @@ import qualified Data.Poset as Partial
 
 type Step m = 
   ( Simp.Step m
-  , Rewrite.Env m
+  , Fusion.Env m
   , Memo.Can m )
 
 steps :: Step m => [Term -> m Term]
@@ -52,6 +52,7 @@ steps =
   , leftTrans
   , rightTrans
   , lfp
+  , leqMatch
   ]
 
 -- | Theorem prover without fusion; use Fusion.run for the full prover  
@@ -174,7 +175,7 @@ caseSplit leq@(Leq (Case cse_t alts) y) = do
 caseSplit leq@(Leq left_t (Case cse_t@(Var x) alts)) = do
   Fail.unless (x `Indices.freeWithin` left_t)
   x_ty <- Type.getM cse_t
-  let left_t_bot = Simp.run (Indices.substAt x (Bot x_ty) left_t)
+  left_t_bot <- Simp.runM (Indices.replaceAt x (Bot x_ty) left_t)
   Fail.unless (isBot left_t_bot)
   History.check Name.CaseSplit leq $ do
     let leq' = Case cse_t (map leqAlt alts)
@@ -183,6 +184,18 @@ caseSplit leq@(Leq left_t (Case cse_t@(Var x) alts)) = do
   leqAlt (Alt tc bs alt_t) =
     Alt tc bs (Leq left_t' alt_t)
     where
-    left_t' = Indices.liftMany (nlength bs) left_t   
+    left_t' = Indices.liftMany (nlength bs) left_t 
 caseSplit _ = Fail.here
 
+
+leqMatch :: Step m => Term -> m Term
+leqMatch (Leq t (Case cse_t alts)) = do
+  Direction.requireInc
+  Fail.unless (t == cse_t)
+  return (Case cse_t (map mkAlt alts))
+  where
+  mkAlt alt@(Alt tc bs alt_t) = 
+    Alt tc bs (Leq pat_t alt_t)
+    where
+    pat_t = patternTerm (altPattern alt)
+leqMatch _ = Fail.here

@@ -12,6 +12,7 @@ module Elea.Term.Ext
   collectM, collect,
   decreasingArgs,
   decreasingAppArgs,
+  constantArgs,
   applyCase,
   applyCases,
   reduce,
@@ -39,7 +40,9 @@ module Elea.Term.Ext
   equateArgsMany,
   strictWithin,
   strictAcross,
-  strictArgs
+  strictArgs,
+  tryGeneralise,
+  matchedWithin
 )
 where
 
@@ -55,7 +58,7 @@ import qualified Elea.Term.Tag as Tag
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs
-import qualified Elea.Monad.Rewrite as Rewrite
+import qualified Elea.Monad.Fusion as Fusion
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
@@ -300,6 +303,39 @@ decreasingArgs (Fix _ fix_b fix_t) =
       return True
       
   
+constantArgs :: Term -> [Nat]
+constantArgs (Fix _ _ fix_t) = 
+  filter isConstArg (range arg_bs)
+  where
+  (arg_bs, fix_body) = flattenLam fix_t
+  arg_count = length arg_bs
+  fix_f = enum arg_count :: Index
+  
+  isConstArg :: Nat -> Bool
+  isConstArg arg_i = id
+    . not
+    . Env.trackIndices (fix_f, Var arg_x)
+    $ Fold.anyM isntConst fix_body
+    where
+    -- The index of the argument we are tracking as it was bound
+    -- by the lambdas of the function
+    arg_x = enum (nlength arg_bs - (arg_i + 1))
+    
+    -- Whether this given argument changes at a recursive call site
+    isntConst :: Term -> Env.TrackIndices (Index, Term) Bool
+    isntConst (App (Var f) args) = do
+      (fix_f, arg_t) <- Env.tracked
+      return 
+        $ fix_f == f
+        -- If the number of arguments differs then this function is not
+        -- in the correct shape for this process. So we fail by saying
+        -- the argument changed.
+        && (length args /= arg_count
+        || arg_t /= (args !! arg_i))
+    isntConst _ = 
+      return False
+
+      
 -- | Take a case-of term and replace the result term down each branch
 -- with the second term argument.
 applyCase :: Term -> Term -> Term
@@ -700,4 +736,30 @@ revertMatches term = do
         $ ms
   return (replaceAll unambig_ms term)
 
+ 
+-- | Assumes the second argument is a =< and tries to generalise the first
+-- argument on either side of the relation, but only if it exists on both sides.
+-- Otherwise this just returns the second argument.
+tryGeneralise :: Term -> Term -> Term
+tryGeneralise gen_t (Leq x y)
+  | gen_t `isSubterm` x 
+  , gen_t `isSubterm` y
+  , Type.has gen_t =
+    Lam gen_b (Leq (gen x) (gen y))
+  where
+  gen_b = Bind "g" (Type.get gen_t)
+  gen z = replace (Indices.lift gen_t) (Var 0) (Indices.lift z)
+tryGeneralise _ t = t
   
+
+-- | Whether the first term is pattern matched upon in the second
+matchedWithin :: Term -> Term -> Bool
+matchedWithin t = id
+  . Env.trackIndices t
+  . Fold.anyM matched
+  where
+  matched :: Term -> Env.TrackIndices Term Bool
+  matched (Case cse_t _) = do
+    t <- Env.tracked
+    return (t == cse_t)
+  matched _ = return False

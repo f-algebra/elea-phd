@@ -13,7 +13,7 @@ import Elea.Show
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Monad.History as History
 import qualified Elea.Term.Tag as Tag
-import qualified Elea.Monad.Rewrite as Rewrite
+import qualified Elea.Monad.Fusion as Fusion
 import qualified Elea.Monad.Discovery.EquationSet as EqSet
 import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Definitions.Data as Defs
@@ -111,7 +111,7 @@ instance Monad m => Memo.Can (FeddT m) where
        -- else return memo_t
 
   
-instance Monad m => Rewrite.Env (FeddT m) where
+instance Monad m => Fusion.Env (FeddT m) where
   rewrites = asks EnvDB.rewrites
   local a t x = local (EnvDB.addRewrite a t x) 
   
