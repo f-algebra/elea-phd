@@ -3,7 +3,7 @@ module Elea.Monad.Env.Data
   Data, empty,
   bindAt, matched, 
   matches, bindings,
-  rewrites, addRewrite,
+  rewrites, addRewrite, forgetRewrites,
   history, forgetMatches,
   direction
 )
@@ -57,6 +57,9 @@ rewrites = get dbRewrites
 
 addRewrite :: Tag -> Term -> Index -> Data -> Data
 addRewrite a t x = modify dbRewrites ((a, t, x) :) 
+
+forgetRewrites :: Data -> Data
+forgetRewrites = set dbRewrites []
 
 history :: (Data :-> History.Repr)
 history = dbHistory

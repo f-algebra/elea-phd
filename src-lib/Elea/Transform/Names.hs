@@ -24,6 +24,7 @@ data Name
   | RepArgFusion
   | FreeArgFusion
   | MatchFixFusion
+  | AccFusion
   | IdFix
   | CaseFun
   | Fusion

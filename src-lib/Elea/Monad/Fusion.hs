@@ -13,6 +13,7 @@ import qualified Data.Set as Set
 class Monad m => Env m where
   local :: Tag -> Term -> Index -> m a -> m a
   rewrites :: m [(Tag, Term, Index)]
+  forgetRewrites :: m a -> m a
   
 findTags :: Env m => Set Tag -> m [(Term, Index)]
 findTags tags = id
@@ -23,4 +24,5 @@ findTags tags = id
 instance Env m => Env (MaybeT m) where
   local a t x = mapMaybeT (local a t x)
   rewrites = Trans.lift rewrites
+  forgetRewrites = mapMaybeT forgetRewrites
   

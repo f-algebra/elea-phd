@@ -47,10 +47,10 @@ steps =
   , doubleNeg
   , forAll
   , removeForAll
-  , caseSplit
-  , constructor
   , leftTrans
   , rightTrans
+  , caseSplit
+  , constructor
   , lfp
   , leqMatch
   ]
@@ -115,7 +115,7 @@ leftTrans _ = Fail.here
 rightTrans :: Step m => Term -> m Term
 rightTrans leq@(Leq x y) = do
   History.check Name.RightTrans leq $ do
-    y' <- Transform.continue y
+    y' <- Direction.invert (Transform.continue y)
     Fail.when (y' == y)
     Transform.continue (Leq x y')
 rightTrans _ = Fail.here

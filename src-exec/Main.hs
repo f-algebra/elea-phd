@@ -4,7 +4,8 @@ module Main
   main,
   test,
   run,
-  run2,
+  dec,
+  embeds
 )
 where
 
@@ -16,7 +17,9 @@ import System.CPUTime
 import qualified Elea.Testing as Test
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Transform.Fusion as Fusion
+import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.Fedd as Fedd
+import qualified Data.Poset as Quasi
 
 time :: IO t -> IO t
 time a = do
@@ -41,27 +44,36 @@ test = time
     tests <- mapM Test.checkProp phd_props 
     return (Test.list tests)
 
-run :: String -> IO ()
-run term_def = id
-  . time
-  $ putStrLn
-  . Fedd.eval $ do
-    Test.loadPrelude
-    term <- Test.term term_def
-    term' <- Fusion.run term
-    term_s <- showM term'
-    return term_s
+runM :: String -> Fedd.Fedd String
+runM term_def = do
+  Test.loadPrelude
+  term <- Test.term term_def
+  term' <- Fusion.run term
+  term_s <- showM term'
+  return term_s
     
-run2 :: String -> IO ()
-run2 term_def = id
+run :: String -> IO ()
+run = id
+  . time
   . putStrLn
+  . Fedd.eval 
+  . runM
+  
+dec :: String -> IO ()
+dec = id
+  . time
+  . putStrLn
+  . Fedd.eval 
+  . Direction.local Direction.Dec
+  . runM
+
+embeds :: String -> String -> Bool
+embeds t1_def t2_def = id
   . Fedd.eval $ do
-    Test.loadPrelude
-    term <- Test.term term_def
-    term' <- Fusion.run term
-    term'' <- Fusion.run term'
-    term_s <- showM term''
-    return term_s
+    Test.loadPrelude 
+    t1 <- Test.term t1_def
+    t2 <- Test.term t2_def 
+    return (t1 Quasi.<= t2)
   
   
     

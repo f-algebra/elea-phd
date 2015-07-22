@@ -2,7 +2,7 @@ module Elea.Unification
 (
   Unifier, Unifiable (..), 
   union, unions, singleton, exists,
-  overlapping,
+  overlapping, domain,
   leastGeneral, mostGeneral,
 )
 where
@@ -56,6 +56,9 @@ unions = foldrM union mempty
 
 exists :: Unifiable t => t -> t -> Bool
 exists t = isJust . find t
+
+domain :: Unifier a -> Set Index
+domain = Map.keysSet
 
 -- | A unifier is \overlapping\ if it rewrites different variables to the
 -- same value, viz. it creates variable overlap where none previously existed.

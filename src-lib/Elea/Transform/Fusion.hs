@@ -74,6 +74,7 @@ steps =
   , fixfix
   , decreasingFreeVar
   , repeatedArg
+  , accumulation
   , matchFix
   , discoverFold
   ]
@@ -83,9 +84,6 @@ fusion :: Step m => Term -> Term -> m Term
 fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
   . Env.forgetAllMatches 
   . Memo.memo Name.Fusion orig_t $ do
-    Fail.assert "trying to fuse the unfusable"
-      $ not (Term.beingFused fix)
-  
     t_s <- showM orig_t
   
     temp_idx <- Tag.make
@@ -106,9 +104,9 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
       . Env.bind new_fix_b
       . Fusion.local temp_idx rewrite_from 0
       . Transform.continue
-    --  . trace ("\n\n[fusing <" ++ show temp_idx   ++ ">] " ++ t_s)
-     -- . trace ("\n\n[replacing] " ++ t_s')
-      -- . trace ("\n\n[transforming< " ++ show temp_idx ++ ">] " ++ t_s'')
+     -- . trace ("\n\n[fusing <" ++ show temp_idx   ++ ">] " ++ t_s)
+    -- . trace ("\n\n[replacing] " ++ t_s')
+    --  . trace ("\n\n[transforming< " ++ show temp_idx ++ ">] " ++ t_s'')
       . Indices.lift
       -- ^ Make room for our new variables we are rewriting to
       $ app ctx_t [Term.unfoldFix temp_fix]
@@ -118,13 +116,13 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
     if not (0 `Indices.freeWithin` new_fix_t) 
     then do 
       when (Set.member temp_idx (Tag.tags new_fix_t)) $ do
-     --   trace ("\n\n[failing <" ++ show temp_idx ++ ">] " ++ t_s''')
-          Fail.here
+     --  trace ("\n\n[failing <" ++ show temp_idx ++ ">] " ++ t_s''')
+         Fail.here
       return 
         . Simp.run
         $ Indices.lower new_fix_t
-    else return
-      . Simp.run
+    else id
+      . Rewrite.run
    --   . trace ("\n\n[yielding <" ++ show temp_idx ++ ">] " ++ t_s''') 
       . Fix fix_i new_fix_b 
       $ Tag.replace temp_idx orig_idx new_fix_t
@@ -138,10 +136,12 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
 fixfix :: forall m . Step m => Term -> m Term
 fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
   -- ^ o_ is outer, i_ is inner
-  
+  Fail.when (Term.beingFused o_fix)
+  orig_s <- showM o_term
   Fail.assert ("fixfix given non lambda floated outer fixed-point" 
               ++ show o_fix ++ "\n" ++ show (Type.argumentTypes (Type.get o_fix))
                 ++ ", " ++ show (fst (flattenLam o_fix_t)))
+   -- . tracE [("fix-fix check", orig_s)]
     $ Term.isLambdaFloated o_fix
     
   -- Pick the first one which does not fail
@@ -165,8 +165,8 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
       let new_term = app new_fix (o_args' ++ i_args)
       new_term' <- Transform.continue new_term
       ts <- showM new_term'
-      trace ("\n\n[fixfix yielded]\n" ++ ts)
-        $ return new_term'
+     -- trace ("\n\n[fixfix yielded]\n" ++ ts)
+      return new_term'
     where
     i_term@(App i_fix@(Fix _ i_fix_b i_fix_t) i_args) = o_args !! arg_i
     o_args' = removeAt (enum arg_i) o_args
@@ -322,30 +322,6 @@ repeatedArg term@(App fix@(Fix _ fix_b fix_t) args) = do
 
 repeatedArg _ = Fail.here
 
-{-
-matchFix :: forall m . Step m => Term -> m Term
-matchFix leq@(Leq x y) = do
-  Direction.requireInc
-  History.check Name.MatchFixFusion leq $ do
-    x' <- doMatchFix x
-    let leq' = Leq x' y
-    t_s <- showM leq
-    t_s' <- showM leq'
-    trace ("\n\n[mfix from]\n" ++ t_s ++ "\n\n[mfix to]\n" ++ t_s')
-      $ Transform.continue (Leq x' y)
-matchFix cse_t@(Case x xs) = do
-  x' <- doMatchFix x
-  x_s <- showM x'
-  let x'' = Constraint.removeAll x'
-  Fail.unless (isCon (leftmost x''))
-  cse_t' <- Transform.continue (Case x'' xs)
-  
-  cse_s <- showM cse_t
-  cse_s' <- showM cse_t'
-  trace ("\n\n[mfix from]\n" ++ cse_s ++ "\n\n[mfix to]\n" ++ cse_s')
-    $ return cse_t'
-matchFix _ = Fail.here
--}
 
 matchFix :: forall m . Step m => Term -> m Term
 matchFix term@(App fix@(Fix {}) xs)
@@ -470,23 +446,57 @@ matchFix term@(App fix@(Fix {}) xs)
 matchFix _ = Fail.here
     
 
-accumulation :: Step m => Term -> m Term
-accumulation (App (Fix {}) xs) = do
-  Fail.here
+accumulation :: forall m . Step m => Term -> m Term
+accumulation orig_t@(App fix@(Fix {}) args) = 
+  History.check Name.AccFusion orig_t $ do
+    arg_tys <- mapM Type.getM args
+    Fail.choose (map (tryArg arg_tys) acc_args)
+  where
+  acc_args = Term.accumulatingArgs fix
+  
+  tryArg :: [Type] -> Nat -> m Term
+  tryArg arg_tys arg_n = do
+    Fail.unless (isSimple acc_arg)
+    ctx_s <- showM ctx_t
+    orig_s <- showM orig_t
+    new_fix <- fusion ctx_t fix
+    return (app new_fix (removeAt arg_n args))
+    where
+    gen_tys = removeAt arg_n arg_tys
+    gen_bs = zipWith (\i -> Bind ("X" ++ show i)) [0..] gen_tys
+    fun_b = Bind "g" (Type.get fix)
+    fun_var = Var (elength gen_bs) 
+    
+    acc_arg = Indices.liftMany (nlength gen_bs + 1) (args !! arg_n)
+    arg_vars = id 
+      . insertAt (enum arg_n) acc_arg 
+      . reverse 
+      . map (Var . enum)
+      $ [0..length gen_bs - 1]
+    
+    ctx_t = unflattenLam (fun_b : gen_bs) (app fun_var arg_vars)
+  
 accumulation _ = Fail.here
   
 
 discoverFold :: forall m . Step m => Term -> m Term
-discoverFold orig_t@(App (Fix {}) _) =
-  Env.forgetAllMatches $ do
+discoverFold orig_t@(App (Fix {}) _) = id
+  . History.check Name.FoldDiscovery orig_t
+  . Env.forgetAllMatches $ do
     Direction.requireInc
     Fail.unless (Set.size tags == 1)
     Fail.unless (Type.has orig_t)
-    Fail.when (orig_t == to_call)
     [(from_f, to_var)] <- Fusion.findTags tags
     args <- findArgs from_f
     let from_t = Term.reduce from_f args
-    fold_t <- findFold from_t
+    Fail.when (orig_t Quasi.<= from_t)
+    from_s <- showM from_t 
+    orig_s <- showM orig_t
+    to_s <- showM to_call
+    fold_t <- id
+      . Fusion.forgetRewrites 
+  --    . tracE [("discovering for", orig_s), ("aiming for", from_s)] 
+      $ findFold from_t
     let new_t = App fold_t [App (Var to_var) args]
     return new_t
   where                    
@@ -507,19 +517,22 @@ discoverFold orig_t@(App (Fix {}) _) =
   findFold from_t = do
     Fail.unless (Type.has from_t)
     Fail.unless (Type.isInd from_ty)
+    prop_s <- Env.bindMany c_bs (showM prop)
     prop' <- id
+  --    . tracE [("prop before", prop_s)]
       . Env.bindMany c_bs
       . Memo.memo Name.FoldDiscovery prop 
       . Direction.prover
-      $ Transform.continue prop
+      . Transform.continue 
+      $ Tag.map (const Tag.omega) prop
+    prop_s' <- Env.bindMany c_bs (showM prop')
     unis <- id
       . Env.trackOffsetT
       $ Fold.isoFoldM Term.branches solve prop'
     uni <- Unifier.unions unis
     
-    prop_s <- Env.bindMany c_bs (showM prop')
     return  
-      . trace ("\n\n[discovered fold]\n" ++ prop_s)
+      . Indices.lowerMany (nlength c_vars)
       . Unifier.apply uni
       $ Term.reduce fold_t c_vars
     where
@@ -539,11 +552,14 @@ discoverFold orig_t@(App (Fix {}) _) =
     
     solve :: Term -> Env.TrackOffsetT m [Unifier Term]
     solve (Bot {}) = return [Map.empty]
-    solve (Leq t (Var x)) = do
+    solve (Leq x y) = do
       x' <- Env.tryLowerByOffset x
-      t' <- Env.tryLowerByOffset t
-      Fail.unless (Var x' `elem` c_vars)
-      return [Map.singleton x' t']
+      y' <- Env.tryLowerByOffset y
+      uni <- Unifier.find y' x'
+      Fail.unless (Unifier.domain uni `Set.isSubsetOf` c_var_set)
+      return [uni]
+      where
+      c_var_set = Set.fromList (map fromVar c_vars)
     solve _ = Fail.here
     
   

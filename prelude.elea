@@ -109,6 +109,13 @@ let add =
   | 0 -> y
   | Suc x' -> Suc (add x' y)
   end
+  
+let it_add = 
+  fix (it_add: nat -> nat -> nat) (x y: nat) ->
+  match x with
+  | 0 -> y
+  | Suc x' -> it_add x' (Suc y)
+  end
    
 let mul = 
   fix (mul: nat -> nat -> nat) (x y: nat) -> 

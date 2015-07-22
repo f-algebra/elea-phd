@@ -60,7 +60,7 @@ module Elea.Prelude
   maximum, maximum1, invert,
   intersects, liftMaybe, maybeT, nth, drop, take, screen,
   isSubsequenceOf, evalWriter, evalWriterT, 
-  removeAll
+  removeAll, tracE
 )
 where
 
@@ -443,4 +443,8 @@ evalWriter = fst . runWriter
 evalWriterT :: Monad m => WriterT w m a -> m a
 evalWriterT = liftM fst . runWriterT
 
-                               
+tracE :: [(String, String)] -> a -> a
+tracE [] = id
+tracE ((n, s):xs) = id
+  . trace ("\n\n[" ++ n ++ "]\n" ++ s) 
+  . tracE xs

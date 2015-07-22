@@ -110,6 +110,7 @@ instance Tag.Gen m => Tag.Gen (StepT m) where
 instance Fusion.Env m => Fusion.Env (StepT m) where
   rewrites = Trans.lift Fusion.rewrites
   local a t x = mapStepT (Fusion.local a t x)
+  forgetRewrites = mapStepT Fusion.forgetRewrites
 
 instance Env.MatchRead m => Env.MatchRead (StepT m) where
   matches = Trans.lift Env.matches

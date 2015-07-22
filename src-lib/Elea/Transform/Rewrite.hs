@@ -47,7 +47,7 @@ type Env m =
   , Memo.Can m
   , Direction.Has m )
 
-type Step m = Prover.Step m
+type Step m = (Env m, Prover.Step m)
   
 
 run :: Env m => Term -> m Term
@@ -77,6 +77,7 @@ expressSteps =
   [ const Fail.here
   , expressConstructor
   , commuteConstraint
+  , expressAccumulation
   , finiteCaseFix
   , identityFix
   ] 
@@ -283,6 +284,7 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
         
 expressConstructor _ = Fail.here
 
+
 -- | Unsound cos I'm an idiot
 expressMatch :: Step m => Term -> m Term
 expressMatch term@(App fix@(Fix {}) _) = do
@@ -370,6 +372,75 @@ finiteCaseFix term@(Case cse_t@(App fix@(Fix _ _ fix_t) args) alts) = do
     rec_vars = Set.fromList (Type.recursiveArgIndices con)
   
 finiteCaseFix _ = Fail.here
+
+
+expressAccumulation :: Step m => Term -> m Term
+expressAccumulation fix@(Fix fix_i fix_b fix_t) = do
+  Direction.requireDec
+  Fail.unless (length acc_args == 1)
+  -- ^ I am too rushed to code the general case atm
+  Fail.unless (isJust mby_acc)
+  Fail.unless (acc_idx `Indices.freeWithin` acc_t) 
+  Fail.when (isVar acc_t)
+  ctx_s <- showM ctx_t
+  fix_s <- showM fix
+  simp_t <- id
+    . Env.bindMany (fix_b : arg_bs) 
+    . run 
+    $ Indices.replaceAt (elength arg_bs) 
+        (Term.reduce ctx_t_here [fun_var])
+        body_t
+  let replaced_t = Term.replace acc_t (Var Indices.omega) simp_t
+  replaced_s <- Env.bindMany (fix_b : arg_bs) $ showM replaced_t
+  --tracE [ ("acc-fission for", fix_s)
+   --     , ("acc-fission context", ctx_s)
+      --  , ("acc-fission result", replaced_s) ] 
+  Fail.when (Var acc_idx `Term.isSubterm` replaced_t)
+  let new_fix = id
+        . Fix fix_i fix_b 
+        . unflattenLam arg_bs
+        . Indices.replaceAt Indices.omega (Var acc_idx)
+        $ replaced_t
+  let final_t = Term.reduce ctx_t [new_fix]
+  simp_s <- showM final_t
+  return final_t
+  where
+  acc_args = Term.accumulatingArgs fix
+  [arg_n] = acc_args
+  (arg_bs, body_t) = flattenLam fix_t
+  acc_idx = (enum . pred) (nlength arg_bs - arg_n) :: Index
+  fun_var = Var (elength arg_bs)
+  arg_vars = id
+    . setAt (enum arg_n) acc_t
+    . reverse
+    . map (Var . enum)
+    $ [0..length arg_bs - 1]
+  Just acc_t = mby_acc
+  ctx_t = id
+    . unflattenLam (fix_b : arg_bs) 
+    $ app fun_var arg_vars
+  ctx_t_here = 
+    Indices.liftMany (nlength (fix_b : arg_bs)) ctx_t
+  
+  mby_acc = guessAcc body_t  
+    where
+    guessAcc :: Term -> Maybe Term
+    guessAcc cse_t@(Case _ alts) = do
+      Fail.unless (length base_alts == 1)
+      acc_t <- guessAcc alt_t
+      Indices.tryLowerMany (nlength bs)  acc_t
+      where
+      base_alts = filter (Type.isBaseCase . Tag.untag . get altConstructor) alts
+      [Alt _ bs alt_t] = base_alts
+    guessAcc t = 
+      return t
+    
+  
+  
+  
+  
+  
+expressAccumulation _ = Fail.here
 
 
 {-

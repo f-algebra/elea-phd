@@ -13,6 +13,7 @@ module Elea.Term.Ext
   decreasingArgs,
   decreasingAppArgs,
   constantArgs,
+  accumulatingArgs,
   applyCase,
   applyCases,
   reduce,
@@ -334,6 +335,16 @@ constantArgs (Fix _ _ fix_t) =
         || arg_t /= (args !! arg_i))
     isntConst _ = 
       return False
+      
+-- | A very lazy definition
+accumulatingArgs :: Term -> [Nat]
+accumulatingArgs fix@(Fix _ _ fix_t) = 
+  Set.toList (all_args Set.\\ Set.union dec_args const_args)
+  where
+  arg_count = nlength (fst (flattenLam fix_t))
+  all_args = Set.fromList [0..arg_count - 1]
+  dec_args = Set.fromList (decreasingArgs fix)
+  const_args = Set.fromList (constantArgs fix)
 
       
 -- | Take a case-of term and replace the result term down each branch
