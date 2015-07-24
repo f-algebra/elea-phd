@@ -42,6 +42,7 @@ import qualified Data.Map as Map
   '<-'        { TokenLArr }
   '=>'        { TokenDRArr }
   '=<'        { TokenLeq }
+  '>='        { TokenGeq }
   '=='        { TokenEqEq }
   '*'         { TokenSet }
   '='         { TokenEq }
@@ -68,6 +69,7 @@ import qualified Data.Map as Map
   if          { TokenIf }
   then        { TokenThen }
   else        { TokenElse }
+  seq         { TokenSeq }
   'fold['     { TokenFold  }
   assert      { TokenAssert }
   assertBool  { TokenAssBool }
@@ -133,7 +135,9 @@ Term :: { RawTerm }
   | '(' Term ',' TermList ')'         { TTuple ($2:$4) }
   | fun Bindings '->' Term            { TLam $2 $4 }
   | fix Bindings '->' Term            { TFix $2 $4 }
+  | seq Term in Term                  { TSeq $2 $4 }
   | Term '=<' Term                    { TLeq $1 $3 }
+  | Term '>=' Term                    { TLeq $3 $1 }
   | Term '==' Term                    { TEq $1 $3 }
   | let name '=' Term in Term         { TLet $2 $4 $6 }
   | 'fold[' Type ']'                  { TFold $2 }
@@ -206,6 +210,7 @@ data RawTerm
   | TApp RawTerm RawTerm
   | TFix [RawBind] RawTerm
   | TLam [RawBind] RawTerm
+  | TSeq RawTerm RawTerm
   | TCon Nat RawType
   | TUnr RawType
   | TCase RawTerm [RawAlt]
@@ -466,6 +471,10 @@ parseRawTerm (TEq rt1 rt2) = do
   t1 <- parseRawTerm rt1
   t2 <- parseRawTerm rt2 
   return (conj [Term.Leq t1 t2, Term.Leq t2 t1])
+parseRawTerm (TSeq rt1 rt2) = do
+  t1 <- parseRawTerm rt1
+  t2 <- parseRawTerm rt2
+  return (Term.Seq t1 t2)
 parseRawTerm (TVar var) = 
   lookupTerm var
 parseRawTerm (TUnr rty) = do
@@ -529,6 +538,8 @@ data Token
   | TokenRArr
   | TokenDRArr
   | TokenLeq
+  | TokenGeq
+  | TokenSeq
   | TokenEq
   | TokenOS
   | TokenCS
@@ -575,6 +586,7 @@ lexer (' ':cs) = lexer cs
 lexer ('\n':cs) = lexer cs
 lexer ('-':'>':cs) = TokenRArr : lexer cs
 lexer ('<':'-':cs) = TokenLArr : lexer cs
+lexer ('>':'=':cs) = TokenGeq : lexer cs
 lexer ('=':'=':cs) = TokenEqEq : lexer cs
 lexer ('=':'<':cs) = TokenLeq : lexer cs
 lexer ('=':cs) = TokenEq : lexer cs
@@ -612,6 +624,7 @@ lexer (c:cs)
       ("else", rest) -> TokenElse : lexer rest
       ("type", rest) -> TokenType : lexer rest
       ("ind", rest) -> TokenInd : lexer rest
+      ("seq", rest) -> TokenSeq : lexer rest
       ("end", rest) -> TokenEnd : lexer rest
       ("prop", rest) -> TokenProp : lexer rest
       ("forall", rest) -> TokenAll : lexer rest
@@ -653,8 +666,10 @@ instance Show Token where
   show TokenElse = "else"
   show TokenFold = "fold["
   show TokenEqEq = "=="
+  show TokenGeq = ">="
   show (TokenInj n) = "inj" ++ show n
   show TokenAssert = "assert"
+  show TokenSeq = "seq"
   
   showList = (++) . intercalate " " . map show
 }

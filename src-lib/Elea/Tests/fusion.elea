@@ -31,13 +31,13 @@ prop "revapp cons"<A> (n: A) (xs: list<A>) ->
 prop "revrev"<A> (xs: list<A>) ->
   reverse<A> (reverse<A> xs) =< xs
 
-prop "eq_nat reflexive" (n: nat) -> 
-  eq_nat n n =< True
+prop "eq reflexive" (n: nat) -> 
+  eq n n =< True
   
-let eq_nat3 = 
+let eq3 = 
   fix (eq3: nat -> nat -> nat -> bool) (x y z: nat) ->
   match x with
-  | 0 -> and (eq_nat y 0) (eq_nat z 0)
+  | 0 -> and (eq y 0) (eq z 0)
   | Suc x ->
     match y with
     | 0 -> False
@@ -49,17 +49,17 @@ let eq_nat3 =
     end
   end
 
-prop "eq_nat3" (x: nat) ->
-  eq_nat3 x x x =< True
+prop "eq3" (x: nat) ->
+  eq3 x x x =< True
   
-prop "eq_nat3 1" (x y: nat) ->
-  eq_nat3 x x y =< eq_nat x y
+prop "eq3 1" (x y: nat) ->
+  eq3 x x y =< eq x y
   
-prop "eq_nat3 2" (x y: nat) -> 
-  eq_nat3 x y y =< eq_nat x y
+prop "eq3 2" (x y: nat) -> 
+  eq3 x y y =< eq x y
 
-prop "leq_nat reflexive" (n: nat) ->
-  leq_nat n n =< True
+prop "le reflexive" (n: nat) ->
+  le n n =< True
   
 prop "drop add"<A> (n m: nat) (xs: list<A>) ->
   drop<A> m (drop<A> n xs) =< drop<A> (add n m) xs
@@ -68,36 +68,31 @@ prop "drop take"<A> (n: nat) (xs: list<A>) ->
   append<A> (take<A> n xs) (drop<A> n xs) =< xs
  
 prop "count append" (n: nat) (xs ys: list<nat>) ->
-  count_nat n (append<nat> xs ys) =< add (count_nat n xs) (count_nat n ys)
+  count n (append<nat> xs ys) =< add (count n xs) (count n ys)
  
 prop "count snoc" (n: nat) (xs: list<nat>) ->
-  count_nat n (append<nat> xs (Cons<nat> n Nil<nat>)) =< Suc (count_nat n xs)
+  count n (append<nat> xs (Cons<nat> n Nil<nat>)) =< Suc (count n xs)
   /*
 prop "count reverse": forall (n: nat) (xs: list<nat>) ->
-  count_nat n xs = count_nat n (reverse<nat> xs)
+  count n xs = count n (reverse<nat> xs)
   */
   
-prop "eq_nat symmetric" (n m: nat) ->
-  implies (eq_nat n m) (eq_nat m n) =< True
+prop "eq symmetric" (n m: nat) ->
+  implies (eq n m) (eq m n) =< True
   
-prop "leq_nat total" (n m: nat) ->
-  implies (not (leq_nat n m)) (leq_nat m n) =< True
+prop "le total" (n m: nat) ->
+  implies (not (le n m)) (le m n) =< True
  
-prop "eq_nat transitive" (i j k: nat) ->
-  implies (and (eq_nat i j) (eq_nat j k)) (eq_nat i k) =< True
+prop "eq transitive" (i j k: nat) ->
+  implies (and (eq i j) (eq j k)) (eq i k) =< True
   
-prop "leq_nat transitive" (i j k: nat) ->
-  implies (and (leq_nat i j) (leq_nat j k)) (leq_nat i k) =< True
+prop "le transitive" (i j k: nat) ->
+  implies (and (le i j) (le j k)) (le i k) =< True
   
-prop "leq_nat total 2" (f: nat -> nat) (n m: nat) ->
-  implies (not (leq_nat (f n) m)) (leq_nat m (f n)) =< True
-  
-prop "test" (xs: list<nat>) (n: nat) (f: bool -> bool) ->
-  is_sorted (insert_nat n xs) =< f (is_sorted xs)
   
  /*
 prop "insertsort sorted": forall (xs: list<nat>) (n: nat) ->
-  implies (is_sorted xs) (is_sorted (insert_nat n xs))
+  implies (is_sorted xs) (is_sorted (insert n xs))
  */
   /*
 let half_fused_eq = 
@@ -111,7 +106,7 @@ let half_fused_eq =
       end)
   | Suc y' ->
     assert Suc x' <- x in
-    (assert True <- eq_nat x' y' in
+    (assert True <- eq x' y' in
       (match z with
       | 0 -> False
       | Suc z' -> hfeq x' y' z'
@@ -119,7 +114,7 @@ let half_fused_eq =
   end
   
 prop "half fused eq" : forall (i j k: nat) ->
-  implies (eq_nat k i) (half_fused_eq i j k)
+  implies (eq k i) (half_fused_eq i j k)
  */ 
 /*
 prop "id list"<A>:  
@@ -163,16 +158,16 @@ let srtd_tree_ins =
   match t with
   | Leaf -> True
   | Node t1 x t2 ->
-    if leq_nat n x
+    if le n x
     then 
       and (sorted_tree t2)
-        (and (leq_leftmost x t2)
-        (and (rightmost_leq (tree_insert n t1) x)
+        (and (le_leftmost x t2)
+        (and (rightmost_le (tree_insert n t1) x)
         (srtd_ins n t1)))
     else 
       and (sorted_tree t1)
-        (and (leq_leftmost x (tree_insert n t2))
-        (and (rightmost_leq t1 x)
+        (and (le_leftmost x (tree_insert n t2))
+        (and (rightmost_le t1 x)
         (srtd_ins n t2)))
   end
 
@@ -180,33 +175,33 @@ prop "sorted flatten": forall (t: tree<nat>) (n: nat) (xs: list<nat>) ->
   implies (sorted_tree t) (is_sorted (flatten<nat> (tree_insert n t)))
 
 prop "rightmost ins": forall (t: tree<nat>) (n: nat) (x: nat) ->
-  implies (and (leq_nat x n) (rightmost_leq t n)) 
-    (rightmost_leq (tree_insert x t) n)
+  implies (and (le x n) (rightmost_le t n)) 
+    (rightmost_le (tree_insert x t) n)
   
-prop "rightmost leq": forall (t: tree<nat>) (n: nat) ->
-  leq_nat (rightmost<nat> t) n = rightmost_leq t n
+prop "rightmost le": forall (t: tree<nat>) (n: nat) ->
+  le (rightmost<nat> t) n = rightmost_le t n
 
 prop "leftmost ins": forall (t: tree<nat>) (n x: nat) ->
-  implies (and (leq_nat n x) (leq_leftmost n t)) 
-    (leq_leftmost n (tree_insert x t))
+  implies (and (le n x) (le_leftmost n t)) 
+    (le_leftmost n (tree_insert x t))
     
 prop "leftmost ins 2": forall (t1 t2: tree<nat>) (x y n: nat) ->
-  implies (and (leq_nat n x) (leq_leftmost n (Node<nat> t1 y Leaf<nat>))) 
-    (leq_leftmost n (Node<nat> (tree_insert x t1) y Leaf<nat>))
+  implies (and (le n x) (le_leftmost n (Node<nat> t1 y Leaf<nat>))) 
+    (le_leftmost n (Node<nat> (tree_insert x t1) y Leaf<nat>))
     
 prop "sorted tree impl": forall (t1 t2: tree<nat>) (x: nat) ->
   match sorted_tree (Node<nat> t1 x t2) with
   | True -> 
     match t2 with 
-    | Leaf -> rightmost_leq t1 x
+    | Leaf -> rightmost_le t1 x
     | Node t1 x t2 -> True
     end
   | False -> True
   end
   
 prop "leftmost impl": forall (t1 t2: tree<nat>) (x n: nat) ->
-  implies (leq_leftmost n (Node<nat> t1 x t2))
-    (leq_leftmost n (tree_insert n t1))
+  implies (le_leftmost n (Node<nat> t1 x t2))
+    (le_leftmost n (tree_insert n t1))
     
 prop "last flatten"<A>: forall (t: tree<A>) ->
   last<A> (flatten<A> t) = rightmost<A> t
@@ -215,13 +210,13 @@ prop "prop 27": forall (x: nat) (xs ys: list<nat>) ->
   implies (elem_nat x ys) (elem_nat x (append<nat> xs ys))
 
 prop "prop 30": forall (x: nat) (xs: list<nat>) ->
-  elem_nat x (insert_nat x xs)
+  elem_nat x (insert x xs)
   
 prop "prop 66": forall (p: nat -> bool) (xs: list<nat>) ->
-  leq_nat (length<nat> (filter<nat> p xs)) (length<nat> xs)
+  le (length<nat> (filter<nat> p xs)) (length<nat> xs)
 
 prop "prop 3": forall (n: nat) (xs ys: list<nat>) ->
-  leq_nat (count_nat n xs) (count_nat n (append<nat> xs ys))
+  le (count n xs) (count n (append<nat> xs ys))
 
 prop "prop 6": forall (n m: nat) ->
   minus n (add n m) = 0 

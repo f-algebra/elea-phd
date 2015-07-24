@@ -70,6 +70,10 @@ instance HasTypeM Term where
       return (Just (Base prop))
     check (Leq' _ _) = 
       return (Just (Base prop))
+    check (Seq' _ (Just ty)) = do
+      return (Just ty)
+    check (Seq' _ Nothing) = 
+      return Nothing
     check (App' Nothing _) =
       return Nothing
     check (App' (Just fty) xs) = do

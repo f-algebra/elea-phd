@@ -64,6 +64,7 @@ transformSteps =
   , caseApp
   , appCase
   , caseCase
+  , reduceSeq
   ]
 
 traverseSteps :: Step m => [Term -> m Term]
@@ -271,11 +272,18 @@ caseApp (App (Case t alts) args) =
 caseApp _ = Fail.here
 
 
+reduceSeq :: Step m => Term -> m Term
+reduceSeq (Seq (Bot _) t) 
+  | Type.has t = return (Bot (Type.get t))
+reduceSeq (Seq (leftmost -> Con {}) t) =
+  return t
+reduceSeq _ = Fail.here
+
+
 -- | If we have a case statement on the right of term 'App'lication
 -- then float it out.
--- TODO check for strict args!!
 appCase :: Step m => Term -> m Term
-appCase term@(App f xs) = do
+appCase term@(App f@(Fix {}) xs) = do
   cse_i <- Fail.fromMaybe (findIndex isCase xs)
   Transform.continue (applyCase cse_i)
   where

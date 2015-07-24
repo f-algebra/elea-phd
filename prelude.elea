@@ -2,6 +2,7 @@
 ind prop_ty = ff
 let tt = _|_ prop_ty
 
+
 let fst<A, B> = 
   fun (p: (A, B)) -> 
   match p with
@@ -134,21 +135,6 @@ let minus =
     | Suc x' -> minus x' y'
     end
   end
-  
-let triangle = 
-  fix (tri: nat -> nat) (x: nat) ->
-  match x with
-  | 0 -> 0
-  | Suc x' -> add x (tri x')
-  end
-  
-let cubes =
-  fix (cubes: nat -> nat) (x: nat) ->
-  match x with
-  | 0 -> 0
-  | Suc x' -> add (mul x (mul x x)) (cubes x')
-  end
-  
    
 let double = 
   fix (dbl: nat -> nat) (x: nat) ->
@@ -168,6 +154,13 @@ let length<A> =
   match xs with
   | Nil -> 0
   | Cons y ys -> Suc (len ys)
+  end
+  
+let null<A> = 
+  fun (xs: list<A>) ->
+  match xs with
+  | Nil -> True
+  | Cons x xs' -> False
   end
  
 let append<A> =
@@ -191,14 +184,14 @@ let it_rev<A> =
   | Cons x xs' -> it_rev xs' (Cons<A> x ys)
   end
     
-let count_nat = 
-  fix (c: nat -> list<nat> -> nat) (n: nat) (xs: list<nat>) ->
+let count = 
+  fix (count: nat -> list<nat> -> nat) (n: nat) (xs: list<nat>) ->
   match xs with
   | Nil -> 0
   | Cons y ys ->
     if eq n y 
-    then Suc (c n ys)
-    else c n ys
+    then Suc (count n ys)
+    else count n ys
   end
 
 let take<A> =
@@ -221,6 +214,26 @@ let drop<A> =
     | Nil -> Nil<A>
     | Cons y ys -> drop n' ys
     end
+  end
+  
+let takeWhile<A> = 
+  fix (take: (A -> bool) -> list<A> -> list<A>) (p: A -> bool) (xs: list<A>) ->
+  match xs with
+  | Nil -> Nil<A>
+  | Cons x xs' -> 
+    if p x
+    then Cons<A> x (take p xs')
+    else Nil<A>
+  end
+  
+let dropWhile<A> = 
+  fix (drop: (A -> bool) -> list<A> -> list<A>) (p: A -> bool) (xs: list<A>) ->
+  match xs with
+  | Nil -> Nil<A>
+  | Cons x xs' -> 
+    if p x
+    then drop p xs'
+    else xs
   end
 
 let filter<A> = 
@@ -261,10 +274,19 @@ let any<A> =
   | Cons y ys -> or (f y) (any ys)
   end
 
-let elem_nat = 
+let elem = 
   fun (x: nat) -> any<nat> (eq x)
   
-    
+let delete = 
+  fix (delete: nat -> list<nat> -> list<nat>) (n: nat) (xs: list<nat>) ->
+  match xs with
+  | Nil -> Nil<nat>
+  | Cons x xs' ->
+    if eq n x
+    then delete n xs'
+    else Cons<nat> x (delete n xs')
+  end
+  
 let insert = 
   fix (ins: nat -> list<nat> -> list<nat>) (n: nat) (xs: list<nat>) ->
   match xs with
@@ -302,6 +324,17 @@ let last<A> =
     match ys with
     | Nil -> y
     | Cons z zs -> last ys
+    end
+  end
+  
+let butlast<A> = 
+  fix (butlast: list<A> -> list<A>) (xs: list<A>) ->
+  match xs with
+  | Nil -> _|_ list<A>
+  | Cons x xs' ->
+    match xs' with
+    | Nil -> Nil<A>
+    | Cons x' xs'' -> Cons<A> x (butlast xs')
     end
   end
     
@@ -424,3 +457,9 @@ let sorted_tree2 =
       (and (leq_leftmost x t2) 
         (and (rightmost_leq t1 x) (srtd t2)))
   end
+
+
+let test = fun (n: nat) (xs ys: list<nat>) ->
+  drop<nat> n (append<nat> xs ys)
+  ==
+  append<nat> (drop<nat> n xs) (drop<nat> (minus n (length<nat> xs)) ys) 

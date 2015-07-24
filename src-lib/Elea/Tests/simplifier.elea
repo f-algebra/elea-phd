@@ -1,7 +1,7 @@
 
 prop "beta1" (x: nat) ->
   (fun (y: nat) -> add x y) x
-  =<
+  ==
   add x x
   
 prop "undef case" (x: nat) ->
@@ -12,7 +12,7 @@ prop "undef case" (x: nat) ->
 
 prop "beta2" -> 
   (fun (x: nat) (y: nat) -> True)
-  =<
+  ==
   (fun (f: nat -> bool) (x: nat) -> f) (fun (y: nat) -> True)
   
 prop "unr1" ->
@@ -28,29 +28,29 @@ prop "unr1" ->
     end)
     
 prop "1+1=2" ->
-  add 1 1 =< 2
+  add 1 1 == 2
 
 prop "2*2=2+2" ->
-  mul 2 2 =< add 2 2
+  mul 2 2 == add 2 2
 
 prop "1<=2" ->
-  True =< leq_nat 1 2
- 
+  True == le 1 2
+  
 prop "not-not" (p: bool) ->
-  not (not p) =< p
+  not (not p) == p
   
 prop "case-app" (x: nat) ->
   Suc (match x with | 0 -> 0 | Suc x -> x end)
-  =<
+  >=
   (match x with | 0 -> Suc 0 | Suc x -> Suc x end)
   
 prop "unfold1"<A> (xs: list<A>) (n: A) ->
   reverse<A> (Cons<A> n xs)
-  =<
+  ==
   append<A> (reverse<A> xs) (Cons<A> n Nil<A>)
   
 prop "eq1" (x: nat) ->
-  if (eq_nat x 0)
+  if (eq x 0)
   then 
     match x with
     | 0 -> tt
@@ -72,7 +72,7 @@ let append3<A> =
     
 prop "append3-simp"<A> (xs ys zs: list<A>) ->
   append3<A> xs ys zs 
-  =< 
+  ==
   append<A> xs (append<A> ys zs) 
     
   
@@ -85,7 +85,7 @@ let dneppa<A> =
    
 prop "non-rec first arg"<A> (xs ys: list<A>) ->
   dneppa<A> ys xs 
-  =<
+  ==
   append<A> xs ys
     
   
@@ -106,18 +106,18 @@ prop "always true" (n m: nat) ->
 prop "constant fix 1" (n m x: nat) ->
   (fix (f: nat -> bool) (x: nat) ->
   match x with
-  | 0 -> eq_nat n m
+  | 0 -> eq n m
   | Suc x' -> f x'
   end) x 
   =<
-  eq_nat n m
+  eq n m
   
 prop "constant fix 2" (xs: list<nat>) ->
   (fix (f: list<nat> -> bool) (xs: list<nat>) ->
   match xs with
   | Nil -> True
   | Cons y ys ->
-    or (f ys) (eq_nat 1 y)
+    or (f ys) (eq 1 y)
   end) xs
   =< 
   True
@@ -136,7 +136,7 @@ let is_sorted2 =
     | Cons y ys ->
       match ys with
       | Nil -> srtd Nil<nat>
-      | Cons z zs -> and (leq_nat y z) (srtd ys)
+      | Cons z zs -> and (le y z) (srtd ys)
       end
     end
     
@@ -185,7 +185,7 @@ let super_loopy = fun (t: tree<nat>) (n: nat) ->
       match tb with
       | Leaf -> False
       | Node tba m tbb -> 
-        match rightmost_leq t n with
+        match rightmost_le t n with
         | False -> False
         | True -> sorted_tree t
         end

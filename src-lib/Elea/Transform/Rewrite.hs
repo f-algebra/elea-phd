@@ -103,9 +103,9 @@ rewrite term@(App {}) = do
     args <- Term.findConstrainedArgs from_t term
     args_s <- showM args
     return
-   --   . trace ("\n\n[unifying] " ++ term_s
-    --    ++ "\n\n[with] " ++ show from_t 
-     --   ++ "\n\n[gives] " ++ args_s) 
+      . trace ("\n\n[unifying] " ++ term_s
+        ++ "\n\n[with] " ++ show from_t 
+        ++ "\n\n[gives] " ++ args_s) 
       $ app (Var h) args
   
 rewrite _ = Fail.here

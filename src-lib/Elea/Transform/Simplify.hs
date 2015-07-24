@@ -67,7 +67,7 @@ steps =
   , caseFun
   , constArg
   , identityCase
-  , constantCase
+ -- , constantCase
   , constantFix
   , unfold
  -- , floatVarMatch
@@ -132,7 +132,7 @@ constArg term@(App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
     let term' = Term.reduce fix' args'
     Transform.continue (Term.reduce fix' args')
   where
-  arg_idxs = Term.constantArgs fix
+  arg_idxs = Term.constantArgs fix ++ Term.unusedArgs fix
   pos = head arg_idxs
   
   -- Strip off the preceding lambdas of the function
@@ -321,7 +321,7 @@ constantCase _ = Fail.here
    
 unfold :: Step m => Term -> m Term
 unfold term@(App fix@(Fix {}) args) 
-  | any (isCon . leftmost) dec_args =
+  | any (\(leftmost -> f) -> isCon f || isBot f) dec_args =
   -- ^ Speed improvement
     History.check Name.Unfold term $ do
       term' <- id

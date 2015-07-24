@@ -104,7 +104,7 @@ tests = Test.label "Terms"
     let strict1' = strictWithin t1
         strict1 = Set.fromList [x, y]
         
-    t2 <- Test.term "not (eq_nat x y)"
+    t2 <- Test.term "not (eq x y)"
     let strict2' = strictWithin t2
         strict2 = strict1
         
@@ -123,12 +123,12 @@ tests = Test.label "Terms"
     , strict1
     ]
 
-def_eq_unit, def_eq_bool, def_eq_nat, def_eq_ntree :: String
+def_eq_unit, def_eq_bool, def_eq, def_eq_ntree :: String
 def_eq_unit = 
   "fun (u v: unit) -> True"
 def_eq_bool =
   "fun (p q: bool) -> if p then q else not q"
-def_eq_nat =
+def_eq =
   "fix (eq: nat -> nat -> bool) (x y: nat) -> "
   ++ "match x with "
   ++ "| 0 -> match y with | 0 -> True | Suc y' -> False end "
@@ -153,6 +153,6 @@ def_nat_id =
   
 def_strict_test = 
   "match x with "
-  ++ "| 0 -> match y with | 0 -> False | Suc y' -> eq_nat z z end "
-  ++ "| Suc x' -> eq_nat y z end"
+  ++ "| 0 -> match y with | 0 -> False | Suc y' -> eq z z end "
+  ++ "| Suc x' -> eq y z end"
     

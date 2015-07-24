@@ -104,7 +104,8 @@ instance Monad m => Memo.Can (FeddT m) where
         return mby_t
         
       Just memo_t -> do
-        return memo_t
+        trace ("\n\n\n\n\n\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!memoised for: " ++ show term)
+          $ return memo_t
        -- mby_t' <- cont
        -- if isJust mby_t' && memo_t /= mby_t'
         -- then error (show memo_t ++ "\n\nactually\n\n" ++ show mby_t')

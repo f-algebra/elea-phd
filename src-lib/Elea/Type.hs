@@ -9,7 +9,7 @@ module Elea.Type
   indName, indConstructors, 
   bindLabel, bindType, 
   constructorOf, constructorIndex,
-  empty, prop, unit, tuple, bool, emptyTy,
+  empty, prop, tag, unit, tuple, bool, emptyTy,
   equation, isEquation, true, false,
   returnType, argumentTypes, dropArgs, split,
   isInd, isFun, fromBase,
@@ -203,6 +203,10 @@ empty = Ind "empty" []
 
 emptyTy :: Type
 emptyTy = Base empty
+
+-- | Huge hack but the type of fixed-point tags is just the empty type
+tag :: Ind
+tag = empty
 
 -- | The unit type, viz. the single parameterless constructor inductive type.
 unit :: Ind

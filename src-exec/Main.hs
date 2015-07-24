@@ -3,6 +3,7 @@ module Main
   module Elea.Prelude,
   main,
   test,
+  test2,
   run,
   dec,
   embeds

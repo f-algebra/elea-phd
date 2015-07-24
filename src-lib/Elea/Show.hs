@@ -64,6 +64,7 @@ instance Show (Term' (Term, String)) where
 
 instance Show (Term' String) where
   show (Leq' x y) = "(" ++ x ++ " =< " ++ y ++ ")"
+  show (Seq' x y) = "seq " ++ x ++ " in " ++ y
   show (Bot' _) = "_|_"
   show (App' f xs) = f' ++ " " ++ xs'
     where 
@@ -97,6 +98,11 @@ instance (Env.Read m, Defs.Read m) => ShowM m Constraint where
     ts <- showM (matchedTerm m)
     ps <- showM (matchedTo m)
     return (ps ++ " <- " ++ ts)
+    
+instance Env.Read m => ShowM m Index where
+  showM idx = do
+    Bind n _ <- Env.boundAt idx
+    return n
     
     
 instance Show (Alt' String) where

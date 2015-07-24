@@ -13,6 +13,7 @@ module Elea.Term.Ext
   decreasingArgs,
   decreasingAppArgs,
   constantArgs,
+  unusedArgs,
   accumulatingArgs,
   applyCase,
   applyCases,
@@ -43,7 +44,8 @@ module Elea.Term.Ext
   strictAcross,
   strictArgs,
   tryGeneralise,
-  matchedWithin
+  matchedWithin,
+  unifyArgs
 )
 where
 
@@ -269,40 +271,57 @@ decreasingAppArgs :: Term -> [Nat]
 decreasingAppArgs (App fix args) = 
   filter (nlength args >) (decreasingArgs fix)
   
-
+  
 -- | Returns the indices of the strictly decreasing arguments for
 -- a given function. Undefined if not given a 'Fix'.
 decreasingArgs :: Term -> [Nat]
-decreasingArgs (Fix _ fix_b fix_t) = 
-  filter isDecreasing (range arg_bs)
+decreasingArgs fix@(Fix _ fix_b fix_t) = 
+  Set.toList (Set.fromList dec_or_const_args Set.\\ Set.fromList const_args)
   where
   (arg_bs, fix_body) = flattenLam fix_t
-  
+  dec_or_const_args = filter isDecreasing (range arg_bs)
+  const_args = constantArgs fix
+
   isDecreasing :: Nat -> Bool
   isDecreasing arg_i = id
-    . Env.trackIndices fix_f
+    . Env.trackOffset
     
     -- We track all terms which are 
     -- structurally smaller than our starting argument
-    . Env.trackSmallerThan (Var arg_idx)
+    . Env.trackSmallerThan arg_var
     $ Fold.allM decreasing fix_body
     where
     -- The deBrujin index of the lambda bound variable we are tracking
-    arg_idx = enum (length arg_bs - (enum arg_i + 1))
+    arg_var = Var (enum (length arg_bs - (enum arg_i + 1)))
     
     -- The deBrujin index of the fix bound function variable
-    fix_f = elength arg_bs
+    fix_var :: Index = elength arg_bs
     
     decreasing :: 
       Term -> Env.TrackSmallerTermsT (Env.TrackIndices Index) Bool
     decreasing t@(App (Var f) args) = do
-      fix_f <- Trans.lift Env.tracked
-      if fix_f /= f || arg_i >= nlength args
+      fix_var' <- Trans.lift (Env.liftByOffset fix_var)
+      arg_var' <- Trans.lift (Env.liftByOffset arg_var)
+      if fix_var' /= f || arg_i >= nlength args
+      then return True
+      else if arg_var' == (args !! arg_i)
       then return True
       else Env.isSmaller (args !! arg_i)
     decreasing _ = 
       return True
+  
       
+unusedArgs :: Term -> [Nat]
+unusedArgs fix@(Fix _ _ fix_t) =
+  filter isUnused (range arg_bs)
+  where
+  (arg_bs, body_t) = flattenLam fix_t
+      
+  isUnused :: Nat -> Bool
+  isUnused n = not (idx `Indices.freeWithin` body_t) 
+    where
+    idx :: Index = enum ((nlength arg_bs - 1) - n)
+  
   
 constantArgs :: Term -> [Nat]
 constantArgs (Fix _ _ fix_t) = 
@@ -335,17 +354,44 @@ constantArgs (Fix _ _ fix_t) =
         || arg_t /= (args !! arg_i))
     isntConst _ = 
       return False
-      
--- | A very lazy definition
-accumulatingArgs :: Term -> [Nat]
-accumulatingArgs fix@(Fix _ _ fix_t) = 
-  Set.toList (all_args Set.\\ Set.union dec_args const_args)
-  where
-  arg_count = nlength (fst (flattenLam fix_t))
-  all_args = Set.fromList [0..arg_count - 1]
-  dec_args = Set.fromList (decreasingArgs fix)
-  const_args = Set.fromList (constantArgs fix)
 
+      
+accumulatingArgs :: Term -> [Nat]
+accumulatingArgs fix@(Fix _ _ fix_t) 
+  | acc_idxss == [] = []
+  | otherwise = id
+    . Set.toList
+    $ foldl1 Set.intersection acc_idxss
+  where
+  (arg_bs, body_t) = flattenLam fix_t
+  fix_var :: Index = (enum . length) arg_bs 
+  arg_vars = id
+    . reverse
+    . map (Var . enum) 
+    $ range arg_bs
+    
+  acc_idxss :: [Set Nat]
+  acc_idxss = id
+    . Env.trackOffset 
+    $ Fold.foldM accumulates body_t
+  
+  accumulates :: Term -> Env.TrackOffset [Set Nat]
+  accumulates (App (Var f) xs) = do
+    fix_var' <- Env.liftByOffset fix_var 
+    if fix_var' /= f || length xs /= length arg_vars
+    then return []
+    else do
+      arg_vars' <- Env.liftByOffset arg_vars 
+      let isAcc i = (arg_vars' !! i) `isStrictSubterm` (xs !! i)
+      return 
+        . (return :: a -> [a])
+        . Set.fromList
+        . map enum
+        . findIndices isAcc 
+        $ range xs
+  accumulates _ = 
+    return []
+    
       
 -- | Take a case-of term and replace the result term down each branch
 -- with the second term argument.
@@ -562,6 +608,22 @@ commuteMatchesWhenM when = Fold.rewriteM commute
       Fail.here
   commute _ = 
     Fail.here
+    
+unifyArgs :: [Nat] -> Term -> Term
+unifyArgs [] term = term
+unifyArgs [n] term = term
+unifyArgs (n:ns) term =
+  unflattenLam arg_bs body_t'
+  where
+  (arg_bs, body_t) = flattenLam term
+  arg_idxs :: [Index] = id
+    . reverse
+    . map enum
+    $ range arg_bs
+  main_var = Var (arg_idxs !! n)
+  
+  unify m = Indices.replaceAt (arg_idxs !! m) main_var
+  body_t' = foldr unify body_t ns
 
 
 -- | Return the number of times a given subterm occurs in a larger term.
@@ -572,6 +634,9 @@ occurrences t = Env.trackIndices t . Fold.countM (\t -> Env.trackeds (== t))
 isSubterm :: Term -> Term -> Bool
 isSubterm t = Env.trackIndices t . Fold.anyM (\t -> Env.trackeds (== t))
     
+isStrictSubterm :: Term -> Term -> Bool
+isStrictSubterm t t' = t `isSubterm` t' && t /= t'
+
 {-
 -- | Finds a context which will turn the first term into the second.
 -- Basically takes the first term and replaces all instances of it 
@@ -661,15 +726,20 @@ isLambdaFloated fix@(Fix _ _ fix_t) =
 findArguments :: Fail.Can m => Term -> Term -> m [Term]
 findArguments ctx term = do
   uni <- Unifier.find ctx_body (Indices.liftMany (nlength arg_bs) term)
-  Fail.unless (Indices.free uni `Set.isSubsetOf` arg_idxs)
+  Fail.unless (Unifier.domain uni `Set.isSubsetOf` Set.fromList arg_idxs)
   return 
     . map (Indices.lowerMany (nlength arg_bs) . snd)
-    $ Map.toDescList uni
+    $ Map.toDescList (Map.union uni defaults)
   where
   (arg_bs, ctx_body) = flattenLam ctx
   
-  arg_idxs :: Set Index
-  arg_idxs = (Set.fromList . map enum) [0..length arg_bs - 1]
+  arg_idxs :: [Index]
+  arg_idxs = (map enum . range) arg_bs
+  
+  defaults = id
+    . Map.fromList 
+    . zipWith (\idx (Bind _ ty) -> (idx, Bot ty)) arg_idxs 
+    $ arg_bs
   
   
 findConstrainedArgs :: forall m . (Env.MatchRead m, Fail.Can m) 

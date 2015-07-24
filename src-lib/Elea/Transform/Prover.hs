@@ -8,7 +8,7 @@ module Elea.Transform.Prover
 where
 
 
-import Elea.Prelude
+import Elea.Prelude hiding ( negate )
 import Elea.Term hiding ( constructor )
 import Elea.Show ( showM )
 import Elea.Unification ( Unifier )
@@ -44,6 +44,7 @@ steps =
   [ const Fail.here   
   , reflexivity
   , bottom
+  , implication
   , doubleNeg
   , forAll
   , removeForAll
@@ -83,6 +84,15 @@ bottom (Leq (Bot _) _) = return truth
 bottom (Leq x (Bot _)) 
   | isCon (leftmost x) = return falsity
 bottom _ = Fail.here
+
+
+implication :: Fail.Can m => Term -> m Term
+implication (Leq x y)
+  | x == truth = return truth
+  -- ^ anything implies true
+  | y == truth = return falsity
+  -- ^ true does not imply false
+implication _  = Fail.here
 
 
 doubleNeg :: Step m => Term -> m Term

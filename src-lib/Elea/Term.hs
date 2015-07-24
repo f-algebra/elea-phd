@@ -22,7 +22,7 @@ module Elea.Term
   flattenApp, leftmost, arguments,
   flattenLam, unflattenLam, unflattenApp,
   isCon, isLam, isVar,
-  isFix, isBot, isCase, 
+  isFix, isBot, isCase, isSeq,
   isLeq, isQuantifiedLeq,
   emptyInfo,
   inductivelyTyped, 
@@ -67,6 +67,9 @@ data Term
             , leqRight :: !Term } 
             
   | Bot     { botType :: !Type }
+  
+  | Seq     { seqOf :: !Term
+            , inner :: !Term }
   
   | Var     { varIndex :: !Index }
 
@@ -119,7 +122,7 @@ data Prop
             
 -- | Information stored about fixpoints, to add efficiency.
 data FixInfo
-  = FixInfo { _fixIndex :: !Tag }
+  = FixInfo { _fixIndex :: !Index }
   deriving ( Eq, Ord )
 
  
@@ -129,6 +132,7 @@ type instance Fold.Base Term = Term'
 
 data Term' a 
   = Leq' a a
+  | Seq' a a
   | Bot' !Type
   | Var' !Index
   | App' a [a]
@@ -162,6 +166,7 @@ instance Fold.Foldable Term where
   project (Con tc) = Con' tc
   project (Case t alts) = Case' t (map projectAlt alts)
   project (Leq t t') = Leq' t t'
+  project (Seq t t') = Seq' t t'
   project (Bot ty) = Bot' ty
 
 instance Fold.Unfoldable Term where
@@ -172,6 +177,7 @@ instance Fold.Unfoldable Term where
   embed (Con' tc) = Con tc
   embed (Case' t alts) = Case t (map embedAlt alts)
   embed (Leq' t t') = Leq t t'
+  embed (Seq' t t') = Seq t t'
   embed (Bot' ty) = Bot ty
   
 class ContainsTerms t where
@@ -209,6 +215,7 @@ instance Zip Term' where
   zip (Fix' i b t) (Fix' _ _ t') = Fix' i b (t, t')
   zip (Con' con) (Con' {}) = Con' con
   zip (Leq' x y) (Leq' x' y') = Leq' (x, x') (y, y')
+  zip (Seq' x y) (Seq' x' y') = Seq' (x, x') (y, y')
   zip (Bot' ty) (Bot' _) = Bot' ty
   zip (Case' t alts) (Case' t' alts') =
     Case' (t, t') (zipWith zip alts alts')
@@ -240,6 +247,10 @@ isFix _ = False
 isLeq :: Term -> Bool
 isLeq (Leq _ _) = True
 isLeq _ = False
+
+isSeq :: Term -> Bool
+isSeq (Seq _ _) = True
+isSeq _ = False
 
 isQuantifiedLeq :: Term -> Bool
 isQuantifiedLeq = 
@@ -277,7 +288,7 @@ arguments :: Term -> [Term]
 arguments = tail . flattenApp
 
 emptyInfo :: FixInfo
-emptyInfo = FixInfo Tag.omega
+emptyInfo = FixInfo Indices.omega
 
   
 -- | This should maybe be called @fullyApplied@ but it checks whether a fixpoint
@@ -291,7 +302,7 @@ inductivelyTyped (App (Fix _ (Bind _ fix_ty) _) args) =
 -- Can be detected as the tag will not be omega
 beingFused :: Term -> Bool
 beingFused (Fix i _ _) =
-  get fixIndex i /= Tag.omega
+  get fixIndex i /= Indices.omega
 
   
 matchedPattern :: Match -> Pattern
@@ -488,7 +499,7 @@ buildFold ind@(Type.Ind _ cons) result_ty =
       where
       conArgToTy IndVar = result_ty
       conArgToTy (ConArg ty) = ty
-
+      
       
 -- | Returns the recursive identity function for a given type      
 recursiveId :: Indexed Term => Type.Ind -> Term
@@ -599,7 +610,7 @@ stripTags :: Term -> Term
 stripTags = Fold.transform strip
   where
   strip (Fix inf b t) = 
-    Fix (set fixIndex Tag.omega inf) b t
+    Fix (set fixIndex Indices.omega inf) b t
   strip other = other
   
 
@@ -625,6 +636,7 @@ instance Eq (Term' ()) where
     length xs == length xs'
   Lam' {} == Lam' {} = True
   Fix' {} == Fix' {} = True
+  Seq' {} == Seq' {} = True
   Con' tc == Con' tc' = 
     Tag.get tc == Tag.get tc'
   Case' _ alts == Case' _ alts'

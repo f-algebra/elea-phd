@@ -541,6 +541,10 @@ instance Unifiable Term where
       uni_x <- uni x x'
       uni_y <- uni y y'
       Unifier.union uni_x uni_y
+    uni (Seq x y) (Seq x' y') = do
+      uni_x <- uni x x'
+      uni_y <- uni y y'
+      Unifier.union uni_x uni_y
     uni (Bot _) (Bot _) = 
       return mempty
     uni (Var x1) (Var x2)
@@ -629,6 +633,8 @@ instance Unifiable Term where
     comp _ (Bot _) = return GT
     comp (Leq _ _) _ = return LT
     comp _ (Leq _ _) = return GT
+    comp (Seq _ _) _ = return LT
+    comp _ (Seq _ _) = return GT
     comp (App t1 t2) (App t1' t2') = do
       -- We use the lexicographical ordering monoid append operation.
       c1 <- comp t1 t1'

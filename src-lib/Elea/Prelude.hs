@@ -60,7 +60,7 @@ module Elea.Prelude
   maximum, maximum1, invert,
   intersects, liftMaybe, maybeT, nth, drop, take, screen,
   isSubsequenceOf, evalWriter, evalWriterT, 
-  removeAll, tracE
+  removeAll, tracE, findIndicesM
 )
 where
 
@@ -448,3 +448,14 @@ tracE [] = id
 tracE ((n, s):xs) = id
   . trace ("\n\n[" ++ n ++ "]\n" ++ s) 
   . tracE xs
+
+findIndicesM :: Monad m => (a -> m Bool) -> [a] -> m [Nat]
+findIndicesM p = id
+  . liftM concat 
+  . zipWithM find [0..]
+  where
+  find i x = do
+    is <- p x
+    if is 
+    then return [i]
+    else return []
