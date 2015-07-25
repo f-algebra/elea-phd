@@ -98,14 +98,15 @@ instance Monad m => Memo.Can (FeddT m) where
     memo_db <- State.gets (get fsMemo)
     case MemoDB.lookup name term memo_db of
       Nothing -> do
-        mby_t <- cont
+        mby_t <-  cont
         let memo_db' = MemoDB.insert name term mby_t memo_db
+        -- trace ("\n\n\n\n!!!!! FAILED !!!!!\n\n\n" ++ show term ++ "\n\nDB:" ++ show memo_db')
         State.modify (set fsMemo memo_db')
         return mby_t
         
       Just memo_t -> do
-        trace ("\n\n\n\n\n\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!memoised for: " ++ show term)
-          $ return memo_t
+        -- trace ("\n[memoised]\n") 
+        return memo_t
        -- mby_t' <- cont
        -- if isJust mby_t' && memo_t /= mby_t'
         -- then error (show memo_t ++ "\n\nactually\n\n" ++ show mby_t')

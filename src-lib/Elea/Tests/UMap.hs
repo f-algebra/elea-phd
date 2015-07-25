@@ -33,27 +33,38 @@ tests = Test.label "UMap"
           $ UMap.empty
         test2 = Test.assertEq "hurrah" msg
         
-    leq_nat1 <- 
-      Test.simplifiedTerm "assert False <- leq_nat x n in leq_nat m x"
-    leq_nat2 <-
-      Test.simplifiedTerm "assert False <- leq_nat x n in leq_nat n x"
+    le1 <- 
+      Test.simplifiedTerm "assert False <- le x n in le m x"
+    le2 <-
+      Test.simplifiedTerm "assert False <- le x n in le n x"
       
     let leq_map = id
-          . UMap.insert leq_nat1 "not true either"
-          . UMap.insert leq_nat2 "actually true"
-          . UMap.insert leq_nat1 "not true"
+          . UMap.insert le1 "not true either"
+          . UMap.insert le2 "actually true"
+          . UMap.insert le1 "not true"
           $ UMap.empty
           
-        Just (_, msg3) = UMap.lookupLG leq_nat2 leq_map
+        Just (_, msg3) = UMap.lookupLG le2 leq_map
         test3 = Test.assertEq "actually true" msg3
-        Just (_, msg4) = UMap.lookupLG leq_nat1 leq_map
+        Just (_, msg4) = UMap.lookupLG le1 leq_map
         test4 = Test.assertEq "not true either" msg4
         
         leq_map2 = id
-          . UMap.insert leq_nat1 "meep"
+          . UMap.insert le1 "meep"
           $ UMap.empty
           
-        mby5 = UMap.lookupAlphaEq leq_nat2 leq_map2
+        mby5 = UMap.lookupAlphaEq le2 leq_map2
         test5 = Test.assertEq Nothing mby5
+        
+    drop1 <- Test.term "drop<nat> n xs"
+    drop2 <- Test.term "drop<nat> m ys"
+    let test6 = Test.assert (Unifier.alphaEq drop1 drop2)
+        drop_map = id
+          . UMap.insert drop1 "drop1"
+          . UMap.insert drop2 "drop2"
+          $ UMap.empty
+          
+        [(_, (_, msg7))] = UMap.lookup drop2 drop_map
+        test7 = Test.assertEq "drop1" msg7
     
-    return (Test.list [test1, test2, test3, test4, test5])
+    return (Test.list [test1, test2, test3, test4, test5, test6, test7])

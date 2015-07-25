@@ -10,6 +10,7 @@ prop (n m: nat) -> minus (add n m) n =< m
 prop (k m n: nat) -> minus (add k m) (add k n) =< minus m n
 prop (k m n: nat) -> minus (minus n m) k == minus n (add m k)
 prop (k m n: nat) -> max (max k m) n == max k (max m n)
+
 prop (n m: nat) -> eq n m == eq m n
 prop (k m n: nat) ->
   assertBool le n m 
@@ -21,7 +22,7 @@ prop<A> (n: nat) (xs: list<A>) ->
 	append<A> (take<A> n xs) (drop<A> n xs) =< xs
 	
 prop (n: nat) (xs ys: list<nat>) -> 
-	add (count n xs) (count n ys) ->= count n (append<nat> xs ys)
+	add (count n xs) (count n ys) == count n (append<nat> xs ys)
 	
 prop<A, B> (n: nat) (f: A -> B) (xs: list<A>) -> 
   drop<B> n (map<A, B> f xs) 
@@ -45,7 +46,7 @@ prop (xs: list<nat>) ->
 prop (n: nat) (xs ys: list<nat>) ->
   assertBool elem n xs 
   in elem n (append<nat> xs ys) =< True
-
+  
 prop (n: nat) (xs ys: list<nat>) ->
   assertBool elem n ys 
   in elem n (append<nat> xs ys) =< True
@@ -94,55 +95,37 @@ prop<A> (xs: list<A>) (x: A) ->
   
 prop<A> (xs: list<A>) ->
   length<A> (butlast<A> xs) =< minus (length<A> xs) 1
-
+*/
 prop (n: nat) (xs ys: list<nat>) -> 
 	le (count n xs) (count n (append<nat> xs ys))
-  
-*/
-
+	 /*  
 prop<A> (n: nat) (xs ys: list<A>) ->
   drop<A> n (append<A> xs ys) 
-  >=
-  append<A> (drop<A> n xs) (drop<A> (minus n (length<A> xs)) xs) 
+  ==
+  append<A> (drop<A> n xs) (drop<A> (minus n (length<A> xs)) ys)
+   
+*//* The other direction needs deepseq knowledge *//*
+prop 71 (n m: nat) (xs: list<nat>) ->
+  assertBool not (eq n m) 
+  in elem n (insert m xs) =< elem n xs
+  
+*//* The other direction needs deepseq knowledge *//*
+prop 76 (n m: nat) (xs: list<nat>) ->
+  assertBool not (eq n m) 
+  in count n (snoc<nat> m xs) =< count n xs
+  
+prop 77 (n: nat) (xs: list<nat>) ->
+  assertBool is_sorted xs
+  in is_sorted (insert n xs)
+  
+prop 78 (xs: list<nat>) ->
+  is_sorted (insertsort xs)
+  */
+  
+ 
+  
 /*
 
-
-prop_69 n m
-  = proveBool (n <= (m + n))
-
-prop_70 m n
-  = givenBool (m <= n)
-  ( proveBool (m <= S n) )
-
-prop_71 x y xs
-  = given (x == y =:= False)
-  ( (elem x (ins y xs) =:= elem x xs) )
-
-prop_72 i xs
-  = (rev (drop i xs) =:= take (len xs - i) (rev xs))
-
-prop_73 p xs
-  = (rev (filter p xs) =:= filter p (rev xs))
-
-prop_74 i xs
-  = (rev (take i xs) =:= drop (len xs - i) (rev xs))
-
-prop_75 n m xs
-  = (count n xs + count n [m] =:= count n (m : xs))
-
-prop_76 n m xs
-  = given (n == m =:= False)
-  ( (count n (xs ++ [m]) =:= count n xs) )
-
-prop_77 x xs
-  = givenBool (sorted xs)
-  ( proveBool (sorted (insort x xs)) )
-
-prop_78 xs
-  = proveBool (sorted (sort xs))
-
-prop_79 m n k
-  = (m - n) - k =< (S m - n) - S k  
 
 prop_80 n xs ys
   = (take n (xs ++ ys) =:= take n xs ++ take (n - len xs) ys)
@@ -319,30 +302,46 @@ prop_T49 x y = givenBool (x `elem` isort y) (proveBool (x `elem` y))
 
 
 !!! needs more tool work
--- Needs repeated strict args in  
+--  Needs fission + fusion at once
 prop (n m: nat) -> minus (add m n) n =< m
 
+-- These two suffer from the len xs = len (rev xs) problem
+prop 72<A> (n: nat) (xs: list<A>) ->
+  reverse<A> (drop<A> n xs) == take<A> (minus (length<A> xs) n) (reverse<A> xs)
+  
+prop_74 i xs
+  = (rev (take i xs) =:= drop (len xs - i) (rev xs))
+  
+  
 -- This one is just hard
 cubes n =:= tri n * tri n
 
--- Seemingly impossible
+-- These need implication based generalisations
 prop<A> (p: A -> bool) (xs: list<A>) ->
   le (length<A> (filter<A> p xs)) (length<A> xs)
 prop_68 n xs
   = proveBool (len (delete n xs) <= len xs)
-  
+prop (n m: nat) ->
+  le n (add m n) 
+prop (n m: nat) ->
+  lt n (Suc (add m n))
 
 -- This one needs that insertsort deepseqs its input
+-- so it works with finite input
 prop (xs: list<nat>) (n: nat) ->
   count n (insertsort xs) == count n xs
   
 -- Not entirely sure what's wrong here
 
-
-  
+-- Needs dec con fusion
 prop (n m: nat) ->
-  lt n (Suc (add m n))
-                                                      
+  assertBool le m n in le m (Suc n)
+
+-- Needs fix fix with con fusion!
+prop 79 (m n k: nat) ->
+  minus (minus m n) k =< minus (minus (Suc m) n) (Suc k)
+  
+  
 -- Needs finite mode!
 prop<A> (n m: nat) (xs: list<A>) ->
   drop<A> n (take<A> m xs) =< take<A> (minus m n) (drop<A> n xs)  
@@ -354,9 +353,14 @@ prop_52 n xs
 
 prop_47 a
   = (height (mirror a) =:= height a)
-  
-  
+ 
+prop_73 p x
+  = (rev (filter p xs) =:= filter p (rev xs))
 
+prop_75 n m xs
+  = (count n xs + count n [m] =:= count n (m : xs))
+  
+  
 ! not interesting
 (S (count n xs) =:= count n (n : xs))
 (drop Z xs =:= xs)

@@ -415,6 +415,7 @@ reduce (Bot (Type.Fun _ res_ty)) (x:xs) =
 reduce f xs = 
   app f xs    
  
+  
 -- | Generalise all the arguments of a term to fresh variables.
 -- The first argument of the inner computation to run will lift 
 -- indices by the number of new variables.

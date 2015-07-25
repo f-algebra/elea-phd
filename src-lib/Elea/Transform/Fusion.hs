@@ -71,6 +71,7 @@ run = Transform.fix (Transform.compose all_steps)
 steps :: Step m => [Term -> m Term]
 steps = 
   [ const Fail.here
+ -- , argument
   , fixfix
   , decreasingFreeVar
   , repeatedArg
@@ -134,6 +135,55 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
   
   new_fix_b = set Type.bindType (Type.get orig_t) fix_b
   
+  {-
+argument :: forall m . Step m => Term -> m Term
+argument orig_t@(flattenApp -> fix@(Fix {}) : args) = do
+  Fail.when (Term.beingFused fix)
+  Fail.unless (Type.isInd (Type.get orig_t))
+  Term.generaliseTerms gen_all orig_t generalised
+  -- ^ Generalise all fixed-point calls which are already
+  -- being fused so as not to repeat ourselves
+  where
+  generalise only terms, not variables
+  use the variables in the quantification bit
+  
+  findGeneralisable :: Term -> ([Index], [Index], [Term])
+  findGeneralisable term@(App (Var _) _) = 
+    ([], [], [term])
+  findGeneralisable term@(flattenApp -> fix@(Fix {}) : xs) 
+    | Term.beingFused fix =
+      ([], [], [term]) ++ xs_gens
+    | otherwise = 
+      (Set.toList (Indices.free fix), [], []) ++ xs_gens
+    where
+    xs_gens = concatMap findGeneralisable xs
+  findGeneralisable (App f xs) =
+    concatMap findGeneralisable (f : xs)
+  findGeneralisable (Con _) = mempty
+  findGeneralisable (Var x) = ([], [x], [])
+  findGeneralisable (Bot _) = mempty
+      
+  (fix_vars, arg_vars, Set.fromList -> gen_terms) = 
+    findGeneralisable orig_t
+    
+  gen_vars = id
+    . Set.mapMonotonic Var 
+    . Set.intersection (Set.fromList fix_vars)
+    $ Set.fromList arg_vars
+    
+  gen_all = gen_terms `Set.union` gen_vars
+  
+  generalised :: Indices.Shift -> Term -> m Term
+  generalised liftHere gen_t@(flattenApp -> fix@(Fix {}) : args) = do
+    Fail.unless (any (not . isVar) args)
+    gen_s <- showM gen_t
+    orig_s <- showM (liftHere orig_t)
+    tracE [("arg term", orig_s), ("gen term", gen_s)]
+      $ Fail.here
+    
+argument _ = Fail.here
+    -}
+    
     
 fixfix :: forall m . Step m => Term -> m Term
 fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
@@ -164,8 +214,8 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
       $ Term.isLambdaFloated i_fix
     gen_s <- showM gen_t
     ctx_s <- showM ctx_t
-    tracE [("fixfix on", gen_s), ("context", ctx_s)]
-      $ Type.assertEqM "fix-fix created an incorrectly typed context" o_term full_t
+   -- tracE [("fixfix on", gen_s), ("context", ctx_s)]
+    id $ Type.assertEqM "fix-fix created an incorrectly typed context" o_term full_t
 
     History.check Name.FixFixFusion gen_t $ do
       new_fix <-fusion ctx_t i_fix
@@ -475,7 +525,8 @@ matchFix term@(App fix@(Fix {}) xs)
       fix_var = Var (elength all_args)
       ctx_margs = map toIdx [0..length margs-1]
       ctx_oargs = map toIdx [length margs..length all_args - 1]
-      ct' = set matchTerm (app mfix ctx_margs) ct
+      ct' = set matchTerm (app mfix' ctx_margs) ct
+      mfix' = Indices.liftMany (nlength m_bs + nlength o_bs + 1) mfix
       
     -- Remove residual constraints on fixed-point results  
     cleanupResult = Constraint.removeWhen recFix

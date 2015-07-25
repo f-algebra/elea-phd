@@ -170,6 +170,13 @@ let append<A> =
   | Cons y ys -> Cons<A> y (app ys zs)
   end
   
+let snoc<A> = 
+  fix (snoc: A -> list<A> -> list<A>) (a: A) (xs: list<A>) ->
+  match xs with
+  | Nil -> Cons<A> a Nil<A>
+  | Cons x xs' -> Cons<A> x (snoc a xs')
+  end
+  
 let reverse<A> = 
   fix (rev: list<A> -> list<A>) (xs: list<A>) ->
   match xs with
@@ -460,6 +467,4 @@ let sorted_tree2 =
 
 
 let test = fun (n: nat) (xs ys: list<nat>) ->
-  drop<nat> n (append<nat> xs ys)
-  ==
-  append<nat> (drop<nat> n xs) (drop<nat> (minus n (length<nat> xs)) ys) 
+  drop<nat> (minus (length<nat> xs) n) (reverse<nat> xs)

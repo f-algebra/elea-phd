@@ -20,13 +20,13 @@ tests = Test.list
   [ Prelude.tests
   , Type.tests
   , Term.tests
- -- , UMap.tests
+  , UMap.tests
 --  , Checker.tests 
-  , Simplifier.tests
+ -- , Simplifier.tests
  -- , Constraints.tests
  -- , Context.tests
  -- , Inventor.tests
-  , Fusion.tests  
+ -- , Fusion.tests  
   ]
 
 runTests :: IO ()

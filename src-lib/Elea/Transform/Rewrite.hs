@@ -103,9 +103,9 @@ rewrite term@(App {}) = do
     args <- Term.findConstrainedArgs from_t term
     args_s <- showM args
     return
-      . trace ("\n\n[unifying] " ++ term_s
-        ++ "\n\n[with] " ++ show from_t 
-        ++ "\n\n[gives] " ++ args_s) 
+     -- . trace ("\n\n[unifying] " ++ term_s
+    --    ++ "\n\n[with] " ++ show from_t 
+     --   ++ "\n\n[gives] " ++ args_s) 
       $ app (Var h) args
   
 rewrite _ = Fail.here
@@ -354,11 +354,13 @@ finiteCaseFix term@(Case cse_t@(App fix@(Fix _ _ fix_t) args) alts) = do
     ts <- showM term
     term' <- id
       . Transform.continue 
-      . trace ("\n\n[unfold finite] " ++ ts)
+     -- . trace ("\n\n[unfold finite] " ++ ts)
       $ Case (Term.reduce (Term.unfoldFix fix) args) alts
     -- standard progress check
     ts' <- showM term'
-    Fail.when $ trace ("\n\n[finite yield] " ++ ts') (term Quasi.<= term')
+    Fail.when 
+      -- . trace ("\n\n[finite yield] " ++ ts')
+      $ term Quasi.<= term'
     return term'
   where  
   cse_ind = Type.fromBase (Type.get cse_t)

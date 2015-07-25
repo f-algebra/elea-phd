@@ -44,10 +44,11 @@ lookup (enum -> name) term (Data map) =
       return (fmap (Unifier.apply uni) mby_t)
 
 insert :: Name -> Term -> Maybe Term -> Data -> Data
-insert _ term _ db
-  | (not . Set.null . Indices.free) term = db
+-- insert _ term _ db
+ -- | (not . Set.null . Indices.free) term = db
 insert (enum -> name) term outcome (Data map) = 
   Data (Map.alter ins name map)
   where
   ins Nothing = Just (UMap.singleton term outcome)
   ins (Just umap) = Just (UMap.insert term outcome umap)
+  

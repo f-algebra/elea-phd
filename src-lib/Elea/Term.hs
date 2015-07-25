@@ -122,7 +122,7 @@ data Prop
             
 -- | Information stored about fixpoints, to add efficiency.
 data FixInfo
-  = FixInfo { _fixIndex :: !Index }
+  = FixInfo { _fixIndex :: !Tag }
   deriving ( Eq, Ord )
 
  
@@ -288,7 +288,7 @@ arguments :: Term -> [Term]
 arguments = tail . flattenApp
 
 emptyInfo :: FixInfo
-emptyInfo = FixInfo Indices.omega
+emptyInfo = FixInfo Tag.omega
 
   
 -- | This should maybe be called @fullyApplied@ but it checks whether a fixpoint
@@ -302,7 +302,7 @@ inductivelyTyped (App (Fix _ (Bind _ fix_ty) _) args) =
 -- Can be detected as the tag will not be omega
 beingFused :: Term -> Bool
 beingFused (Fix i _ _) =
-  get fixIndex i /= Indices.omega
+  get fixIndex i /= Tag.omega
 
   
 matchedPattern :: Match -> Pattern
@@ -610,7 +610,7 @@ stripTags :: Term -> Term
 stripTags = Fold.transform strip
   where
   strip (Fix inf b t) = 
-    Fix (set fixIndex Indices.omega inf) b t
+    Fix (set fixIndex Tag.omega inf) b t
   strip other = other
   
 
