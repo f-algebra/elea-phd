@@ -2,18 +2,22 @@ module Elea.Monad.Fusion
 (
   Env (..),
   findTags,
+  checkEnabled,
 )
 where
 
 import Elea.Prelude hiding ( local )
 import Elea.Term
 import qualified Control.Monad.Trans.Class as Trans
+import qualified Elea.Monad.Failure.Class as Fail
 import qualified Data.Set as Set
 
 class Monad m => Env m where
   local :: Tag -> Term -> Index -> m a -> m a
   rewrites :: m [(Tag, Term, Index)]
   forgetRewrites :: m a -> m a
+  disable :: m a -> m a
+  isDisabled :: m Bool
   
 findTags :: Env m => Set Tag -> m [(Term, Index)]
 findTags tags = id
@@ -25,4 +29,12 @@ instance Env m => Env (MaybeT m) where
   local a t x = mapMaybeT (local a t x)
   rewrites = Trans.lift rewrites
   forgetRewrites = mapMaybeT forgetRewrites
+  disable = mapMaybeT disable
+  isDisabled = Trans.lift isDisabled
+
+checkEnabled :: (Env m, Fail.Can m) => m ()
+checkEnabled = do
+  disabled <- isDisabled
+  Fail.when disabled
+  return ()
   

@@ -134,7 +134,7 @@ prop "id list"<A>:
   
   
 prop "filter reverse"<A>: forall (p: A -> bool) (xs: list<A>) ->
-  reverse<A> (filter<A> p x   s) = filter<A> p (reverse<A> xs)
+  reverse<A> (filter<A> p xs) = filter<A> p (reverse<A> xs)
 
   */
 /*  

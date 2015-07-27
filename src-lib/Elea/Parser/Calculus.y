@@ -582,6 +582,7 @@ lexer ('/':'*':cs) = lexer (commentEnd cs)
   commentEnd [] = []
   commentEnd ('*':'/':cs) = cs
   commentEnd (c:cs) = commentEnd cs
+lexer ('/':'/':cs) = lexer (dropWhile (/= '\n') cs)
 lexer (' ':cs) = lexer cs
 lexer ('\n':cs) = lexer cs
 lexer ('-':'>':cs) = TokenRArr : lexer cs

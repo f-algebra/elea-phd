@@ -77,7 +77,9 @@ expressSteps =
   [ const Fail.here
   , expressConstructor
   , commuteConstraint
+  , unfoldConstraint
   , expressAccumulation
+  , matchVar
   , finiteCaseFix
   , identityFix
   ] 
@@ -101,14 +103,38 @@ rewrite term@(App {}) = do
     ms <- Env.matches
     term_s <- showM term
     args <- Term.findConstrainedArgs from_t term
+    Fail.when (any isFinite args)
     args_s <- showM args
     return
-     -- . trace ("\n\n[unifying] " ++ term_s
-    --    ++ "\n\n[with] " ++ show from_t 
-     --   ++ "\n\n[gives] " ++ args_s) 
+  --    . trace ("\n\n[unifying] " ++ term_s
+    --   ++ "\n\n[with] " ++ show from_t 
+     --  ++ "\n\n[gives] " ++ args_s) 
       $ app (Var h) args
   
 rewrite _ = Fail.here
+
+
+matchVar :: forall m . Step m => Term -> m Term
+matchVar term@(App fix@(Fix {}) xs) = do
+  Fail.unless (Term.beingFused fix)  
+  [(from_f, to_f)] <- Fusion.findTags (Set.singleton tag)
+  let from_t = snd (flattenLam from_f)
+  Fail.unless (Term.beingFused (leftmost from_t))
+  -- ^ Make sure this is for a fixCon rewrite
+  Fail.choose (map (tryMatch from_t) [0..length xs - 1])
+  where
+  tag = get fixIndex (fixInfo fix)
+  
+  tryMatch :: Term -> Int -> m Term
+  tryMatch (App _ xs') arg_i = do
+    Fail.unless (isCon (leftmost (xs' !! arg_i)))
+    Fail.unless (isVar (xs !! arg_i))
+    new_t <- Term.buildCase (xs !! arg_i) term
+    History.check Name.MatchVar new_t
+      $ Transform.continue new_t
+    
+matchVar _ = Fail.here
+  
 
 
 identityFix :: forall m . Step m => Term -> m Term
@@ -339,6 +365,18 @@ commuteConstraint term@(Case (leftmost -> Fix {}) _)
   
 commuteConstraint _ = Fail.here
   
+
+unfoldConstraint :: Step m => Term -> m Term
+unfoldConstraint term@(Case (App fix@(Fix {}) xs) alts)
+  | Constraint.splittable term
+  , any (isCon . leftmost) xs =
+    History.check Name.UnfoldCase term $ do
+      let term' = Case (Term.reduce (Term.unfoldFix fix) xs) alts
+      term'' <- Transform.continue term'
+      Fail.when (term Quasi.<= term'')
+      return term''
+      
+unfoldConstraint _ = Fail.here
 
 
 -- | Unfolds a 'Fix' which is being pattern matched upon if that pattern

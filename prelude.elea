@@ -467,4 +467,4 @@ let sorted_tree2 =
 
 
 let test = fun (n: nat) (xs ys: list<nat>) ->
-  drop<nat> (minus (length<nat> xs) n) (reverse<nat> xs)
+  drop<nat> n (append<nat> xs ys) 

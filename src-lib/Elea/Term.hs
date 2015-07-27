@@ -301,8 +301,10 @@ inductivelyTyped (App (Fix _ (Bind _ fix_ty) _) args) =
 -- | If a fixed-point is in the process of being fused into a context.
 -- Can be detected as the tag will not be omega
 beingFused :: Term -> Bool
+beingFused (App f _) = beingFused f
 beingFused (Fix i _ _) =
   get fixIndex i /= Tag.omega
+beingFused _ = False
 
   
 matchedPattern :: Match -> Pattern

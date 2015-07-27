@@ -15,12 +15,14 @@ data Name
   | TraverseApp
   | Unfold
   | UnfoldCase
+  | MatchVar
   | ConstArg
   | FiniteCaseFix
   | FloatVarMatch
   | ExpressCon
   | ExpressMatch
   | FixFixFusion
+  | ConFusion
   | RepArgFusion
   | FreeArgFusion
   | MatchFixFusion

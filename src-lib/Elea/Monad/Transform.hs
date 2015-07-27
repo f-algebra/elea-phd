@@ -111,6 +111,8 @@ instance Fusion.Env m => Fusion.Env (StepT m) where
   rewrites = Trans.lift Fusion.rewrites
   local a t x = mapStepT (Fusion.local a t x)
   forgetRewrites = mapStepT Fusion.forgetRewrites
+  disable = mapStepT Fusion.disable
+  isDisabled = Trans.lift Fusion.isDisabled
 
 instance Env.MatchRead m => Env.MatchRead (StepT m) where
   matches = Trans.lift Env.matches
@@ -132,7 +134,3 @@ instance Memo.Can m => Memo.Can (StepT m) where
     instep :: m (Maybe (Maybe Term)) -> m (Maybe (Maybe Term))
     instep mx =
       liftM return (Memo.maybeMemo n t (liftM join mx))
-        
-        
-        
-      

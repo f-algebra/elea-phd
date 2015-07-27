@@ -5,7 +5,8 @@ module Elea.Monad.Env.Data
   matches, bindings,
   rewrites, addRewrite, forgetRewrites,
   history, forgetMatches,
-  direction
+  direction,
+  disableFlag
 )
 where
 
@@ -26,12 +27,13 @@ data Data
           , _dbMatches :: [Match]
           , _dbRewrites :: [(Tag, Term, Index)] 
           , _dbHistory :: History.Repr
-          , _dbDirection :: Direction }
+          , _dbDirection :: Direction
+          , _flagDisable :: Bool }
           
 mkLabels [ ''Data ]
 
 empty :: Data
-empty = Data mempty mempty mempty History.empty Direction.Inc
+empty = Data mempty mempty mempty History.empty Direction.Inc False
 
 matches :: Data -> [Match]
 matches = get dbMatches
@@ -72,4 +74,9 @@ liftRewritesAt at =
   
 direction :: (Data :-> Direction)
 direction = dbDirection
+
+disableFlag :: (Data :-> Bool)
+disableFlag = flagDisable
+
+
 

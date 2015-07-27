@@ -15,6 +15,7 @@ import Elea.Term
 import Elea.Show ( showM )
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Type.Ext as Type
+import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Term.Constraint as Constraint
 import qualified Elea.Monad.History as History
@@ -321,8 +322,8 @@ constantCase _ = Fail.here
    
 unfold :: Step m => Term -> m Term
 unfold term@(App fix@(Fix {}) args) 
-  | any (\(leftmost -> f) -> isCon f || isBot f) dec_args =
-  -- ^ Speed improvement
+  | any needsUnroll dec_args
+  || all (isCon . leftmost) dec_args =
     History.check Name.Unfold term $ do
       term' <- id
         . runM
@@ -334,6 +335,11 @@ unfold term@(App fix@(Fix {}) args)
      --    $  trace ("\n\n[success unfold]" ++ show term   ++ "\n\n[into] " ++ show term')
         $ term'
   where
+  needsUnroll t = 
+    Term.isBot t
+    || Term.isFinite t 
+    || (isCon (leftmost t) && not (Set.null (Tag.tags t)))
+  
   dec_args = map (args !!) (Term.decreasingArgs fix)
   
 unfold _ = Fail.here

@@ -117,6 +117,8 @@ instance Monad m => Fusion.Env (FeddT m) where
   rewrites = asks EnvDB.rewrites
   local a t x = local (EnvDB.addRewrite a t x) 
   forgetRewrites = local EnvDB.forgetRewrites
+  disable = local (set EnvDB.disableFlag True)
+  isDisabled = asks (get EnvDB.disableFlag)
     
 instance Monad m => History.Env (FeddT m) where
   ask = asks (get EnvDB.history)

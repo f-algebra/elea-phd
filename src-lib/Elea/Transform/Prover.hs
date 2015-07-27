@@ -156,7 +156,11 @@ lfp (Leq x y) = do
   Fail.unless (isFixPromoted x)
   History.check Name.LFP (Leq x y) $ do
     let x' = fixInduction x y
-    leq' <- Transform.continue (Leq x' y)
+  --  from_s <- showM (Leq x y)
+  --  to_s <- showM (Leq x' y)
+    leq' <- id
+     -- . tracE [("leq from", from_s), ("leq to", to_s)] 
+      $ Transform.continue (Leq x' y)
     return leq'
   where
   -- > fixInduction ((fix F) x) y = F (\x -> y)

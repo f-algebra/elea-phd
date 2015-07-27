@@ -45,7 +45,9 @@ module Elea.Term.Ext
   strictArgs,
   tryGeneralise,
   matchedWithin,
-  unifyArgs
+  unifyArgs,
+  buildContext,
+  buildCase
 )
 where
 
@@ -845,3 +847,66 @@ matchedWithin t = id
     t <- Env.tracked
     return (t == cse_t)
   matched _ = return False
+
+
+buildContext :: forall m . Env.Read m => Int -> Term -> m (Term, [Term])
+buildContext arg_i (App fix@(Fix _ fix_b fix_t) args) = do
+  free_bs <- mapM Env.boundAt free_vars
+  arg_tys <- mapM Type.getM arg_xs
+  let arg_bs = zipWith (\i -> Bind ("a" ++ show i)) [0..] arg_tys 
+  return ( build free_bs arg_bs, args' )
+  where
+  free_vars = Set.toList (Indices.free fix Set.\\ Indices.free args)
+  arg_f : arg_xs = flattenApp (args !! arg_i)
+  args' = map Var free_vars ++ removeAt (enum arg_i) args ++ arg_xs
+  
+  unify_me = id
+    . map (map snd)
+    . filter ((>= 2) . length)
+    . groupBy ((==) `on` fst)
+    . sort
+    $ zip args' [0..]
+    
+  build free_bs arg_bs = id 
+    . flip (foldr unifyArgs) unify_me 
+    . unflattenLam (free_bs ++ fix_bs ++ arg_bs) 
+    $ App fix' args'
+    where
+    fix_bs = removeAt (enum arg_i) (fst (flattenLam fix_t))
+    
+    fix' = id
+      . Indices.liftMany (enum full_c)
+      . snd
+      . flattenLam
+      $ abstractVars free_bs free_vars fix
+      
+    args' = id
+      $ left_args ++ [arg'] ++ right_args
+      
+    left_args =
+      map (Var . enum . (+ arg_c)) [0..arg_i-1]
+    right_args = 
+      map (Var . enum . (+ arg_c)) [arg_i..fix_c-1]
+    
+    arg' = App arg_f' arg_xs'
+    arg_xs' = reverse (map (Var . enum) [0..arg_c-1])
+    arg_f' = Indices.liftMany (enum (full_c + length free_bs)) arg_f
+
+    arg_c = length arg_bs
+    fix_c = length fix_bs
+    full_c = fix_c + arg_c
+    
+
+buildCase :: Env.Read m => Term -> Term -> m Term
+buildCase match_t branch_t = do
+  Type.Base match_ind <- Type.getM match_t
+  let cons = Type.constructors match_ind
+  return (Case match_t (map buildAlt cons))
+  where
+  buildAlt :: Constructor -> Alt
+  buildAlt con = 
+    Alt tcon bs (Indices.liftMany (nlength bs) branch_t)
+    where
+    tcon = Tag.Tagged Tag.null con               
+    bs = Type.makeAltBindings con
+    
