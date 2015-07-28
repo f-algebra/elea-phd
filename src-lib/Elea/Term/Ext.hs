@@ -779,6 +779,13 @@ abstractVars :: [Bind] -> [Index] -> Term -> Term
 abstractVars bs xs = 
   concatEndos (zipWith abstractVar bs xs)
   
+abstractTerm :: Term -> Term -> Term
+abstractTerm abs_t in_t = id
+  . Lam abs_b 
+  . replace (Indices.lift abs_t) (Var 0) 
+  $ Indices.lift in_t
+  where
+  abs_b = Bind "g" (Type.get abs_t)
 
 mapFixInfo :: (FixInfo -> FixInfo) -> Term -> Term
 mapFixInfo f = Fold.transform mp

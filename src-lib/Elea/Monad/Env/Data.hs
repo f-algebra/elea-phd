@@ -16,6 +16,7 @@ import Elea.Term.Index
 import Elea.Monad.Env ()
 import Elea.Monad.Direction ( Direction )
 import qualified Elea.Monad.History as History
+import qualified Elea.Term.Ext as Term
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Monad.Fusion as Fusion
@@ -48,7 +49,18 @@ bindAt at b = id
   . modify dbBinds (insertAt (enum at) b)
 
 matched :: Match -> Data -> Data
-matched m = modify dbMatches (++ [m])
+matched m 
+  | isVar (Term.matchedTerm m) = 
+    modify dbMatches (map apply)
+  | otherwise = 
+    modify dbMatches (++ [m])
+  where
+  Var x = Term.matchedTerm m
+  
+  apply (Match cse_t ps n) = 
+    Match cse_t' ps n
+    where
+    cse_t' = Indices.replaceAt x (Term.matchedTo m) cse_t
           
 forgetMatches :: (Match -> Bool) -> Data -> Data
 forgetMatches when = 

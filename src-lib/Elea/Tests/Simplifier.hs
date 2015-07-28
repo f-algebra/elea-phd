@@ -8,6 +8,7 @@ import Elea.Prelude
 import Elea.Term
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Monad.Definitions.Class as Defs
+import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Testing as Test
 import qualified Elea.Transform.Prover as Prover
 
@@ -15,6 +16,7 @@ checkProp :: (Env.Read m, Defs.Has m) => Prop -> m Test.Test
 checkProp (Prop name t) = id
   . liftM (Test.label name)
   . Test.assertTruth
+  . Fedd.eval 
   $ Prover.run t
   
 tests = id

@@ -4,6 +4,7 @@
 module Elea.Transform.Simplify
 (
   Step,
+  Env,
   run, 
   runM,
   steps,
@@ -68,9 +69,9 @@ steps =
   , caseFun
   , constArg
   , identityCase
- -- , constantCase
   , constantFix
   , unfold
+  , unfoldCase
  -- , floatVarMatch
   {-
   , uselessFix
@@ -375,3 +376,14 @@ floatVarMatch term@(Case (App fix@(Fix {}) xs) _)
     
 floatVarMatch _ = Fail.here
 
+
+unfoldCase :: Step m => Term -> m Term
+unfoldCase term@(Case (App fix@(Fix {}) xs) alts)
+  | any (isCon . leftmost) xs =
+    History.check Name.UnfoldCase term $ do
+      let term' = Case (Term.reduce (Term.unfoldFix fix) xs) alts
+      term'' <- Transform.continue term'
+      Fail.when (term Quasi.<= term'')
+      return term''
+      
+unfoldCase _ = Fail.here

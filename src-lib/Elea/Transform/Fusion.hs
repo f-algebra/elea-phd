@@ -105,7 +105,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
       . Env.bind new_fix_b
       . Fusion.local temp_idx rewrite_from 0
       . Transform.continue
-     -- . trace ("\n\n[fusing <" ++ show temp_idx ++ ">] " ++ t_s)
+      . trace ("\n\n[fusing <" ++ show temp_idx ++ ">] " ++ t_s)
     --  . trace ("\n\n[replacing] " ++ t_s')
      -- . trace ("\n\n[transforming< " ++ show temp_idx ++ ">] " ++ t_s'')
       . Indices.lift
@@ -117,7 +117,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
     if not (0 `Indices.freeWithin` new_fix_t) 
     then do 
       when (Set.member temp_idx (Tag.tags new_fix_t)) 
-        $ trace ("\n\n[fusing <" ++ show temp_idx   ++ ">] " ++ t_s)
+     --   $ trace ("\n\n[fusing <" ++ show temp_idx   ++ ">] " ++ t_s)
         $ trace ("\n\n[failing <" ++ show temp_idx ++ ">] " ++ t_s''')
         $ Fail.here
       return 
@@ -125,7 +125,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
         $ Indices.lower new_fix_t
     else id
       . Rewrite.run
-      . trace ("\n\n[fusing <" ++ show temp_idx   ++ ">] " ++ t_s)
+     -- . trace ("\n\n[fusing <" ++ show temp_idx   ++ ">] " ++ t_s)
       . trace ("\n\n[yielding <" ++ show temp_idx ++ ">] " ++ t_s''') 
       . Fix fix_i new_fix_b 
       $ Tag.replace temp_idx orig_idx new_fix_t
@@ -139,6 +139,9 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
 fixCon :: forall m . Step m => Term -> m Term
 fixCon orig_t@(App fix@(Fix _ fix_b _) args) = do
   Fusion.checkEnabled
+  Direction.requireInc
+  -- ^ This is because 'matchVar' only works with Inc
+  -- and this step only works with 'matchVar'
   Fail.when (Term.beingFused fix)
   Fail.when (all (isCon . leftmost) dec_args)
   -- ^ Only applicable if unrolling is not
@@ -434,11 +437,10 @@ matchFix term@(App fix@(Fix {}) xs)
     Fail.when (null cts)
     
     term' <- id
-     -- . Fusion.disable
+      . Fusion.disable
       $ fuseConstraints cts term
     term'' <- id  
       . Direction.prover
-    --  . Fusion.disable
       . Rewrite.run 
       $ Constraint.removeAll term'
     Fail.unless (term'' Quasi.< term)
@@ -597,6 +599,7 @@ discoverFold orig_t@(App (Fix {}) orig_args) = id
     Fusion.checkEnabled
     Direction.requireInc
     Fail.unless (Set.size tags == 1)
+    Fail.unless (Set.size to_calls == 1)
     Fail.unless (Type.has orig_t)
     Fail.unless (is_fixfix || is_other)
     -- ^ Time saving heuristic
@@ -639,7 +642,7 @@ discoverFold orig_t@(App (Fix {}) orig_args) = id
     prop_s <- Env.bindMany c_bs (showM prop)
     prop' <- id
       . Env.bindMany c_bs    
-     -- . tracE [("discovery prop", prop_s)]       
+     -- . tracE [("discovery prop (before)", prop_s)]       
       . Memo.memo Name.FoldDiscovery prop 
       . Direction.prover
       . Transform.continue 
@@ -656,11 +659,14 @@ discoverFold orig_t@(App (Fix {}) orig_args) = id
     
     hopefully_true <- id
       . Env.bindMany c_bs 
+      . Direction.prover
       . Transform.continue
-      $ Unifier.apply uni prop'
-    t_s <- Env.bindMany c_bs $ showM hopefully_true
-    tracE [("hopefully true", t_s)]
-      $ Fail.unless (hopefully_true == Term.truth)
+      . Unifier.apply uni 
+      $ ungeneraliseProp prop'
+    t_s <- Env.bindMany c_bs $ showM (Unifier.apply uni $ ungeneraliseProp prop')
+    t_s' <- Env.bindMany c_bs (showM hopefully_true)
+   -- tracE [("hopefully true (before)", t_s), ("hopefully true", t_s')]
+    Fail.unless (hopefully_true == Term.truth)
     
     return  
       . Indices.lowerMany (nlength c_vars)
@@ -676,9 +682,14 @@ discoverFold orig_t@(App (Fix {}) orig_args) = id
     from_t' = liftHere from_t
     orig_t' = liftHere orig_t
     prop = id
-      . Term.tryGeneralise (liftHere to_call)
+      . generaliseProp
       . Leq orig_t' 
       $ Term.reduce fold_t (c_vars ++ [from_t'])
+
+    generaliseProp = Term.tryGeneralise (liftHere to_call)
+    ungeneraliseProp t
+      | isLam t = Term.reduce t [liftHere to_call]
+      | otherwise = t
      
     liftHere = Indices.liftMany (nlength c_bs)
     
@@ -719,7 +730,7 @@ discoverFold orig_t@(App (Fix {}) orig_args) = id
       collapse :: [(Index, [Term])] -> m [(Index, Term)]
       collapse css = mapM removeMaybe merged
         where
-        has_defaults = True
+        has_default = True
           && not (Type.isRecursive (Type.fromBase from_ty))
           && any (isJust . snd) merged
         
@@ -741,7 +752,7 @@ discoverFold orig_t@(App (Fix {}) orig_args) = id
         removeMaybe :: (Index, Maybe Term) -> m (Index, Term)
         removeMaybe (c, Just x) = return (c, x)
         removeMaybe (c, Nothing) = do
-          Fail.unless has_defaults
+          Fail.unless has_default
           return (c, orig_t')
           
     collapse _ = Fail.here
@@ -750,26 +761,51 @@ discoverFold orig_t@(App (Fix {}) orig_args) = id
   -- applicable
   findArgs :: Term -> m [Term]
   findArgs from_f = do
-    Fail.when (Constraint.has from_t)
+    Fail.unless (isFix (leftmost from_t))
     -- ^ This technique doesn't work for match-fix fusion
+    uni <- id
+      . Unifier.unions
+      . map fromJust
+      . filter isJust
+      . zipWith Unifier.find from_args 
+      $ Indices.liftMany (nlength arg_bs) orig_args
+    
+    
     from_s <- showM from_f
     to_s <- showM orig_t
-    Fail.unless (Set.size from_calls == 1)
-    Fail.unless (Set.size to_calls == 1)
-   -- Fail.unless (check_args == [0..length arg_bs - 1])
-    return (map (to_args !!) from_idxs)
+    uni_s <- Env.bindMany arg_bs $ showM (Map.toList uni)
+   -- tracE [("find-args from", from_s), ("find-args to", to_s), ("unifier", uni_s)]
+    id  $ Fail.unless (Unifier.domain uni == required_vars)  
+      
+    let uni_with_defaults = Map.union uni default_uni
+        found_args = id
+          . Indices.lowerMany (nlength arg_bs)
+          . map (Unifier.apply uni_with_defaults)
+          $ map Var arg_vars
+          
+    args_s <- showM found_args
+  --  tracE [("find-args args", args_s)]
+    return found_args
     where
     (arg_bs, from_t) = flattenLam from_f
     from_calls = Term.collect taggedFixCall from_t
-    App _ from_args = (head . Set.toList) from_calls
+    App _ from_args = from_t
     
-    from_idxs = reverse (findIndices argIdx from_args)
-      where
-      argIdx (Var x) = enum x < length arg_bs
-      argIdx _ = False
+    arg_vars :: [Index]
+    arg_vars = id
+      . map enum
+      . reverse
+      $ range arg_bs
+ 
+    required_vars = 
+      Set.intersection (Set.fromList arg_vars) (Indices.free from_t)
       
- --   check_args :: [Int]
-  --  check_args = map (enum . fromVar . (from_args !!)) from_idxs
-    
+    default_uni = id
+      . Map.fromList 
+      . zip arg_vars 
+      . map (\(Bind _ ty) -> Bot ty)
+      $ arg_bs
+      
+      
 discoverFold _ = Fail.here
     

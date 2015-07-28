@@ -124,11 +124,22 @@ let mul =
   | 0 -> 0
   | Suc x' -> add y (mul x' y)
   end
+  
+let qmul = 
+  fix (qmul: nat -> nat -> nat -> nat) (x y acc: nat) ->
+  match x with
+  | 0 -> acc
+  | Suc x' -> qmul x' y (add y acc)
+  end
 
 let minus = 
   fix (minus: nat -> nat -> nat) (x y: nat) -> 
   match y with
-  | 0 -> x
+  | 0 -> 
+    match x with
+    | 0 -> 0
+    | Suc x' -> Suc x'
+    end
   | Suc y' ->
     match x with
     | 0 -> 0
@@ -143,6 +154,33 @@ let double =
   | Suc x' -> Suc (Suc (dbl x'))
   end
   
+let fac = 
+  fix (fac: nat -> nat) (x: nat) ->
+  match x with
+  | 0 -> 1
+  | Suc x' -> mul x (fac x')
+  end
+  
+let qfac =
+  fix (qfac: nat -> nat -> nat) (x acc: nat) ->
+  match x with
+  | 0 -> acc
+  | Suc x' -> qfac x' (mul x acc)
+  end
+  
+let exp = 
+  fix (exp: nat -> nat -> nat) (x n: nat) ->
+  match x with
+  | 0 -> 1
+  | Suc x' -> mul n (exp n x')
+  end
+  
+let qexp =
+  fix (qexp: nat -> nat -> nat -> nat) (x n acc: nat) ->
+  match x with
+  | 0 -> acc
+  | Suc x' -> qexp n x' (mul n acc)
+  end 
 
   
 /* Lists */

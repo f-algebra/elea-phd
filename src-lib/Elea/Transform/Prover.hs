@@ -20,6 +20,7 @@ import qualified Elea.Monad.History as History
 import qualified Elea.Transform.Names as Name
 import qualified Elea.Transform.Evaluate as Eval
 import qualified Elea.Transform.Simplify as Simp
+import qualified Elea.Transform.Names as Name
 import qualified Elea.Unification as Unifier
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Monad.Transform as Transform
@@ -34,10 +35,13 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Poset as Partial
 
-type Step m = 
-  ( Simp.Step m
+type Env m = 
+  ( Simp.Env m
+  , Env.All m
   , Fusion.Env m
   , Memo.Can m )
+
+type Step m = ( Env m , Simp.Step m )
 
 steps :: Step m => [Term -> m Term]
 steps = 
@@ -50,17 +54,17 @@ steps =
   , removeForAll
   , leftTrans
   , rightTrans
-  , caseSplit
+  , caseSplitInc
+  , caseSplitDec
   , constructor
   , lfp
+  , absurdBranch
   , leqMatch
   ]
 
 -- | Theorem prover without fusion; use Fusion.run for the full prover  
-run :: Term -> Term
-run = id
-  . Fedd.eval
-  . Transform.fix (Transform.compose all_steps)
+run :: Env m => Term -> m Term
+run = Transform.fix (Transform.compose all_steps)
   where
   all_steps = []
     ++ Eval.transformSteps 
@@ -176,8 +180,9 @@ lfp (Leq x y) = do
 lfp _ = Fail.here
 
 
-caseSplit :: Step m => Term -> m Term
-caseSplit leq@(Leq (Case cse_t alts) y) = do
+caseSplitInc :: Step m => Term -> m Term
+caseSplitInc leq@(Leq (Case cse_t alts) y) = do
+  Direction.requireInc
   History.check Name.CaseSplit leq $ do
     let leq' = Case cse_t (map leqAlt alts)
     Transform.continue leq'
@@ -186,7 +191,9 @@ caseSplit leq@(Leq (Case cse_t alts) y) = do
     Alt tc bs (Leq alt_t y')
     where
     y' = Indices.liftMany (nlength bs) y
-caseSplit leq@(Leq left_t (Case cse_t@(Var x) alts)) = do
+    
+caseSplitInc leq@(Leq left_t (Case cse_t@(Var x) alts)) = do
+  Direction.requireInc
   Fail.unless (x `Indices.freeWithin` left_t)
   x_ty <- Type.getM cse_t
   left_t_bot <- Simp.runM (Indices.replaceAt x (Bot x_ty) left_t)
@@ -199,7 +206,22 @@ caseSplit leq@(Leq left_t (Case cse_t@(Var x) alts)) = do
     Alt tc bs (Leq left_t' alt_t)
     where
     left_t' = Indices.liftMany (nlength bs) left_t 
-caseSplit _ = Fail.here
+    
+caseSplitInc _ = Fail.here
+
+caseSplitDec :: Step m => Term -> m Term
+caseSplitDec leq@(Leq x (Case cse_t alts)) = do
+  Direction.requireDec
+  History.check Name.CaseSplit leq $ do
+    let leq' = Case cse_t (map leqAlt alts)
+    Transform.continue leq'
+  where
+  leqAlt (Alt tc bs alt_t) =
+    Alt tc bs (Leq x' alt_t)
+    where
+    x' = Indices.liftMany (nlength bs) x
+
+caseSplitDec _ = Fail.here
 
 
 leqMatch :: Step m => Term -> m Term
@@ -213,3 +235,57 @@ leqMatch (Leq t (Case cse_t alts)) = do
     where
     pat_t = patternTerm (altPattern alt)
 leqMatch _ = Fail.here
+
+    
+absurdBranch :: Step m => Term -> m Term
+absurdBranch orig_t@(Case (Var x) alts) = do
+  Direction.requireInc
+  ty <- Type.getM orig_t
+  Fail.unless (Type.Base Type.prop == ty)
+  alts' <- zipWithM absurdAlt [0..] alts
+  Fail.when (alts' == alts)
+  Transform.continue (Case (Var x) alts')
+  where
+  absurdAlt n alt@(Alt tcon bs alt_t) 
+    | Type.isBaseCase (Tag.untag tcon) = do
+      is_abs <- id
+        . Env.bindMany bs
+        . Env.matched (Term.matchFromCase n orig_t)
+        $ absurdEnv
+      if is_abs 
+      then do
+        ty <- Type.getM orig_t
+        return (Alt tcon bs (Bot ty))
+      else
+        return alt
+    | otherwise = 
+      return alt
+
+  absurdEnv :: Step m => m Bool
+  absurdEnv = do
+    ms <- liftM (filter potentialAbs) Env.matches
+    anyM isAbsurd ms
+    where
+    potentialAbs match = True
+      && isFix (leftmost cse_t) 
+      && any Term.isFinite dec_args 
+      where
+      cse_t = Term.matchedTerm match
+      App fix args = cse_t
+      dec_args = map (args !!) (Term.decreasingArgs fix)
+      
+    isAbsurd match = do
+      prop' <- id
+        . Direction.local Direction.Dec
+        . Memo.memo Name.AbsurdEnv prop
+        . Fusion.disable
+        $ Transform.continue prop
+        -- ^ Using our prover backwards 
+        -- performs proof by contradiction
+      return (prop' == Term.falsity)
+      where 
+      cse_t = Term.matchedTerm match
+      pat_t = Term.matchedTo match
+      prop = Leq pat_t cse_t
+    
+absurdBranch _ = Fail.here 

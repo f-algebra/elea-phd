@@ -126,32 +126,26 @@ prop<A> (n: nat) (xs ys: list<A>) ->
   drop<A> n (append<A> xs ys) 
   ==
   append<A> (drop<A> n xs) (drop<A> (minus n (length<A> xs)) ys)
+  
+prop<A> (p: A -> bool) (xs: list<A>) ->
+  le (length<A> (filter<A> p xs)) (length<A> xs)
+  
+prop 68 (n: nat) (xs: list<nat>) ->
+  le (length<nat> (delete n xs)) (length<nat> xs)
+  
+prop (n m: nat) ->
+  assertBool le m n in le m (Suc n)
+  
+prop 80<A> (n: nat) (xs ys: list<A>) ->
+  take<A> n (append<A> xs ys) 
+  == 
+  append<A> (take<A> n xs) (take<A> (minus n (length<A> xs)) ys)  
+  
   */
-  
-prop<A> (p: A -> bool) (xs: list<A>) ->
-  le (length<A> (filter<A> p xs)) (length<A> xs)
+prop t34 (m n: nat) -> 
+  qmul n m 0 =< mul n m
 /*
-prop<A> (p: A -> bool) (xs: list<A>) ->
-  le (length<A> (filter<A> p xs)) (length<A> xs)
-
-prop (n m: nat) ->
-  assertBool le m n in le m (Suc n)
   
-  
-prop 79 (m n k: nat) ->
-  minus (minus m n) k =< minus (minus (Suc m) n) (Suc k)   
-  
-prop (n m: nat) ->
-  assertBool le m n in le m (Suc n)
- 
-prop<A> (p: A -> bool) (xs: list<A>) ->
-  le (length<A> (filter<A> p xs)) (length<A> xs)
-
-prop_80 n xs ys
-  = (take n (xs ++ ys) =:= take n xs ++ take (n - len xs) ys)
-
-prop_81 n m xs {- ys -}
-  = (take n (drop m xs) =:= drop m (take (n + m) xs))
 
 prop_82 n xs ys
   = (take n (zip xs ys) =:= zip (take n xs) (take n ys))
@@ -341,8 +335,7 @@ prop_74 i xs
 cubes n =:= tri n * tri n
 
 -- These need implication based generalisations
-prop_68 n xs
-  = proveBool (len (delete n xs) <= len xs)
+
 
 
 -- This one needs that insertsort deepseqs its input
@@ -378,6 +371,14 @@ prop_73 p x
 prop_75 n m xs
   = (count n xs + count n [m] =:= count n (m : xs))
   
+prop 79 (m n k: nat) ->
+  minus (minus m n) k == minus (minus (Suc m) n) (Suc k)   
+  
+prop_81 n m xs
+  = (take n (drop m xs) =:= drop m (take (n + m) xs))
+  
+prop t33 (n m: nat) ->
+  qexp n m 1 == exp n m
   
 ! not interesting
 (S (count n xs) =:= count n (n : xs))

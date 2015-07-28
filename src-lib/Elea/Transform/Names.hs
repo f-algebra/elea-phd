@@ -36,5 +36,6 @@ data Name
   | LFP
   | CaseSplit
   | FoldDiscovery
+  | AbsurdEnv
   deriving ( Enum, Show )
 

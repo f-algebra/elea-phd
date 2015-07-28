@@ -24,7 +24,9 @@ import qualified Elea.Term.Constraint as Constraint
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Failure.Class as Fail
+import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.Env.Class as Env
+import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Monad.Transform as Transform
 import qualified Elea.Transform.Names as Name
 import qualified Elea.Monad.History as History
@@ -45,9 +47,8 @@ type Step m =
   
 
 run :: Term -> Term
-run = flip runReader ([] :: [Bind]) 
-    . History.emptyEnvT
-    -- ^ Use the Reader [Bind] instance for type environments
+run = id
+    . Fedd.eval
     . Transform.fix (Transform.compose all_steps)
   where
   all_steps = []
@@ -150,18 +151,19 @@ traverseMatch term@(Case cse_t alts) =
 traverseMatch _ = Fail.here
 
 
-traverseBranches :: Step m => Term -> m Term
+traverseBranches :: forall m . Step m => Term -> m Term
 
 traverseBranches term@(Case (Var x) alts) = 
   History.check Name.TraverseVarBranch term $ do
-    alts' <- mapM traverseAlt alts
+    alts' <- zipWithM traverseAlt [0..] alts
     let term' = Case (Var x) alts'
     Fail.when (term == term')
     Transform.continue (Case (Var x) alts')
   where
-  traverseAlt alt@(Alt tcon bs t) = do
+  traverseAlt n alt@(Alt tcon bs t) = do
     t' <- id
       . Env.bindMany bs
+      . Env.matched (Term.matchFromCase n term)
       . Transform.continue 
       -- Substitute the variable we have just bound for the 
       -- pattern it has been bound to
@@ -170,7 +172,7 @@ traverseBranches term@(Case (Var x) alts) =
     where
     x_here = Indices.liftMany (nlength bs) x
     pat_t = (patternTerm . altPattern) alt
-    
+
 traverseBranches term@(Case cse_t alts) = 
   History.check Name.TraverseBranch term $ do
     alts' <- zipWithM traverseAlt [0..] alts
@@ -187,6 +189,8 @@ traverseBranches term@(Case cse_t alts) =
     where
     cse_t_here = Indices.liftMany (nlength bs) cse_t
     pat_t = (patternTerm . altPattern) alt
+
+    
     
 traverseBranches _ = Fail.here
 

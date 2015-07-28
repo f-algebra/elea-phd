@@ -77,7 +77,6 @@ expressSteps =
   [ const Fail.here
   , expressConstructor
   , commuteConstraint
-  , unfoldConstraint
   , expressAccumulation
   , matchVar
   , finiteCaseFix
@@ -117,13 +116,16 @@ rewrite _ = Fail.here
 matchVar :: forall m . Step m => Term -> m Term
 matchVar term@(App fix@(Fix {}) xs) = do
   Fail.unless (Term.beingFused fix)  
+  Direction.requireInc
   [(from_f, to_f)] <- Fusion.findTags (Set.singleton tag)
   let from_t = snd (flattenLam from_f)
   Fail.unless (Term.beingFused (leftmost from_t))
   -- ^ Make sure this is for a fixCon rewrite
-  Fail.choose (map (tryMatch from_t) [0..length xs - 1])
+  Fail.unless (length (Term.arguments from_t) == length xs) 
+  Fail.choose (map (tryMatch from_t . enum) dec_idxs)
   where
   tag = get fixIndex (fixInfo fix)
+  dec_idxs = Term.decreasingArgs fix
   
   tryMatch :: Term -> Int -> m Term
   tryMatch (App _ xs') arg_i = do
@@ -134,7 +136,6 @@ matchVar term@(App fix@(Fix {}) xs) = do
       $ Transform.continue new_t
     
 matchVar _ = Fail.here
-  
 
 
 identityFix :: forall m . Step m => Term -> m Term
@@ -364,19 +365,7 @@ commuteConstraint term@(Case (leftmost -> Fix {}) _)
     ct' = Indices.liftMany (nlength bs) ct
   
 commuteConstraint _ = Fail.here
-  
 
-unfoldConstraint :: Step m => Term -> m Term
-unfoldConstraint term@(Case (App fix@(Fix {}) xs) alts)
-  | Constraint.splittable term
-  , any (isCon . leftmost) xs =
-    History.check Name.UnfoldCase term $ do
-      let term' = Case (Term.reduce (Term.unfoldFix fix) xs) alts
-      term'' <- Transform.continue term'
-      Fail.when (term Quasi.<= term'')
-      return term''
-      
-unfoldConstraint _ = Fail.here
 
 
 -- | Unfolds a 'Fix' which is being pattern matched upon if that pattern
@@ -426,7 +415,7 @@ expressAccumulation fix@(Fix fix_i fix_b fix_t) = do
   fix_s <- showM fix
   simp_t <- id
     . Env.bindMany (fix_b : arg_bs) 
-    . run 
+    . Transform.continue
     $ Indices.replaceAt (elength arg_bs) 
         (Term.reduce ctx_t_here [fun_var])
         body_t
@@ -434,7 +423,7 @@ expressAccumulation fix@(Fix fix_i fix_b fix_t) = do
   replaced_s <- Env.bindMany (fix_b : arg_bs) $ showM replaced_t
   --tracE [ ("acc-fission for", fix_s)
    --     , ("acc-fission context", ctx_s)
-      --  , ("acc-fission result", replaced_s) ] 
+       -- , ("acc-fission result", replaced_s) ] 
   Fail.when (Var acc_idx `Term.isSubterm` replaced_t)
   let new_fix = id
         . Fix fix_i fix_b 
@@ -474,11 +463,6 @@ expressAccumulation fix@(Fix fix_i fix_b fix_t) = do
       [Alt _ bs alt_t] = base_alts
     guessAcc t = 
       return t
-    
-  
-  
-  
-  
   
 expressAccumulation _ = Fail.here
 
