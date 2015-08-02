@@ -142,35 +142,29 @@ instance HasType Term where
 
   
     
-assertEqM :: (Env.Read m, HasTypeM a, Show a) 
+assertEqM :: (Env.Read m, HasTypeM a, ShowM m a) 
   => String -> a -> a -> m ()
 assertEqM msg x y = do
   as_x <- runMaybeT (assignM x)
   as_y <- runMaybeT (assignM y)
-  case (as_x, as_y) of
-    (Nothing, _) -> error (msg ++ "\n[invalid from term] " ++ show x)
-    (_, Nothing) -> error (msg ++ "\n[invalid to term] " ++ show y)
-    (Just (Just xty), Just (Just yty))
-      | xty /= yty -> 
-        error (assertionMsg msg (show x) (show y) xty yty)
-    _ -> 
-      return () 
-      
-  {-
-assertEq :: (Monad m, HasType a, Show a) => String -> a -> a -> m ()
-assertEq msg x y 
-  case (assign x, assign y) of
-    (Nothing, _) -> fail (msg ++ "\n[invalid from term] " ++ show x)
-    (_, Nothing) -> fail (msg ++ "\n[invalid to term] " ++ show y)
-    (Just (Just xty), Just (Just yty))
-      | xty /= yty -> 
-    -}
-    
-assertEq _ _ _ = 
-  return ()
-
-assertionMsg msg xs ys xty yty = 
-  "\n\n[type error] " ++ msg 
-    ++ "\n[original term] " ++ xs ++ " : " ++ show xty
-    ++ "\n[new term] " ++ ys ++ " : " ++ show yty
+  if valid as_x as_y
+  then return ()
+  else do
+    x_s <- showM x
+    y_s <- showM y
+    let x_ty = showTyping as_x
+        y_ty = showTyping as_y
+        
+    error 
+      $  "\n\n[type error] " ++ msg 
+      ++ "\n[original term] " ++ x_s ++ " : " ++ x_ty
+      ++ "\n[new term] " ++ y_s ++ " : " ++ show y_ty
+  where
+  valid (Just (Just t1)) (Just (Just t2)) = 
+    t1 == t2
+  valid _ _ = False
+  
+  showTyping Nothing = "[invalid type]"
+  showTyping (Just Nothing) = "[type unknown]"
+  showTyping (Just (Just ty)) = show ty
 

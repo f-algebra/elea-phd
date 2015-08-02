@@ -48,7 +48,7 @@ mapStepT :: forall m a b . Monad m
 mapStepT f = StepT . mapReaderT (mapMaybeT f) . stepT
     
 
-fix :: forall m . (Env.Read m, History.Env m) 
+fix :: forall m . (Env.Read m, History.Env m, Defs.Read m) 
   => (Term -> StepT m Term) -> Term -> m Term
 fix f t = do
   hist <- History.ask

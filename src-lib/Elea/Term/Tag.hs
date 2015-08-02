@@ -7,6 +7,7 @@ module Elea.Term.Tag
   Gen (..),
   GenT,
   Has (..),
+  exceptOmega,
   make,
   omega,
   null,
@@ -75,6 +76,9 @@ newtype GenT m a
   = GenT { genT :: StateT Int m a }
   deriving ( Functor, Monad, MonadState Int, MonadTrans )
   
+exceptOmega :: Has a => a -> Set Tag
+exceptOmega = Set.delete omega . tags
+  
 replace :: Has a => Tag -> Tag -> a -> a
 replace a b = map (\x -> if x == a then b else x)
   
@@ -86,6 +90,10 @@ omega = Tag (-2)
 
 null :: Tag 
 null = Tag 0
+
+instance Has a => Has [a] where
+  tags = Set.unions . Prelude.map tags
+  map f = Prelude.map (map f)
 
   
 instance Monad m => Gen (GenT m) where
@@ -114,4 +122,5 @@ instance Gen m => Gen (EitherT e m) where
 
 instance Show a => Show (Tagged a) where
   show (Tagged t x) = show x
+  
   

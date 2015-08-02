@@ -742,7 +742,7 @@ findArguments ctx term = do
   defaults = id
     . Map.fromList 
     . zipWith (\idx (Bind _ ty) -> (idx, Bot ty)) arg_idxs 
-    $ arg_bs
+    $ reverse arg_bs
   
   
 findConstrainedArgs :: forall m . (Env.MatchRead m, Fail.Can m) 
@@ -859,13 +859,20 @@ matchedWithin t = id
 buildContext :: forall m . Env.Read m => Int -> Term -> m (Term, [Term])
 buildContext arg_i (App fix@(Fix _ fix_b fix_t) args) = do
   free_bs <- mapM Env.boundAt free_vars
-  arg_tys <- mapM Type.getM arg_xs
-  let arg_bs = zipWith (\i -> Bind ("a" ++ show i)) [0..] arg_tys 
+  arg_bs <- zipWithM getArgBind [0..] arg_xs
   return ( build free_bs arg_bs, args' )
   where
   free_vars = Set.toList (Indices.free fix Set.\\ Indices.free args)
   arg_f : arg_xs = flattenApp (args !! arg_i)
   args' = map Var free_vars ++ removeAt (enum arg_i) args ++ arg_xs
+  
+  getArgBind :: Int -> Term -> m Bind
+  getArgBind _ (Var x) = 
+    Env.boundAt x
+  getArgBind n t = do
+    ty <- Type.getM t
+    return (Bind ("x" ++ show n) ty)
+  
   
   unify_me = id
     . map (map snd)
@@ -891,9 +898,9 @@ buildContext arg_i (App fix@(Fix _ fix_b fix_t) args) = do
       $ left_args ++ [arg'] ++ right_args
       
     left_args =
-      map (Var . enum . (+ arg_c)) [0..arg_i-1]
+      reverse $ map (Var . enum . (+ arg_c)) [0..arg_i-1]
     right_args = 
-      map (Var . enum . (+ arg_c)) [arg_i..fix_c-1]
+      reverse $ map (Var . enum . (+ arg_c)) [arg_i..fix_c-1]
     
     arg' = App arg_f' arg_xs'
     arg_xs' = reverse (map (Var . enum) [0..arg_c-1])

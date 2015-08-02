@@ -28,6 +28,7 @@ import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs
+import qualified Elea.Monad.Fusion as Fusion
 import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Monad.Transform as Transform
 import qualified Elea.Monad.Direction as Direction
@@ -46,6 +47,7 @@ type Env m =
   ( Env.All m
   , Defs.Read m
   , Direction.Has m
+  , Fusion.Env m
   , History.Env m )
 
 
@@ -69,12 +71,11 @@ steps =
   , caseFun
   , constArg
   , identityCase
+--  , undefinedCase
   , constantFix
   , unfold
-  , unfoldCase
- -- , floatVarMatch
   {-
-  , uselessFix
+ -- , floatVarMatch
   , propagateMatch
   , finiteArgFix
   , unfoldFixInj
@@ -313,10 +314,6 @@ constantCase (Case _ alts) = do
   (alt_t:alt_ts) <- mapM loweredAltTerm alts
   Fail.unless (all (== alt_t) alt_ts)
   Transform.continue alt_t
-  where
-  loweredAltTerm :: Alt -> m Term
-  loweredAltTerm (Alt _ bs alt_t) = 
-    Indices.tryLowerMany (nlength bs) alt_t
     
 constantCase _ = Fail.here
 
@@ -339,7 +336,7 @@ unfold term@(App fix@(Fix {}) args)
   needsUnroll t = 
     Term.isBot t
     || Term.isFinite t 
-    || (isCon (leftmost t) && not (Set.null (Tag.tags t)))
+    || (isCon (leftmost t) && not (Set.null (Tag.exceptOmega t)))
   
   dec_args = map (args !!) (Term.decreasingArgs fix)
   

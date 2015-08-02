@@ -63,9 +63,13 @@ instance Show (Term' (Term, String)) where
 
 
 instance Show (Term' String) where
-  show (Leq' x y) = "(" ++ x ++ " =< " ++ y ++ ")"
+  show (Leq' x y)
+    | x == "ff" = "(not " ++ y ++ ")"
+    | otherwise = "(" ++ x ++ " =< " ++ y ++ ")"
   show (Seq' x y) = "seq " ++ x ++ " in " ++ y
-  show (Bot' _) = "_|_"
+  show (Bot' (Type.Base ind)) 
+    | ind == Type.prop = "tt"
+  show (Bot' ty) = "_|_"
   show (App' f xs) = f' ++ " " ++ xs'
     where 
     xs' = intercalate " " (map bracketIfNeeded xs)
@@ -74,7 +78,7 @@ instance Show (Term' String) where
   show (Fix' inf (show -> b) t) =
     "\nfix" ++ show inf ++" " ++ b ++ " -> " ++ indent t
   show (Lam' (show -> b) t) =
-    "\nfun " ++ b ++ " -> " ++ t
+    "\nfun " ++ b ++ " -> " ++ t 
   show (Con' con) = show con
   show (Case' cse_t f_alts) =
       "\nmatch " ++ cse_t ++ " with"

@@ -219,6 +219,8 @@ instance ContainsTypes Term where
     mapTy (Con tcon) = do
       tcon' <- mapTypesM f' tcon
       return (Con tcon')
+    mapTy (Bot ty) =
+      return Bot `ap` f' ty
     mapTy (Case cse_t alts) = do
       alts' <- mapM mapAlt alts
       return (Case cse_t alts')

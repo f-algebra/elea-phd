@@ -43,6 +43,7 @@ module Elea.Term
   beingFused,
   recursiveId,
   isFixPromoted,
+  loweredAltTerm,
 )
 where
 
@@ -514,7 +515,7 @@ recursiveId ind@(Ind _ cons) =
   
 truth, falsity :: Term
 truth = Bot (Type.Base Type.prop)
-falsity = Con (Tag.with Tag.null (Constructor Type.prop 0))
+falsity = Con (Tag.with Tag.null Type.falsity)
   
     
 false, true :: Term
@@ -626,6 +627,10 @@ isFixPromoted (App fix@(Fix {}) xs) =
   x_vars_set = Set.fromList x_vars
   overlap = Set.intersection (Indices.free fix) x_vars_set
 isFixPromoted _ = False
+
+loweredAltTerm :: Indexed Term => Fail.Can m => Alt -> m Term
+loweredAltTerm (Alt _ bs alt_t) = 
+  Indices.tryLowerMany (nlength bs) alt_t
 
 
 -- | An instance to compare the "symbols" of terms, used

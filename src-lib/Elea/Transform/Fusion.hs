@@ -90,11 +90,12 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
     temp_idx <- Tag.make
     let temp_i = set fixIndex temp_idx fix_i
         temp_fix = Fix temp_i fix_b fix_t
-        rewrite_from = id 
-          . Simp.run
-        --  . traceMe "\n\n!![rewrite_from]"
-          . Indices.lift 
-          $ app ctx_t [temp_fix]
+    rewrite_from <- id 
+      . Env.bind fix_b
+      . Simp.runM
+    --  . traceMe "\n\n!![rewrite_from]"
+      . Indices.lift 
+      $ app ctx_t [temp_fix]
   
     Type.assertEqM "[fixfix]" (Indices.lower rewrite_from) orig_t
            
@@ -107,7 +108,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
       . Transform.continue
       . trace ("\n\n[fusing <" ++ show temp_idx ++ ">] " ++ t_s)
     --  . trace ("\n\n[replacing] " ++ t_s')
-     -- . trace ("\n\n[transforming< " ++ show temp_idx ++ ">] " ++ t_s'')
+   --   . trace ("\n\n[transforming< " ++ show temp_idx ++ ">] " ++ t_s'')
       . Indices.lift
       -- ^ Make room for our new variables we are rewriting to
       $ app ctx_t [Term.unfoldFix temp_fix]
@@ -120,8 +121,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
      --   $ trace ("\n\n[fusing <" ++ show temp_idx   ++ ">] " ++ t_s)
         $ trace ("\n\n[failing <" ++ show temp_idx ++ ">] " ++ t_s''')
         $ Fail.here
-      return 
-        . Simp.run
+      Simp.runM
         $ Indices.lower new_fix_t
     else id
       . Rewrite.run
@@ -169,8 +169,9 @@ fixCon orig_t@(App fix@(Fix _ fix_b _) args) = do
       fused_t <- fusion ctx_t fix
       let new_t = Term.reduce fused_t full_args
       new_s <- showM new_t
-      tracE [("fixcon input", gen_s), ("fixcon output", new_s)]
-        $ Transform.continue new_t
+      -- tracE [("fixcon input", gen_s), ("fixcon output", new_s)]
+      Transform.continue new_t
+        
 fixCon _ = Fail.here
 
     
@@ -612,7 +613,7 @@ discoverFold orig_t@(App (Fix {}) orig_args) = id
     to_s <- showM to_call
     fold_t <- id  
       . Fusion.forgetRewrites 
-     -- . tracE [("discovering for", orig_s), ("aiming for", from_s)] 
+      . tracE [("discovering for", orig_s), ("aiming for", from_s)] 
       $ findFold from_t
     let new_t = App fold_t [App (Var to_var) args]
     return new_t

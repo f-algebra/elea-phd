@@ -10,6 +10,7 @@ module Elea.Type
   bindLabel, bindType, 
   constructorOf, constructorIndex,
   empty, prop, tag, unit, tuple, bool, emptyTy,
+  falsity,
   equation, isEquation, true, false,
   returnType, argumentTypes, dropArgs, split,
   isInd, isFun, fromBase,
@@ -213,7 +214,10 @@ unit :: Ind
 unit = Ind "unit" [("()", [])]
 
 prop :: Ind 
-prop = unit
+prop = Ind "prop" [("ff", [])]
+
+falsity :: Constructor
+falsity = Constructor prop 0
 
 -- | Cartesian n-product.
 tuple :: [Type] -> Ind
