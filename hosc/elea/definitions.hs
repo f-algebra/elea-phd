@@ -3,6 +3,9 @@ data List a = Nil | Cons a (List a);
 data Nat = Z | Suc Nat;
 data Pair a b = Pair a b;
 
+repeat = \x -> Cons x (repeat x);
+iterate = \f x -> Cons x (iterate f (f x));
+
 app = \xs ys ->
 	case xs of {
 		Nil -> ys;
@@ -112,6 +115,12 @@ filter = \p xs ->
   
 compose = \f g x -> f (g x);
 
+tail = \xs ->
+  case xs of {
+    Nil -> Nil;
+    Cons x1 xs1 -> xs1;
+  };
+
 len = \xs ->
   case xs of {
     Nil -> Z;
@@ -155,7 +164,7 @@ butlast = \xs ->
       case xs1 of {
         Nil -> Nil;
         Cons x2 xs2 ->
-          butlast (Cons x2 xs2);
+          Cons x2 (butlast xs2);
       };
   };
   

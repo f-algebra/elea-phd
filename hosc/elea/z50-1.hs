@@ -12,7 +12,7 @@ butlast = \xs ->
       case xs1 of {
         Nil -> Nil;
         Cons x2 xs2 ->
-          butlast (Cons x2 xs2);
+          Cons x2 (butlast xs2);
       };
   };
   

@@ -45,6 +45,14 @@ class EleaTests {
   @Test def p34() = testEq("elea/p34-1.hs", "elea/p34-2.hs")
   @Test def p35() = testEq("elea/p35-1.hs", "elea/p35-2.hs")
   
+  @Test def c1() = testEq("elea/c1-1.hs", "elea/c1-2.hs")
+  @Test def c2() = testEq("elea/c2-1.hs", "elea/c2-2.hs")
+  @Test def c3() = testEq("elea/c3-1.hs", "elea/c3-2.hs")
+  // @Test def c4() = testEq("elea/c1-1.hs", "elea/c2-2.hs")
+  @Test def c5() = testEq("elea/c5-1.hs", "elea/c5-2.hs")
+  @Test def c6() = testEq("elea/c6-1.hs", "elea/c6-2.hs")
+  @Test def c7() = testEq("elea/c7-1.hs", "elea/c7-2.hs")
+ //  @Test def c8() = testEq("elea/c1-1.hs", "elea/c2-2.hs")
   
   def testEq(f1: String, f2: String) = {
     val p1 = supercompile(f1)
