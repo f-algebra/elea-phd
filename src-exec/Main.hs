@@ -17,6 +17,7 @@ import Text.Printf
 import System.CPUTime
 import qualified Elea.Testing as Test
 import qualified Elea.Term.Ext as Term
+import qualified Elea.Type.Ext as Type
 import qualified Elea.Transform.Fusion as Fusion
 import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.Fedd as Fedd
@@ -51,7 +52,8 @@ runM term_def = do
   term <- Test.term term_def
   term' <- Fusion.run term
   term_s <- showM term'
-  return term_s
+  ty_s <- liftM show (Type.getM term')
+  return ("\n" ++ term_s ++ "\n\n: " ++ ty_s)
     
 run :: String -> IO ()
 run = id

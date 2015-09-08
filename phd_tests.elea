@@ -3,302 +3,468 @@
 
 // Simple Nat properties 
 /*
-prop (n: nat) -> add n 0 == n
-prop (n: nat) -> minus n n =< 0
-prop (n m: nat) -> minus n (add n m) =< 0
-prop (n m: nat) -> minus (add n m) n =< m
-prop (k m n: nat) -> minus (add k m) (add k n) =< minus m n
-prop (k m n: nat) -> minus (minus n m) k == minus n (add m k)
-
-// prop (k m n: nat) -> max (max k m) n == max k (max m n)
-
-prop (n m: nat) -> eq n m == eq m n
-//prop (k m n: nat) ->
- // assertBool le n m 
- // in max m n == m
-prop (n: nat) -> assertBool le n 0 in n == 0
-prop (n m: nat) -> le n (add n m) =< True
-
-prop<A> (n: nat) (xs: list<A>) -> 
+prop zeno1 <A> (n: nat) (xs: list<A>) -> 
 	append<A> (take<A> n xs) (drop<A> n xs) =< xs
-	
-prop (n: nat) (xs ys: list<nat>) -> 
-	add (count n xs) (count n ys) == count n (append<nat> xs ys)
-	
-// prop (n: nat) (xs ys: list<nat>) -> 
-	// le (count n xs) (count n (append<nat> xs ys))
-	
-prop<A, B> (n: nat) (f: A -> B) (xs: list<A>) -> 
-  drop<B> n (map<A, B> f xs) 
-  == 
-  map<A, B> f (drop<A> n xs)
-  
 
-prop<A> (p: A -> bool) (xs: list<A>) ->
-  append<A> (takeWhile<A> p xs) (dropWhile<A> p xs) =< xs
+prop zeno2 (n: nat) (xs ys: list<nat>) -> 
+	add (count n xs) (count n ys) == count n (append<nat> xs ys)
+
+// bugged
+//prop zeno3 (n: nat) (xs ys: list<nat>) -> 
+//	le (count n xs) (count n (append<nat> xs ys))
 	
+prop zeno4 (n: nat) (xs: list<nat>) ->
+  count n (Cons<nat> n xs) =< Suc (count n xs) 
+  
+prop zeno5 (n m: nat) (xs: list<nat>) ->
+  assertBool eq n m
+  in Suc (count n xs) == count n (Cons<nat> m xs)
+  
+prop zeno6 (n m: nat) -> 
+  minus n (add n m) =< 0
+  
+prop zeno7 (n m: nat) -> 
+  minus (add n m) n =< m
+  
+prop zeno8 (k m n: nat) -> 
+  minus (add k m) (add k n) =< minus m n
 	
-	
-prop<A> (p: A -> bool) (xs ys: list<A>) ->
+prop zeno9 (k m n: nat) -> 
+  minus (minus n m) k == minus n (add m k)
+  
+prop zeno10 (n: nat) ->
+  minus n n =< 0
+  
+prop zeno11 <A> (xs: list<A>) ->
+  drop<A> 0 xs == xs
+  
+prop zeno12 <A, B> (n: nat) (f: A -> B) (xs: list<A>) -> 
+  drop<B> n (map<A, B> f xs) 
+  == map<A, B> f (drop<A> n xs)
+  
+prop zeno13 <A> (n: nat) (x: A) (xs: list<A>) ->
+  drop<A> (Suc n) (Cons<A> x xs) == drop<A> n xs
+  
+prop zeno14 <A> (p: A -> bool) (xs ys: list<A>) ->
   filter<A> p (append<A> xs ys) 
-  == 
-  append<A> (filter<A> p xs) (filter<A> p ys)
+  == append<A> (filter<A> p xs) (filter<A> p ys)  
   
-prop (n: nat) (xs: list<nat>) ->
+prop zeno15 (n: nat) (xs: list<nat>) ->
   length<nat> (insert n xs) =< Suc (length<nat> xs)
+
+prop zeno16 <A> (x: A) (xs: list<A>) ->
+  assertBool null<A> xs
+  in last<A> (Cons<A> x xs) == x
   
-prop<A> (n: nat) (xs: list<A>) ->
+prop zeno17 (n: nat) ->
+  assertBool le n 0
+  in n == 0
+  
+prop zeno18 (n m: nat) ->
+  lt n (Suc (add n m))
+  
+prop zeno19 <A> (n: nat) (xs: list<A>) ->
   length<A> (drop<A> n xs) == minus (length<A> xs) n
   
-prop (xs: list<nat>) -> 
+prop zeno20 (xs: list<nat>) -> 
   length<nat> (insertsort xs) =< length<nat> xs
+
+prop zeno21 (n m: nat) ->
+  le n (add n m)
   
-prop (n: nat) (xs ys: list<nat>) ->
+prop zeno22 (n m k: nat) ->
+  max (max n m) k == max n (max m k)
+  
+// Does not hold in either directon 
+// prop zeno23 (n m: nat) ->
+//   max n m == max m n 
+
+prop zeno24 (n m: nat) ->
+  assertBool eq (max n m) n
+  in le m n
+  
+prop zeno25 (n m: nat) ->
+  assertBool eq (max n m) m
+  in le n m
+  
+prop zeno26 (n: nat) (xs ys: list<nat>) ->
   assertBool elem n xs 
-  in elem n (append<nat> xs ys) =< True
-  
-prop (n: nat) (xs ys: list<nat>) ->
+  in elem n (append<nat> xs ys)
+
+prop zeno27 (n: nat) (xs ys: list<nat>) ->
   assertBool elem n ys 
-  in elem n (append<nat> xs ys) =< True
+  in elem n (append<nat> xs ys)
   
-prop (n: nat) (xs: list<nat>) ->  
-  elem n (append<nat> xs (Cons<nat> n Nil<nat>)) =< True
+prop zeno28 (n: nat) (xs: list<nat>) ->  
+  elem n (append<nat> xs (Cons<nat> n Nil<nat>))
 
-prop (n: nat) (xs: list<nat>) ->  
-  elem n (insert n xs) =< True
+prop zeno29 (n: nat) (xs: list<nat>) ->  
+  elem n (eq_insert n xs)
   
-prop (n: nat) (xs: list<nat>) ->
-  elem n (delete n xs) =< False 
+prop zeno30 (n: nat) (xs: list<nat>) ->  
+  elem n (lt_insert n xs)
+  
+prop zeno31 (n m k: nat) ->
+  min (min n m) k == min n (min m k)
+  
+// Does not hold in either directon
+// prop zeno32 (n m: nat) ->
+//   min n m == min m n 
 
-prop (n: nat) (xs: list<nat>) ->
-  count n (append<nat> xs (Cons<nat> n Nil<nat>)) =< Suc (count n xs)
+prop zeno33 (n m: nat) ->
+  assertBool eq (min n m) n
+  in le n m
   
-prop<A, B> (n: nat) (f: A -> B) (xs: list<A>) ->
-  take<B> n (map<A, B> f xs) == map<A, B> f (take<A> n xs)
+prop zeno34 (n m: nat) ->
+  assertBool eq (min n m) m
+  in le m n
   
-prop<A> (p: A -> bool) (xs: list<A>) ->
+prop zeno35 <A> (xs: list<A>) ->
+  dropWhile<A> (fun (x: A) -> False) xs == xs
+  
+prop zeno36 <A> (xs: list<A>) ->
+  takeWhile<A> (fun (x: A) -> True) xs == xs
+    
+prop zeno37 (n: nat) (xs: list<nat>) ->
+  not (elem n (delete n xs))
+  
+prop zeno38 (n: nat) (xs: list<nat>) ->
+  count n (append<nat> xs (Cons<nat> n Nil<nat>)) 
+  =< Suc (count n xs)
+  
+prop zeno39 (n x: nat) (xs: list<nat>) ->
+  add (count n (Cons<nat> x Nil<nat>)) (count n xs)
+  == count n (Cons<nat> x xs)
+  
+prop zeno40 <A> (xs: list<A>) ->
+  take<A> 0 xs == Nil<A>
+  
+prop zeno41 <A, B> (n: nat) (f: A -> B) (xs: list<A>) ->
+  take<B> n (map<A, B> f xs) 
+  == map<A, B> f (take<A> n xs)
+  
+prop zeno42 <A> (n: nat) (x: A) (xs: list<A>) ->
+  take<A> (Suc n) (Cons<A> x xs) 
+  == Cons<A> x (take<A> n xs)
+  
+prop zeno43 <A> (p: A -> bool) (xs: list<A>) ->
   append<A> (takeWhile<A> p xs) (dropWhile<A> p xs) =< xs
   
-prop<A> (xs: list<A>) ->
-  append<A> (butlast<A> xs) (Cons<A> (last<A> xs) Nil<A>) =< xs 
+prop zeno44 <A, B> (x: A) (xs: list<A>) (ys: list<B>) ->
+  zip<A, B> (Cons<A> x xs) ys =< zipConcat<A, B> x xs ys
+
+prop zeno45 <A, B> (x: A) (y: B) (xs: list<A>) (ys: list<B>) ->
+  zip<A, B> (Cons<A> x xs) (Cons<B> y ys)
+  == Cons<(A, B)> (x, y) (zip<A, B> xs ys)
   
-prop<A> (xs: list<A>) ->
+prop zeno46 <A, B> (xs: list<B>) ->
+  zip<A, B> Nil<A> xs == Nil<(A, B)>
+  
+// Does not hold in either directon
+// prop zeno47 <A> (t: tree<A>) ->
+//   height<A> (mirror<A> t) == height<A> t
+
+prop zeno48 <A> (xs: list<A>) ->
+  assertBool not (null<A> xs) 
+  in append<A> (butlast<A> xs) (Cons<A> (last<A> xs) Nil<A>) 
+     == xs
+     
+// Does not hold in either directon
+// prop zeno49 <A> (xs ys: list<A>) ->
+//  butlast<A> (append<A> xs ys) 
+//  == butlastConcat<A> xs ys
+
+prop zeno50 <A> (xs: list<A>) ->
   butlast<A> xs == take<A> (minus (length<A> xs) 1) xs
-  
-prop<A> (xs: list<A>) (x: A) ->
+     
+prop zeno51 <A> (xs: list<A>) (x: A) ->
   butlast<A> (append<A> xs (Cons<A> x Nil<A>)) =< xs
-         
-prop<A> (n m: nat) (xs: list<A>) ->
-  drop<A> n (drop<A> m xs) == drop<A> (add m n) xs
   
-prop<A> (xs ys: list<A>) ->
+// Does not hold in either directon
+// prop zeno52 (n: nat) (xs: list<nat>) ->
+//  count n xs == count n (reverse<nat> xs)
+  
+// Does not hold in either directon
+// prop zeno53 (xs: list<nat>) (n: nat) ->
+//  count n (insertsort xs) == count n xs
+
+// Fails
+// prop zeno54 (m n: nat) ->
+//  minus (add m n) n =< m
+
+prop zeno55 <A> (n: nat) (xs ys: list<A>) ->
+  append<A> (drop<A> n xs) (drop<A> (minus n (length<A> xs)) ys)
+  == drop<A> n (append<A> xs ys)
+          
+// Had to reverse 'm' and 'n' to make this hold
+prop zeno56 <A> (n m: nat) (xs: list<A>) ->
+  drop<A> n (drop<A> m xs) == drop<A> (add m n) xs  
+  
+// Does not hold
+// prop zeno57 <A> (n m: nat) (xs: list<A>) ->
+//   drop<A> n (take<A> m xs) == take<A> (minus m n) (drop<A> n xs)
+
+// Same problem as prop 3 I think
+// prop zeno58 <A, B> (n: nat) (xs: list<A>) (ys: list<B>) ->
+//  drop<(A, B)> n (zip<A, B> xs ys) 
+//  == zip<A, B> (drop<A> n xs) (drop<B> n ys)
+
+prop zeno59 <A> (xs ys: list<A>) ->
+  assertBool null<A> ys
+  in last<A> (append<A> xs ys) == last<A> xs
+  
+prop zeno60 <A> (xs ys: list<A>) ->
   assertBool not (null<A> ys) 
   in last<A> (append<A> xs ys) == last<A> ys
+  
+// Does not hold in either direction
+// prop zeno61 <A> (xs ys: list<A>) ->
+//   last<A> (append<A> xs ys) == lastOfTwo<A> xs ys
 
-prop<A> (xs: list<A>) (n: nat) ->
+prop zeno62 <A> (x: A) (xs: list<A>) ->
+  assertBool not (null<A> xs)
+  in last<A> (Cons<A> x xs) == last<A> xs
+  
+prop zeno63 <A> (xs: list<A>) (n: nat) ->
   assertBool lt n (length<A> xs)
   in last<A> (drop<A> n xs) =< last<A> xs
-  
-prop<A> (xs: list<A>) (x: A) ->
+
+prop zeno64 <A> (x: A) (xs: list<A>) ->
   last<A> (append<A> xs (Cons<A> x Nil<A>)) =< x
   
-prop<A> (xs: list<A>) ->
+// Requires leq generalisation
+// prop zeno65 (n m: nat) ->
+//   lt n (Suc (add m n))
+      
+prop zeno66 <A> (p: A -> bool) (xs: list<A>) ->
+  le (length<A> (filter<A> p xs)) (length<A> xs)
+  
+prop zeno67 <A> (xs: list<A>) ->
   length<A> (butlast<A> xs) =< minus (length<A> xs) 1
-   
-// The other direction needs deepseq knowledge
-prop 71 (n m: nat) (xs: list<nat>) ->
+
+prop zeno68 (n: nat) (xs: list<nat>) ->
+  le (length<nat> (delete n xs)) (length<nat> xs)
+
+// Requires leq generalisation
+// prop zeno69 (n m: nat) ->
+//   le n (add m n)
+  
+prop zeno70 (n m: nat) ->
+  assertBool le m n 
+  in le m (Suc n)
+
+prop zeno71 (n m: nat) (xs: list<nat>) ->
   assertBool not (eq n m) 
   in elem n (insert m xs) =< elem n xs
   
-// The other direction needs deepseq knowledge
-prop 76 (n m: nat) (xs: list<nat>) ->
+// Fails
+// prop zeno72 <A> (n: nat) (xs: list<A>) ->
+//   reverse<A> (drop<A> n xs)
+//   == take<A> (minus (length<A> xs) n) (reverse<A> xs)
+  
+// Does not hold
+// prop zeno73 <A> (p: A -> bool) (xs: list<A>) ->
+//   reverse<A> (filter<A> p xs)
+//   == filter<A> p (reverse<A> xs)
+
+// Fails
+// prop zeno74 <A> (n: nat) (xs: list<A>) ->
+//   reverse<A> (take<A> n xs)
+//   == drop<A> (minus (length<A> xs) n) (reverse<A> xs)
+
+// Does not hold in either direction
+// prop zeno75 (n m: nat) (xs: list<nat>) ->
+//   add (count n xs) (count n (Cons<nat> m Nil<nat>))
+//   == count n (Cons<nat> m xs)
+
+prop zeno76 (n m: nat) (xs: list<nat>) ->
   assertBool not (eq n m) 
   in count n (snoc<nat> m xs) =< count n xs
   
-//prop 77 (n: nat) (xs: list<nat>) ->
- // assertBool is_sorted xs
- // in is_sorted (insert n xs)
+prop zeno77 (n: nat) (xs: list<nat>) ->
+  assertBool is_sorted xs
+  in is_sorted (insert n xs)
   
-prop 78 (xs: list<nat>) ->
+prop zeno78 (xs: list<nat>) ->
   is_sorted (insertsort xs)
   
-prop<A> (n: nat) (xs ys: list<A>) ->
-  drop<A> n (append<A> xs ys) 
-  ==
-  append<A> (drop<A> n xs) (drop<A> (minus n (length<A> xs)) ys)
+// Does not hold    
+// prop zeno79 (m n k: nat) ->
+//   minus (minus m n) k == minus (minus (Suc m) n) (Suc k)  
+
+prop zeno80 <A> (n: nat) (xs ys: list<A>) ->
+  append<A> (take<A> n xs) (take<A> (minus n (length<A> xs)) ys) 
+  == take<A> n (append<A> xs ys) 
+ 
+// Bugged
+// prop zeno81 <A> (n m: nat) (xs: list<A>) ->
+//   drop<A> m (take<A> (add n m) xs)
+//   == take<A> n (drop<A> m xs) 
+ 
+prop zeno82 <A, B> (n: nat) (xs: list<A>) (ys: list<A>) ->
+  take<(A, B)> n (zip<A, B> xs ys)
+  == zip<A, B> (take<A> n xs) (take<A> n ys)
   
-prop<A> (p: A -> bool) (xs: list<A>) ->
-  le (length<A> (filter<A> p xs)) (length<A> xs)
+prop zeno83 <A, B> (xs ys: list<A>) (zs: list<B>) ->
+  append<(A, B)> (zip<A, B> xs (take<A> (length<A> xs) zs))
+                 (zip<A, B> ys (drop<A> (length<A> xs) zs))
+  == zip<A, B> (append<A> xs ys) zs                 
   
-prop 68 (n: nat) (xs: list<nat>) ->
-  le (length<nat> (delete n xs)) (length<nat> xs)
+prop zeno84 <A, B> (xs: list<A>) (ys zs: list<B>) ->
+  append<(A, B)> (zip<A, B> (take<A> (length<A> ys) xs) ys)
+                 (zip<A, B> (drop<A> (length<A> ys) xs) zs)
+  == zip<A, B> xs (append<A> ys zs)         
+ 
+// Fails
+prop zeno85 <A, B> (xs: list<A>) (ys: list<B>) ->
+  assertBool eq (length<A> xs) (length<B> ys)
+  in reverse<(A, B)> (zip<A, B> xs ys)
+     == zip<A, B> (reverse<A> xs) (reverse<B> ys) 
+     
+     
+prop prod1 (n: nat) ->
+  add n n =< double n
   
-prop (n m: nat) ->
-  assertBool le m n in le m (Suc n)
+// Does not hold in either direction
+// prop prod2 <A> (xs ys: list<A>) ->
+//   length<A> (append<A> xs ys) 
+//   == length<A> (append<A> ys xs)
+
+// Does not hold in either direction
+// prop prod3 <A> (xs ys: list<A>) ->
+//   length<A> (append<A> xs ys) 
+//   == add (length<A> ys) (length<A> xs)
+
+prop prop4 <A> (xs: list<A>) ->
+  length<A> (append<A> xs xs) =< double (length<A> xs)
   
-prop 80<A> (n: nat) (xs ys: list<A>) ->
-  take<A> n (append<A> xs ys) 
-  == 
-  append<A> (take<A> n xs) (take<A> (minus n (length<A> xs)) ys)  
+prop prod5 <A> (xs ys: list<A>) ->
+  length<A> (reverse<A> xs) =< length<A> xs
+  
+prop prod6 <A> (xs ys: list<A>) ->
+  length<A> (reverse<A> (append<A> xs ys))
+  =< add (length<A> xs) (length<A> ys)
+  
+prop prod7 <A> (xs ys: list<A>) ->
+  length<A> (it_rev<A> xs ys)
+  =< add (length<A> xs) (length<A> ys)
+  
+// Does not hold in either direction
+// prop prod8 <A> (n m: nat) (xs: list<A>) ->
+//   drop<A> n (drop<A> m xs) 
+//   == drop<A> m (drop<A> n xs)
+
+// Does not hold in either direction
+// prop prod9 <A> (n m k: nat) (xs: list<A>) ->
+//   drop<A> n (drop<A> m (drop<A> k xs)) 
+//   == drop<A> k (drop<A> m (drop<A> m xs)) 
+
+prop prod10 <A> (xs: list<A>) ->
+  reverse<A> (reverse<A> xs) =< xs
+  
+// Fails due to lack of deepseq info
+// prop prod11 <A> (xs ys: list<A>) ->
+//   reverse<A> (append<A> (reverse<A> xs) (reverse<A> ys))
+//   =< append<A> ys xs
+
+prop prod12 <A> (xs ys: list<A>) ->
+  it_rev<A> xs ys == append<A> (reverse<A> xs) ys
+
+prop prod13 (n: nat) ->
+  half (add n n) =< n
+  
+prop prod14 (xs: list<nat>) ->
+  is_sorted (insertsort xs)
+    
+prop prod15 (n: nat) ->
+  add n (Suc n) =< Suc (add n n)
+  
+prop prod16 (n: nat) ->
+  even (add n n)
+  
+// Fails due to lack of deepseq info
+// prop prod17 <A> (xs ys: list<A>) ->
+//   reverse<A> (reverse<A> (append<A> xs ys))
+//   =< append<A> (reverse<A> (reverse<A> xs)) 
+//                (reverse<A> (reverse<A> ys))
+  
+// Should succeed...
+// prop prod18 <A> (xs ys: list<A>) ->
+//   reverse<A> (append<A> (reverse<A> xs) ys)
+//   =< append<A> (reverse<A> ys) xs
+
+prop prod19 <A> (xs ys: list<A>) ->
+  reverse<A> (reverse<A> (append<A> xs ys))
+  =< append<A> (reverse<A> (reverse<A> xs)) ys
+
+prop prod20 <A> (xs: list<A>) ->
+  even (length<A> (append<A> xs xs))
+ 
+// Fails
+// prop prod21 <A> (xs ys: list<A>) ->
+//   rotate<A> (length<A> xs) (append<A> xs ys)
+//   =< append<A> ys xs
+
+// Should succeed
+// unrolling issue
+// prop prod22 <A> (xs ys: list<A>) ->
+//   even (length<A> (append<A> xs ys))
+//   == even (length<A> (append<A> ys xs))
+                               
+
+  */
+  
+
+/*
+
+
+
+  
+prop prod27 <A> (xs: list<A>) ->
+  reverse<A> xs == it_rev<A> xs Nil<A>
+  
+prop prod36 (n: nat) (xs ys: list<nat>) ->
+  assertBool elem n xs
+  in elem n (append<nat> xs ys)
+  
+prop prod37 (n: nat) (xs ys: list<nat>) ->
+  assertBool elem n ys
+  in elem n (append<nat> xs ys)
+  
+prop prod38 (n: nat) (xs ys: list<nat>) ->
+  assertBool and (elem n xs) (elem n ys)
+  in elem n (append<nat> xs ys)
+  
+prop prod39 (n m: nat) (xs ys: list<nat>) ->
+  assertBool elem n (drop<nat> m xs)
+  in elem n xs
+  
+prop prod40 (xs ys: list<nat>) ->
+  assertBool subset xs ys
+  in union xs ys =< ys
+  
+prop prod41 (xs ys: list<nat>) ->
+  assertBool subset xs ys
+  in intersect xs ys =< xs
+  
+prop prod42 (n: nat) (xs ys: list<nat>) ->
+  assertBool elem n xs
+  in elem n (union xs ys)
+  
+prop prod43 (n: nat) (xs ys: list<nat>) ->
+  assertBool elem n ys
+  in elem n (union xs ys)
+  
+prop prod44 (n: nat) (xs ys: list<nat>) ->
+  assertBool and (elem n xs) (elem n ys)
+  in elem n (intersect xs ys)
   
   */
-prop t34 (m n: nat) -> 
-  qmul n m 0 =< mul n m
-/*
   
-
-prop_82 n xs ys
-  = (take n (zip xs ys) =:= zip (take n xs) (take n ys))
-
-prop_83 xs ys zs
-  = (zip (xs ++ ys) zs =:=
-           zip xs (take (len xs) zs) ++ zip ys (drop (len xs) zs))
-
-prop_84 xs ys zs
-  = (zip xs (ys ++ zs) =:=
-           zip (take (len ys) xs) ys ++ zip (drop (len ys) xs) zs)
-
-prop_85 xs ys
-  = (len xs =:= len ys) ==>
-    (zip (rev xs) (rev ys) =:= rev (zip xs ys))
-
-
-prop_T01 :: Nat -> Prop Nat
-prop_T01 x = double x =:= x + x
-
-prop_T02 :: [a] -> [a] -> Prop Nat
-prop_T02 x y = length (x ++ y ) =:= length (y ++ x)
-
-prop_T03 :: [a] -> [a] -> Prop Nat
-prop_T03 x y = length (x ++ y ) =:= length (y ) + length x
-
-prop_T04 :: [a] -> Prop Nat
-prop_T04 x = length (x ++ x) =:= double (length x)
-
-prop_T05 :: [a] -> Prop Nat
-prop_T05 x = length (rev x) =:= length x
-
-prop_T06 :: [a] -> [a] -> Prop Nat
-prop_T06 x y = length (rev (x ++ y )) =:= length x + length y
-
-prop_T07 :: [a] -> [a] -> Prop Nat
-prop_T07 x y = length (qrev x y) =:= length x + length y
-
-prop_T08 :: Nat -> Nat -> [a] -> Prop [a]
-prop_T08 x y z = drop x (drop y z) =:= drop y (drop x z)
-
-prop_T09 :: Nat -> Nat -> [a] -> Nat -> Prop [a]
-prop_T09 x y z w = drop w (drop x (drop y z)) =:= drop y (drop x (drop w z))
-
-prop_T10 :: [a] -> Prop [a]
-prop_T10 x = rev (rev x) =:= x
-
-prop_T11 :: [a] -> [a] -> Prop [a]
-prop_T11 x y = rev (rev x ++ rev y) =:= y ++ x
-
-prop_T12 :: [a] -> [a] -> Prop [a]
-prop_T12 x y = qrev x y =:= rev x ++ y
-
-prop_T13 :: Nat -> Prop Nat
-prop_T13 x = half (x + x) =:= x
-
-prop_T14 :: [Nat] -> Prop Bool
-prop_T14 x = proveBool (sorted (isort x))
-
-prop_T15 :: Nat -> Prop Nat
-prop_T15 x = x + S x =:= S (x + x)
-
-prop_T16 :: Nat -> Prop Bool
-prop_T16 x = proveBool (even (x + x))
-
-prop_T17 :: [a] -> [a] -> Prop [a]
-prop_T17 x y = rev (rev (x ++ y)) =:= rev (rev x) ++ rev (rev y)
-
-prop_T18 :: [a] -> [a] -> Prop [a]
-prop_T18 x y = rev (rev x ++ y) =:= rev y ++ x
-
-prop_T19 :: [a] -> [a] -> Prop [a]
-prop_T19 x y = rev (rev x) ++ y =:= rev (rev (x ++ y))
-
-prop_T20 :: [a] -> Prop Bool
-prop_T20 x = proveBool (even (length (x ++ x)))
-
-prop_T21 :: [a] -> [a] -> Prop [a]
-prop_T21 x y = rotate (length x) (x ++ y) =:= y ++ x
-
-prop_T22 :: [a] -> [a] -> Prop Bool
-prop_T22 x y = even (length (x ++ y)) =:= even (length (y ++ x))
-
-prop_T23 :: [a] -> [a] -> Prop Nat
-prop_T23 x y = half (length (x ++ y)) =:= half (length (y ++ x))
-
-prop_T24 :: Nat -> Nat -> Prop Bool
-prop_T24 x y = even (x + y) =:= even (y + x)
-
-prop_T25 :: [a] -> [a] -> Prop Bool
-prop_T25 x y = even (length (x ++ y)) =:= even (length y + length x)
-
-prop_T26 :: Nat -> Nat -> Prop Nat
-prop_T26 x y = half (x + y) =:= half (y + x)
-
-prop_T27 :: [a] -> Prop [a]
-prop_T27 x = rev x =:= qrev x []
-
-prop_T28 :: [[a]] -> Prop [a]
-prop_T28 x = revflat x =:= qrevflat x []
-
-prop_T29 :: [a] -> Prop [a]
-prop_T29 x = rev (qrev x []) =:= x
-
-prop_T30 :: [a] -> Prop [a]
-prop_T30 x = rev (rev x ++ []) =:= x
-
-prop_T31 :: [a] -> Prop [a]
-prop_T31 x = qrev (qrev x []) [] =:= x
-
-prop_T32 :: [a] -> Prop [a]
-prop_T32 x = rotate (length x) x =:= x
-
-prop_T33 :: Nat -> Prop Nat
-prop_T33 x = fac x =:= qfac x one
-
-prop_T34 :: Nat -> Nat -> Prop Nat
-prop_T34 x y = x * y =:= mult x y zero
-
-prop_T35 :: Nat -> Nat -> Prop Nat
-prop_T35 x y = exp x y =:= qexp x y one
-
-prop_T36 :: Nat -> [Nat] -> [Nat] -> Prop Bool
-prop_T36 x y z = givenBool (x `elem` y) (proveBool (x `elem` (y ++ z)))
-
-prop_T37 :: Nat -> [Nat] -> [Nat] -> Prop Bool
-prop_T37 x y z = givenBool (x `elem` z) (proveBool (x `elem` (y ++ z)))
-
-prop_T38 :: Nat -> [Nat] -> [Nat] -> Prop Bool
-prop_T38 x y z = givenBool (x `elem` y)
-               ( givenBool (x `elem` z)
-               ( proveBool (x `elem` (y ++ z))))
-
-prop_T39 :: Nat -> Nat -> [Nat] -> Prop Bool
-prop_T39 x y z = givenBool (x `elem` drop y z) (proveBool (x `elem` z))
-
-prop_T40 :: [Nat] -> [Nat] -> Prop [Nat]
-prop_T40 x y = givenBool (x `subset` y) ((x `union` y) =:= y)
-
-prop_T41 :: [Nat] -> [Nat] -> Prop [Nat]
-prop_T41 x y = givenBool (x `subset` y) ((x `intersect` y) =:= x)
-
-prop_T42 :: Nat -> [Nat] -> [Nat] -> Prop Bool
-prop_T42 x y z = givenBool (x `elem` y) (proveBool (x `elem` (y `union` z)))
-
-prop_T43 :: Nat -> [Nat] -> [Nat] -> Prop Bool
-prop_T43 x y z = givenBool (x `elem` y) (proveBool (x `elem` (z `union` y)))
-
-prop_T44 :: Nat -> [Nat] -> [Nat] -> Prop Bool
-prop_T44 x y z = givenBool (x `elem` y)
-               ( givenBool (x `elem` z)
-               ( proveBool (x `elem` (y `intersect` z))))
-
+  
+  
+/*
+ 
 prop_T45 :: Nat -> [Nat] -> Prop Bool
 prop_T45 x y = proveBool (x `elem` insert x y)
 
@@ -308,144 +474,6 @@ prop_T46 x y z = x =:= y ==> proveBool (x `elem` insert y z)
 prop_T47 :: Nat -> Nat -> [Nat] -> Prop Bool
 prop_T47 x y z = givenBool (x /= y) ((x `elem` insert y z) =:= x `elem` z)
 
-prop_T48 :: [Nat] -> Prop Nat
-prop_T48 x = length (isort x) =:= length x
 
-prop_T49 :: Nat -> [Nat] -> Prop Bool
-prop_T49 x y = givenBool (x `elem` isort y) (proveBool (x `elem` y))
-
-
-!!! needs more tool work
---  Needs fission + fusion at once
-prop (n m: nat) -> minus (add m n) n =< m
-prop (n m: nat) ->
-  lt n (Suc (add m n))
-prop (n m: nat) ->
-  le n (add m n) 
-  
--- These two suffer from the len xs = len (rev xs) problem
-prop 72<A> (n: nat) (xs: list<A>) ->
-  reverse<A> (drop<A> n xs) == take<A> (minus (length<A> xs) n) (reverse<A> xs)
-  
-prop_74 i xs
-  = (rev (take i xs) =:= drop (len xs - i) (rev xs))
-  
-  
--- This one is just hard
-cubes n =:= tri n * tri n
-
--- These need implication based generalisations
-
-
-
--- This one needs that insertsort deepseqs its input
--- so it works with finite input
-prop (xs: list<nat>) (n: nat) ->
-  count n (insertsort xs) == count n xs
-  
-
--- Needs dec con fusion
-prop (n m: nat) ->
-  assertBool le m n in le m (Suc n)
-
--- Needs fix fix with con fusion!
-prop 79 (m n k: nat) ->
-  minus (minus m n) k =< minus (minus (Suc m) n) (Suc k)   
-  
-  
--- Needs finite mode!
-prop<A> (n m: nat) (xs: list<A>) ->
-  drop<A> n (take<A> m xs) =< take<A> (minus m n) (drop<A> n xs)  
-
-max a b =:= max b a
-
-prop_52 n xs
-  = (count n xs =:= count n (rev xs))
-
-prop_47 a
-  = (height (mirror a) =:= height a)
- 
-prop_73 p x
-  = (rev (filter p xs) =:= filter p (rev xs))
-
-prop_75 n m xs
-  = (count n xs + count n [m] =:= count n (m : xs))
-  
-prop 79 (m n k: nat) ->
-  minus (minus m n) k == minus (minus (Suc m) n) (Suc k)   
-  
-prop_81 n m xs
-  = (take n (drop m xs) =:= drop m (take (n + m) xs))
-  
-prop t33 (n m: nat) ->
-  qexp n m 1 == exp n m
-  
-! not interesting
-(S (count n xs) =:= count n (n : xs))
-(drop Z xs =:= xs)
-
-prop (n x: nat) (xs: list<nat>) ->
-  assertBool eq n x 
-  in count n (Cons<nat> x xs) =< Suc (count n xs)
-prop_13 n x xs
-  = (drop (S n) (x : xs) =:= drop n xs)
-
-prop_16 x xs
-  = xs =:= [] ==> last (x:xs) =:= x
-
-prop_31 a b c
-  = (min (min a b) c =:= min a (min b c))
-
-prop_32 a b
-  = (min a b =:= min b a)
-
-prop_33 a b
-  = (min a b == a =:= a <= b)
-
-prop_34 a b
-  = (min a b == b =:= b <= a)
-  
-
-prop_35 xs
-  = (dropWhile (\_ -> False) xs =:= xs)
-
-prop_36 xs
-  = (takeWhile (\_ -> True) xs =:= xs)
- 
-prop_39 n x xs
-  = (count n [x] + count n xs =:= count n (x:xs))
-
-prop_40 xs
-  = (take Z xs =:= [])
-
-prop_42 n x xs
-  = (take (S n) (x:xs) =:= x : (take n xs))
-  
-prop_44 x xs ys
-  = (zip (x:xs) ys =:= zipConcat x xs ys)
-
-prop_45 x y xs ys
-  = (zip (x:xs) (y:ys) =:= (x, y) : zip xs ys)
-
-prop_46 xs
-  = (zip [] xs =:= [])
-  
-prop_49 xs ys
-  = (butlast (xs ++ ys) =:= butlastConcat xs ys)
-  
-
-prop_58 n xs ys
-  = (drop n (zip xs ys) =:= zip (drop n xs) (drop n ys))
-
-prop_59 xs ys
-  = ys =:= [] ==> last (xs ++ ys) =:= last xs
-  
-
-prop_62 xs x
-  = givenBool (not (null xs))
-  ( (last (x:xs) =:= last xs) )
-
-prop_61 xs ys
-  = (last (xs ++ ys) =:= lastOfTwo xs ys)
 
 */
