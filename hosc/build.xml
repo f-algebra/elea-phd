@@ -1,0 +1,87 @@
+<?xml version="1.0" ?>
+<project name="A Higher-Order SuperCompiler" default="all" basedir=".">
+
+	<!-- ================================= 
+	          target: all              
+	         ================================= -->
+	<target name="all" depends="clean, prepare, compile, make_jar" description="compile code and then run tests"/>
+	<target name="test" depends="compile, junit" />
+
+	<!-- 1. Define common properties. -->
+
+
+	<property environment="env" />
+	<property name="src.dir" value="src" />
+	<property name="build.dir" value="build" />
+	<property name="classes.dir" value="build/classes" />
+  	<property name="scala.home" value="C:/Users/Thomas/Documents/Will/scala-2.7.7.final" />
+  	<property name="java.home" value="C:/Program Files (x86)/Java/jdk1.7.0_79" />
+	<property name="scala-compiler.jar" value="${scala.home}/lib/scala-compiler.jar" />
+	<property name="scala-library.jar" value="${scala.home}/lib/scala-library.jar" />
+	<property name="scala-reflect.jar" value="${scala.home}/lib/scala-reflect.jar" />
+
+	<!-- 2. Define Scala CLASSPATH. -->
+
+	<path id="scala.classpath">
+		<pathelement location="${scala-compiler.jar}" />
+		<pathelement location="${scala-library.jar}" />
+		<pathelement location="${basedir}/lib/junit-4.12.jar" />
+		<pathelement location="${basedir}/lib/hamcrest-core-1.3.jar" />
+	</path>
+
+	<path id="final.classpath">
+		<pathelement location="${basedir}/build/classes/" />
+		<path refid="project.classpath" />
+	</path>
+    <!-- 4. Define scala compiler command. -->
+
+	<taskdef resource="scala/tools/ant/antlib.xml">
+		<classpath refid="scala.classpath" />
+	</taskdef>
+
+	<target name="clean" description="delete build directory">
+		<delete dir="${build.dir}" />
+	</target>
+
+	<target name="prepare">
+		<mkdir dir="${build.dir}" />
+		<mkdir dir="${classes.dir}" />
+	</target>
+
+	<target name="compile" depends="prepare" description="compile code">
+		<scalac srcdir="${src.dir}" destdir="${classes.dir}" classpathref="scala.classpath" force="changed" 
+			deprecation="on" unchecked="on">
+			<include name="**/*.scala" />
+		</scalac>
+	</target>
+	
+	<!-- ================================= 
+          target: make_jar              
+         ================================= -->
+    <target name="make_jar" depends="compile" description="create hosc.jar">
+    	<jar destfile="${build.dir}/hosc.jar">
+    	    <fileset dir="${classes.dir}" />
+        </jar>
+    </target>
+    
+  <target name="junit" depends="make_jar">
+    <mkdir dir="${basedir}/test" />
+    <junit printsummary="yes" haltonfailure="no">
+    
+      <classpath refid="scala.classpath" />
+      <classpath location="lib/junit-4.12.jar" />
+      <classpath location="lib/hamcrest-core-1.3.jar" />
+      <classpath location="${build.dir}/hosc.jar" />
+      
+      <formatter type="plain" />
+        
+      <batchtest fork="yes" todir="${basedir}/test">
+        <fileset dir="${classes.dir}">
+          <include name="hosc/EleaTests.class" />
+        </fileset>
+      </batchtest>
+      
+    </junit>
+  </target>
+
+</project>
