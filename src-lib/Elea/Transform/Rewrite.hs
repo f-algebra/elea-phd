@@ -78,7 +78,7 @@ expressSteps =
   , expressConstructor
   , commuteConstraint
   , expressAccumulation
-  , matchVar
+  , matchVar    
   , finiteCaseFix
   , identityFix
   ] 
@@ -116,10 +116,14 @@ rewrite _ = Fail.here
 matchVar :: forall m . Step m => Term -> m Term
 matchVar term@(App fix@(Fix {}) xs) = do
   Fail.unless (Term.beingFused fix)  
-  Direction.requireInc
+  Direction.requireInc  
   [(from_f, to_f)] <- Fusion.findTags (Set.singleton tag)
   let from_t = snd (flattenLam from_f)
-  Fail.unless (Term.beingFused (leftmost from_t))
+  from_s <- showM from_f
+  t_s <- showM term
+  id 
+  --  . tracE [("match-var from", from_s), ("match-var with", t_s)]
+    $ Fail.unless (Term.beingFused (leftmost from_t))
   -- ^ Make sure this is for a fixCon rewrite
   Fail.unless (length (Term.arguments from_t) == length xs) 
   Fail.choose (map (tryMatch from_t . enum) dec_idxs)
@@ -409,22 +413,26 @@ expressAccumulation fix@(Fix fix_i fix_b fix_t) = do
   Fail.unless (length acc_args == 1)
   -- ^ I am too rushed to code the general case atm
   Fail.unless (isJust mby_acc)
-  Fail.unless (acc_idx `Indices.freeWithin` acc_t) 
+  Fail.unless (acc_idx `Indices.freeWithin` acc_t)  
+  Fail.unless (Fold.any isCase body_t) 
   Fail.when (isVar acc_t)
   ctx_s <- showM ctx_t
   fix_s <- showM fix
+  let trans_t =
+        Indices.replaceAt (elength arg_bs) 
+          (Term.reduce ctx_t_here [fun_var])
+          body_t
+  Env.bindMany (fix_b : arg_bs)
+    $ Type.assertEqM "expressAccumulation" body_t trans_t
   simp_t <- id
     . Env.bindMany (fix_b : arg_bs) 
-    . Transform.continue
-    $ Indices.replaceAt (elength arg_bs) 
-        (Term.reduce ctx_t_here [fun_var])
-        body_t
+    $ Transform.continue trans_t
   let replaced_t = Term.replace acc_t (Var Indices.omega) simp_t
   replaced_s <- Env.bindMany (fix_b : arg_bs) $ showM replaced_t
-  --tracE [ ("acc-fission for", fix_s)
-   --     , ("acc-fission context", ctx_s)
-       -- , ("acc-fission result", replaced_s) ] 
-  Fail.when (Var acc_idx `Term.isSubterm` replaced_t)
+  tracE [ ("acc-fission for", fix_s)
+        , ("acc-fission context", ctx_s)
+        , ("acc-fission result", replaced_s) ] 
+   $ Fail.when (Var acc_idx `Term.isSubterm` replaced_t)
   let new_fix = id
         . Fix fix_i fix_b 
         . unflattenLam arg_bs

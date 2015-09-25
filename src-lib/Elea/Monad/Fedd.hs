@@ -31,7 +31,8 @@ newtype FeddT m a
   = FeddT { 
     runFeddT :: RWST EnvDB.Data EqSet.EqSet FeddState m a }
   deriving 
-  ( Monad, MonadTrans
+  ( Functor, Applicative 
+  , Monad, MonadTrans
   , MonadReader EnvDB.Data
   , MonadWriter EqSet.EqSet
   , MonadState FeddState )

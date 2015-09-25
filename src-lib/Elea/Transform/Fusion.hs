@@ -73,15 +73,15 @@ steps =
   [ const Fail.here
   , fixfix
   , fixCon
+  , accumulation
   , decreasingFreeVar
   , repeatedArg
-  , accumulation
   , matchFix
   , discoverFold
   ]
 
 
-fusion :: Step m => Term -> Term -> m Term
+fusion :: Step m=> Term -> Term -> m Term
 fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
   . Env.forgetAllMatches 
   . Memo.memo Name.Fusion orig_t $ do
@@ -90,13 +90,13 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
     temp_idx <- Tag.make
     let temp_i = set fixIndex temp_idx fix_i
         temp_fix = Fix temp_i fix_b fix_t
-    rewrite_from <- id 
-      . Env.bind fix_b
-      . Simp.runM
-    --  . traceMe "\n\n!![rewrite_from]"
-      . Indices.lift 
-      $ app ctx_t [temp_fix]
-  
+    rewrite_from <- id
+      . Simp.runWithoutUnfoldM
+      -- We cannot use unfold because it will break fixCon fusion
+      -- but we need constArg for free-arg fusion
+      . Indices.lift
+      $ Term.reduce ctx_t [temp_fix]
+      
     Type.assertEqM "[fixfix]" (Indices.lower rewrite_from) orig_t
            
     t_s' <- Env.bind new_fix_b $ showM rewrite_from
@@ -134,7 +134,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
   orig_idx = get fixIndex fix_i
   
   new_fix_b = set Type.bindType (Type.get orig_t) fix_b
-    
+      
   
 fixCon :: forall m . Step m => Term -> m Term
 fixCon orig_t@(App fix@(Fix _ fix_b _) args) = do
@@ -219,11 +219,11 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
         full_t = Term.reduce ctx_t (i_fix : full_args)
         
  --   gen_s <- showM full_t
- --   gen_s' <- showM (Term.reduce old_ctx_t (i_fix : full_args))
- --  ctx_s' <- showM old_ctx_t
- --   ctx_s <- showM ctx_t
- --   tracE [("fixfix on", gen_s), ("old gen", gen_s'), 
- --          ("context", ctx_s), ("old context", ctx_s')]
+  --  gen_s' <- showM (Term.reduce old_ctx_t (i_fix : full_args))
+  --  ctx_s' <- showM old_ctx_t
+  --  ctx_s <- showM ctx_t
+   -- tracE [("fixfix on", gen_s), ("old gen", gen_s'), 
+    --       ("context", ctx_s), ("old context", ctx_s')]
     Type.assertEqM "fix-fix created an incorrectly typed context" o_term full_t
 
     History.check Name.FixFixFusion gen_t $ do
@@ -608,12 +608,14 @@ discoverFold orig_t@(App (Fix {}) orig_args) = id
     args <- findArgs from_f
     let from_t = Term.reduce from_f args
     Fail.when (orig_t Quasi.<= from_t)
-    from_s <- showM from_t 
+    from_s <- showM from_t   
+    args_s <- showM args
+    from_fs <- showM from_f
     orig_s <- showM orig_t
     to_s <- showM to_call
     fold_t <- id  
       . Fusion.forgetRewrites 
-      . tracE [("discovering for", orig_s), ("aiming for", from_s)] 
+   --    . tracE [("discovering for", orig_s), ("aiming for", from_s), ("from_f", from_fs), ("args", args_s)] 
       $ findFold from_t
     let new_t = App fold_t [App (Var to_var) args]
     return new_t
@@ -626,6 +628,8 @@ discoverFold orig_t@(App (Fix {}) orig_args) = id
     all (\t -> taggedFixCall t || isVar t) orig_args
   is_other = 
     taggedFixCall orig_t
+  is_freearg =
+    
   
   taggedFixCall (App (Fix fix_i _ _) _) =
     get fixIndex fix_i == tag
@@ -643,7 +647,7 @@ discoverFold orig_t@(App (Fix {}) orig_args) = id
     prop_s <- Env.bindMany c_bs (showM prop)
     prop' <- id
       . Env.bindMany c_bs    
-     -- . tracE [("discovery prop (before)", prop_s)]       
+      . tracE [("discovery prop (before)", prop_s)]       
       . Memo.memo Name.FoldDiscovery prop 
       . Direction.prover
       . Transform.continue 
@@ -663,7 +667,8 @@ discoverFold orig_t@(App (Fix {}) orig_args) = id
       . Direction.prover
       . Transform.continue
       . Unifier.apply uni 
-      $ ungeneraliseProp prop'
+      . ungeneraliseProp 
+      $ prop'
     t_s <- Env.bindMany c_bs $ showM (Unifier.apply uni $ ungeneraliseProp prop')
     t_s' <- Env.bindMany c_bs (showM hopefully_true)
    -- tracE [("hopefully true (before)", t_s), ("hopefully true", t_s')]
@@ -771,26 +776,29 @@ discoverFold orig_t@(App (Fix {}) orig_args) = id
       . zipWith Unifier.find from_args 
       $ Indices.liftMany (nlength arg_bs) orig_args
     
-    
     from_s <- showM from_f
     to_s <- showM orig_t
     uni_s <- Env.bindMany arg_bs $ showM (Map.toList uni)
-   -- tracE [("find-args from", from_s), ("find-args to", to_s), ("unifier", uni_s)]
-    id  $ Fail.unless (Unifier.domain uni == required_vars)  
+    id
+     -- . tracE [("find-args from", from_s), ("find-args to", to_s), ("unifier", uni_s)]
+      $ Fail.unless (Unifier.domain uni == required_vars)  
       
     let uni_with_defaults = Map.union uni default_uni
         found_args = id
           . Indices.lowerMany (nlength arg_bs)
           . map (Unifier.apply uni_with_defaults)
           $ map Var arg_vars
-          
+    found_tys <- mapM Type.getM found_args
+    Fail.unless (found_tys == arg_tys)
     args_s <- showM found_args
-  --  tracE [("find-args args", args_s)]
-    return found_args
+    id
+     -- . tracE [("find-args args", args_s)]
+      $ return found_args
     where
     (arg_bs, from_t) = flattenLam from_f
     from_calls = Term.collect taggedFixCall from_t
     App _ from_args = from_t
+    arg_tys = map (get Type.bindType) arg_bs
     
     arg_vars :: [Index]
     arg_vars = id

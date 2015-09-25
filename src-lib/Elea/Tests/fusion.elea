@@ -1,4 +1,3 @@
-    
 
 prop "add 0" (n: nat) ->
   add n 0 =< n
@@ -89,6 +88,14 @@ prop "eq transitive" (i j k: nat) ->
 prop "le transitive" (i j k: nat) ->
   implies (and (le i j) (le j k)) (le i k) =< True
   
+prop "sorted" (xs: list<nat>) ->
+  is_sorted (insertsort xs)
+  
+prop "len filter" <A> (p: A -> bool) (xs: list<A>) ->
+  le (length<A> (filter<A> p xs)) (length<A> xs)
+  
+prop "le add" (n m: nat) ->
+  le n (add m n)
   
  /*
 prop "insertsort sorted": forall (xs: list<nat>) (n: nat) ->
@@ -214,9 +221,6 @@ prop "prop 30": forall (x: nat) (xs: list<nat>) ->
   
 prop "prop 66": forall (p: nat -> bool) (xs: list<nat>) ->
   le (length<nat> (filter<nat> p xs)) (length<nat> xs)
-
-prop "prop 3": forall (n: nat) (xs ys: list<nat>) ->
-  le (count n xs) (count n (append<nat> xs ys))
 
 prop "prop 6": forall (n m: nat) ->
   minus n (add n m) = 0 

@@ -13,7 +13,7 @@ where
 
 import Elea.Prelude
 import Elea.Term 
-import Elea.Show ()
+import Elea.Show ( showM )
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Env.Class as Env
@@ -41,7 +41,7 @@ class Monad m => Step m where
 -- | Carry around a call to a simplification function
 newtype StepT m a 
   = StepT { stepT :: ReaderT (Term -> m Term) (MaybeT m) a }
-  deriving ( Functor, Monad )
+  deriving ( Functor, Applicative, Monad )
   
 mapStepT :: forall m a b . Monad m 
   => (m (Maybe a) -> m (Maybe b)) -> StepT m a -> StepT m b
@@ -55,7 +55,11 @@ fix f t = do
   mby_t' <- runMaybeT (runReaderT (stepT (f t)) (fix f))
   case mby_t' of
     Just t' -> do
-      Type.assertEqM "[fix]" t t' 
+     -- ts <- showM t
+     -- ts' <- showM t'
+      id
+       -- . tracE [("step-from", ts), ("step-to", ts')] 
+        $ Type.assertEqM "[fix]" t t' 
       return t'
     _ -> 
       return t

@@ -15,6 +15,7 @@ data Name
   | TraverseApp
   | Unfold
   | UnfoldCase
+  | UnfoldProductive
   | MatchVar
   | ConstArg
   | FiniteCaseFix

@@ -265,7 +265,7 @@ isBaseCase term = do
 -- (or it is just not 'Write'), then use 'TrackIndicesT'.
 newtype AlsoTrack r m a
   = AlsoTrack { runAlsoTrack :: ReaderT r m a }
-  deriving ( Monad, MonadTrans )
+  deriving ( Functor, Applicative, Monad, MonadTrans )
   
 instance (Indexed r, Monad m) => Tracks r (AlsoTrack r m) where
   tracked = AlsoTrack ask
@@ -357,7 +357,7 @@ trackOffset = runIdentity . trackOffsetT
 
 newtype TrackMatches m a
   = TrackMatches { runTrackMatches :: ReaderT [Match] m a }
-  deriving ( Monad, MonadTrans )
+  deriving ( Functor, Applicative, Monad, MonadTrans )
   
 mapTrackMatches :: Monad m => (m a -> n b) -> 
   (TrackMatches m a -> TrackMatches n b)
@@ -415,7 +415,7 @@ instance Discovery.Listens m => Discovery.Listens (TrackMatches m) where
 -- Matches and bindings are (necessarily) NOT written to the inner monad.
 newtype TrackAllT r m a
   = TrackAllT { runTrackAllT :: ReaderT r m a }
-  deriving ( Monad, MonadTrans )
+  deriving ( Functor, Applicative, Monad, MonadTrans )
   
 type TrackAll r = TrackAllT r Identity
 

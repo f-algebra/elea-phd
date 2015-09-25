@@ -7,6 +7,7 @@ module Elea.Transform.Simplify
   Env,
   run, 
   runM,
+  runWithoutUnfoldM,
   steps,
 )
 where
@@ -63,8 +64,15 @@ runM = Transform.fix (Transform.compose all_steps)
     ++ Eval.transformSteps 
     ++ Eval.traverseSteps     
     ++ steps       
+   
+-- Bit of a hack which is needed for free-arg fusion
+runWithoutUnfoldM :: Env m => Term -> m Term
+runWithoutUnfoldM = Transform.fix
+  . Transform.compose
+  $ Eval.transformSteps
+  ++ Eval.traverseSteps
+  ++ [ constArg ]
     
- 
 steps :: Step m => [Term -> m Term]
 steps =
   [ const Fail.here
@@ -220,9 +228,9 @@ uselessFix _ = Fail.here
 -- | If a recursive function just returns the same value, regardless of its
 -- inputs, just reduce it to that value.
 constantFix :: Step m => Term -> m Term
-constantFix t@(App (Fix _ fix_b fix_t) args)
+constantFix t@(flattenApp -> Fix _ fix_b fix_t : args)  
   | length args /= length arg_bs = Fail.here
-   
+  
   | Just [result] <- mby_results
   , correctGuess result = do
     Direction.requireInc
@@ -237,6 +245,12 @@ constantFix t@(App (Fix _ fix_b fix_t) args)
   (arg_bs, _) = flattenLam fix_t
   fix_ty = get Type.bindType fix_b
   result_ty = Type.Base (Type.returnType fix_ty)
+  
+  mkLam = id
+    . unflattenLam rem_bs
+    . Indices.liftMany (nlength rem_bs)
+    where
+    rem_bs = drop (length args) arg_bs
   
   mby_results = id
     . potentialResults
@@ -320,8 +334,8 @@ constantCase _ = Fail.here
    
 unfold :: Step m => Term -> m Term
 unfold term@(App fix@(Fix {}) args) 
-  | any needsUnroll dec_args
-  || all (isCon . leftmost) dec_args =
+  | not (any blockUnroll dec_args)
+  , any needsUnroll dec_args =
     History.check Name.Unfold term $ do
       term' <- id
         . runM
@@ -335,8 +349,11 @@ unfold term@(App fix@(Fix {}) args)
   where
   needsUnroll t = 
     Term.isBot t
-    || Term.isFinite t 
-    || (isCon (leftmost t) && not (Set.null (Tag.exceptOmega t)))
+    || Term.isFinite t
+    || isCon (leftmost t)
+    
+  blockUnroll t =
+    not (Set.null (Tag.exceptOmega (leftmost t)))
   
   dec_args = map (args !!) (Term.decreasingArgs fix)
   

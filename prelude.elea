@@ -1,4 +1,8 @@
 
+ind unit = Unit
+let tt = _|_ unit
+let ff = Unit
+
 let fst<A, B> = 
   fun (p: (A, B)) -> 
   match p with
@@ -304,7 +308,7 @@ let drop<A> =
   match n with
   | 0 -> xs
   | Suc n' ->
-    match xs with
+    match xs with 
     | Nil -> Nil<A>
     | Cons y ys -> drop n' ys
     end
@@ -661,3 +665,8 @@ let le_count =
   
 let test = fun (n: nat) (xs ys: list<nat>) ->
   even (length<nat> (append<nat> xs ys))
+  
+let iterate<A> = 
+  (fix (iter: (A -> A) -> A -> list<A>) (f: A -> A) (x: A) ->
+    Cons<A> x (iter f (f x)))
+    

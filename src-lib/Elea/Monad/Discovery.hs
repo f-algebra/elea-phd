@@ -28,7 +28,7 @@ import qualified Control.Monad.Writer as Writer
 -- | A monad which ignores discoveries it is passed
 newtype IgnoreT m a 
   = IgnoreT { ignoreT :: m a }
-  deriving ( Monad )
+  deriving ( Functor, Applicative, Monad )
   
 type Ignore = IgnoreT Identity
 
@@ -44,7 +44,7 @@ instance Tells Ignore where
 -- | A monad to record discoveries
 newtype ListenerT m a 
   = ListenerT { runListenerT :: WriterT EqSet m a }
-  deriving ( Monad, MonadTrans )
+  deriving ( Functor, Applicative, Monad, MonadTrans )
   
 type Listener = ListenerT Identity
   

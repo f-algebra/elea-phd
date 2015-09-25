@@ -10,8 +10,8 @@ prop zeno2 (n: nat) (xs ys: list<nat>) ->
 	add (count n xs) (count n ys) == count n (append<nat> xs ys)
 
 // bugged
-//prop zeno3 (n: nat) (xs ys: list<nat>) -> 
-//	le (count n xs) (count n (append<nat> xs ys))
+prop zeno3 (n: nat) (xs ys: list<nat>) -> 
+  le (count n xs) (count n (append<nat> xs ys))
 	
 prop zeno4 (n: nat) (xs: list<nat>) ->
   count n (Cons<nat> n xs) =< Suc (count n xs) 
@@ -204,10 +204,11 @@ prop zeno56 <A> (n m: nat) (xs: list<A>) ->
 // prop zeno57 <A> (n m: nat) (xs: list<A>) ->
 //   drop<A> n (take<A> m xs) == take<A> (minus m n) (drop<A> n xs)
 
-// Same problem as prop 3 I think
+// Fail. Would work if I could float pattern matches out of fixed-points
+// but this is unsound in non-total languages :sadface:
 // prop zeno58 <A, B> (n: nat) (xs: list<A>) (ys: list<B>) ->
-//  drop<(A, B)> n (zip<A, B> xs ys) 
-//  == zip<A, B> (drop<A> n xs) (drop<B> n ys)
+//   drop<(A, B)> n (zip<A, B> xs ys) 
+//   =< zip<A, B> (drop<A> n xs) (drop<B> n ys)
 
 prop zeno59 <A> (xs ys: list<A>) ->
   assertBool null<A> ys

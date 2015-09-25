@@ -57,9 +57,11 @@ steps =
   , caseSplitInc
   , caseSplitDec
   , constructor
+  , unfoldProductive
   , lfp
-  , absurdBranch
   , leqMatch
+  , generalise
+  , absurdBranch
   ]
 
 -- | Theorem prover without fusion; use Fusion.run for the full prover  
@@ -117,6 +119,23 @@ constructor (Leq (flattenApp -> Con tc : xs) (flattenApp -> Con tc' : xs'))
 constructor _ = Fail.here
 
 
+unfoldProductive :: Step m => Term -> m Term
+unfoldProductive leq@(Leq con_t (flattenApp -> fix@(Fix {}) : args)) 
+  | isCon (leftmost con_t)
+  , Term.isProductive fix = do
+    History.check Name.UnfoldProductive leq 
+      . Transform.continue
+      $ Leq con_t (Term.reduce (Term.unfoldFix fix) args)
+unfoldProductive leq@(Leq (flattenApp -> fix@(Fix {}) : args) con_t)
+  | isCon (leftmost con_t) 
+  , Term.isProductive fix = do
+    History.check Name.UnfoldProductive leq
+      . Transform.continue
+      $ Leq (Term.reduce (Term.unfoldFix fix) args) con_t
+unfoldProductive _ = 
+  Fail.here
+
+  
 leftTrans :: Step m => Term -> m Term
 leftTrans leq@(Leq x y) = 
   History.check Name.LeftTrans leq $ do
@@ -288,4 +307,36 @@ absurdBranch orig_t@(Case (Var x) alts) = do
       pat_t = Term.matchedTo match
       prop = Leq pat_t cse_t
     
-absurdBranch _ = Fail.here 
+absurdBranch _ = Fail.here
+
+
+generalise :: Step m => Term -> m Term
+generalise leq@(Leq (flattenApp -> Fix {} : args) right_t) 
+  | not (null to_gen) = do
+    leq_s <- showM leq
+    Transform.continue 
+      $ foldr Term.tryGeneralise leq to_gen
+  where 
+  to_gen = id
+    . filter (\t -> t `Term.isSubterm` right_t)
+    . filter isFix
+    $ args
+generalise leq@(Leq (flattenApp -> fix@(Fix {}) : args) right_t) 
+  | not (null free_vars) = do
+    leq' <- Term.tryGeneraliseInFix (head free_vars) leq
+    leq_s <- showM leq'
+    id
+      . tracE [("gen leq", leq_s)]
+      $ Transform.continue leq'
+  where
+  free_vars = id
+    . filter (\x -> freeInFix x fix)
+    . map fromVar
+    . filter isVar
+    $ args
+  
+  freeInFix :: Index -> Term -> Bool
+  freeInFix var fix =
+    isFix fix && Indices.freeWithin var fix
+generalise _ =
+  Fail.here

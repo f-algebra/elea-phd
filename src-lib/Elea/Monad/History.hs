@@ -89,7 +89,7 @@ memoCheck name t = id
 
 newtype EnvT m a
   = EnvT { envT :: ReaderT Repr m a }
-  deriving ( Functor, Monad, MonadReader Repr, MonadTrans )
+  deriving ( Functor, Applicative, Monad, MonadReader Repr, MonadTrans )
 
 emptyEnvT :: EnvT m a -> m a
 emptyEnvT = flip runReaderT empty  . envT

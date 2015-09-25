@@ -25,6 +25,6 @@ tests = Test.label "Fusion"
   Test.loadPrelude
   eqs <- Test.loadFile "src-lib/Elea/Tests/fusion.elea"
   mapM checkProp
-    -- . filter ((== "le reflexive") . get propName)
+    . filter ((== "le add") . get propName)
     $ eqs
 

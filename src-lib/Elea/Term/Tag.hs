@@ -74,7 +74,7 @@ class Has a where
   
 newtype GenT m a
   = GenT { genT :: StateT Int m a }
-  deriving ( Functor, Monad, MonadState Int, MonadTrans )
+  deriving ( Functor, Applicative, Monad, MonadState Int, MonadTrans )
   
 exceptOmega :: Has a => a -> Set Tag
 exceptOmega = Set.delete omega . tags

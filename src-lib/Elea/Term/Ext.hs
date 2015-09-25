@@ -44,10 +44,12 @@ module Elea.Term.Ext
   strictAcross,
   strictArgs,
   tryGeneralise,
+  tryGeneraliseInFix,
   matchedWithin,
   unifyArgs,
   buildContext,
-  buildCase
+  buildCase,
+  isProductive
 )
 where
 
@@ -843,6 +845,26 @@ tryGeneralise gen_t (Leq x y)
 tryGeneralise _ t = t
   
 
+-- | Like tryGeneralise but takes a variable and only generalises instances
+-- which are free in fixed-points. Used for the generalisation required
+-- by the discovery step within some free-variable fusion steps.
+tryGeneraliseInFix :: Env.Read m => Index -> Term -> m Term
+tryGeneraliseInFix var_t leq@(Leq {}) = do
+  gen_b <- Env.boundAt var_t
+  let leq' = id
+        . Env.trackIndices (Indices.lift var_t, 0) 
+        . Fold.transformM genInFix
+        $ Indices.lift leq
+  return (Lam gen_b leq')
+  where
+  genInFix :: Term -> Env.TrackIndices (Index, Index) Term
+  genInFix fix@(Fix {}) = do
+    (from_x, to_x) <- Env.tracked
+    return (Indices.replaceAt from_x (Var to_x) fix)
+  genInFix other = 
+    return other
+
+
 -- | Whether the first term is pattern matched upon in the second
 matchedWithin :: Term -> Term -> Bool
 matchedWithin t = id
@@ -924,3 +946,6 @@ buildCase match_t branch_t = do
     tcon = Tag.Tagged Tag.null con               
     bs = Type.makeAltBindings con
     
+isProductive :: Term -> Bool
+isProductive (Fix _ _ fix_t) = 
+  Fold.isoAll branches (isCon . leftmost) fix_t

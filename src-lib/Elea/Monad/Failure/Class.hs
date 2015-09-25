@@ -99,9 +99,14 @@ joinMaybe m = do
   
 
 -- | Pick a non failing instance. If none exists then fail.
-choose :: (Can m, Foldable f) => f (m a) -> m a
-choose = join . liftM fromMaybe . firstM . map catch . toList
-
+choose :: Can m => [m a] -> m a
+choose [] = here
+choose (m:ms) = do
+  m_x <- catch m
+  case m_x of
+    Nothing -> choose ms
+    Just x -> return x
+  
 -- | Useful function since I cast the 'Maybe' of the Data.Map.lookup
 -- all the time.
 mapLookup :: (Ord k, Can m) => k -> Map k v -> m v

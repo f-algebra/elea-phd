@@ -29,7 +29,7 @@ import qualified Control.Monad.Trans.Class as Trans
 
 newtype DBReaderT m a 
   = DBReaderT { runDBReaderT :: ReaderT Data m a }
-  deriving ( Monad, MonadTrans, MonadReader Data )
+  deriving ( Functor, Applicative, Monad, MonadTrans, MonadReader Data )
   
 type DBReader = DBReaderT Identity
 
@@ -46,7 +46,7 @@ instance (Show Term, Monad m) => Read (DBReaderT m) where
   
 newtype DBStateT m a 
   = DBStateT { runDBStateT :: StateT Data m a }
-  deriving ( Monad, MonadTrans, MonadState Data )
+  deriving ( Functor, Applicative, Monad, MonadTrans, MonadState Data )
   
 type DBState = DBStateT Identity
   

@@ -98,7 +98,7 @@ import Data.Nat ( Nat, CoNat )
 import Data.Label ( (:->), get, set, modify, mkLabels, lens )
 import Data.Maybe
 import Data.Either ( lefts, rights, partitionEithers )
-import Data.Monoid hiding ( Sum, All, (<>) )
+import Data.Monoid hiding ( Sum, All, (<>), Alt )
 import Data.Semigroup ( Semigroup (..) )
 import Data.Map.Strict ( Map )
 import Data.Sequence ( Seq )
@@ -106,7 +106,7 @@ import Data.Set ( Set, (\\) )
 import qualified Data.Set as Set
 import Data.IntSet ( IntSet )
 import Data.Traversable
-import Data.Foldable hiding ( concat, concatMap, maximum, minimum )
+import Data.Foldable hiding ( concat, concatMap, maximum, minimum, length )
 import Data.List ( intersperse, unfoldr, partition,
   isPrefixOf, isSuffixOf, isInfixOf, sort, sortBy, findIndex,
   delete, elemIndices, intersect, union, transpose, groupBy,
