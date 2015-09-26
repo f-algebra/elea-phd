@@ -625,11 +625,9 @@ discoverFold orig_t@(App (Fix {}) orig_args) = id
   orig_ty = Type.get orig_t
   
   is_fixfix = 
-    all (\t -> taggedFixCall t || isVar t) orig_args
+    any taggedFixCall orig_args
   is_other = 
     taggedFixCall orig_t
-  is_freearg =
-    
   
   taggedFixCall (App (Fix fix_i _ _) _) =
     get fixIndex fix_i == tag
