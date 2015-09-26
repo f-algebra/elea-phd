@@ -357,6 +357,7 @@ repeatedArg :: forall m . Step m => Term -> m Term
   
 repeatedArg term@(App fix@(Fix _ fix_b fix_t) args) = do
   Fusion.checkEnabled
+  Fail.unless (length args == length fix_bs)
   Fail.unless (Term.inductivelyTyped term)
   Fail.when (Term.beingFused fix)
   Fail.choose (map fuseRepeated rep_arg_is)
@@ -377,18 +378,15 @@ repeatedArg term@(App fix@(Fix _ fix_b fix_t) args) = do
   fuseRepeated :: [Int] -> m Term
   fuseRepeated arg_is = do
     full_s <- showM full_t
-    
+    orig_s <- showM term
+    ctx_s <- showM ctx_t
     new_fix <- id
-      . trace ("\n\n[rep-arg] " ++ full_s)
+      . tracE [("rep-arg orig", orig_s), ("rep-arg ctx", ctx_s), ("rep-arg full", full_s)]
       . History.check Name.RepArgFusion full_t
       $ fusion ctx_t fix
       
-    Transform.continue (app new_fix args')
+    Transform.continue (app new_fix args)
     where
-    arg_set :: Set Nat
-    arg_set = Set.fromList (map enum arg_is)
-    args' = (args !! head arg_is) : removeAll arg_set args
-    
     Just var_i = find (Term.isVar . (args !!)) arg_is
     Var arg_x = args !! var_i
     -- ^ One is guaranteed to be a variable 
@@ -396,33 +394,11 @@ repeatedArg term@(App fix@(Fix _ fix_b fix_t) args) = do
     full_t = Term.reduce ctx_t [fix]
     
     ctx_t = id
-      . unflattenLam (fix_b:ctx_bs)
-      . app (Var (elength ctx_bs))
-      $ ctx_args
-      where
-      non_arg_is = 
-        (reverse . removeAll arg_set) [0..length args - 1]
-      
-      arg_b = fix_bs !! ((length args - head arg_is) - 1)
-      ctx_bs = arg_b : removeAll arg_set fix_bs
-      new_arg = Var (enum (length ctx_bs - 1))
-      ctx_args = map getArg (range args)
-        where
-        getArg :: Nat -> Term
-        getArg n 
-          | enum n `elem` arg_is = id
-              . Indices.replaceAt (liftHere arg_x) new_arg
-              . liftHere
-              $ args !! n
-          | otherwise = id
-              . Var
-              . enum
-              . fromJust
-              $ findIndex (== enum n) non_arg_is
-          where
-          
-          liftHere :: Indexed a => a -> a
-          liftHere = Indices.liftMany (nlength ctx_bs + 1)
+      . Term.unifyArgs (map (succ . enum) arg_is)
+      . unflattenLam (fix_b:fix_bs)
+      . app (Var (elength fix_bs))
+      . map (Var . enum)
+      $ reverse (range fix_bs)
 
 repeatedArg _ = Fail.here
 
@@ -594,7 +570,7 @@ accumulation _ = Fail.here
   
 
 discoverFold :: forall m . Step m => Term -> m Term
-discoverFold orig_t@(App (Fix {}) orig_args) = id
+discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
   . History.check Name.FoldDiscovery orig_t
   . Env.forgetAllMatches $ do
     Fusion.checkEnabled
@@ -642,14 +618,19 @@ discoverFold orig_t@(App (Fix {}) orig_args) = id
   findFold from_t = do
     Fail.unless (Type.has from_t)
     Fail.unless (Type.isInd from_ty)
+    prop <- id
+      . Env.bindMany c_bs
+      . generaliseProp
+      . Tag.map (const Tag.omega)
+      . Leq orig_t' 
+      $ Term.reduce fold_t (c_vars ++ [from_t'])
     prop_s <- Env.bindMany c_bs (showM prop)
     prop' <- id
       . Env.bindMany c_bs    
       . tracE [("discovery prop (before)", prop_s)]       
       . Memo.memo Name.FoldDiscovery prop 
       . Direction.prover
-      . Transform.continue 
-      $ Tag.map (const Tag.omega) prop
+      $ Transform.continue prop
     prop_s' <- Env.bindMany c_bs (showM prop')
     unis <- id         
       . tracE [("discovery prop", prop_s')]                      
@@ -669,8 +650,8 @@ discoverFold orig_t@(App (Fix {}) orig_args) = id
       $ prop'
     t_s <- Env.bindMany c_bs $ showM (Unifier.apply uni $ ungeneraliseProp prop')
     t_s' <- Env.bindMany c_bs (showM hopefully_true)
-   -- tracE [("hopefully true (before)", t_s), ("hopefully true", t_s')]
-    Fail.unless (hopefully_true == Term.truth)
+    tracE [("hopefully true (before)", t_s), ("hopefully true", t_s')]
+      $ Fail.unless (hopefully_true == Term.truth)
     
     return  
       . Indices.lowerMany (nlength c_vars)
@@ -685,14 +666,21 @@ discoverFold orig_t@(App (Fix {}) orig_args) = id
     c_var_set = Set.fromList (map fromVar c_vars)
     from_t' = liftHere from_t
     orig_t' = liftHere orig_t
-    prop = id
-      . generaliseProp
-      . Leq orig_t' 
-      $ Term.reduce fold_t (c_vars ++ [from_t'])
-
-    generaliseProp = Term.tryGeneralise (liftHere to_call)
+      
+    free_args
+      | fix@(Fix {}) : args <- flattenApp from_t' = id
+        . filter (\x -> Indices.freeWithin x fix)
+        . map fromVar
+        $ filter isVar args
+      | otherwise = []
+        
+    generaliseProp t
+      | is_fixfix = return (Term.tryGeneralise (liftHere to_call) t)
+      | not (null free_args) = Term.tryGeneraliseInFix (head free_args) t
+      | otherwise = return t
     ungeneraliseProp t
-      | isLam t = Term.reduce t [liftHere to_call]
+      | is_fixfix, isLam t = Term.reduce t [liftHere to_call]
+      | not (null free_args), isLam t = Term.reduce t [Var (head free_args)]
       | otherwise = t
      
     liftHere = Indices.liftMany (nlength c_bs)

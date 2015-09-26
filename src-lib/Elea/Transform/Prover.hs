@@ -320,7 +320,8 @@ generalise leq@(Leq (flattenApp -> Fix {} : args) right_t)
   to_gen = id
     . filter (\t -> t `Term.isSubterm` right_t)
     . filter isFix
-    $ args
+    $ args 
+    {-
 generalise leq@(Leq (flattenApp -> fix@(Fix {}) : args) right_t) 
   | not (null free_vars) = do
     leq' <- Term.tryGeneraliseInFix (head free_vars) leq
@@ -338,5 +339,6 @@ generalise leq@(Leq (flattenApp -> fix@(Fix {}) : args) right_t)
   freeInFix :: Index -> Term -> Bool
   freeInFix var fix =
     isFix fix && Indices.freeWithin var fix
+    -}
 generalise _ =
   Fail.here
