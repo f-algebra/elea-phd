@@ -94,9 +94,14 @@ prop "sorted" (xs: list<nat>) ->
 prop "len filter" <A> (p: A -> bool) (xs: list<A>) ->
   le (length<A> (filter<A> p xs)) (length<A> xs)
   
-prop "le add" (n m: nat) ->
-  le n (add m n)
+// leq gen problem
+// prop "le add" (n m: nat) ->
+//   le n (add m n)
   
+prop "drop take" <A> (n m: nat) (xs: list<A>) ->
+  drop<A> m (take<A> (add n m) xs)
+  == take<A> n (drop<A> m xs) 
+
  /*
 prop "insertsort sorted": forall (xs: list<nat>) (n: nat) ->
   implies (is_sorted xs) (is_sorted (insert n xs))
