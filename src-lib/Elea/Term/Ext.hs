@@ -947,5 +947,16 @@ buildCase match_t branch_t = do
     bs = Type.makeAltBindings con
     
 isProductive :: Term -> Bool
-isProductive (Fix _ _ fix_t) = 
-  Fold.isoAll branches (isCon . leftmost) fix_t
+isProductive (Fix _ _ fix_t) = id
+  . Env.trackOffset
+  $ Fold.isoAllM branches prod fix_t
+  where
+  prod :: Term -> Env.TrackOffset Bool
+  prod (leftmost -> t) =
+    if isCon t 
+    then return True
+    else return False
+    {-do
+      fix_f :: Index <- liftM enum Env.tracked
+      return (not (fix_f `Indices.freeWithin` t))-}
+      

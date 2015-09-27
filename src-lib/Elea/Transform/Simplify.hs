@@ -82,6 +82,7 @@ steps =
 --  , undefinedCase
   , constantFix
   , unfold
+  , unfoldCase
   {-
  -- , floatVarMatch
   , propagateMatch
@@ -333,9 +334,10 @@ constantCase _ = Fail.here
 
    
 unfold :: Step m => Term -> m Term
-unfold term@(App fix@(Fix {}) args) 
-  | not (any blockUnroll dec_args)
-  , any needsUnroll dec_args =
+unfold term@(App fix@(Fix {}) args)
+  | any needsUnroll dec_args
+  || all (isCon . leftmost) dec_args
+  || cant_fix_con_fuse =
     History.check Name.Unfold term $ do
       term' <- id
         . runM
@@ -349,12 +351,13 @@ unfold term@(App fix@(Fix {}) args)
   where
   needsUnroll t = 
     Term.isBot t
-    || Term.isFinite t
-    || isCon (leftmost t)
+    || Term.isFinite t 
+    || (isCon (leftmost t) && not (Set.null (Tag.exceptOmega t)))
     
-  blockUnroll t =
-    not (Set.null (Tag.exceptOmega (leftmost t)))
-  
+  cant_fix_con_fuse = 
+    Type.isRecursive (Type.fromBase (Type.get term))
+    && any (isCon . leftmost) dec_args
+    
   dec_args = map (args !!) (Term.decreasingArgs fix)
   
 unfold _ = Fail.here
@@ -393,11 +396,16 @@ floatVarMatch _ = Fail.here
 
 unfoldCase :: Step m => Term -> m Term
 unfoldCase term@(Case (App fix@(Fix {}) xs) alts)
-  | any (isCon . leftmost) xs =
+  | assert_fun  =
     History.check Name.UnfoldCase term $ do
+      ts <- showM term
       let term' = Case (Term.reduce (Term.unfoldFix fix) xs) alts
       term'' <- Transform.continue term'
       Fail.when (term Quasi.<= term'')
       return term''
-      
+  where
+  assert_fun = 
+    any (isCon . leftmost) xs
+    && Constraint.has term
+  
 unfoldCase _ = Fail.here

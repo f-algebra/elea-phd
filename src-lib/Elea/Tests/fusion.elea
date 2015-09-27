@@ -91,21 +91,29 @@ prop "le transitive" (i j k: nat) ->
 prop "sorted" (xs: list<nat>) ->
   is_sorted (insertsort xs)
   
+prop "le add" (n m: nat) ->
+  le n (add m n)
+
 prop "len filter" <A> (p: A -> bool) (xs: list<A>) ->
   le (length<A> (filter<A> p xs)) (length<A> xs)
   
-// leq gen problem
-// prop "le add" (n m: nat) ->
-//   le n (add m n)
+prop "len insert" (n: nat) (xs: list<nat>) ->
+  length<nat> (insert n xs) =< Suc (length<nat> xs)
+  
+prop "zip concat" <A, B> (x: A) (xs: list<A>) (ys: list<B>) ->
+  zip<A, B> (Cons<A> x xs) ys =< zipConcat<A, B> x xs ys
   
 prop "drop take" <A> (n m: nat) (xs: list<A>) ->
   drop<A> m (take<A> (add n m) xs)
   == take<A> n (drop<A> m xs) 
 
- /*
-prop "insertsort sorted": forall (xs: list<nat>) (n: nat) ->
-  implies (is_sorted xs) (is_sorted (insert n xs))
- */
+// unfold fail
+prop "le count" (n: nat) (xs ys: list<nat>) -> 
+  le (count n xs) (count n (append<nat> xs ys))
+  
+// prop "insertsort sorted" (xs: list<nat>) (n: nat) ->
+ // implies (is_sorted xs) (is_sorted (insert n xs))
+ 
   /*
 let half_fused_eq = 
   fix (hfeq: nat -> nat -> nat -> bool) (x y z: nat) ->

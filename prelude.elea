@@ -670,3 +670,19 @@ let iterate<A> =
   (fix (iter: (A -> A) -> A -> list<A>) (f: A -> A) (x: A) ->
     Cons<A> x (iter f (f x)))
     
+let revflat<A> = 
+  fix (revflat: list<list<A>> -> list<A>) (xss: list<list<A>>) ->
+  match xss with
+  | Nil -> Nil<A>
+  | Cons xs xss' ->
+    append<A> (revflat xss) xs
+  end
+  
+let it_revflat<A> = 
+  fix (it_rflat: list<list<A>> -> list<A> -> list<A>) 
+      (xss: list<list<A>>) (ys: list<A>) ->
+  match xss with
+  | Nil -> ys
+  | Cons xs xss' ->
+    it_rflat xss' (append<A> xs ys)
+  end

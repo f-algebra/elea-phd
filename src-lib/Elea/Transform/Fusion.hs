@@ -147,10 +147,22 @@ fixCon orig_t@(App fix@(Fix _ fix_b _) args) = do
   -- ^ Only applicable if unrolling is not
   Fail.when (Type.isRecursive (Type.fromBase (Type.get orig_t)))
   -- ^ I can't envisage this being useful to recursively typed return values
-  Fail.choose
+  mby_result <- id
+    . Fail.catch
+    . Fail.choose
     . map (conArg . enum)
     . filter (Term.isCon . Term.leftmost . (args !!))
     $ Term.decreasingArgs fix
+    
+  Fail.fromMaybe mby_result
+    {-
+  case mby_result of
+    Just res_t -> return res_t
+    Nothing -> 
+      History.check Name.Unfold orig_t
+        . Transform.continue 
+        $ Term.reduce (Term.unfoldFix fix) args
+        -}
   where
   dec_args = map (args !!) (Term.decreasingArgs fix) 
   
@@ -190,7 +202,8 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
   o_free_bs <- mapM Env.boundAt o_free_vars
     
   -- Pick the first one which does not fail
-  Fail.choose
+  id
+    . Fail.choose
     -- Run fixfixArg on every decreasing fixpoint argument position
     . map (fixArg o_free_bs . enum)
     . filter (Term.isFix . Term.leftmost . (o_args !!))
@@ -621,7 +634,6 @@ discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
     prop <- id
       . Env.bindMany c_bs
       . generaliseProp
-      . Tag.map (const Tag.omega)
       . Leq orig_t' 
       $ Term.reduce fold_t (c_vars ++ [from_t'])
     prop_s <- Env.bindMany c_bs (showM prop)
@@ -630,7 +642,8 @@ discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
       . tracE [("discovery prop (before)", prop_s)]       
       . Memo.memo Name.FoldDiscovery prop 
       . Direction.prover
-      $ Transform.continue prop
+      . Transform.continue
+      $ Tag.map (const Tag.omega) prop
     prop_s' <- Env.bindMany c_bs (showM prop')
     unis <- id         
       . tracE [("discovery prop", prop_s')]                      
@@ -803,4 +816,3 @@ discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
       
       
 discoverFold _ = Fail.here
-    

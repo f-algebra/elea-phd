@@ -25,6 +25,6 @@ tests = Test.label "Fusion"
   Test.loadPrelude
   eqs <- Test.loadFile "src-lib/Elea/Tests/fusion.elea"
   mapM checkProp
-    . filter ((== "len filter") . get propName)
+    . filter ((== "le count") . get propName)
     $ eqs
 

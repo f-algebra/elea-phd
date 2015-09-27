@@ -2,16 +2,16 @@
 
 
 // Simple Nat properties 
-/*
+
 prop zeno1 <A> (n: nat) (xs: list<A>) -> 
 	append<A> (take<A> n xs) (drop<A> n xs) =< xs
 
 prop zeno2 (n: nat) (xs ys: list<nat>) -> 
 	add (count n xs) (count n ys) == count n (append<nat> xs ys)
 
-// bugged
-prop zeno3 (n: nat) (xs ys: list<nat>) -> 
-  le (count n xs) (count n (append<nat> xs ys))
+// Takes ages. Test separately.
+// prop zeno3 (n: nat) (xs ys: list<nat>) -> 
+//   le (count n xs) (count n (append<nat> xs ys))
 	
 prop zeno4 (n: nat) (xs: list<nat>) ->
   count n (Cons<nat> n xs) =< Suc (count n xs) 
@@ -48,7 +48,7 @@ prop zeno13 <A> (n: nat) (x: A) (xs: list<A>) ->
 prop zeno14 <A> (p: A -> bool) (xs ys: list<A>) ->
   filter<A> p (append<A> xs ys) 
   == append<A> (filter<A> p xs) (filter<A> p ys)  
-  
+
 prop zeno15 (n: nat) (xs: list<nat>) ->
   length<nat> (insert n xs) =< Suc (length<nat> xs)
 
@@ -72,8 +72,9 @@ prop zeno20 (xs: list<nat>) ->
 prop zeno21 (n m: nat) ->
   le n (add n m)
   
-prop zeno22 (n m k: nat) ->
-  max (max n m) k == max n (max m k)
+// Takes a long time, test separately
+// prop zeno22 (n m k: nat) ->
+//   max (max n m) k == max n (max m k)
   
 // Does not hold in either directon 
 // prop zeno23 (n m: nat) ->
@@ -104,8 +105,9 @@ prop zeno29 (n: nat) (xs: list<nat>) ->
 prop zeno30 (n: nat) (xs: list<nat>) ->  
   elem n (lt_insert n xs)
   
-prop zeno31 (n m k: nat) ->
-  min (min n m) k == min n (min m k)
+// Takes a long time, test separately
+// prop zeno31 (n m k: nat) ->
+//   min (min n m) k == min n (min m k)
   
 // Does not hold in either directon
 // prop zeno32 (n m: nat) ->
@@ -188,7 +190,7 @@ prop zeno51 <A> (xs: list<A>) (x: A) ->
 // prop zeno53 (xs: list<nat>) (n: nat) ->
 //  count n (insertsort xs) == count n xs
 
-// Fails
+// Unfold fail
 // prop zeno54 (m n: nat) ->
 //  minus (add m n) n =< m
 
@@ -205,7 +207,7 @@ prop zeno56 <A> (n m: nat) (xs: list<A>) ->
 //   drop<A> n (take<A> m xs) == take<A> (minus m n) (drop<A> n xs)
 
 // Fail. Would work if I could float pattern matches out of fixed-points
-// but this is unsound in non-total languages :sadface:
+// but this is unsound in non-total langua long time :sadface:
 // prop zeno58 <A, B> (n: nat) (xs: list<A>) (ys: list<B>) ->
 //   drop<(A, B)> n (zip<A, B> xs ys) 
 //   =< zip<A, B> (drop<A> n xs) (drop<B> n ys)
@@ -233,9 +235,8 @@ prop zeno63 <A> (xs: list<A>) (n: nat) ->
 prop zeno64 <A> (x: A) (xs: list<A>) ->
   last<A> (append<A> xs (Cons<A> x Nil<A>)) =< x
   
-// Requires leq generalisation
-// prop zeno65 (n m: nat) ->
-//   lt n (Suc (add m n))
+prop zeno65 (n m: nat) ->
+  lt n (Suc (add m n))
       
 prop zeno66 <A> (p: A -> bool) (xs: list<A>) ->
   le (length<A> (filter<A> p xs)) (length<A> xs)
@@ -246,9 +247,8 @@ prop zeno67 <A> (xs: list<A>) ->
 prop zeno68 (n: nat) (xs: list<nat>) ->
   le (length<nat> (delete n xs)) (length<nat> xs)
 
-// Requires leq generalisation
-// prop zeno69 (n m: nat) ->
-//   le n (add m n)
+prop zeno69 (n m: nat) ->
+  le n (add m n)
   
 prop zeno70 (n m: nat) ->
   assertBool le m n 
@@ -282,10 +282,12 @@ prop zeno76 (n m: nat) (xs: list<nat>) ->
   assertBool not (eq n m) 
   in count n (snoc<nat> m xs) =< count n xs
   
-prop zeno77 (n: nat) (xs: list<nat>) ->
-  assertBool is_sorted xs
-  in is_sorted (insert n xs)
+// Takes a long time, test separately
+// prop zeno77 (n: nat) (xs: list<nat>) ->
+//   assertBool is_sorted xs
+//   in is_sorted (insert n xs)
   
+// Somehow this takes less time than zeno77
 prop zeno78 (xs: list<nat>) ->
   is_sorted (insertsort xs)
   
@@ -297,7 +299,7 @@ prop zeno80 <A> (n: nat) (xs ys: list<A>) ->
   append<A> (take<A> n xs) (take<A> (minus n (length<A> xs)) ys) 
   == take<A> n (append<A> xs ys) 
  
-// Bugged
+// Unfold fail
 // prop zeno81 <A> (n m: nat) (xs: list<A>) ->
 //   drop<A> m (take<A> (add n m) xs)
 //   == take<A> n (drop<A> m xs) 
@@ -317,11 +319,10 @@ prop zeno84 <A, B> (xs: list<A>) (ys zs: list<B>) ->
   == zip<A, B> xs (append<A> ys zs)         
  
 // Fails
-prop zeno85 <A, B> (xs: list<A>) (ys: list<B>) ->
-  assertBool eq (length<A> xs) (length<B> ys)
-  in reverse<(A, B)> (zip<A, B> xs ys)
-     == zip<A, B> (reverse<A> xs) (reverse<B> ys) 
-     
+// prop zeno85 <A, B> (xs: list<A>) (ys: list<B>) ->
+//   assertBool eq (length<A> xs) (length<B> ys)
+//   in reverse<(A, B)> (zip<A, B> xs ys)
+//      == zip<A, B> (reverse<A> xs) (reverse<B> ys) 
      
 prop prod1 (n: nat) ->
   add n n =< double n
@@ -374,8 +375,9 @@ prop prod12 <A> (xs ys: list<A>) ->
 prop prod13 (n: nat) ->
   half (add n n) =< n
   
-prop prod14 (xs: list<nat>) ->
-  is_sorted (insertsort xs)
+// Tested in the zeno set
+// prop prod14 (xs: list<nat>) ->
+//   is_sorted (insertsort xs)
     
 prop prod15 (n: nat) ->
   add n (Suc n) =< Suc (add n n)
@@ -389,7 +391,7 @@ prop prod16 (n: nat) ->
 //   =< append<A> (reverse<A> (reverse<A> xs)) 
 //                (reverse<A> (reverse<A> ys))
   
-// Should succeed...
+// Another deepseq failure
 // prop prod18 <A> (xs ys: list<A>) ->
 //   reverse<A> (append<A> (reverse<A> xs) ys)
 //   =< append<A> (reverse<A> ys) xs
@@ -406,23 +408,62 @@ prop prod20 <A> (xs: list<A>) ->
 //   rotate<A> (length<A> xs) (append<A> xs ys)
 //   =< append<A> ys xs
 
-// Should succeed
-// unrolling issue
+// Fails due to internal deepseq issues
 // prop prod22 <A> (xs ys: list<A>) ->
+//  even (length<A> (append<A> xs ys))
+//  == even (length<A> (append<A> ys xs))
+  
+// Does not hold in either direction
+// prop prod23 <A> (xs ys: list<A>) ->
+//   half (length<A> (append<A> xs ys)) 
+//   == half (length<A> (append<A> ys xs))
+
+// Fails due to internal deepseq issues
+// prop prod24 (n m: nat) ->
+//   even (add n m) == even (add m n)
+
+// Fails
+// prop prod25 <A> (xs ys: list<A>) ->
 //   even (length<A> (append<A> xs ys))
-//   == even (length<A> (append<A> ys xs))
-                               
-
-  */
+//   == even (add (length<A> ys) (length<A> xs))
   
+// Does not hold in either direction
+// prop prod26 (n m: nat) ->
+//   half (add n m) == half (add m n)
 
-/*
-
-
-
-  
 prop prod27 <A> (xs: list<A>) ->
   reverse<A> xs == it_rev<A> xs Nil<A>
+  
+// Fails, but shouldn't, worth investigating if I had time
+// prop prod28 <A> (xss: list<list<A>>) ->
+//   revflat<A> xss == it_revflat<A> xss Nil<A>
+
+prop prod29 <A> (xs: list<A>) ->
+  reverse<A> (it_rev<A> xs Nil<A>) =< xs
+  
+prop prod30 <A> (xs: list<A>) ->
+  reverse<A> (append<A> (reverse<A> xs) Nil<A>) =< xs
+  
+// Crashes, but should definitely pass, since I know it can rewrite
+// "it_rev xs Nil" to "reverse xs"
+// prop prod31 <A> (xs: list<A>) ->
+//   it_rev<A> (it_rev<A> xs Nil<A>) Nil<A> =< xs
+ 
+// Fails
+// prop prod32 <A> (xs: list<A>) ->
+//   rotate<A> (length<A> xs) xs =< xs
+
+// Fails but actually crashes. FML
+// prop prod33 (n: nat) ->
+//  fac n == qfac n 1
+
+// Should pass but crashes
+// prop prod34 (n m: nat) ->
+//   mul n m == qmul n m 0
+
+// Fails and crashes
+// prop prod35 (n m: nat) ->
+//   exp n m == qexp n m 1
   
 prop prod36 (n: nat) (xs ys: list<nat>) ->
   assertBool elem n xs
@@ -460,21 +501,25 @@ prop prod44 (n: nat) (xs ys: list<nat>) ->
   assertBool and (elem n xs) (elem n ys)
   in elem n (intersect xs ys)
   
-  */
+prop prod45 (n: nat) (xs: list<nat>) ->
+  elem n (insert n xs) =< True
+
+prop prod46 (n m: nat) (xs: list<nat>) ->
+  assertBool eq n m in 
+  elem n (insert m xs) =< True
+
+prop prod47 (n m: nat) (xs: list<nat>) ->
+  assertBool not (eq n m)
+  in elem n (insert m xs) =< elem n xs
   
-  
-  
-/*
+prop prod48 (xs: list<nat>) ->
+  length<nat> (insertsort xs) =< length<nat> xs
  
-prop_T45 :: Nat -> [Nat] -> Prop Bool
-prop_T45 x y = proveBool (x `elem` insert x y)
+prop prod49 (n: nat) (xs: list<nat>) ->
+  assertBool elem n (insertsort xs) in
+  elem n xs =< True
+  
+// Does not hold
+// prop prod50 (n: nat) (xs: list<nat>) ->
+//   count n (insertsort xs) == count n xs
 
-prop_T46 :: Nat -> Nat -> [Nat] -> Prop Bool
-prop_T46 x y z = x =:= y ==> proveBool (x `elem` insert y z)
-
-prop_T47 :: Nat -> Nat -> [Nat] -> Prop Bool
-prop_T47 x y z = givenBool (x /= y) ((x `elem` insert y z) =:= x `elem` z)
-
-
-
-*/

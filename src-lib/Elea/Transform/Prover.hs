@@ -57,8 +57,8 @@ steps =
   , caseSplitInc
   , caseSplitDec
   , constructor
-  , unfoldProductive
   , lfp
+  , unfoldProductive
   , leqMatch
   , generalise
   , absurdBranch
@@ -220,7 +220,7 @@ caseSplitInc leq@(Leq left_t (Case cse_t@(Var x) alts)) = do
   History.check Name.CaseSplit leq $ do
     let leq' = Case cse_t (map leqAlt alts)
     Transform.continue leq'
-  where
+  where 
   leqAlt (Alt tc bs alt_t) =
     Alt tc bs (Leq left_t' alt_t)
     where
