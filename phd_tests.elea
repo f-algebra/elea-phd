@@ -2,7 +2,7 @@
 
 
 // Simple Nat properties 
-
+/*
 prop zeno1 <A> (n: nat) (xs: list<A>) -> 
 	append<A> (take<A> n xs) (drop<A> n xs) =< xs
 
@@ -523,3 +523,27 @@ prop prod49 (n: nat) (xs: list<nat>) ->
 // prop prod50 (n: nat) (xs: list<nat>) ->
 //   count n (insertsort xs) == count n xs
 
+prop coind1 <A, B> (f: A -> B) (x: A) ->
+  map<A, B> f (repeat<A> x) == repeat<B> (f x)
+  
+prop coind2 <A> (f: A -> A) (x: A) ->
+  tail<A> (iterate<A> f x) == iterate<A> f (f x)
+  
+prop coind3 <A> (f: A -> A) (x: A) ->
+  map<A, A> f (iterate<A> f x)
+  == iterate<A> f (f x)
+  
+prop coind4 <A> (p: A -> bool) (x: A) ->
+  filter<A> p (repeat<A> x) =< repeat<A> x
+  
+prop coind5 <A> (n: nat) (x: A) ->
+  drop<A> n (repeat<A> x) == repeat<A> x
+  
+prop coind6 <A> (f: A -> A) (x: A) ->
+  butlast<A> (iterate<A> f x) == iterate<A> f x
+  
+prop coind7 <A> (f: A -> A) (x: A) ->
+  last<A> (iterate<A> f x) == _|_ A
+  
+prop coind8 (n: nat) ->
+  is_sorted (repeat<nat> n) == _|_ bool

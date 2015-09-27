@@ -670,6 +670,14 @@ let iterate<A> =
   (fix (iter: (A -> A) -> A -> list<A>) (f: A -> A) (x: A) ->
     Cons<A> x (iter f (f x)))
     
+let repeat<A> = 
+  fix (repeat: A -> list<A>) (x: A) ->
+    Cons<A> x (repeat x)
+    
+let tail<A> =
+  fun (xs: list<A>) ->
+  assert Cons x xs' <- xs in xs'
+    
 let revflat<A> = 
   fix (revflat: list<list<A>> -> list<A>) (xss: list<list<A>>) ->
   match xss with
