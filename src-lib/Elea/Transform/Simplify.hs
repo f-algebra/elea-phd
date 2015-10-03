@@ -142,7 +142,9 @@ constArg term@(App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
     
     -- Run evaluation to reduce all the new lambdas
     let term' = Term.reduce fix' args'
-    Transform.continue (Term.reduce fix' args')
+    ts <- showM term
+    ts' <- showM term'
+    Transform.continue term' 
   where
   arg_idxs = Term.constantArgs fix ++ Term.unusedArgs fix
   pos = head arg_idxs

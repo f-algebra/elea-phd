@@ -61,7 +61,7 @@ run = Transform.fix (Transform.compose all_steps)
     ++ Rewrite.rewriteSteps
     ++ Prover.steps
     ++ Eval.traverseSteps
-    ++ Rewrite.expressSteps
+   -- ++ Rewrite.expressSteps
     -- ^ Prioritising rewrites over descending into terms
     -- speeds things up a bit
     ++ Simp.steps
@@ -91,6 +91,8 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
     let temp_i = set fixIndex temp_idx fix_i
         temp_fix = Fix temp_i fix_b fix_t
     rewrite_from <- id
+      . trace ("\n\n[fusing <" ++ show temp_idx ++ ">] " ++ t_s)
+      . Env.bind fix_b
       . Simp.runWithoutUnfoldM
       -- We cannot use unfold because it will break fixCon fusion
       -- but we need constArg for free-arg fusion
@@ -103,11 +105,10 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
    -- t_s'' <- showM (Eval.run (app ctx_t [Term.unfoldFix temp_fix]))
     
     new_fix_t <- id  
+     -- . trace ("\n\n[replacing] " ++ t_s')
       . Env.bind new_fix_b
       . Fusion.local temp_idx rewrite_from 0
       . Transform.continue
-      . trace ("\n\n[fusing <" ++ show temp_idx ++ ">] " ++ t_s)
-    --  . trace ("\n\n[replacing] " ++ t_s')
    --   . trace ("\n\n[transforming< " ++ show temp_idx ++ ">] " ++ t_s'')
       . Indices.lift
       -- ^ Make room for our new variables we are rewriting to
@@ -336,12 +337,13 @@ decreasingFreeVar orig_t@(App fix@(Fix _ _ fix_t) args) = do
   
   orig_s <- showM orig_t
   ctx_s <- showM ctx_t
-  fix_s <- showM expr_fix
+  fix_s <- showM (Term.reduce ctx_t [expr_fix])
   
   new_fix <- id
     . History.check Name.FreeArgFusion full_t
-    -- . trace ("\n\n[dec-free from] " ++ orig_s ++ "\n\n[context] " ++ ctx_s 
-   --     ++ "\n\n[expressed fix] " ++ fix_s)
+    . tracE [ ("dec-free from", orig_s),
+              ("dec-free context", ctx_s),
+              ("dec-free expressed fix", fix_s) ]
     $ fusion ctx_t expr_fix
     
   Transform.continue (app new_fix args)

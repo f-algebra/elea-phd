@@ -442,12 +442,12 @@ expressAccumulation fix@(Fix fix_i fix_b fix_t) = do
   trans_s <- Env.bindMany (fix_b : arg_bs) $ showM trans_t
   repl_s <- Env.bindMany (fix_b : arg_bs) $ showM replaced_t
   id
-  -- . tracE [ ("acc-fission for", fix_s)
-  --      , ("acc-fission context", ctx_s)
-  --      , ("acc-fission substituted", trans_s)
-  --      , ("acc-fission simplified", simp_s)
-  --      , ("acc-fission replaced", repl_s)
-  --      , ("acc-fission variable", acc_var) ] 
+   . tracE [ ("acc-fission for", fix_s)
+        , ("acc-fission context", ctx_s)
+        , ("acc-fission substituted", trans_s)
+        , ("acc-fission simplified", simp_s)
+        , ("acc-fission replaced", repl_s)
+        , ("acc-fission variable", acc_var) ] 
     $ Fail.when (Var acc_idx `Term.isSubterm` replaced_t)
   let new_fix = id
         . Fix fix_i fix_b 

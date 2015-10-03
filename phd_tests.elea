@@ -2,7 +2,7 @@
 
 
 // Simple Nat properties 
-
+/*
 prop zeno1 <A> (n: nat) (xs: list<A>) -> 
 	append<A> (take<A> n xs) (drop<A> n xs) =< xs
 
@@ -207,7 +207,7 @@ prop zeno56 <A> (n m: nat) (xs: list<A>) ->
 //   drop<A> n (take<A> m xs) == take<A> (minus m n) (drop<A> n xs)
 
 // Fail. Would work if I could float pattern matches out of fixed-points
-// but this is unsound in non-total langua long time :sadface:
+// but this is unsound in non-total languages :sadface:
 // prop zeno58 <A, B> (n: nat) (xs: list<A>) (ys: list<B>) ->
 //   drop<(A, B)> n (zip<A, B> xs ys) 
 //   =< zip<A, B> (drop<A> n xs) (drop<B> n ys)
@@ -444,8 +444,6 @@ prop prod29 <A> (xs: list<A>) ->
 prop prod30 <A> (xs: list<A>) ->
   reverse<A> (append<A> (reverse<A> xs) Nil<A>) =< xs
   
-// Crashes, but should definitely pass, since I know it can rewrite
-// "it_rev xs Nil" to "reverse xs"
 prop prod31 <A> (xs: list<A>) ->
   it_rev<A> (it_rev<A> xs Nil<A>) Nil<A> =< xs
  
