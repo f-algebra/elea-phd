@@ -676,7 +676,10 @@ let repeat<A> =
     
 let tail<A> =
   fun (xs: list<A>) ->
-  assert Cons x xs' <- xs in xs'
+  match xs with
+  | Nil -> _|_ list<A>
+  | Cons x xs' -> xs'
+  end
     
 let revflat<A> = 
   fix (revflat: list<list<A>> -> list<A>) (xss: list<list<A>>) ->

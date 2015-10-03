@@ -60,7 +60,7 @@ steps =
   , lfp
   , unfoldProductive
   , leqMatch
-  , generalise
+ -- , generalise
   , absurdBranch
   ]
 
@@ -188,7 +188,7 @@ lfp (Leq x y) = do
   where
   -- > fixInduction ((fix F) x) y = F (\x -> y)
   fixInduction :: Term -> Term -> Term
-  fixInduction (App (Fix _ _ fix_t) xs) y = id
+  fixInduction (flattenApp -> Fix _ _ fix_t : xs) y = id
     . (\f -> Term.reduce f xs)
     . Indices.subst (Term.abstractVars x_bs x_vars y)
     $ fix_t

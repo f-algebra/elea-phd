@@ -2,7 +2,7 @@
 
 
 // Simple Nat properties 
-/*
+
 prop zeno1 <A> (n: nat) (xs: list<A>) -> 
 	append<A> (take<A> n xs) (drop<A> n xs) =< xs
 
@@ -434,7 +434,7 @@ prop prod20 <A> (xs: list<A>) ->
 prop prod27 <A> (xs: list<A>) ->
   reverse<A> xs == it_rev<A> xs Nil<A>
   
-// Fails, but shouldn't, worth investigating if I had time
+// Fails, but shouldn't, bugfix asap
 // prop prod28 <A> (xss: list<list<A>>) ->
 //   revflat<A> xss == it_revflat<A> xss Nil<A>
 
@@ -446,8 +446,8 @@ prop prod30 <A> (xs: list<A>) ->
   
 // Crashes, but should definitely pass, since I know it can rewrite
 // "it_rev xs Nil" to "reverse xs"
-// prop prod31 <A> (xs: list<A>) ->
-//   it_rev<A> (it_rev<A> xs Nil<A>) Nil<A> =< xs
+prop prod31 <A> (xs: list<A>) ->
+  it_rev<A> (it_rev<A> xs Nil<A>) Nil<A> =< xs
  
 // Fails
 // prop prod32 <A> (xs: list<A>) ->
@@ -455,7 +455,7 @@ prop prod30 <A> (xs: list<A>) ->
 
 // Fails but actually crashes. FML
 // prop prod33 (n: nat) ->
-//  fac n == qfac n 1
+//   fac n == qfac n 1
 
 // Should pass but crashes
 // prop prod34 (n m: nat) ->
@@ -525,9 +525,9 @@ prop prod49 (n: nat) (xs: list<nat>) ->
 
 prop coind1 <A, B> (f: A -> B) (x: A) ->
   map<A, B> f (repeat<A> x) == repeat<B> (f x)
-  
+
 prop coind2 <A> (f: A -> A) (x: A) ->
-  tail<A> (iterate<A> f x) == iterate<A> f (f x)
+  tail<A> (iterate<A> f x) =< iterate<A> f (f x)
   
 prop coind3 <A> (f: A -> A) (x: A) ->
   map<A, A> f (iterate<A> f x)
@@ -538,12 +538,15 @@ prop coind4 <A> (p: A -> bool) (x: A) ->
   
 prop coind5 <A> (n: nat) (x: A) ->
   drop<A> n (repeat<A> x) == repeat<A> x
-  
+
 prop coind6 <A> (f: A -> A) (x: A) ->
   butlast<A> (iterate<A> f x) == iterate<A> f x
   
 prop coind7 <A> (f: A -> A) (x: A) ->
   last<A> (iterate<A> f x) == _|_ A
   
+// Mistake in my submitted PhD, oops
+// If you are an examiner reading this, please have mercy,
+// I will disclose this at my viva
 prop coind8 (n: nat) ->
-  is_sorted (repeat<nat> n) == _|_ bool
+  is_sorted (repeat<nat> n) =< False

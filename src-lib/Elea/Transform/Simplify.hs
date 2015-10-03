@@ -259,11 +259,14 @@ constantFix t@(flattenApp -> Fix _ fix_b fix_t : args)
     $ Indices.substAt 0 (Bot fix_ty) fix_t
   
   potentialResults :: Term -> Maybe [Term]
-  potentialResults = id
-    . map toList
-    . Env.trackOffset
-    . runMaybeT
-    . Fold.isoFoldM Term.branches resultTerm
+  potentialResults term
+    | not (isCase (snd (flattenLam term))) = Nothing
+    | otherwise = id
+      . map toList
+      . Env.trackOffset
+      . runMaybeT
+      . Fold.isoFoldM Term.branches resultTerm
+      $ term
     where
     resultTerm :: Term -> MaybeT Env.TrackOffset (Set Term)
     resultTerm term
@@ -278,9 +281,9 @@ constantFix t@(flattenApp -> Fix _ fix_b fix_t : args)
   correctGuess :: Term -> Bool
   correctGuess guess_t
     | Just [] <- mby_results' = True
-    | Just [guess_t'] <- mby_results' = id
-      . assert (guess_t == guess_t') 
-      $ True
+    | Just [guess_t'] <- mby_results' = do
+      tracE [("orig", show t), ("guess", show guess_t), ("guess check", show guess_t')]
+      $ guess_t == guess_t'
     | otherwise = False
     where
     rec_f = id
@@ -395,8 +398,8 @@ floatVarMatch _ = Fail.here
 
 
 unfoldCase :: Step m => Term -> m Term
-unfoldCase term@(Case (App fix@(Fix {}) xs) alts)
-  | assert_fun  =
+unfoldCase term@(Case (flattenApp -> fix@(Fix {}) : xs) alts)
+  | assert_fun || only_prod  =
     History.check Name.UnfoldCase term $ do
       ts <- showM term
       let term' = Case (Term.reduce (Term.unfoldFix fix) xs) alts
@@ -407,5 +410,9 @@ unfoldCase term@(Case (App fix@(Fix {}) xs) alts)
   assert_fun = 
     any (isCon . leftmost) xs
     && Constraint.has term
+    
+  only_prod = 
+    Term.isProductive fix 
+    && Term.decreasingArgs fix == []
   
 unfoldCase _ = Fail.here

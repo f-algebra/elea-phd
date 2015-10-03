@@ -248,7 +248,8 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
       return new_term'
     where
     
-    i_term@(App i_fix@(Fix _ i_fix_b i_fix_t) i_args) = o_args !! arg_i
+    i_term = o_args !! arg_i
+    i_fix@(Fix _ i_fix_b i_fix_t) : i_args = flattenApp i_term
     i_dec_idxs = Term.decreasingArgs i_fix
     full_args = map Var o_free_vars ++ o_args' ++ i_args
     
@@ -451,7 +452,7 @@ matchFix term@(App fix@(Fix {}) xs)
     , not (Type.isRecursive (matchInd ct)) =
       True
     where
-    App (Fix {}) ys = matchedTerm ct
+    Fix {} : ys = flattenApp (matchedTerm ct)
     
   usefulConstraint _ = False
   
@@ -552,7 +553,8 @@ accumulation orig_t@(App fix@(Fix {}) args) = do
     arg_tys <- mapM Type.getM args
     orig_s <- showM fix  
   --  tracE [("acc args of", orig_s), ("are", show acc_args)]
-    id $ Fail.choose (map (tryArg arg_tys) acc_args)
+    new_t <- Fail.choose (map (tryArg arg_tys) acc_args)
+    Transform.continue new_t
   where
   acc_args = Term.accumulatingArgs fix
   

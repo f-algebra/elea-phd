@@ -618,7 +618,7 @@ stripTags = Fold.transform strip
   
 
 isFixPromoted :: Indexed Term => Term -> Bool
-isFixPromoted (App fix@(Fix {}) xs) =
+isFixPromoted (flattenApp -> fix@(Fix {}) : xs) =
   all isVar xs 
   && elength x_vars == Set.size x_vars_set
   && Set.null overlap

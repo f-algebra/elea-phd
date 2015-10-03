@@ -186,13 +186,16 @@ expressConstructor :: forall m . Step m => Term -> m Term
 expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
   Fail.when (Tag.tags term == Set.singleton Tag.omega) 
   Fail.when (Set.null suggestions)
-  sugg_tys <- mapM Type.getM (Set.toList suggestions)
+  
+  ts <- showM fix
+  sug_s <- showM (Set.toList suggestions)
+  ctx_s <- Env.bind fix_b $ showM (sugg_ctxs)
+  sugg_tys <- id
+    -- . tracE [("con-fission input", ts), ("con-fission suggestions", ctx_s)]
+    $ mapM Type.getM (Set.toList suggestions)
   Fail.assert "express-constructor suggestions not correctly typed"
     $ all (== sugg_ty) sugg_tys
-    -- ^ Check all the suggestions are correctly typed
-    
-  ts <- showM term
-  suggs <- showM suggestions 
+   -- ^ Check all the suggestions are correctly typed
     
   fix' <- id
     . Fail.choose 
@@ -214,6 +217,10 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
   gap_b = Bind "gap" term_ty 
   term_ty = Type.get term
   sugg_ty = Type.Fun term_ty term_ty
+  
+  sugg_ctxs = id
+    . map suggestionToContext 
+    $ Set.toList suggestions
     
   suggestions :: Set Term
   suggestions = id
@@ -256,22 +263,23 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
         Fail.when (arg_i `elem` Type.nonRecursiveArgs con)
         return
           . Set.singleton
-          $ gapContext idx_offset (enum arg_i)
+          $ gapContext free_limit (enum arg_i)
       else return
          . Set.unions
-         . map (Set.singleton . gapContext idx_offset) 
+         . map (Set.singleton . gapContext free_limit) 
          $ Type.recursiveArgs con
       where
       -- Construct a context which is the constructor term with
       -- a gap at the given argument position
       gapContext :: Nat -> Nat -> Term
       gapContext idx_offset gap_i = id
-        . Indices.lowerMany idx_offset
         . Lam gap_b
         . app (Con tcon)
         $ left ++ [Var 0] ++ right
         where
-        (left, _:right) = splitAt (enum gap_i) args
+        (left, _:right) = id
+          . splitAt (enum gap_i) 
+          $ Indices.lowerMany (pred idx_offset) args
             
     suggest term = do
       fix_f <- liftM pred Env.offset
@@ -280,23 +288,24 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
       Fail.unless (enum fix_f `Indices.freeWithin` term)
       return mempty
 
+  suggestionToContext ctx_t = id
+    . unflattenLam arg_bs
+    . Term.reduce (Indices.liftMany (nlength arg_bs + 1) ctx_t)
+    . (return :: a -> [a])
+    . unflattenApp 
+    . reverse 
+    $ map (Var . enum) [0..length arg_bs]
       
   express :: Term -> m Term
-  express ctx_t = id
+  express sugg_t = id
     . liftM (\t -> Indices.subst (Fix fix_i fix_b t) ctx_comp)
-    . Env.trackIndicesT ctx_t
+    . Env.trackIndicesT sugg_t
     . Env.bind fix_b
     . strip
     . Simp.run
     $ Indices.replaceAt 0 ctx_comp fix_t
     where
-    ctx_comp = id
-      . unflattenLam arg_bs
-      . app (Indices.liftMany (nlength arg_bs + 1) ctx_t)
-      . (return :: a -> [a])
-      . unflattenApp 
-      . reverse 
-      $ map (Var . enum) [0..length arg_bs]
+    ctx_comp = suggestionToContext sugg_t
     
     strip :: Term -> Env.TrackIndicesT Term m Term
     strip (Lam b t) = do
@@ -428,19 +437,26 @@ expressAccumulation fix@(Fix fix_i fix_b fix_t) = do
     . Env.bindMany (fix_b : arg_bs) 
     $ Transform.continue trans_t
   let replaced_t = Term.replace acc_t (Var Indices.omega) simp_t
-  replaced_s <- Env.bindMany (fix_b : arg_bs) $ showM replaced_t
-  tracE [ ("acc-fission for", fix_s)
-        , ("acc-fission context", ctx_s)
-        , ("acc-fission result", replaced_s) ] 
-   $ Fail.when (Var acc_idx `Term.isSubterm` replaced_t)
+  simp_s <- Env.bindMany (fix_b : arg_bs) $ showM simp_t
+  acc_var <- Env.bindMany (fix_b : arg_bs) $ showM (Var acc_idx)
+  trans_s <- Env.bindMany (fix_b : arg_bs) $ showM trans_t
+  repl_s <- Env.bindMany (fix_b : arg_bs) $ showM replaced_t
+  id
+  -- . tracE [ ("acc-fission for", fix_s)
+  --      , ("acc-fission context", ctx_s)
+  --      , ("acc-fission substituted", trans_s)
+  --      , ("acc-fission simplified", simp_s)
+  --      , ("acc-fission replaced", repl_s)
+  --      , ("acc-fission variable", acc_var) ] 
+    $ Fail.when (Var acc_idx `Term.isSubterm` replaced_t)
   let new_fix = id
         . Fix fix_i fix_b 
         . unflattenLam arg_bs
         . Indices.replaceAt Indices.omega (Var acc_idx)
         $ replaced_t
   let final_t = Term.reduce ctx_t [new_fix]
-  simp_s <- showM final_t
-  return final_t
+  final_s <- showM final_t
+  tracE [("acc-fission result", final_s)] $ return final_t
   where
   acc_args = Term.accumulatingArgs fix
   [arg_n] = acc_args
