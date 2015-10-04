@@ -61,7 +61,7 @@ run = Transform.fix (Transform.compose all_steps)
     ++ Rewrite.rewriteSteps
     ++ Prover.steps
     ++ Eval.traverseSteps
-   -- ++ Rewrite.expressSteps
+    ++ Rewrite.expressSteps
     -- ^ Prioritising rewrites over descending into terms
     -- speeds things up a bit
     ++ Simp.steps

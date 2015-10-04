@@ -2,7 +2,7 @@
 
 
 // Simple Nat properties 
-/*
+
 prop zeno1 <A> (n: nat) (xs: list<A>) -> 
 	append<A> (take<A> n xs) (drop<A> n xs) =< xs
 
@@ -451,15 +451,15 @@ prop prod31 <A> (xs: list<A>) ->
 // prop prod32 <A> (xs: list<A>) ->
 //   rotate<A> (length<A> xs) xs =< xs
 
-// Fails but actually crashes. FML
+// Fails
 // prop prod33 (n: nat) ->
 //   fac n == qfac n 1
 
-// Should pass but crashes
+// Fails, but shouldn't, bugfix asap
 // prop prod34 (n m: nat) ->
 //   mul n m == qmul n m 0
 
-// Fails and crashes
+// Fails
 // prop prod35 (n m: nat) ->
 //   exp n m == qexp n m 1
   
