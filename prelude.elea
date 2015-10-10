@@ -137,7 +137,7 @@ let mul =
   fix (mul: nat -> nat -> nat) (x y: nat) -> 
   match x with
   | 0 -> 0
-  | Suc x' -> add y (mul x' y)
+  | Suc x' -> add (mul x' y) y
   end
   
 let qmul = 
@@ -686,7 +686,7 @@ let revflat<A> =
   match xss with
   | Nil -> Nil<A>
   | Cons xs xss' ->
-    append<A> (revflat xss) xs
+    append<A> (revflat xss') xs
   end
   
 let it_revflat<A> = 

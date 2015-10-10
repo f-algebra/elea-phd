@@ -591,7 +591,7 @@ discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
   . History.check Name.FoldDiscovery orig_t
   . Env.forgetAllMatches $ do
     Fusion.checkEnabled
-    Direction.requireInc
+   -- Direction.requireInc
     Fail.unless (Set.size tags == 1)
     Fail.unless (Set.size to_calls == 1)
     Fail.unless (Type.has orig_t)

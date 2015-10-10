@@ -435,8 +435,8 @@ prop prod27 <A> (xs: list<A>) ->
   reverse<A> xs == it_rev<A> xs Nil<A>
   
 // Fails, but shouldn't, bugfix asap
-// prop prod28 <A> (xss: list<list<A>>) ->
-//   revflat<A> xss == it_revflat<A> xss Nil<A>
+prop prod28 <A> (xss: list<list<A>>) ->
+  revflat<A> xss == it_revflat<A> xss Nil<A>
 
 prop prod29 <A> (xs: list<A>) ->
   reverse<A> (it_rev<A> xs Nil<A>) =< xs
@@ -456,8 +456,8 @@ prop prod31 <A> (xs: list<A>) ->
 //   fac n == qfac n 1
 
 // Fails, but shouldn't, bugfix asap
-// prop prod34 (n m: nat) ->
-//   mul n m == qmul n m 0
+prop prod34 (n m: nat) ->
+  mul n m == qmul n m 0
 
 // Fails
 // prop prod35 (n m: nat) ->
