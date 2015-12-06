@@ -177,7 +177,10 @@ lfp :: forall m . Step m => Term -> m Term
 lfp (Leq x y) = do
   Direction.requireInc
   Fail.unless (isFixPromoted x)
-  Fail.when (not (isVar y) && Unifier.exists y x)
+  Fail.when $ True
+    && not (isVar y) 
+    && Unifier.exists y x 
+    && not (Unifier.alphaEq x y)
   History.check Name.LFP (Leq x y) $ do
     let x' = fixInduction x y
     from_s <- showM (Leq x y)

@@ -1,8 +1,6 @@
 // Requires prelude.elea to be loaded
 
-
 // Simple Nat properties 
-
 prop zeno1 <A> (n: nat) (xs: list<A>) -> 
 	append<A> (take<A> n xs) (drop<A> n xs) =< xs
 
@@ -73,8 +71,8 @@ prop zeno21 (n m: nat) ->
   le n (add n m)
   
 // Takes a long time, test separately
-// prop zeno22 (n m k: nat) ->
-//   max (max n m) k == max n (max m k)
+prop zeno22 (n m k: nat) ->
+  max (max n m) k == max n (max m k)
   
 // Does not hold in either directon 
 // prop zeno23 (n m: nat) ->
@@ -110,8 +108,8 @@ prop zeno30 (n: nat) (xs: list<nat>) ->
 //   min (min n m) k == min n (min m k)
   
 // Does not hold in either directon
-// prop zeno32 (n m: nat) ->
-//   min n m == min m n 
+prop zeno32 (n m: nat) ->
+  min n m == min m n 
 
 prop zeno33 (n m: nat) ->
   assertBool eq (min n m) n
@@ -543,8 +541,5 @@ prop coind6 <A> (f: A -> A) (x: A) ->
 prop coind7 <A> (f: A -> A) (x: A) ->
   last<A> (iterate<A> f x) == _|_ A
   
-// Mistake in my submitted PhD, oops
-// If you are an examiner reading this, please have mercy,
-// I will disclose this at my viva
 prop coind8 (n: nat) ->
-  is_sorted (repeat<nat> n) =< False
+  is_sorted (repeat<nat> n) == _|_ bool
