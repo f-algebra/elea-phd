@@ -7,7 +7,7 @@ prop zeno1 <A> (n: nat) (xs: list<A>) ->
 prop zeno2 (n: nat) (xs ys: list<nat>) -> 
 	add (count n xs) (count n ys) == count n (append<nat> xs ys)
 
-// Takes ages. Test separately.
+// Fails
 // prop zeno3 (n: nat) (xs ys: list<nat>) -> 
 //   le (count n xs) (count n (append<nat> xs ys))
 	
@@ -70,7 +70,6 @@ prop zeno20 (xs: list<nat>) ->
 prop zeno21 (n m: nat) ->
   le n (add n m)
   
-// Takes a long time, test separately
 prop zeno22 (n m k: nat) ->
   max (max n m) k == max n (max m k)
   
@@ -102,14 +101,13 @@ prop zeno29 (n: nat) (xs: list<nat>) ->
   
 prop zeno30 (n: nat) (xs: list<nat>) ->  
   elem n (lt_insert n xs)
-  
-// Takes a long time, test separately
-// prop zeno31 (n m k: nat) ->
-//   min (min n m) k == min n (min m k)
+
+prop zeno31 (n m k: nat) ->
+  min (min n m) k == min n (min m k)
   
 // Does not hold in either directon
-prop zeno32 (n m: nat) ->
-  min n m == min m n 
+// prop zeno32 (n m: nat) ->
+//   min n m == min m n 
 
 prop zeno33 (n m: nat) ->
   assertBool eq (min n m) n
