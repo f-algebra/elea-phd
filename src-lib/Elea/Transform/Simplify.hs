@@ -345,13 +345,12 @@ unfold term@(App fix@(Fix {}) args)
   || cant_fix_con_fuse =
     History.check Name.Unfold term $ do
       term' <- id
-        . runM
+        . Transform.continue
         $ Term.reduce (Term.unfoldFix fix) args
       when (term Quasi.<= term') $ do
      --   trace ("\n\n[failed unfold] " ++ show term ++ "\n\n[into] " ++ show term') 
           Fail.here 
-      Transform.continue 
-     --    $  trace ("\n\n[success unfold]" ++ show term   ++ "\n\n[into] " ++ show term')
+      return 
         $ term'
   where
   needsUnroll t = 

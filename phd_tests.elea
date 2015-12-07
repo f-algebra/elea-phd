@@ -180,7 +180,7 @@ prop zeno51 <A> (xs: list<A>) (x: A) ->
   
 // Does not hold in either directon
 // prop zeno52 (n: nat) (xs: list<nat>) ->
-//  count n xs == count n (reverse<nat> xs)
+//  count n xs == count n (rev<nat> xs)
   
 // Does not hold in either directon
 // prop zeno53 (xs: list<nat>) (n: nat) ->
@@ -194,7 +194,7 @@ prop zeno55 <A> (n: nat) (xs ys: list<A>) ->
   append<A> (drop<A> n xs) (drop<A> (minus n (length<A> xs)) ys)
   == drop<A> n (append<A> xs ys)
           
-// Had to reverse 'm' and 'n' to make this hold
+// Had to rev 'm' and 'n' to make this hold
 prop zeno56 <A> (n m: nat) (xs: list<A>) ->
   drop<A> n (drop<A> m xs) == drop<A> (add m n) xs  
   
@@ -256,18 +256,18 @@ prop zeno71 (n m: nat) (xs: list<nat>) ->
   
 // Fails
 // prop zeno72 <A> (n: nat) (xs: list<A>) ->
-//   reverse<A> (drop<A> n xs)
-//   == take<A> (minus (length<A> xs) n) (reverse<A> xs)
+//   rev<A> (drop<A> n xs)
+//   == take<A> (minus (length<A> xs) n) (rev<A> xs)
   
 // Does not hold
 // prop zeno73 <A> (p: A -> bool) (xs: list<A>) ->
-//   reverse<A> (filter<A> p xs)
-//   == filter<A> p (reverse<A> xs)
+//   rev<A> (filter<A> p xs)
+//   == filter<A> p (rev<A> xs)
 
 // Fails
 // prop zeno74 <A> (n: nat) (xs: list<A>) ->
-//   reverse<A> (take<A> n xs)
-//   == drop<A> (minus (length<A> xs) n) (reverse<A> xs)
+//   rev<A> (take<A> n xs)
+//   == drop<A> (minus (length<A> xs) n) (rev<A> xs)
 
 // Does not hold in either direction
 // prop zeno75 (n m: nat) (xs: list<nat>) ->
@@ -317,8 +317,8 @@ prop zeno84 <A, B> (xs: list<A>) (ys zs: list<B>) ->
 // Fails
 // prop zeno85 <A, B> (xs: list<A>) (ys: list<B>) ->
 //   assertBool eq (length<A> xs) (length<B> ys)
-//   in reverse<(A, B)> (zip<A, B> xs ys)
-//      == zip<A, B> (reverse<A> xs) (reverse<B> ys) 
+//   in rev<(A, B)> (zip<A, B> xs ys)
+//      == zip<A, B> (rev<A> xs) (rev<B> ys) 
      
 prop prod1 (n: nat) ->
   add n n =< double n
@@ -337,10 +337,10 @@ prop prop4 <A> (xs: list<A>) ->
   length<A> (append<A> xs xs) =< double (length<A> xs)
   
 prop prod5 <A> (xs ys: list<A>) ->
-  length<A> (reverse<A> xs) =< length<A> xs
+  length<A> (rev<A> xs) =< length<A> xs
   
 prop prod6 <A> (xs ys: list<A>) ->
-  length<A> (reverse<A> (append<A> xs ys))
+  length<A> (rev<A> (append<A> xs ys))
   =< add (length<A> xs) (length<A> ys)
   
 prop prod7 <A> (xs ys: list<A>) ->
@@ -358,15 +358,15 @@ prop prod7 <A> (xs ys: list<A>) ->
 //   == drop<A> k (drop<A> m (drop<A> m xs)) 
 
 prop prod10 <A> (xs: list<A>) ->
-  reverse<A> (reverse<A> xs) =< xs
+  rev<A> (rev<A> xs) =< xs
   
 // Fails due to lack of deepseq info
 // prop prod11 <A> (xs ys: list<A>) ->
-//   reverse<A> (append<A> (reverse<A> xs) (reverse<A> ys))
+//   rev<A> (append<A> (rev<A> xs) (rev<A> ys))
 //   =< append<A> ys xs
 
 prop prod12 <A> (xs ys: list<A>) ->
-  it_rev<A> xs ys == append<A> (reverse<A> xs) ys
+  it_rev<A> xs ys == append<A> (rev<A> xs) ys
 
 prop prod13 (n: nat) ->
   half (add n n) =< n
@@ -383,18 +383,18 @@ prop prod16 (n: nat) ->
   
 // Fails due to lack of deepseq info
 // prop prod17 <A> (xs ys: list<A>) ->
-//   reverse<A> (reverse<A> (append<A> xs ys))
-//   =< append<A> (reverse<A> (reverse<A> xs)) 
-//                (reverse<A> (reverse<A> ys))
+//   rev<A> (rev<A> (append<A> xs ys))
+//   =< append<A> (rev<A> (rev<A> xs)) 
+//                (rev<A> (rev<A> ys))
   
 // Another deepseq failure
 // prop prod18 <A> (xs ys: list<A>) ->
-//   reverse<A> (append<A> (reverse<A> xs) ys)
-//   =< append<A> (reverse<A> ys) xs
+//   rev<A> (append<A> (rev<A> xs) ys)
+//   =< append<A> (rev<A> ys) xs
 
 prop prod19 <A> (xs ys: list<A>) ->
-  reverse<A> (reverse<A> (append<A> xs ys))
-  =< append<A> (reverse<A> (reverse<A> xs)) ys
+  rev<A> (rev<A> (append<A> xs ys))
+  =< append<A> (rev<A> (rev<A> xs)) ys
 
 prop prod20 <A> (xs: list<A>) ->
   even (length<A> (append<A> xs xs))
@@ -428,17 +428,17 @@ prop prod20 <A> (xs: list<A>) ->
 //   half (add n m) == half (add m n)
 
 prop prod27 <A> (xs: list<A>) ->
-  reverse<A> xs == it_rev<A> xs Nil<A>
+  rev<A> xs == it_rev<A> xs Nil<A>
   
 // Fails, but shouldn't, bugfix asap
 prop prod28 <A> (xss: list<list<A>>) ->
   revflat<A> xss == it_revflat<A> xss Nil<A>
 
 prop prod29 <A> (xs: list<A>) ->
-  reverse<A> (it_rev<A> xs Nil<A>) =< xs
+  rev<A> (it_rev<A> xs Nil<A>) =< xs
   
 prop prod30 <A> (xs: list<A>) ->
-  reverse<A> (append<A> (reverse<A> xs) Nil<A>) =< xs
+  rev<A> (append<A> (rev<A> xs) Nil<A>) =< xs
   
 prop prod31 <A> (xs: list<A>) ->
   it_rev<A> (it_rev<A> xs Nil<A>) Nil<A> =< xs

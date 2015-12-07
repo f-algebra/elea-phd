@@ -179,12 +179,14 @@ instance Show Constraint where
   -}
       
 instance (Env.Read m, Defs.Read m) => ShowM m Prop where
+  showM (Prop "" t) = showM t
   showM (Prop name t) = do
     ts <- showM t
     return
       $ "prop " ++ name ++ " = " ++ ts
       
 instance Show Prop where
+  show (Prop "" t) = show t
   show (Prop name t) = 
     "prop " ++ name ++ " = " ++ show t
     

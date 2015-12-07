@@ -252,7 +252,7 @@ let snoc<A> =
   | Cons x xs' -> Cons<A> x (snoc a xs')
   end
   
-let reverse<A> = 
+let rev<A> = 
   fix (rev: list<A> -> list<A>) (xs: list<A>) ->
   match xs with
   | Nil -> Nil<A>

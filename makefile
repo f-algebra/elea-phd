@@ -8,10 +8,10 @@ ghci:
 	ghci -fobject-code $(FLAGS) $(EXTS) $(MAIN)
 
 power:
-	ghc --make -O2 $(FLAGS) $(EXTS) $(MAIN)
+	ghc --make -o elea.exe -O $(FLAGS) $(EXTS) $(MAIN)
 	
 test:
-	ghc --make -O2 -o elea.exe $(FLAGS) $(EXTS) $(MAIN)
+	ghc --make -O -o elea.exe $(FLAGS) $(EXTS) $(MAIN)
 	elea.exe 2>&1
 
 happy:

@@ -20,6 +20,7 @@ import qualified Elea.Monad.Definitions.Data as Defs
 import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Monad.Memo.Data as MemoDB
 import qualified Elea.Monad.Discovery.Class as Disc
+import qualified Elea.Monad.Discovery as Disc
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Monad.Env.Data as EnvDB
@@ -47,12 +48,10 @@ data FeddState
 mkLabels [ ''FeddState ]
 
 evalT :: Monad m => FeddT m a -> m a
-evalT = id
-  . liftM fst3
-  . (\rwst -> runRWST rwst EnvDB.empty emptyState)
-  . runFeddT
-  where
-  fst3 (x, _, _) = x
+evalT fedd = do
+  (x, _, _) <- runRWST (runFeddT fedd) EnvDB.empty emptyState
+  return x
+    
 
 emptyState :: FeddState
 emptyState = FS Defs.empty MemoDB.empty 1

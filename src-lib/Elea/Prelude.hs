@@ -45,12 +45,14 @@ module Elea.Prelude
   module Debug.Trace,
   module System.IO.Unsafe,
   
+  debug,
+  
   (++), (!!), concat, intercalate, map, void,
   concatMap, concatMapM, partitionM,
   concatEndos, concatEndosM,
   fromJustT, anyM, allM, findM, sortWith, deleteIndices,
   minimalBy, nubOrd, elemOrd, intersectOrd, countOrd,
-  fromRight, fromLeft, traceMe, setAt, firstM, 
+  fromRight, fromLeft, setAt, firstM, 
   takeIndices, isNub, foldl1M, seqStr, strSeq,
   isLeft, isRight, modifyM, removeAt,
   insertAt, enum, elength, nlength, range,
@@ -134,6 +136,9 @@ import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Nat as Nat
 
 infixr 6 ++
+
+debug :: Bool
+debug = True
 
 (|>) :: a -> (a -> b) -> b
 (|>) = flip ($)
@@ -309,9 +314,6 @@ isLeft _ = False
 isRight (Right _) = True
 isRight _ = False
 
-traceMe :: Show a => String -> a -> a
-traceMe s x = trace (s ++ ": " ++ show x) x
-
 setAt :: Int -> a -> [a] -> [a]
 setAt _ x [] = [x]
 setAt 0 x xs = x:(tail xs)
@@ -444,6 +446,7 @@ evalWriterT :: Monad m => WriterT w m a -> m a
 evalWriterT = liftM fst . runWriterT
 
 tracE :: [(String, String)] -> a -> a
+tracE _ | not debug = id
 tracE [] = id
 tracE ((n, s):xs) = id
   . trace ("\n\n[" ++ n ++ "]\n" ++ s) 

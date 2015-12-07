@@ -6,7 +6,7 @@
  - There is NO WARRANTY, to the extent permitted by law.
  -}
  
-{-# LANGUAGE FlexibleInstances, OverlappingInstances, UndecidableInstances #-}
+{-# LANGUAGE FlexibleInstances, UndecidableInstances #-}
 module Data.Poset where
 
 import qualified Data.List as List

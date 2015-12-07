@@ -30,6 +30,7 @@ import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Monad.Transform as Transform
 import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Fusion as Fusion
+import qualified Elea.Monad.Discovery as Discovery
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.Memo.Class as Memo
@@ -40,6 +41,7 @@ import qualified Data.Poset as Quasi
 
 type Env m = 
   ( Defs.Read m
+  , Discovery.Tells m
   , Env.All m
   , Tag.Gen m
   , History.Env m 
@@ -211,6 +213,7 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
     $ app fix' args
     
   Fail.when (term Quasi.<= term')
+  Discovery.rewritesTo term term'
   return term'
   where
   (arg_bs, _) = Term.flattenLam fix_t

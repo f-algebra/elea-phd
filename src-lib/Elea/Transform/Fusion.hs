@@ -91,7 +91,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
     let temp_i = set fixIndex temp_idx fix_i
         temp_fix = Fix temp_i fix_b fix_t
     rewrite_from <- id
-      . trace ("\n\n[fusing <" ++ show temp_idx ++ ">] " ++ t_s)
+      . tracE [("fusing <" ++ show temp_idx ++ ">", t_s)]
       . Env.bind fix_b
       . Simp.runWithoutUnfoldM
       -- We cannot use unfold because it will break fixCon fusion
@@ -116,20 +116,23 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
       
     t_s''' <- showM (Eval.run (Fix fix_i new_fix_b new_fix_t))
       
-    if not (0 `Indices.freeWithin` new_fix_t) 
-    then do 
-      when (Set.member temp_idx (Tag.tags new_fix_t)) 
-     --   $ trace ("\n\n[fusing <" ++ show temp_idx   ++ ">] " ++ t_s)
-        $ trace ("\n\n[failing <" ++ show temp_idx ++ ">] " ++ t_s''')
-        $ Fail.here
-      Simp.runM
-        $ Indices.lower new_fix_t
-    else id
-      . Rewrite.run
-     -- . trace ("\n\n[fusing <" ++ show temp_idx   ++ ">] " ++ t_s)
-      . trace ("\n\n[yielding <" ++ show temp_idx ++ ">] " ++ t_s''') 
-      . Fix fix_i new_fix_b 
-      $ Tag.replace temp_idx orig_idx new_fix_t
+    new_t <- do
+      if not (0 `Indices.freeWithin` new_fix_t) 
+      then do 
+        when (Set.member temp_idx (Tag.tags new_fix_t)) 
+       --   $ trace ("\n\n[fusing <" ++ show temp_idx   ++ ">] " ++ t_s)
+          . tracE [("failing <" ++ show temp_idx ++ ">", t_s''')]
+          $ Fail.here
+        Simp.runM
+          $ Indices.lower new_fix_t
+      else id
+        . Rewrite.run
+       -- . trace ("\n\n[fusing <" ++ show temp_idx   ++ ">] " ++ t_s)
+        . tracE [("yielding <" ++ show temp_idx ++ ">", t_s''')] 
+        . Fix fix_i new_fix_b 
+        $ Tag.replace temp_idx orig_idx new_fix_t
+    Discovery.rewritesTo orig_t new_t
+    return new_t
   where
   orig_t = Term.reduce ctx_t [fix]
   orig_idx = get fixIndex fix_i
@@ -203,12 +206,13 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
   o_free_bs <- mapM Env.boundAt o_free_vars
     
   -- Pick the first one which does not fail
-  id
+  new_t <- id
     . Fail.choose
     -- Run fixfixArg on every decreasing fixpoint argument position
     . map (fixArg o_free_bs . enum)
     . filter (Term.isFix . Term.leftmost . (o_args !!))
     $ reverse o_dec_idxs
+  return new_t
   where  
   o_dec_idxs = Term.decreasingArgs o_fix
   o_free_vars = Set.toList (Indices.free o_fix)

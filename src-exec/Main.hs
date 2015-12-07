@@ -15,6 +15,7 @@ import Elea.Tests.All ( runTests )
 import Elea.Show ( showM )
 import Text.Printf
 import System.CPUTime
+import System.Environment ( getArgs )
 import qualified Elea.Testing as Test
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Type.Ext as Type
@@ -35,7 +36,9 @@ time a = do
 test2 :: IO ()
 test2 = time runTests
 
-main = test
+main = do
+  args <- getArgs
+  run (args !! 0)
 
 test :: IO ()
 test = time
