@@ -1,0 +1,83 @@
+
+name:                elea
+version:             0.1.0.0
+synopsis:            Automated inductive theorem prover for the simply typed 
+                     lambda calculus, based on fixpoint-fusion.
+license:             MIT
+license-file:        LICENSE
+author:              William Sonnex
+maintainer:          will@sonnex.name                                 
+category:            Theorem Provers
+build-type:          Simple
+cabal-version:       >=1.8
+
+source-repository head
+  type:              git
+  location:          git://github.com/wsonnex/elea.git
+  branch:            master
+
+library
+  hs-source-dirs:    src-lib
+  build-tools:       happy
+  
+  extensions:        DoAndIfThenElse
+                     TemplateHaskell 
+                     TypeOperators 
+                     FunctionalDependencies 
+                     GADTs 
+                     MultiParamTypeClasses 
+                     FlexibleContexts 
+                     FlexibleInstances 
+                     ScopedTypeVariables 
+                     TypeSynonymInstances 
+                     ViewPatterns 
+                     TypeFamilies 
+                     BangPatterns 
+                     DeriveFunctor 
+                     DeriveFoldable 
+                     DeriveTraversable 
+                     RecursiveDo 
+                     RankNTypes 
+                     GeneralizedNewtypeDeriving 
+                     ConstraintKinds
+                     PatternGuards
+                     NoImplicitPrelude
+                     StandaloneDeriving
+  
+  build-depends:     base >=4, 
+                     containers >=0.5, 
+                     HUnit >=1, 
+                     mtl >=2, 
+                     transformers >=0.3, 
+                     either >=4, 
+                     fclabels >=2 && <3, 
+                     semigroups >=0.12, 
+                     text >=0.11,
+                     uniplate >=1.6, 
+                     MissingH >=1.2, 
+                     keys >=3, 
+                     tagged >=0.7, 
+                     ghc-prim >=0.3, 
+                     recursion-schemes >=4, 
+                     semigroupoids >=4,
+                     lattices >=1
+                     
+  exposed-modules:   Elea.Tests.All
+                     Elea.Prelude
+                     Elea.Testing
+                     Elea.Term.Ext
+                     Elea.Show
+                     Elea.Type.Ext
+                     Elea.Transform.Fusion
+                     Elea.Monad.Direction
+                     Elea.Monad.Fedd
+                     Data.Poset
+                     
+                     
+executable elea  
+  hs-source-dirs:    src-exec
+  main-is:           Main.hs
+  build-depends:     base, elea
+  
+  extensions:        NoImplicitPrelude
+  
