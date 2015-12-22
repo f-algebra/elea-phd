@@ -1,0 +1,1554 @@
+
+
+[fixfix fusing]
+(
+fix (count: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 0
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then Suc (count ys)
+    else count ys
+  end) ((
+fix (app: list -> list) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> ys
+  | Cons (y: nat) (ys: list) -> Cons y (app ys)
+  end) xs)
+
+
+[unfolded]
+(
+fix (count: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 0
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then Suc (count ys)
+    else count ys
+  end) (Cons y ((
+fix<336> (app: list -> list) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> ys[2]
+  | Cons (y: nat) (ys: list) -> Cons y (app ys)
+  end) ys))
+
+
+[yielding]
+
+if $eq n y
+then Suc ((
+  fix (count: list -> nat) -> 
+    fun (xs: list) -> 
+    match xs with
+    | Nil -> 0
+    | Cons (y: nat) (ys: list) -> 
+      if $eq n y
+      then Suc (count ys)
+      else count ys
+    end) ((
+  fix<336> (app: list -> list) -> 
+    fun (xs: list) -> 
+    match xs with
+    | Nil -> ys[2]
+    | Cons (y: nat) (ys: list) -> Cons y (app ys)
+    end) ys))
+else (
+  fix (count: list -> nat) -> 
+    fun (xs: list) -> 
+    match xs with
+    | Nil -> 0
+    | Cons (y: nat) (ys: list) -> 
+      if $eq n y
+      then Suc (count ys)
+      else count ys
+    end) ((
+  fix<336> (app: list -> list) -> 
+    fun (xs: list) -> 
+    match xs with
+    | Nil -> ys[2]
+    | Cons (y: nat) (ys: list) -> Cons y (app ys)
+    end) ys)
+
+
+[fixfix yielded]
+(
+fix (app: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> (
+    fix (count: list -> nat) -> 
+      fun (xs: list) -> 
+      match xs with
+      | Nil -> 0
+      | Cons (y: nat) (ys: list) -> 
+        if $eq n y
+        then Suc (count ys)
+        else count ys
+      end) ys
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then Suc (app ys)
+    else app ys
+  end) xs
+
+
+[fixfix fusing]
+$le ((
+fix (count: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 0
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then Suc (count ys)
+    else count ys
+  end) xs) ((
+fix (app: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> (
+    fix (count: list -> nat) -> 
+      fun (xs: list) -> 
+      match xs with
+      | Nil -> 0
+      | Cons (y: nat) (ys: list) -> 
+        if $eq n y
+        then Suc (count ys)
+        else count ys
+      end) ys
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then Suc (app ys)
+    else app ys
+  end) xs)
+
+
+[unfolded]
+$eq 0 y[2]
+
+
+[yielding]
+
+match y[2] with
+| 0 -> True
+| Suc (y': nat) -> False
+end
+
+
+[unfolded]
+
+assert True <- $eq (Suc x') y[2] in False
+
+
+[yielding]
+
+assert Suc (y': nat) <- y[2] in 
+assert True <- $eq x' y' in False
+
+
+[unfolded]
+
+assert True <- $eq (Suc x') y[2] in (
+fix<338> (eq: nat -> nat -> bool) -> 
+  fun (x: nat) -> 
+  fun (y: nat) -> 
+  match x with
+  | 0 -> 
+    match y with
+    | 0 -> True
+    | Suc (y': nat) -> False
+    end
+  | Suc (x': nat) -> 
+    match y with
+    | 0 -> False
+    | Suc (y': nat) -> eq x' y'
+    end
+  end) x' y'
+
+
+[yielding]
+
+assert Suc (y': nat) <- y[2] in 
+assert True <- $eq x' y' in (
+fix<338> (eq: nat -> nat -> bool) -> 
+  fun (x: nat) -> 
+  fun (y: nat) -> 
+  match x with
+  | 0 -> 
+    match y with
+    | 0 -> True
+    | Suc (y': nat) -> False
+    end
+  | Suc (x': nat) -> 
+    match y with
+    | 0 -> False
+    | Suc (y': nat) -> eq x' y'
+    end
+  end) x' y'[2]
+
+
+[unfolded]
+$eq 0 y[2]
+
+
+[yielding]
+
+match y[2] with
+| 0 -> True
+| Suc (y': nat) -> False
+end
+
+
+[unfolded]
+
+assert False <- $eq (Suc x') y[2] in False
+
+
+[yielding]
+
+match y[2] with
+| 0 -> False
+| Suc (y': nat) -> 
+  assert False <- $eq x' y' in False
+end
+
+
+[unfolded]
+
+assert False <- $eq (Suc x') y[2] in (
+fix<339> (eq: nat -> nat -> bool) -> 
+  fun (x: nat) -> 
+  fun (y: nat) -> 
+  match x with
+  | 0 -> 
+    match y with
+    | 0 -> True
+    | Suc (y': nat) -> False
+    end
+  | Suc (x': nat) -> 
+    match y with
+    | 0 -> False
+    | Suc (y': nat) -> eq x' y'
+    end
+  end) x' y'
+
+
+[yielding]
+
+match y[2] with
+| 0 -> (
+  fix<339> (eq: nat -> nat -> bool) -> 
+    fun (x: nat) -> 
+    fun (y: nat) -> 
+    match x with
+    | 0 -> 
+      match y with
+      | 0 -> True
+      | Suc (y': nat) -> False
+      end
+    | Suc (x': nat) -> 
+      match y with
+      | 0 -> False
+      | Suc (y': nat) -> eq x' y'
+      end
+    end) x' y'
+| Suc (y': nat) -> 
+  assert False <- $eq x' y' in (
+  fix<339> (eq: nat -> nat -> bool) -> 
+    fun (x: nat) -> 
+    fun (y: nat) -> 
+    match x with
+    | 0 -> 
+      match y with
+      | 0 -> True
+      | Suc (y': nat) -> False
+      end
+    | Suc (x': nat) -> 
+      match y with
+      | 0 -> False
+      | Suc (y': nat) -> eq x' y'
+      end
+    end) x' y'[2]
+end
+
+
+[fixfix fusing]
+$le x ((
+fix (count: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 0
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then Suc (count ys)
+    else count ys
+  end) ys)
+
+
+[unfolded]
+$le x 0
+
+
+[yielding]
+
+match x with
+| 0 -> True
+| Suc (x': nat) -> False
+end
+
+
+[unfolded]
+$le x (Suc ((
+fix<340> (count: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 0
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then Suc (count ys)
+    else count ys
+  end) ys))
+
+
+[yielding]
+
+match x with
+| 0 -> True
+| Suc (x': nat) -> $le x' ((
+  fix<340> (count: list -> nat) -> 
+    fun (xs: list) -> 
+    match xs with
+    | Nil -> 0
+    | Cons (y: nat) (ys: list) -> 
+      if $eq n y
+      then Suc (count ys)
+      else count ys
+    end) ys)
+end
+
+
+[fixfix yielded]
+(
+fix (count: nat -> list -> bool) -> 
+  fun (x: nat) -> 
+  fun (ys: list) -> 
+  match ys with
+  | Nil -> 
+    match x with
+    | 0 -> True
+    | Suc (x': nat) -> False
+    end
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then 
+      match x with
+      | 0 -> True
+      | Suc (x': nat) -> count x' ys
+      end
+    else count x ys
+  end) x ys
+
+
+[unfolded]
+$le x (Suc ((
+fix<337> (app: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> (
+    fix (count: list -> nat) -> 
+      fun (xs: list) -> 
+      match xs with
+      | Nil -> 0
+      | Cons (y: nat) (ys: list) -> 
+        if $eq n y
+        then Suc (count ys)
+        else count ys
+      end) ys[2]
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then Suc (app ys)
+    else app ys
+  end) ys))
+
+
+[yielding]
+
+match x with
+| 0 -> True
+| Suc (x': nat) -> $le x' ((
+  fix<337> (app: list -> nat) -> 
+    fun (xs: list) -> 
+    match xs with
+    | Nil -> (
+      fix (count: list -> nat) -> 
+        fun (xs: list) -> 
+        match xs with
+        | Nil -> 0
+        | Cons (y: nat) (ys: list) -> 
+          if $eq n y
+          then Suc (count ys)
+          else count ys
+        end) ys[2]
+    | Cons (y: nat) (ys: list) -> 
+      if $eq n y
+      then Suc (app ys)
+      else app ys
+    end) ys)
+end
+
+
+[fixfix fusing]
+(
+fix (app: nat -> list -> bool) -> 
+  fun (x: nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> (
+    fix (count: nat -> list -> bool) -> 
+      fun (x: nat) -> 
+      fun (ys: list) -> 
+      match ys with
+      | Nil -> 
+        match x with
+        | 0 -> True
+        | Suc (x': nat) -> False
+        end
+      | Cons (y: nat) (ys: list) -> 
+        if $eq n y
+        then 
+          match x with
+          | 0 -> True
+          | Suc (x': nat) -> count x' ys
+          end
+        else count x ys
+      end) x ys
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then 
+      match x with
+      | 0 -> True
+      | Suc (x': nat) -> app x' ys
+      end
+    else app x ys
+  end) ((
+fix (count: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 0
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then Suc (count ys)
+    else count ys
+  end) xs) xs
+
+
+[unfolded]
+$eq 0 y[2]
+
+
+[yielding]
+
+match y[2] with
+| 0 -> True
+| Suc (y': nat) -> False
+end
+
+
+[unfolded]
+
+assert True <- $eq (Suc x') y[2] in False
+
+
+[yielding]
+
+assert Suc (y': nat) <- y[2] in 
+assert True <- $eq x' y' in False
+
+
+[unfolded]
+
+assert True <- $eq (Suc x') y[2] in (
+fix<342> (eq: nat -> nat -> bool) -> 
+  fun (x: nat) -> 
+  fun (y: nat) -> 
+  match x with
+  | 0 -> 
+    match y with
+    | 0 -> True
+    | Suc (y': nat) -> False
+    end
+  | Suc (x': nat) -> 
+    match y with
+    | 0 -> False
+    | Suc (y': nat) -> eq x' y'
+    end
+  end) x' y'
+
+
+[yielding]
+
+assert Suc (y': nat) <- y[2] in 
+assert True <- $eq x' y' in (
+fix<342> (eq: nat -> nat -> bool) -> 
+  fun (x: nat) -> 
+  fun (y: nat) -> 
+  match x with
+  | 0 -> 
+    match y with
+    | 0 -> True
+    | Suc (y': nat) -> False
+    end
+  | Suc (x': nat) -> 
+    match y with
+    | 0 -> False
+    | Suc (y': nat) -> eq x' y'
+    end
+  end) x' y'[2]
+
+
+[unfolded]
+$eq 0 y[2]
+
+
+[yielding]
+
+match y[2] with
+| 0 -> True
+| Suc (y': nat) -> False
+end
+
+
+[unfolded]
+
+assert False <- $eq (Suc x') y[2] in False
+
+
+[yielding]
+
+match y[2] with
+| 0 -> False
+| Suc (y': nat) -> 
+  assert False <- $eq x' y' in False
+end
+
+
+[unfolded]
+
+assert False <- $eq (Suc x') y[2] in (
+fix<343> (eq: nat -> nat -> bool) -> 
+  fun (x: nat) -> 
+  fun (y: nat) -> 
+  match x with
+  | 0 -> 
+    match y with
+    | 0 -> True
+    | Suc (y': nat) -> False
+    end
+  | Suc (x': nat) -> 
+    match y with
+    | 0 -> False
+    | Suc (y': nat) -> eq x' y'
+    end
+  end) x' y'
+
+
+[yielding]
+
+match y[2] with
+| 0 -> (
+  fix<343> (eq: nat -> nat -> bool) -> 
+    fun (x: nat) -> 
+    fun (y: nat) -> 
+    match x with
+    | 0 -> 
+      match y with
+      | 0 -> True
+      | Suc (y': nat) -> False
+      end
+    | Suc (x': nat) -> 
+      match y with
+      | 0 -> False
+      | Suc (y': nat) -> eq x' y'
+      end
+    end) x' y'
+| Suc (y': nat) -> 
+  assert False <- $eq x' y' in (
+  fix<343> (eq: nat -> nat -> bool) -> 
+    fun (x: nat) -> 
+    fun (y: nat) -> 
+    match x with
+    | 0 -> 
+      match y with
+      | 0 -> True
+      | Suc (y': nat) -> False
+      end
+    | Suc (x': nat) -> 
+      match y with
+      | 0 -> False
+      | Suc (y': nat) -> eq x' y'
+      end
+    end) x' y'[2]
+end
+
+
+[unfolded]
+(
+fix (app: nat -> list -> bool) -> 
+  fun (x: nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> (
+    fix (count: nat -> list -> bool) -> 
+      fun (x: nat) -> 
+      fun (ys: list) -> 
+      match ys with
+      | Nil -> 
+        match x with
+        | 0 -> True
+        | Suc (x': nat) -> False
+        end
+      | Cons (y: nat) (ys: list) -> 
+        if $eq n y
+        then 
+          match x with
+          | 0 -> True
+          | Suc (x': nat) -> count x' ys
+          end
+        else count x ys
+      end) x ys
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then 
+      match x with
+      | 0 -> True
+      | Suc (x': nat) -> app x' ys
+      end
+    else app x ys
+  end) 0 Nil
+
+
+[yielding]
+(
+fix (count: nat -> list -> bool) -> 
+  fun (x: nat) -> 
+  fun (ys: list) -> 
+  match ys with
+  | Nil -> 
+    match x with
+    | 0 -> True
+    | Suc (x': nat) -> False
+    end
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then 
+      match x with
+      | 0 -> True
+      | Suc (x': nat) -> count x' ys
+      end
+    else count x ys
+  end) 0 ys
+
+
+[orig]
+(
+fix (count: list -> bool) -> 
+  fun (ys: list) -> 
+  match ys with
+  | Nil -> True
+  | Cons (y: nat) (ys: list) -> 
+    if (
+      fix (eq: nat -> nat -> bool) -> 
+        fun (x: nat) -> 
+        fun (y: nat) -> 
+        match x with
+        | 0 -> 
+          match y with
+          | 0 -> True
+          | Suc (y': nat) -> False
+          end
+        | Suc (x': nat) -> 
+          match y with
+          | 0 -> False
+          | Suc (y': nat) -> eq x' y'
+          end
+        end) _10 y
+    then True
+    else count ys
+  end) _2
+
+
+[guess]
+True
+
+
+[guess check]
+True
+
+
+[unfolded]
+(
+fix<341> (count: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 0
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then Suc (count ys)
+    else count ys
+  end) Nil
+
+
+[yielding]
+0
+
+
+[unfolded]
+(
+fix<341> (count: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 0
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then Suc (count ys)
+    else count ys
+  end) Nil
+
+
+[yielding]
+0
+
+
+[unfolded]
+(
+fix (app: nat -> list -> bool) -> 
+  fun (x: nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> (
+    fix (count: nat -> list -> bool) -> 
+      fun (x: nat) -> 
+      fun (ys: list) -> 
+      match ys with
+      | Nil -> 
+        match x with
+        | 0 -> True
+        | Suc (x': nat) -> False
+        end
+      | Cons (y: nat) (ys: list) -> 
+        if $eq n y
+        then 
+          match x with
+          | 0 -> True
+          | Suc (x': nat) -> count x' ys
+          end
+        else count x ys
+      end) x ys[2]
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then 
+      match x with
+      | 0 -> True
+      | Suc (x': nat) -> app x' ys
+      end
+    else app x ys
+  end) (Suc ((
+fix<341> (count: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 0
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then Suc (count ys)
+    else count ys
+  end) ys)) (Cons y ys)
+
+
+[yielding]
+
+if $eq n y
+then (
+  fix (app: nat -> list -> bool) -> 
+    fun (x: nat) -> 
+    fun (xs: list) -> 
+    match xs with
+    | Nil -> (
+      fix (count: nat -> list -> bool) -> 
+        fun (x: nat) -> 
+        fun (ys: list) -> 
+        match ys with
+        | Nil -> 
+          match x with
+          | 0 -> True
+          | Suc (x': nat) -> False
+          end
+        | Cons (y: nat) (ys: list) -> 
+          if $eq n y
+          then 
+            match x with
+            | 0 -> True
+            | Suc (x': nat) -> count x' ys
+            end
+          else count x ys
+        end) x ys[2]
+    | Cons (y: nat) (ys: list) -> 
+      if $eq n y
+      then 
+        match x with
+        | 0 -> True
+        | Suc (x': nat) -> app x' ys
+        end
+      else app x ys
+    end) ((
+  fix<341> (count: list -> nat) -> 
+    fun (xs: list) -> 
+    match xs with
+    | Nil -> 0
+    | Cons (y: nat) (ys: list) -> 
+      if $eq n y
+      then Suc (count ys)
+      else count ys
+    end) ys) ys
+else (
+  fix (app: nat -> list -> bool) -> 
+    fun (x: nat) -> 
+    fun (xs: list) -> 
+    match xs with
+    | Nil -> (
+      fix (count: nat -> list -> bool) -> 
+        fun (x: nat) -> 
+        fun (ys: list) -> 
+        match ys with
+        | Nil -> 
+          match x with
+          | 0 -> True
+          | Suc (x': nat) -> False
+          end
+        | Cons (y: nat) (ys: list) -> 
+          if $eq n y
+          then 
+            match x with
+            | 0 -> True
+            | Suc (x': nat) -> count x' ys
+            end
+          else count x ys
+        end) x ys[2]
+    | Cons (y: nat) (ys: list) -> 
+      if $eq n y
+      then 
+        match x with
+        | 0 -> True
+        | Suc (x': nat) -> app x' ys
+        end
+      else app x ys
+    end) (Suc ((
+  fix<341> (count: list -> nat) -> 
+    fun (xs: list) -> 
+    match xs with
+    | Nil -> 0
+    | Cons (y: nat) (ys: list) -> 
+      if $eq n y
+      then Suc (count ys)
+      else count ys
+    end) ys)) ys
+
+
+[unfolded]
+(
+fix<345> (app: nat -> list -> bool) -> 
+  fun (x: nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> (
+    fix (count: nat -> list -> bool) -> 
+      fun (x: nat) -> 
+      fun (ys: list) -> 
+      match ys with
+      | Nil -> 
+        match x with
+        | 0 -> True
+        | Suc (x': nat) -> False
+        end
+      | Cons (y: nat) (ys: list) -> 
+        if $eq n y
+        then 
+          match x with
+          | 0 -> True
+          | Suc (x': nat) -> count x' ys
+          end
+        else count x ys
+      end) x ys[4]
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then 
+      match x with
+      | 0 -> True
+      | Suc (x': nat) -> app x' ys
+      end
+    else app x ys
+  end) x' Nil
+
+
+[yielding]
+(
+fix (count: nat -> list -> bool) -> 
+  fun (x: nat) -> 
+  fun (ys: list) -> 
+  match ys with
+  | Nil -> 
+    match x with
+    | 0 -> True
+    | Suc (x': nat) -> False
+    end
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then 
+      match x with
+      | 0 -> True
+      | Suc (x': nat) -> count x' ys
+      end
+    else count x ys
+  end) x' ys[4]
+
+
+[unfolded]
+(
+fix<345> (app: nat -> list -> bool) -> 
+  fun (x: nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> (
+    fix (count: nat -> list -> bool) -> 
+      fun (x: nat) -> 
+      fun (ys: list) -> 
+      match ys with
+      | Nil -> 
+        match x with
+        | 0 -> True
+        | Suc (x': nat) -> False
+        end
+      | Cons (y: nat) (ys: list) -> 
+        if $eq n y
+        then 
+          match x with
+          | 0 -> True
+          | Suc (x': nat) -> count x' ys
+          end
+        else count x ys
+      end) x ys[4]
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then 
+      match x with
+      | 0 -> True
+      | Suc (x': nat) -> app x' ys
+      end
+    else app x ys
+  end) x Nil
+
+
+[yielding]
+(
+fix (count: nat -> list -> bool) -> 
+  fun (x: nat) -> 
+  fun (ys: list) -> 
+  match ys with
+  | Nil -> 
+    match x with
+    | 0 -> True
+    | Suc (x': nat) -> False
+    end
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then 
+      match x with
+      | 0 -> True
+      | Suc (x': nat) -> count x' ys
+      end
+    else count x ys
+  end) x ys[4]
+
+
+[unfolded]
+$eq 0 y[2]
+
+
+[yielding]
+
+match y[2] with
+| 0 -> True
+| Suc (y': nat) -> False
+end
+
+
+[unfolded]
+
+assert False <- $eq (Suc x') y[2] in False
+
+
+[yielding]
+
+match y[2] with
+| 0 -> False
+| Suc (y': nat) -> 
+  assert False <- $eq x' y' in False
+end
+
+
+[unfolded]
+
+assert False <- $eq (Suc x') y[2] in (
+fix<346> (eq: nat -> nat -> bool) -> 
+  fun (x: nat) -> 
+  fun (y: nat) -> 
+  match x with
+  | 0 -> 
+    match y with
+    | 0 -> True
+    | Suc (y': nat) -> False
+    end
+  | Suc (x': nat) -> 
+    match y with
+    | 0 -> False
+    | Suc (y': nat) -> eq x' y'
+    end
+  end) x' y'
+
+
+[yielding]
+
+match y[2] with
+| 0 -> (
+  fix<346> (eq: nat -> nat -> bool) -> 
+    fun (x: nat) -> 
+    fun (y: nat) -> 
+    match x with
+    | 0 -> 
+      match y with
+      | 0 -> True
+      | Suc (y': nat) -> False
+      end
+    | Suc (x': nat) -> 
+      match y with
+      | 0 -> False
+      | Suc (y': nat) -> eq x' y'
+      end
+    end) x' y'
+| Suc (y': nat) -> 
+  assert False <- $eq x' y' in (
+  fix<346> (eq: nat -> nat -> bool) -> 
+    fun (x: nat) -> 
+    fun (y: nat) -> 
+    match x with
+    | 0 -> 
+      match y with
+      | 0 -> True
+      | Suc (y': nat) -> False
+      end
+    | Suc (x': nat) -> 
+      match y with
+      | 0 -> False
+      | Suc (y': nat) -> eq x' y'
+      end
+    end) x' y'[2]
+end
+
+
+[unfolded]
+$eq 0 y[2]
+
+
+[yielding]
+
+match y[2] with
+| 0 -> True
+| Suc (y': nat) -> False
+end
+
+
+[unfolded]
+
+assert True <- $eq (Suc x') y[2] in False
+
+
+[yielding]
+
+assert Suc (y': nat) <- y[2] in 
+assert True <- $eq x' y' in False
+
+
+[unfolded]
+
+assert True <- $eq (Suc x') y[2] in (
+fix<347> (eq: nat -> nat -> bool) -> 
+  fun (x: nat) -> 
+  fun (y: nat) -> 
+  match x with
+  | 0 -> 
+    match y with
+    | 0 -> True
+    | Suc (y': nat) -> False
+    end
+  | Suc (x': nat) -> 
+    match y with
+    | 0 -> False
+    | Suc (y': nat) -> eq x' y'
+    end
+  end) x' y'
+
+
+[yielding]
+
+assert Suc (y': nat) <- y[2] in 
+assert True <- $eq x' y' in (
+fix<347> (eq: nat -> nat -> bool) -> 
+  fun (x: nat) -> 
+  fun (y: nat) -> 
+  match x with
+  | 0 -> 
+    match y with
+    | 0 -> True
+    | Suc (y': nat) -> False
+    end
+  | Suc (x': nat) -> 
+    match y with
+    | 0 -> False
+    | Suc (y': nat) -> eq x' y'
+    end
+  end) x' y'[2]
+
+
+[fixfix fusing]
+(
+fix (app: nat -> nat -> list -> bool) -> 
+  fun (x: nat) -> 
+  fun (y: nat) -> 
+  fun (ys: list) -> 
+  if $eq n y
+  then 
+    match x with
+    | 0 -> True
+    | Suc (x': nat) -> 
+      match ys with
+      | Nil -> (
+        fix (count: nat -> list -> bool) -> 
+          fun (x: nat) -> 
+          fun (ys: list) -> 
+          match ys with
+          | Nil -> 
+            match x with
+            | 0 -> True
+            | Suc (x': nat) -> False
+            end
+          | Cons (y: nat) (ys: list) -> 
+            if $eq n y
+            then 
+              match x with
+              | 0 -> True
+              | Suc (x': nat) -> count x' ys
+              end
+            else count x ys
+          end) x' ys[3]
+      | Cons (b0: nat) (b1: list) -> app x' b0 b1
+      end
+    end
+  else 
+    match ys with
+    | Nil -> (
+      fix (count: nat -> list -> bool) -> 
+        fun (x: nat) -> 
+        fun (ys: list) -> 
+        match ys with
+        | Nil -> 
+          match x with
+          | 0 -> True
+          | Suc (x': nat) -> False
+          end
+        | Cons (y: nat) (ys: list) -> 
+          if $eq n y
+          then 
+            match x with
+            | 0 -> True
+            | Suc (x': nat) -> count x' ys
+            end
+          else count x ys
+        end) x ys[3]
+    | Cons (b0: nat) (b1: list) -> app x b0 b1
+    end) ((
+fix (count: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 0
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then Suc (count ys)
+    else count ys
+  end) ys) y ys
+
+
+[unfolded]
+(
+fix (app: nat -> nat -> list -> bool) -> 
+  fun (x: nat) -> 
+  fun (y: nat) -> 
+  fun (ys: list) -> 
+  if $eq n y
+  then 
+    match x with
+    | 0 -> True
+    | Suc (x': nat) -> 
+      match ys with
+      | Nil -> (
+        fix (count: nat -> list -> bool) -> 
+          fun (x: nat) -> 
+          fun (ys: list) -> 
+          match ys with
+          | Nil -> 
+            match x with
+            | 0 -> True
+            | Suc (x': nat) -> False
+            end
+          | Cons (y: nat) (ys: list) -> 
+            if $eq n y
+            then 
+              match x with
+              | 0 -> True
+              | Suc (x': nat) -> count x' ys
+              end
+            else count x ys
+          end) x' ys[4]
+      | Cons (b0: nat) (b1: list) -> app x' b0 b1
+      end
+    end
+  else 
+    match ys with
+    | Nil -> (
+      fix (count: nat -> list -> bool) -> 
+        fun (x: nat) -> 
+        fun (ys: list) -> 
+        match ys with
+        | Nil -> 
+          match x with
+          | 0 -> True
+          | Suc (x': nat) -> False
+          end
+        | Cons (y: nat) (ys: list) -> 
+          if $eq n y
+          then 
+            match x with
+            | 0 -> True
+            | Suc (x': nat) -> count x' ys
+            end
+          else count x ys
+        end) x ys[4]
+    | Cons (b0: nat) (b1: list) -> app x b0 b1
+    end) 0 y Nil
+
+
+[yielding]
+
+if $eq n y
+then True
+else (
+  fix (count: nat -> list -> bool) -> 
+    fun (x: nat) -> 
+    fun (ys: list) -> 
+    match ys with
+    | Nil -> 
+      match x with
+      | 0 -> True
+      | Suc (x': nat) -> False
+      end
+    | Cons (y: nat) (ys: list) -> 
+      if $eq n y
+      then 
+        match x with
+        | 0 -> True
+        | Suc (x': nat) -> count x' ys
+        end
+      else count x ys
+    end) 0 ys[3]
+
+
+[unfolded]
+$eq 0 y[3]
+
+
+[yielding]
+
+match y[3] with
+| 0 -> True
+| Suc (y': nat) -> False
+end
+
+
+[unfolded]
+
+assert True <- $eq (Suc x') y[3] in False
+
+
+[yielding]
+
+assert Suc (y': nat) <- y[3] in 
+assert True <- $eq x' y' in False
+
+
+[unfolded]
+
+assert True <- $eq (Suc x') y[3] in (
+fix<350> (eq: nat -> nat -> nat -> bool) -> 
+  fun (x: nat) -> 
+  fun (y: nat) -> 
+  fun (y: nat) -> 
+  match x with
+  | 0 -> 
+    assert 0 <- y[2] in 
+    match y with
+    | 0 -> True
+    | Suc (y': nat) -> False
+    end
+  | Suc (x': nat) -> 
+    match y with
+    | 0 -> 
+      assert Suc (y': nat) <- y[2] in False
+    | Suc (y': nat) -> 
+      assert Suc (y': nat) <- y[2] in eq x' y' y'[2]
+    end
+  end) x' y' y'[2]
+
+
+[yielding]
+
+assert Suc (y': nat) <- y[3] in 
+assert True <- $eq x' y' in (
+fix<350> (eq: nat -> nat -> nat -> bool) -> 
+  fun (x: nat) -> 
+  fun (y: nat) -> 
+  fun (y: nat) -> 
+  match x with
+  | 0 -> 
+    assert 0 <- y[2] in 
+    match y with
+    | 0 -> True
+    | Suc (y': nat) -> False
+    end
+  | Suc (x': nat) -> 
+    match y with
+    | 0 -> 
+      assert Suc (y': nat) <- y[2] in False
+    | Suc (y': nat) -> 
+      assert Suc (y': nat) <- y[2] in eq x' y' y'[2]
+    end
+  end) x' y'[2] y'[3]
+
+
+[unfolded]
+$eq 0 y[3]
+
+
+[yielding]
+
+match y[3] with
+| 0 -> True
+| Suc (y': nat) -> False
+end
+
+
+[unfolded]
+
+assert False <- $eq (Suc x') y[3] in False
+
+
+[yielding]
+
+match y[3] with
+| 0 -> False
+| Suc (y': nat) -> 
+  assert False <- $eq x' y' in False
+end
+
+
+[unfolded]
+
+assert False <- $eq (Suc x') y[3] in (
+fix<351> (eq: nat -> nat -> nat -> bool) -> 
+  fun (x: nat) -> 
+  fun (y: nat) -> 
+  fun (y: nat) -> 
+  match x with
+  | 0 -> 
+    assert 0 <- y[2] in 
+    match y with
+    | 0 -> True
+    | Suc (y': nat) -> False
+    end
+  | Suc (x': nat) -> 
+    match y with
+    | 0 -> 
+      assert Suc (y': nat) <- y[2] in False
+    | Suc (y': nat) -> 
+      assert Suc (y': nat) <- y[2] in eq x' y' y'[2]
+    end
+  end) x' y' y'[2]
+
+
+[yielding]
+
+match y[3] with
+| 0 -> (
+  fix<351> (eq: nat -> nat -> nat -> bool) -> 
+    fun (x: nat) -> 
+    fun (y: nat) -> 
+    fun (y: nat) -> 
+    match x with
+    | 0 -> 
+      assert 0 <- y[2] in 
+      match y with
+      | 0 -> True
+      | Suc (y': nat) -> False
+      end
+    | Suc (x': nat) -> 
+      match y with
+      | 0 -> 
+        assert Suc (y': nat) <- y[2] in False
+      | Suc (y': nat) -> 
+        assert Suc (y': nat) <- y[2] in eq x' y' y'[2]
+      end
+    end) x' y' y'[2]
+| Suc (y': nat) -> 
+  assert False <- $eq x' y' in (
+  fix<351> (eq: nat -> nat -> nat -> bool) -> 
+    fun (x: nat) -> 
+    fun (y: nat) -> 
+    fun (y: nat) -> 
+    match x with
+    | 0 -> 
+      assert 0 <- y[2] in 
+      match y with
+      | 0 -> True
+      | Suc (y': nat) -> False
+      end
+    | Suc (x': nat) -> 
+      match y with
+      | 0 -> 
+        assert Suc (y': nat) <- y[2] in False
+      | Suc (y': nat) -> 
+        assert Suc (y': nat) <- y[2] in eq x' y' y'[2]
+      end
+    end) x' y'[2] y'[3]
+end
+
+
+[unfolded]
+(
+fix<348> (count: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 0
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then Suc (count ys)
+    else count ys
+  end) Nil
+
+
+[yielding]
+0
+
+
+[unfolded]
+(
+fix<348> (count: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 0
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then Suc (count ys)
+    else count ys
+  end) (Cons b0 b1)
+
+
+[yielding]
+
+if $eq n b0
+then Suc ((
+  fix<348> (count: list -> nat) -> 
+    fun (xs: list) -> 
+    match xs with
+    | Nil -> 0
+    | Cons (y: nat) (ys: list) -> 
+      if $eq n y
+      then Suc (count ys)
+      else count ys
+    end) b1)
+else (
+  fix<348> (count: list -> nat) -> 
+    fun (xs: list) -> 
+    match xs with
+    | Nil -> 0
+    | Cons (y: nat) (ys: list) -> 
+      if $eq n y
+      then Suc (count ys)
+      else count ys
+    end) b1
+
+
+[unfolded]
+(
+fix<348> (count: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 0
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then Suc (count ys)
+    else count ys
+  end) Nil
+
+
+[yielding]
+0
+
+
+[unfolded]
+(
+fix<348> (count: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 0
+  | Cons (y: nat) (ys: list) -> 
+    if $eq n y
+    then Suc (count ys)
+    else count ys
+  end) (Cons b0 b1)
+
+
+[yielding]
+
+if $eq n b0
+then Suc ((
+  fix<348> (count: list -> nat) -> 
+    fun (xs: list) -> 
+    match xs with
+    | Nil -> 0
+    | Cons (y: nat) (ys: list) -> 
+      if $eq n y
+      then Suc (count ys)
+      else count ys
+    end) b1)
+else (
+  fix<348> (count: list -> nat) -> 
+    fun (xs: list) -> 
+    match xs with
+    | Nil -> 0
+    | Cons (y: nat) (ys: list) -> 
+      if $eq n y
+      then Suc (count ys)
+      else count ys
+    end) b1

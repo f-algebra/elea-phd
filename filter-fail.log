@@ -1,0 +1,514 @@
+
+
+[fixfix fusing]
+$length<$0> ($filter<$0> p xs)
+
+
+[unfolded]
+$length<$0> Nil
+
+
+[fixfixinstance]
+False
+
+
+[yielding]
+0
+
+
+[unfolded]
+$length<$0> (Cons y ((
+fix<336> (filter: list -> list) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> Nil
+  | Cons (y: A) (ys: list) -> 
+    if p y
+    then Cons y (filter ys)
+    else filter ys
+  end) ys))
+
+
+[fixfixinstance]
+False
+
+
+[yielding]
+Suc ($length<$0> ((
+fix<336> (filter: list -> list) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> Nil
+  | Cons (y: A) (ys: list) -> 
+    if p y
+    then Cons y (filter ys)
+    else filter ys
+  end) ys))
+
+
+[fixfix yielded]
+(
+fix (filter: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 0
+  | Cons (y: A) (ys: list) -> 
+    if p y
+    then Suc (filter ys)
+    else filter ys
+  end) xs
+
+
+[fixfix fusing]
+$le ((
+fix (filter: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 0
+  | Cons (y: A) (ys: list) -> 
+    if p y
+    then Suc (filter ys)
+    else filter ys
+  end) xs) ($length<$0> xs)
+
+
+[unfolded]
+$le x 0
+
+
+[fixfixinstance]
+False
+
+
+[yielding]
+
+match x with
+| 0 -> True
+| Suc (x': nat) -> False
+end
+
+
+[unfolded]
+$le x (Suc ((
+fix<337> (len: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 0
+  | Cons (y: A) (ys: list) -> Suc (len ys)
+  end) ys))
+
+
+[fixfixinstance]
+False
+
+
+[yielding]
+
+match x with
+| 0 -> True
+| Suc (x': nat) -> $le x' ((
+  fix<337> (len: list -> nat) -> 
+    fun (xs: list) -> 
+    match xs with
+    | Nil -> 0
+    | Cons (y: A) (ys: list) -> Suc (len ys)
+    end) ys)
+end
+
+
+[fixfix fusing]
+(
+fix (len: nat -> list -> bool) -> 
+  fun (x: nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 
+    match x with
+    | 0 -> True
+    | Suc (x': nat) -> False
+    end
+  | Cons (y: A) (ys: list) -> 
+    match x with
+    | 0 -> True
+    | Suc (x': nat) -> len x' ys
+    end
+  end) ((
+fix (filter: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 0
+  | Cons (y: A) (ys: list) -> 
+    if p y
+    then Suc (filter ys)
+    else filter ys
+  end) xs) xs
+
+
+[unfolded]
+(
+fix (len: nat -> list -> bool) -> 
+  fun (x: nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 
+    match x with
+    | 0 -> True
+    | Suc (x': nat) -> False
+    end
+  | Cons (y: A) (ys: list) -> 
+    match x with
+    | 0 -> True
+    | Suc (x': nat) -> len x' ys
+    end
+  end) 0 Nil
+
+
+[fixfixinstance]
+False
+
+
+[yielding]
+True
+
+
+[unfolded]
+(
+fix (len: nat -> list -> bool) -> 
+  fun (x: nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 
+    match x with
+    | 0 -> True
+    | Suc (x': nat) -> False
+    end
+  | Cons (y: A) (ys: list) -> 
+    match x with
+    | 0 -> True
+    | Suc (x': nat) -> len x' ys
+    end
+  end) (Suc ((
+fix<338> (filter: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 0
+  | Cons (y: A) (ys: list) -> 
+    if p y
+    then Suc (filter ys)
+    else filter ys
+  end) ys)) (Cons y ys)
+
+
+[fixfixinstance]
+False
+
+
+[yielding]
+(
+fix (len: nat -> list -> bool) -> 
+  fun (x: nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 
+    match x with
+    | 0 -> True
+    | Suc (x': nat) -> False
+    end
+  | Cons (y: A) (ys: list) -> 
+    match x with
+    | 0 -> True
+    | Suc (x': nat) -> len x' ys
+    end
+  end) ((
+fix<338> (filter: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 0
+  | Cons (y: A) (ys: list) -> 
+    if p y
+    then Suc (filter ys)
+    else filter ys
+  end) ys) ys
+
+
+[unfolded]
+(
+fix (len: nat -> list -> bool) -> 
+  fun (x: nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 
+    match x with
+    | 0 -> True
+    | Suc (x': nat) -> False
+    end
+  | Cons (y: A) (ys: list) -> 
+    match x with
+    | 0 -> True
+    | Suc (x': nat) -> len x' ys
+    end
+  end) ((
+fix<338> (filter: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 0
+  | Cons (y: A) (ys: list) -> 
+    if p y
+    then Suc (filter ys)
+    else filter ys
+  end) ys) (Cons y ys)
+
+
+[fixfixinstance]
+True
+
+
+[yielding]
+
+match (
+fix<338> (filter: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 0
+  | Cons (y: A) (ys: list) -> 
+    if p y
+    then Suc (filter ys)
+    else filter ys
+  end) ys with
+| 0 -> True
+| Suc (x': nat) -> (
+  fix (len: nat -> list -> bool) -> 
+    fun (x: nat) -> 
+    fun (xs: list) -> 
+    match xs with
+    | Nil -> 
+      match x with
+      | 0 -> True
+      | Suc (x': nat) -> False
+      end
+    | Cons (y: A) (ys: list) -> 
+      match x with
+      | 0 -> True
+      | Suc (x': nat) -> len x' ys
+      end
+    end) x' ys
+end
+
+
+[fixfix yielded]
+(
+fix (filter: list -> bool) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> True
+  | Cons (y: A) (ys: list) -> 
+    if p y
+    then filter ys
+    else 
+      match (
+      fix (filter: list -> nat) -> 
+        fun (xs: list) -> 
+        match xs with
+        | Nil -> 0
+        | Cons (y: A) (ys: list) -> 
+          if p y
+          then Suc (filter ys)
+          else filter ys
+        end) ys with
+      | 0 -> True
+      | Suc (x': nat) -> (
+        fix (len: nat -> list -> bool) -> 
+          fun (x: nat) -> 
+          fun (xs: list) -> 
+          match xs with
+          | Nil -> 
+            match x with
+            | 0 -> True
+            | Suc (x': nat) -> False
+            end
+          | Cons (y: A) (ys: list) -> 
+            match x with
+            | 0 -> True
+            | Suc (x': nat) -> len x' ys
+            end
+          end) x' ys
+      end
+  end) xs
+
+
+[fixfix yielded]
+(
+fix (filter: list -> bool) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> True
+  | Cons (y: A) (ys: list) -> 
+    if p y
+    then filter ys
+    else 
+      match (
+      fix (filter: list -> nat) -> 
+        fun (xs: list) -> 
+        match xs with
+        | Nil -> 0
+        | Cons (y: A) (ys: list) -> 
+          if p y
+          then Suc (filter ys)
+          else filter ys
+        end) ys with
+      | 0 -> True
+      | Suc (x': nat) -> (
+        fix (len: nat -> list -> bool) -> 
+          fun (x: nat) -> 
+          fun (xs: list) -> 
+          match xs with
+          | Nil -> 
+            match x with
+            | 0 -> True
+            | Suc (x': nat) -> False
+            end
+          | Cons (y: A) (ys: list) -> 
+            match x with
+            | 0 -> True
+            | Suc (x': nat) -> len x' ys
+            end
+          end) x' ys
+      end
+  end) xs
+
+
+[leq from]
+((
+fix (filter: list -> bool) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> True
+  | Cons (y: A) (ys: list) -> 
+    if p y
+    then filter ys
+    else 
+      match (
+      fix (filter: list -> nat) -> 
+        fun (xs: list) -> 
+        match xs with
+        | Nil -> 0
+        | Cons (y: A) (ys: list) -> 
+          if p y
+          then Suc (filter ys)
+          else filter ys
+        end) ys with
+      | 0 -> True
+      | Suc (x': nat) -> (
+        fix (len: nat -> list -> bool) -> 
+          fun (x: nat) -> 
+          fun (xs: list) -> 
+          match xs with
+          | Nil -> 
+            match x with
+            | 0 -> True
+            | Suc (x': nat) -> False
+            end
+          | Cons (y: A) (ys: list) -> 
+            match x with
+            | 0 -> True
+            | Suc (x': nat) -> len x' ys
+            end
+          end) x' ys
+      end
+  end) xs =< True)
+
+
+[leq to]
+(
+match xs with
+| Nil -> True
+| Cons (y: A) (ys: list) -> 
+  if p y
+  then (
+    fun (xs: list) -> True) ys
+  else 
+    match (
+    fix (filter: list -> nat) -> 
+      fun (xs: list) -> 
+      match xs with
+      | Nil -> 0
+      | Cons (y: A) (ys: list) -> 
+        if p y
+        then Suc (filter ys)
+        else filter ys
+      end) ys with
+    | 0 -> True
+    | Suc (x': nat) -> (
+      fix (len: nat -> list -> bool) -> 
+        fun (x: nat) -> 
+        fun (xs: list) -> 
+        match xs with
+        | Nil -> 
+          match x with
+          | 0 -> True
+          | Suc (x': nat) -> False
+          end
+        | Cons (y: A) (ys: list) -> 
+          match x with
+          | 0 -> True
+          | Suc (x': nat) -> len x' ys
+          end
+        end) x' ys
+    end
+end =< True)
+
+
+[leq from]
+((
+fix (len: nat -> list -> bool) -> 
+  fun (x: nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 
+    match x with
+    | 0 -> True
+    | Suc (x': nat) -> False
+    end
+  | Cons (y: A) (ys: list) -> 
+    match x with
+    | 0 -> True
+    | Suc (x': nat) -> len x' ys
+    end
+  end) x' ys =< True)
+
+
+[leq to]
+(
+match ys with
+| Nil -> 
+  match x' with
+  | 0 -> True
+  | Suc (x': nat) -> False
+  end
+| Cons (y: A) (ys: list) -> 
+  match x' with
+  | 0 -> True
+  | Suc (x': nat) -> (
+    fun (x: nat) -> 
+    fun (xs: list) -> True) x' ys
+  end
+end =< True)
+Cases: 1  Tried: 0  Errors: 0  Failures: 0                                          ### Failure in: 0
+Property failed with: 
+fun (p: A -> bool) -> 
+fun (xs: list) -> 
+assert Cons (y: A) (ys: list) <- xs in 
+assert False <- p y in 
+assert Suc (x': nat) <- (
+fix (filter: list -> nat) -> 
+  fun (xs: list) -> 
+  match xs with
+  | Nil -> 0
+  | Cons (y: A) (ys: list) -> 
+    if p y
+    then Suc (filter ys)
+    else filter ys
+  end) ys in 
+assert Nil <- ys in 
+assert Suc (x': nat) <- x' in ff
+Cases: 1  Tried: 1  Errors: 0  Failures: 1
