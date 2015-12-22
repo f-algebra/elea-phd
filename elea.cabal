@@ -18,7 +18,6 @@ source-repository head
 
 executable elea
   hs-source-dirs:     src-lib
-  build-tools:        happy
   main-is:            Main.hs
   default-language:   Haskell2010
   
