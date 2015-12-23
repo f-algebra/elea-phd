@@ -23,7 +23,7 @@ tests = id
     . Test.label "Simplifier"
     . Test.run $ do
   Test.loadPrelude  
-  eqs <- Test.loadFile "src-lib/Elea/Tests/simplifier.elea"
+  eqs <- Test.loadFile "src/Elea/Tests/simplifier.elea"
   mapM checkProp 
    -- . filter ((== "beta2") . get equationName)
     $ eqs

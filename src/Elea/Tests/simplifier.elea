@@ -45,9 +45,9 @@ prop "case-app" (x: nat) ->
   (match x with | 0 -> Suc 0 | Suc x -> Suc x end)
   
 prop "unfold1"<A> (xs: list<A>) (n: A) ->
-  reverse<A> (Cons<A> n xs)
+  rev<A> (Cons<A> n xs)
   ==
-  append<A> (reverse<A> xs) (Cons<A> n Nil<A>)
+  append<A> (rev<A> xs) (Cons<A> n Nil<A>)
   
 prop "eq1" (x: nat) ->
   if (eq x 0)

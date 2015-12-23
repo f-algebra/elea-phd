@@ -23,8 +23,8 @@ checkProp (Prop name t) =
 tests = Test.label "Fusion"
     $ Test.run $ do
   Test.loadPrelude
-  eqs <- Test.loadFile "src-lib/Elea/Tests/fusion.elea"
+  eqs <- Test.loadFile "src/Elea/Tests/fusion.elea"
   mapM checkProp
-    . filter ((== "le count") . get propName)
+--    . filter ((== "le count") . get propName)
     $ eqs
 

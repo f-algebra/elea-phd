@@ -3,7 +3,6 @@ module Main
   module Elea.Prelude,
   main,
   test,
-  test2,
   run,
   dec,
   embeds
@@ -11,12 +10,14 @@ module Main
 where
 
 import Elea.Prelude
-import Elea.Tests.All ( runTests )
 import Elea.Show ( showM )
 import Text.Printf
 import System.CPUTime
 import System.Environment ( getArgs )
+
 import qualified Elea.Testing as Test
+import qualified Test.Framework as Test
+import qualified Elea.Tests.All as Tests
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Transform.Fusion as Fusion
@@ -33,12 +34,11 @@ time a = do
   printf "Computation time: %0.3f sec\n" (diff :: Double)
   return v
     
-test2 :: IO ()
-test2 = time runTests
-
+main :: IO ()
 main = do
   args <- getArgs
-  run (args !! 0)
+  case args !! 0 of
+      "test" -> Test.defaultMainWithArgs Tests.all (tail args)
 
 test :: IO ()
 test = time

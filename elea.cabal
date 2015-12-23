@@ -61,4 +61,6 @@ executable elea
                       ghc-prim >=0.3, 
                       recursion-schemes >=4, 
                       semigroupoids >=4,
-                      lattices >=1
+                      lattices >=1,
+                      test-framework-hunit >= 0.3,
+                      test-framework >= 0.8
