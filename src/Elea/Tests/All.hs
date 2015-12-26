@@ -32,5 +32,5 @@ all = id
    -- , Constraints.tests
    -- , Context.tests
    -- , Inventor.tests
-   -- , Fusion.tests  
+    , Fusion.tests  
     ]
