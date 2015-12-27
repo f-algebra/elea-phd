@@ -27,4 +27,3 @@ tests = Test.label "Fusion"
   mapM checkProp
 --    . filter ((== "le count") . get propName)
     $ eqs
-

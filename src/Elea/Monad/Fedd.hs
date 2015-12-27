@@ -1,5 +1,4 @@
 -- | The Fusion, Environment, Definitions and Discovery monad.
--- Possible speed increase by collapsing a monad transformer stack.
 module Elea.Monad.Fedd
 (
   FeddT, Fedd,
@@ -24,40 +23,57 @@ import qualified Elea.Monad.Discovery as Disc
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Monad.Env.Data as EnvDB
+import qualified Elea.Monad.StepCounter as Steps
 import qualified Elea.Monad.Direction as Direction
 import qualified Control.Monad.RWS.Strict as RWS
 import qualified Control.Monad.State.Class as State
+import qualified Control.Monad.Writer.Class as Writer
 
-newtype FeddT m a 
-  = FeddT { 
-    runFeddT :: RWST EnvDB.Data EqSet.EqSet FeddState m a }
-  deriving 
-  ( Functor, Applicative 
-  , Monad, MonadTrans
-  , MonadReader EnvDB.Data
-  , MonadWriter EqSet.EqSet
-  , MonadState FeddState )
   
 type Fedd = FeddT Identity
 
 data FeddState 
   = FS  { _fsDefs :: !Defs.Data
         , _fsMemo :: !MemoDB.Data
-        , _fsTagGen :: !Int }
+        , _fsTagGen :: !Int
+        , _fsStepsRemaining :: !(Maybe Nat) }
+
+data FeddWriter
+  = FW  { _fwDiscoveries :: !EqSet.EqSet
+        , _fwStepsTaken :: !Nat }
+
+instance Monoid FeddWriter where
+  mempty = FW mempty 0
+  mappend (FW x1 y1) (FW x2 y2) = FW (x1 ++ x2) (y1 + y2)
+
+newtype FeddT m a 
+  = FeddT { 
+    runFeddT :: RWST EnvDB.Data FeddWriter FeddState m a }
+  deriving 
+  ( Functor, Applicative 
+  , Monad, MonadTrans
+  , MonadReader EnvDB.Data
+  , MonadWriter FeddWriter
+  , MonadState FeddState )
         
-mkLabels [ ''FeddState ]
+mkLabels [ ''FeddState, ''FeddWriter ]
 
 evalT :: Monad m => FeddT m a -> m a
 evalT fedd = do
   (x, _, _) <- runRWST (runFeddT fedd) EnvDB.empty emptyState
   return x
-    
 
 emptyState :: FeddState
-emptyState = FS Defs.empty MemoDB.empty 1
+emptyState = FS Defs.empty MemoDB.empty 1 Nothing
   
 eval :: Fedd a -> a
 eval = runIdentity . evalT
+
+stepTaken :: FeddWriter
+stepTaken = FW mempty 1
+
+discovery :: Prop -> FeddWriter
+discovery prop = FW (EqSet.singleton prop) 0
   
 instance Monad m => Env.Write (FeddT m) where
   bindAt at b = local (EnvDB.bindAt at b)
@@ -71,10 +87,10 @@ instance Monad m => Env.MatchRead (FeddT m) where
   matches = asks EnvDB.matches
   
 instance Monad m => Disc.Tells (FeddT m) where
-  tell = tell . EqSet.singleton
-  
+  tell = Writer.tell . discovery
+
 instance Monad m => Disc.Listens (FeddT m) where
-  listen = liftM (second EqSet.toList) . listen
+  listen = liftM (second (EqSet.toList . get fwDiscoveries)) . Writer.listen
   
 instance Monad m => Defs.Write (FeddT m) where
   defineTerm n t = State.modify (modify fsDefs (Defs.putTerm n t))
@@ -133,3 +149,11 @@ instance Monad m => Tag.Gen (FeddT m) where
 instance Monad m => Direction.Has (FeddT m) where
   get = asks (get EnvDB.direction)
   local d = local (set EnvDB.direction d)
+
+instance Monad m => Steps.Counter (FeddT m) where
+  take = do
+    tell stepTaken
+    State.modify (modify fsStepsRemaining (map succ))
+
+  taken = 
+    liftM snd . Writer.listens (get fwStepsTaken)

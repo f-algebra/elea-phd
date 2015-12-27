@@ -1,6 +1,6 @@
 EXTS = -XStandaloneDeriving -XNoImplicitPrelude -XTemplateHaskell -XTypeOperators -XFunctionalDependencies -XGADTs -XMultiParamTypeClasses -XFlexibleContexts -XFlexibleInstances -XScopedTypeVariables -XTypeSynonymInstances -XViewPatterns -XTypeFamilies -XBangPatterns -XDeriveFunctor -XDeriveFoldable -XDeriveTraversable -XRecursiveDo -XRankNTypes -XGeneralizedNewtypeDeriving -XConstraintKinds
-FLAGS = -package ghc -funbox-strict-fields -hide-package groupoids -hidir obj -odir obj -isrc-lib -isrc-exec -itest 
-MAIN = src-exec/Main.hs
+FLAGS = -package ghc -funbox-strict-fields -hide-package groupoids -hidir obj -odir obj -isrc -itest 
+MAIN = src/Main.hs
 
 .PHONY : ghci happy clean
 
@@ -15,8 +15,7 @@ test:
 	elea.exe 2>&1
 
 happy:
-	happy src-lib/Elea/Parser/Calculus.y -o src-lib/Elea/Parser/Calculus.hs
+	happy src/Elea/Parser/Calculus.y -o src/Elea/Parser/Calculus.hs
 
 clean:
 	rm -rf obj/
-
