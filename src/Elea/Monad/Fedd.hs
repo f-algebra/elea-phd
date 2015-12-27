@@ -153,7 +153,22 @@ instance Monad m => Direction.Has (FeddT m) where
 instance Monad m => Steps.Counter (FeddT m) where
   take = do
     tell stepTaken
-    State.modify (modify fsStepsRemaining (map succ))
+    State.modify (modify fsStepsRemaining (map safePred))
+    where
+    safePred :: Nat -> Nat
+    safePred n | n == 0 = n
+               | otherwise = pred n
 
   taken = 
     liftM snd . Writer.listens (get fwStepsTaken)
+
+instance Monad m => Steps.Limiter (FeddT m) where
+  limit n continue = do
+    -- Acts like a Reader here, but needs to be a State for Steps.take to work
+    prev_limit <- Steps.remaining
+    State.modify (set fsStepsRemaining (Just n))
+    ret_val <- continue
+    State.modify (set fsStepsRemaining prev_limit)
+    return ret_val
+
+  remaining = State.gets (get fsStepsRemaining)
