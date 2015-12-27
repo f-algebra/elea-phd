@@ -33,6 +33,7 @@ import qualified Elea.Monad.Fusion as Fusion
 import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Monad.Transform as Transform
 import qualified Elea.Monad.Direction as Direction
+import qualified Elea.Monad.StepCounter as Steps
 import qualified Elea.Monad.Fedd as Fedd  
 
 import qualified Data.Monoid as Monoid
@@ -49,7 +50,8 @@ type Env m =
   , Defs.Read m
   , Direction.Has m
   , Fusion.Env m
-  , History.Env m )
+  , History.Env m
+  , Steps.Limiter m )
 
 
 type Step m = (Eval.Step m, Env m)

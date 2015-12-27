@@ -23,6 +23,7 @@ import qualified Elea.Monad.Discovery.Class as Discovery
 import qualified Elea.Monad.History as History
 import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Monad.Direction as Direction
+import qualified Elea.Monad.StepCounter as Steps
 import qualified Elea.Term.Tag as Tag
 import qualified Control.Monad.Reader.Class as Reader
 import qualified Control.Monad.Trans.Class as Trans
@@ -48,21 +49,26 @@ mapStepT :: forall m a b . Monad m
 mapStepT f = StepT . mapReaderT (mapMaybeT f) . stepT
     
 
-fix :: forall m . (Env.Read m, History.Env m, Defs.Read m) 
+fix :: forall m . (Env.Read m, History.Env m, Defs.Read m, Steps.Limiter m) 
   => (Term -> StepT m Term) -> Term -> m Term
 fix f t = do
   hist <- History.ask
-  mby_t' <- runMaybeT (runReaderT (stepT (f t)) (fix f))
-  case mby_t' of
-    Just t' -> do
-     -- ts <- showM t
-     -- ts' <- showM t'
-      id
-       -- . tracE [("step-from", ts), ("step-to", ts')] 
-        $ Type.assertEqM "[fix]" t t' 
-      return t'
-    _ -> 
-      return t
+  can_continue <- Steps.anyRemaining
+  if not can_continue
+  then return t
+  else do
+    Steps.take
+    mby_t' <- runMaybeT (runReaderT (stepT (f t)) (fix f))
+    case mby_t' of
+      Just t' -> do
+       -- ts <- showM t
+       -- ts' <- showM t'
+        id
+         -- . tracE [("step-from", ts), ("step-to", ts')] 
+          $ Type.assertEqM "[fix]" t t' 
+        return t'
+      _ -> 
+        return t
   
 
 traceCont :: Step m => String -> Term -> Term -> m Term
@@ -138,3 +144,11 @@ instance Memo.Can m => Memo.Can (StepT m) where
     instep :: m (Maybe (Maybe Term)) -> m (Maybe (Maybe Term))
     instep mx =
       liftM return (Memo.maybeMemo n t (liftM join mx))
+
+instance Steps.Counter m => Steps.Counter (StepT m) where
+  take = Trans.lift Steps.take
+  taken = StepT . Steps.taken . stepT
+
+instance Steps.Limiter m => Steps.Limiter (StepT m) where
+  limit n = mapStepT (Steps.limit n)
+  remaining = Trans.lift Steps.remaining

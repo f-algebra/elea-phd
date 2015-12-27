@@ -28,6 +28,7 @@ import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Monad.Transform as Transform
+import qualified Elea.Monad.StepCounter as Steps
 import qualified Elea.Transform.Names as Name
 import qualified Elea.Monad.History as History
 
@@ -43,7 +44,8 @@ type Step m =
   ( Transform.Step m
   , Fail.Can m
   , Env.Write m
-  , History.Env m )
+  , History.Env m
+  , Steps.Limiter m )
   
 
 run :: Term -> Term

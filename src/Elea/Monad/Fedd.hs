@@ -159,8 +159,7 @@ instance Monad m => Steps.Counter (FeddT m) where
     safePred n | n == 0 = n
                | otherwise = pred n
 
-  taken = 
-    liftM snd . Writer.listens (get fwStepsTaken)
+  taken = Writer.listens (get fwStepsTaken)
 
 instance Monad m => Steps.Limiter (FeddT m) where
   limit n continue = do
