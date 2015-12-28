@@ -34,7 +34,6 @@ import qualified Elea.Monad.Discovery as Discovery
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.Memo.Class as Memo
-import qualified Elea.Monad.StepCounter as Steps
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -48,8 +47,7 @@ type Env m =
   , History.Env m 
   , Fusion.Env m
   , Memo.Can m
-  , Direction.Has m
-  , Steps.Limiter m )
+  , Direction.Has m )
 
 type Step m = (Env m, Prover.Step m)
   

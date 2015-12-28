@@ -23,7 +23,6 @@ import qualified Elea.Type.Ext as Type
 import qualified Elea.Transform.Fusion as Fusion
 import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.Fedd as Fedd
-import qualified Elea.Monad.StepCounter as Steps
 import qualified Data.Poset as Quasi
 
 time :: IO t -> IO t
@@ -54,10 +53,10 @@ runM :: String -> Fedd.Fedd String
 runM term_def = do
   Test.loadPrelude
   term <- Test.term term_def
-  (term', steps_taken) <- Steps.taken (Fusion.run term)
+  term' <- Fusion.run term
   term_s <- showM term'
   ty_s <- liftM show (Type.getM term')
-  return ("\n" ++ term_s ++ "\n\n: " ++ ty_s ++ "\n\nin " ++ show steps_taken ++ " steps")
+  return ("\n" ++ term_s ++ "\n\n: " ++ ty_s)
     
 run :: String -> IO ()
 run = id
