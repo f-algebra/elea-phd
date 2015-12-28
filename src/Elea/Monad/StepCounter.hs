@@ -16,13 +16,13 @@ class Monad m => Counter m where
   taken :: m a -> m (a, Nat)
 
 class Counter m => Limiter m where
-  limit :: Nat -> m a -> m a
-  remaining :: m (Maybe Nat)
+  limit :: CoNat -> m a -> m a
+  remaining :: m CoNat
 
 anyRemaining :: Limiter m => m Bool
 anyRemaining = do
   n <- remaining
-  return (n == Just 0)
+  return (n > 0)
 
 instance Counter m => Counter (ReaderT r m) where
   take = Trans.lift take

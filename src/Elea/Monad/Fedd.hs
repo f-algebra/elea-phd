@@ -28,7 +28,7 @@ import qualified Elea.Monad.Direction as Direction
 import qualified Control.Monad.RWS.Strict as RWS
 import qualified Control.Monad.State.Class as State
 import qualified Control.Monad.Writer.Class as Writer
-
+import qualified Data.Nat as Nat
   
 type Fedd = FeddT Identity
 
@@ -36,7 +36,7 @@ data FeddState
   = FS  { _fsDefs :: !Defs.Data
         , _fsMemo :: !MemoDB.Data
         , _fsTagGen :: !Int
-        , _fsStepsRemaining :: !(Maybe Nat) }
+        , _fsStepsRemaining :: !CoNat }
 
 data FeddWriter
   = FW  { _fwDiscoveries :: !EqSet.EqSet
@@ -64,8 +64,8 @@ evalT fedd = do
   return x
 
 emptyState :: FeddState
-emptyState = FS Defs.empty MemoDB.empty 1 Nothing
-  
+emptyState = FS Defs.empty MemoDB.empty 1 Nat.omega
+
 eval :: Fedd a -> a
 eval = runIdentity . evalT
 
@@ -153,9 +153,9 @@ instance Monad m => Direction.Has (FeddT m) where
 instance Monad m => Steps.Counter (FeddT m) where
   take = do
     tell stepTaken
-    State.modify (modify fsStepsRemaining (map safePred))
+    State.modify (modify fsStepsRemaining safePred)
     where
-    safePred :: Nat -> Nat
+    safePred :: CoNat -> CoNat
     safePred n | n == 0 = n
                | otherwise = pred n
 
@@ -165,7 +165,7 @@ instance Monad m => Steps.Limiter (FeddT m) where
   limit n continue = do
     -- Acts like a Reader here, but needs to be a State for Steps.take to work
     prev_limit <- Steps.remaining
-    State.modify (set fsStepsRemaining (Just n))
+    State.modify (set fsStepsRemaining n)
     ret_val <- continue
     State.modify (set fsStepsRemaining prev_limit)
     return ret_val
