@@ -30,6 +30,7 @@ import qualified Elea.Monad.Discovery.Class as Discovery
 import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Monad.Fusion as Fusion
 import qualified Elea.Monad.Direction as Direction
+import qualified Elea.Monad.StepCounter as Steps
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 import qualified Data.Map as Map
@@ -45,7 +46,8 @@ type Env m =
   , History.Env m 
   , Fusion.Env m
   , Memo.Can m
-  , Direction.Has m )
+  , Direction.Has m
+  , Steps.Limiter m )
   
   
 type Step m =

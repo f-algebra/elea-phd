@@ -24,6 +24,7 @@ import qualified Elea.Monad.History as History
 import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Term.Tag as Tag
+import qualified Elea.Monad.StepCounter as Steps
 import qualified Control.Monad.Reader.Class as Reader
 import qualified Control.Monad.Trans.Class as Trans
 
@@ -34,20 +35,11 @@ import qualified Data.Map as Map
 {-# INLINEABLE compose #-}
 
 
-class Fail.Can m => Step m where
--- | Accessing the recursive call to our transformation 
+class (Steps.Limiter m, Fail.Can m) => Step m where
+  -- | Accessing the recursive call to our transformation 
   continue :: Term -> m Term
 
-  -- | Number of times `continue` has been called
-  stepsTaken :: m Nat
-  stepsTaken = return 0
 
-  -- | Set the maximum number of times `continue` can be called
-  -- before it starts automatically failing
-  limitSteps :: Nat -> m a -> m a
-  limitSteps _ = id
-
-  
 -- | Carry around a call to a simplification function
 newtype StepT m a 
   = StepT { stepT :: ReaderT (Term -> m Term) (MaybeT m) a }
@@ -93,10 +85,15 @@ compose (f:fs) t = do
 instance MonadTrans StepT where
   lift m = StepT (ReaderT (\_ -> Trans.lift m))
   
-instance Monad m => Step (StepT m) where
+instance Steps.Limiter m => Step (StepT m) where
   continue t = do
-    f <- StepT Reader.ask
-    Trans.lift (f t)
+    can_continue <- Steps.anyRemaining
+    if not can_continue
+    then return t
+    else do
+      Steps.take
+      f <- StepT Reader.ask
+      Trans.lift (f t)
     
 instance Monad m => Fail.Can (StepT m) where
   here = StepT Fail.here
@@ -148,3 +145,11 @@ instance Memo.Can m => Memo.Can (StepT m) where
     instep :: m (Maybe (Maybe Term)) -> m (Maybe (Maybe Term))
     instep mx =
       liftM return (Memo.maybeMemo n t (liftM join mx))
+
+instance Steps.Counter m => Steps.Counter (StepT m) where
+  take = Trans.lift Steps.take
+  taken = StepT . Steps.taken . stepT
+
+instance Steps.Limiter m => Steps.Limiter (StepT m) where
+  limit n = StepT . Steps.limit n . stepT
+  remaining = Trans.lift Steps.remaining

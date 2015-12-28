@@ -24,6 +24,7 @@ import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Monad.Env.Data as EnvDB
 import qualified Elea.Monad.Direction as Direction
+import qualified Elea.Monad.StepCounter as Steps
 import qualified Control.Monad.RWS.Strict as RWS
 import qualified Control.Monad.State.Class as State
 import qualified Control.Monad.Writer.Class as Writer
@@ -34,14 +35,16 @@ type Fedd = FeddT Identity
 data FeddState 
   = FS  { _fsDefs :: !Defs.Data
         , _fsMemo :: !MemoDB.Data
-        , _fsTagGen :: !Int }
+        , _fsTagGen :: !Int
+        , _fsStepsRemaining :: !CoNat }
 
 data FeddWriter
-  = FW  { _fwDiscoveries :: !EqSet.EqSet }
+  = FW  { _fwDiscoveries :: !EqSet.EqSet
+        , _fwStepsTaken :: !Nat }
 
 instance Monoid FeddWriter where
-  mempty = FW mempty
-  mappend (FW x1) (FW x2) = FW (x1 ++ x2)
+  mempty = FW mempty 0
+  mappend (FW x1 y1) (FW x2 y2) = FW (x1 ++ x2) (y1 + y2)
 
 newtype FeddT m a 
   = FeddT { 
@@ -61,13 +64,16 @@ evalT fedd = do
   return x
 
 emptyState :: FeddState
-emptyState = FS Defs.empty MemoDB.empty 1
+emptyState = FS Defs.empty MemoDB.empty 1 Nat.omega
 
 eval :: Fedd a -> a
 eval = runIdentity . evalT
 
+stepTaken :: FeddWriter 
+stepTaken = FW mempty 1
+
 discovery :: Prop -> FeddWriter
-discovery prop = FW (EqSet.singleton prop)
+discovery prop = FW (EqSet.singleton prop) 0
   
 instance Monad m => Env.Write (FeddT m) where
   bindAt at b = local (EnvDB.bindAt at b)
@@ -143,7 +149,7 @@ instance Monad m => Tag.Gen (FeddT m) where
 instance Monad m => Direction.Has (FeddT m) where
   get = asks (get EnvDB.direction)
   local d = local (set EnvDB.direction d)
-{-
+
 instance Monad m => Steps.Counter (FeddT m) where
   take = do
     tell stepTaken
@@ -165,4 +171,3 @@ instance Monad m => Steps.Limiter (FeddT m) where
     return ret_val
 
   remaining = State.gets (get fsStepsRemaining)
--}
