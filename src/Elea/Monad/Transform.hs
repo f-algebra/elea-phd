@@ -89,7 +89,7 @@ instance Steps.Limiter m => Step (StepT m) where
   continue t = do
     can_continue <- Steps.anyRemaining
     if not can_continue
-    then return t
+    then Fail.here
     else do
       Steps.take
       f <- StepT Reader.ask
