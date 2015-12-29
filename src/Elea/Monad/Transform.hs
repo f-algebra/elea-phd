@@ -53,15 +53,19 @@ mapStepT f = StepT . mapReaderT (mapMaybeT f) . stepT
 fix :: forall m . (Steps.Limiter m, Env.Read m, History.Env m, Defs.Read m) 
   => (Term -> StepT m Term) -> Term -> m Term
 fix f t = do
-  hist <- History.ask
-  mby_t' <- runMaybeT (runReaderT (stepT (f t)) (fix f))
-  case mby_t' of
-    Just t' -> do
-      Steps.take
-      Type.assertEqM "[fix]" t t' 
-      return t'
-    _ -> 
-      return t
+  can_continue <- Steps.anyRemaining
+  if not can_continue 
+  then return t
+  else do
+    hist <- History.ask
+    mby_t' <- runMaybeT (runReaderT (stepT (f t)) (fix f))
+    case mby_t' of
+      Just t' -> do
+        Steps.take
+        Type.assertEqM "[fix]" t t' 
+        return t'
+      _ -> 
+        return t
   
 
 traceCont :: Step m => String -> Term -> Term -> m Term
