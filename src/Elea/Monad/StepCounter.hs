@@ -8,12 +8,12 @@ module Elea.Monad.StepCounter
 )
 where
 
-import Elea.Prelude hiding ( take )
+import Elea.Prelude hiding ( take, listen )
 import qualified Control.Monad.Trans.Class as Trans
 
 class Monad m => Counter m where
   take :: m ()
-  taken :: m a -> m (a, Nat)
+  listen :: m a -> m (a, Nat)
 
 class Counter m => Limiter m where
   limit :: CoNat -> m a -> m a
@@ -26,7 +26,7 @@ anyRemaining = do
 
 instance Counter m => Counter (ReaderT r m) where
   take = Trans.lift take
-  taken = mapReaderT taken
+  listen = mapReaderT listen
 
 instance Limiter m => Limiter (ReaderT r m) where
   limit n = mapReaderT (limit n)
@@ -34,14 +34,14 @@ instance Limiter m => Limiter (ReaderT r m) where
 
 instance Counter m => Counter (MaybeT m) where
   take = Trans.lift take
-  taken = mapMaybeT maybeTaken
+  listen = mapMaybeT maybeListen
     where 
-    maybeTaken :: m (Maybe a) -> m (Maybe (a, Nat))
-    maybeTaken run = do
-      (mby_a, n) <- taken run
+    maybeListen :: m (Maybe a) -> m (Maybe (a, Nat))
+    maybeListen run = do
+      (mby_a, n) <- listen run
       if isNothing mby_a
-      then return Nothing
-      else return (Just (fromJust mby_a, n))
+        then return Nothing
+        else return (Just (fromJust mby_a, n))
 
 instance Limiter m => Limiter (MaybeT m) where
   limit n = mapMaybeT (limit n)

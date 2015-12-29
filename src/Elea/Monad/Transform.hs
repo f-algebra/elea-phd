@@ -50,18 +50,15 @@ mapStepT :: forall m a b . Monad m
 mapStepT f = StepT . mapReaderT (mapMaybeT f) . stepT
     
 
-fix :: forall m . (Env.Read m, History.Env m, Defs.Read m) 
+fix :: forall m . (Steps.Limiter m, Env.Read m, History.Env m, Defs.Read m) 
   => (Term -> StepT m Term) -> Term -> m Term
 fix f t = do
   hist <- History.ask
   mby_t' <- runMaybeT (runReaderT (stepT (f t)) (fix f))
   case mby_t' of
     Just t' -> do
-     -- ts <- showM t
-     -- ts' <- showM t'
-      id
-       -- . tracE [("step-from", ts), ("step-to", ts')] 
-        $ Type.assertEqM "[fix]" t t' 
+      Steps.take
+      Type.assertEqM "[fix]" t t' 
       return t'
     _ -> 
       return t
@@ -87,13 +84,8 @@ instance MonadTrans StepT where
   
 instance Steps.Limiter m => Step (StepT m) where
   continue t = do
-    can_continue <- Steps.anyRemaining
-    if not can_continue
-    then Fail.here
-    else do
-      Steps.take
-      f <- StepT Reader.ask
-      Trans.lift (f t)
+    f <- StepT Reader.ask
+    Trans.lift (f t)
     
 instance Monad m => Fail.Can (StepT m) where
   here = StepT Fail.here
@@ -148,7 +140,7 @@ instance Memo.Can m => Memo.Can (StepT m) where
 
 instance Steps.Counter m => Steps.Counter (StepT m) where
   take = Trans.lift Steps.take
-  taken = StepT . Steps.taken . stepT
+  listen = StepT . Steps.listen . stepT
 
 instance Steps.Limiter m => Steps.Limiter (StepT m) where
   limit n = StepT . Steps.limit n . stepT
