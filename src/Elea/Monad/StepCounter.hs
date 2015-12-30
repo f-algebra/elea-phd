@@ -16,7 +16,7 @@ class Monad m => Counter m where
   listen :: m a -> m (a, Nat)
 
 class Counter m => Limiter m where
-  limit :: CoNat -> m a -> m a
+  limit :: Nat -> m a -> m a
   remaining :: m CoNat
 
 anyRemaining :: Limiter m => m Bool

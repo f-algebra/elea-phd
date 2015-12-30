@@ -42,13 +42,7 @@ main = do
       "test" -> Test.defaultMainWithArgs Tests.all (tail args)
 
 test :: IO ()
-test = time
-  $ Test.execute
-  . Fedd.eval $ do
-    Test.loadPrelude
-    phd_props <- Test.loadFile "phd_tests.elea"
-    tests <- mapM Test.checkProp phd_props 
-    return (Test.list tests)
+test = Test.defaultMain Tests.all
 
 runM :: String -> Fedd.Fedd String
 runM term_def = do
