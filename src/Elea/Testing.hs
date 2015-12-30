@@ -1,25 +1,25 @@
 module Elea.Testing 
 (
-  Test, M, execute,
-  label, list, run, 
-  assert, assertEq, assertNot,
+  M, Test,
+  test, testWithPrelude,
   assertSimpEq,
+  label, list,
   loadPrelude, loadFile,
   term, _type,
   simplifiedTerm,
-  checkProp,
+  assertProp,
   assertTermEq,
-  assertTermEqM,
-  assertTruth,
   localVars,
+  module Test.HUnit
 ) 
 where
 
-import Elea.Prelude hiding ( assert )
+import Elea.Prelude
 import Elea.Term
 import Elea.Type
 import Elea.Show
-import Elea.Monad.Fedd ( Fedd )
+import Elea.Monad.Fedd ( FeddT )
+import Test.HUnit ( Test, assertEqual, assertBool, assertFailure )
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Monad.Fedd as Fedd
@@ -32,107 +32,68 @@ import qualified Elea.Monad.Discovery as Discovery
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Memo.Class as Memo
 import qualified Test.HUnit as HUnit
+import qualified Control.Monad.Trans.Class as Trans
 
-type Test = HUnit.Test
-type M = Fedd
+type M = FeddT IO
 
-execute :: Test -> IO ()
-execute test = do
-  HUnit.runTestTT test
-  return ()
-
-list :: [Test] -> Test
-list = HUnit.TestList
+test :: String -> M () -> Test
+test label = id
+  . HUnit.TestLabel label 
+  . HUnit.TestCase 
+  . Fedd.evalT
 
 label :: String -> Test -> Test
 label = HUnit.TestLabel
 
-run :: HUnit.Testable t => Fedd t -> Test
-run = HUnit.test . Fedd.eval . Discovery.trace
+list :: [Test] -> Test
+list = HUnit.TestList
 
-assert :: HUnit.Assertable t => t -> Test
-assert = HUnit.TestCase . HUnit.assert
+testWithPrelude :: String -> M () -> Test
+testWithPrelude label = test label . (loadPrelude >>)
 
-assertNot :: Bool -> Test
-assertNot = assert . not
+assertTermEq :: Term -> Term -> M ()
+assertTermEq (stripTags -> t1) (stripTags -> t2) = do
+  t1s <- showM t1
+  t2s <- showM t2
+  let prop_s = printf "expected: %s\nbut got: %s" t1s t2s
+  Trans.lift
+    $ assertEqual prop_s t1 t2
 
-assertEq :: (Show a, Eq a) => a -> a -> Test
-assertEq = (HUnit.TestCase .) . HUnit.assertEqual ""
-
-assertSimpEq :: Term -> Term -> Test
-assertSimpEq (Simp.run -> t1) (Simp.run -> t2) = 
+assertSimpEq :: Term -> Term -> M ()
+assertSimpEq t1 t2 = do
+  t1' <- Simp.runM t1
+  t2' <- Simp.runM t2
   assertTermEq t1 t2
-  
-assertTruth :: (Env.Read m, Defs.Has m) => Term -> m Test
-assertTruth term 
-  | isBot term = id
-    . return 
-    . HUnit.TestCase 
-    $ HUnit.assertBool "" True
-    
-  | otherwise = do
-    term_s <- showM term
-    let msg = "Property failed with: " ++ term_s
-    return  
-      . HUnit.TestCase
-      $ HUnit.assertFailure msg
       
-checkProp :: Prop -> M Test
-checkProp (Prop name prop_t) = do
+assertProp :: Prop -> M ()
+assertProp (Prop name prop_t) = do
   prop_t' <- Fusion.run prop_t
-  assertTruth prop_t'
+  if isBot prop_t'
+  then return ()
+  else do
+    prop_s <- showM prop_t'
+    Trans.lift
+      . assertFailure
+      $ printf "property \"%s\" failed with: %s" name prop_s
 
-prelude :: String
-prelude = unsafePerformIO
-  $ readFile "prelude.elea"
-  
-loadFile :: (Tag.Gen m, Defs.Has m) => String -> m [Prop]
-loadFile = id
-  . Err.noneM 
-  . liftM (map uninterpreted) 
-  . Parse.program 
-  . unsafePerformIO 
-  . readFile
+loadFile :: String -> M [Prop]
+loadFile file_name = do
+  contents <- Trans.lift (readFile file_name) 
+  Err.noneM 
+    . liftM (map uninterpreted) 
+    $ Parse.program contents
 
-loadPrelude :: (Tag.Gen m, Defs.Has m) => m ()
+loadPrelude :: M ()
 loadPrelude = do
-  eqs <- Err.noneM (Parse.program prelude)
+  [] <- loadFile "prelude.elea"
   return ()
-  {-
-assertProvablyEq :: Fusion.FusionM m => Term -> Term -> m Test
-assertProvablyEq t1 t2 = do
-  mby_eq <- runMaybeT (Equality.prove Fusion.run t1 t2)
-  t1s <- showM t1
-  t2s <- showM t2
-  let prop_s = "\nexpected: " ++ t1s ++ "\nbut got: " ++ t2s
-  return 
-    . HUnit.TestCase   
-    . HUnit.assertBool prop_s
-    $ fromMaybe False mby_eq
-  -}
-  
-assertTermEq :: Term -> Term -> Test
-assertTermEq = assertEq `on` stripTags
-
-assertTermEqM :: (Env.Read m, Defs.Read m) => Term -> Term -> m Test
-assertTermEqM (stripTags -> t1) (stripTags -> t2) = do
-  t1s <- showM t1
-  t2s <- showM t2
-  let prop_s = "\nexpected: " ++ t1s ++ "\nbut got: " ++ t2s
-  return 
-    . HUnit.TestCase
-    . HUnit.assertBool prop_s 
-    $ t1 == t2
     
 term :: (Tag.Gen m, Defs.Has m, Env.Read m) => String -> m Term
 term = Err.noneM . Parse.term
 
 simplifiedTerm :: (Tag.Gen m, Defs.Has m, Env.Read m) => String -> m Term
 simplifiedTerm = liftM Simp.run . term
-{-
-fusedTerm :: (Defs.Has m, Fusion.FusionM m) => String -> m Term
-fusedTerm = Fusion.run <=< term
--}
+
 _type :: (Tag.Gen m, Defs.Has m) => String -> m Type
 _type = Err.noneM . Parse._type
 

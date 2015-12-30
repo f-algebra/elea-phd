@@ -1,7 +1,8 @@
 -- | Some term transformation steps that rely on fixpoint fusion.
 module Elea.Transform.Fusion
 (
-  run
+  run,
+  Env
 )
 where
 

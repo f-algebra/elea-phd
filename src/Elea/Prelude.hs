@@ -44,6 +44,7 @@ module Elea.Prelude
   
   module Debug.Trace,
   module System.IO.Unsafe,
+  module Text.Printf,
   
   debug,
   
@@ -127,6 +128,7 @@ import Data.Proxy
 
 import Debug.Trace
 import System.IO.Unsafe
+import Text.Printf ( printf )
 
 import qualified Prelude as Pre
 import qualified Data.Sequence as Seq
