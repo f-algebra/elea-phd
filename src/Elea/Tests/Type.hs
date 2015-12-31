@@ -9,9 +9,8 @@ import Elea.Type hiding ( get )
 import Elea.Testing ( Test )
 import qualified Elea.Testing as Test
 
-tests = id
-  . Test.label "Type" 
-  $ Test.list [testPreludeTypes]
+tests :: Test
+tests = Test.label "Type" testPreludeTypes
 
 testPreludeTypes :: Test
 testPreludeTypes = 
