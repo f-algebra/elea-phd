@@ -4,8 +4,7 @@ module Main
   main,
   test,
   run,
-  dec,
-  embeds
+  dec
 )
 where
 
@@ -44,7 +43,7 @@ main = do
 test :: IO ()
 test = Test.defaultMain Tests.all
 
-runM :: String -> Fedd.Fedd String
+runM :: String -> Test.M String
 runM term_def = do
   Test.loadPrelude
   term <- Test.term term_def
@@ -54,27 +53,14 @@ runM term_def = do
   return ("\n" ++ term_s ++ "\n\n: " ++ ty_s ++ "\n\n in " ++ show steps_taken ++ " steps")
     
 run :: String -> IO ()
-run = id
-  . time
-  . putStrLn
-  . Fedd.eval 
-  . runM
-  
-dec :: String -> IO ()
-dec = id
-  . time
-  . putStrLn
-  . Fedd.eval 
-  . Direction.local Direction.Dec
-  . runM
+run term_def = time $ do
+  result <- Fedd.evalT (runM term_def)
+  putStrLn result
 
-embeds :: String -> String -> Bool
-embeds t1_def t2_def = id
-  . Fedd.eval $ do
-    Test.loadPrelude 
-    t1 <- Test.term t1_def
-    t2 <- Test.term t2_def 
-    return (t1 Quasi.<= t2)
-  
-  
-    
+dec :: String -> IO ()
+dec term_def = time $ do
+  result <- id
+    . Fedd.evalT 
+    . Direction.local Direction.Dec
+    $ runM term_def
+  putStrLn result

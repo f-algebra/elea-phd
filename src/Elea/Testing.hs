@@ -1,14 +1,15 @@
 module Elea.Testing 
 (
-  M, Test,
+  M,
   test, testWithPrelude,
   assertSimpEq,
   label, list,
   loadPrelude, loadFile,
   term, _type,
   simplifiedTerm,
-  assertProp,
   assertTermEq,
+  assertBool,
+  assertEq,
   localVars,
   module Test.HUnit
 ) 
@@ -19,7 +20,7 @@ import Elea.Term
 import Elea.Type
 import Elea.Show
 import Elea.Monad.Fedd ( FeddT )
-import Test.HUnit ( Test, assertEqual, assertBool, assertFailure )
+import Test.HUnit ( Test, assertFailure )
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Monad.Fedd as Fedd
@@ -51,30 +52,24 @@ list = HUnit.TestList
 testWithPrelude :: String -> M () -> Test
 testWithPrelude label = test label . (loadPrelude >>)
 
-assertTermEq :: Term -> Term -> M ()
-assertTermEq (stripTags -> t1) (stripTags -> t2) = do
+assertBool :: String -> Bool -> M ()
+assertBool msg = Trans.lift . HUnit.assertBool msg
+
+assertEq :: (Show a, Eq a) => String -> a -> a -> M ()
+assertEq msg x y = Trans.lift (HUnit.assertEqual msg x y)
+
+assertTermEq :: String ->Term -> Term -> M ()
+assertTermEq msg (stripTags -> t1) (stripTags -> t2) = do
   t1s <- showM t1
   t2s <- showM t2
-  let prop_s = printf "expected: %s\nbut got: %s" t1s t2s
-  Trans.lift
-    $ assertEqual prop_s t1 t2
+  let prop_s = printf "[%s]\nexpected: %s\nbut got: %s" msg t1s t2s
+  assertEq prop_s t1 t2
 
-assertSimpEq :: Term -> Term -> M ()
-assertSimpEq t1 t2 = do
+assertSimpEq :: String -> Term -> Term -> M ()
+assertSimpEq msg t1 t2 = do
   t1' <- Simp.runM t1
   t2' <- Simp.runM t2
-  assertTermEq t1 t2
-      
-assertProp :: Prop -> M ()
-assertProp (Prop name prop_t) = do
-  prop_t' <- Fusion.run prop_t
-  if isBot prop_t'
-  then return ()
-  else do
-    prop_s <- showM prop_t'
-    Trans.lift
-      . assertFailure
-      $ printf "property \"%s\" failed with: %s" name prop_s
+  assertTermEq msg t1 t2
 
 loadFile :: String -> M [Prop]
 loadFile file_name = do
@@ -97,7 +92,7 @@ simplifiedTerm = liftM Simp.run . term
 _type :: (Tag.Gen m, Defs.Has m) => String -> m Type
 _type = Err.noneM . Parse._type
 
-localVars :: (Tag.Gen m, Defs.Has m, Env.Write m) => String -> m a -> m a
+localVars :: String -> M a -> M a
 localVars bs_s run = do
   bs <- Err.noneM (Parse.bindings bs_s)
   Env.bindMany bs $ do

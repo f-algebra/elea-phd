@@ -6,25 +6,23 @@ where
 
 import Elea.Prelude
 import Elea.Term
+import Elea.Testing ( Test )
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Testing as Test
 import qualified Elea.Transform.Prover as Prover
 
-checkProp :: (Env.Read m, Defs.Has m) => Prop -> m Test.Test
-checkProp (Prop name t) = id
-  . liftM (Test.label name)
-  . Test.assertTruth
-  . Fedd.eval 
-  $ Prover.run t
+testProp :: Prop -> Test.M ()
+testProp (Prop name t) = do
+  t' <- Prover.run t
+  Test.assertTermEq (printf "prop %s" name) truth t'
   
+tests :: Test
 tests = id
-    . Test.label "Simplifier"
-    . Test.run $ do
-  Test.loadPrelude  
-  eqs <- Test.loadFile "src/Elea/Tests/simplifier.elea"
-  mapM checkProp 
-   -- . filter ((== "beta2") . get equationName)
-    $ eqs
+  . Test.testWithPrelude "Simplifier" $ do
+      props <- Test.loadFile "src/Elea/Tests/simplifier.elea"
+      mapM_ testProp 
+       -- . filter ((== "beta2") . get equationName)
+        $ props
 

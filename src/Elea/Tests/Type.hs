@@ -25,5 +25,5 @@ testPreludeTypes =
     
     Test.assertBool "isBaseCase true" (isBaseCase true)
     Test.assertBool "isBaseCase zero" (isBaseCase zero)
-    Test.assertEqual "succ single rec arc" [0] (recursiveArgs succ)
+    Test.assertEq "succ single rec arc" [0] (recursiveArgs succ)
     Test.assertBool "isRecursive nat" (isRecursive nat)
