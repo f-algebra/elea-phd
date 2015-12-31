@@ -10,11 +10,8 @@ import Elea.Testing ( Test )
 import qualified Elea.Testing as Test
 
 tests :: Test
-tests = Test.label "Type" testPreludeTypes
-
-testPreludeTypes :: Test
-testPreludeTypes = 
-  Test.testWithPrelude "testPrelude" $ do
+tests = 
+  Test.testWithPrelude "Type" $ do
     Base nat <- Test._type "nat"
     Base bool <- Test._type "bool"
     
