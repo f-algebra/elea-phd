@@ -1,11 +1,12 @@
 module Elea.Tests.Fusion
 (
-  tests, checkProp  
+  tests  
 )
 where
 
 import Elea.Prelude
 import Elea.Term
+import Elea.Testing ( Test )
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Transform.Simplify as Simp
 import qualified Elea.Testing as Test
@@ -14,16 +15,16 @@ import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Transform.Fusion as Fusion
 import qualified Elea.Monad.Definitions as Defs
 
-checkProp :: Prop -> Test.M Test.Test
-checkProp (Prop name t) = 
-  liftM (Test.label name) $ do
-    t' <- Fusion.run t
-    Test.assertTruth t'
-    
-tests = Test.label "Fusion"
-    $ Test.run $ do
-  Test.loadPrelude
-  eqs <- Test.loadFile "src/Elea/Tests/fusion.elea"
-  mapM checkProp
---    . filter ((== "le count") . get propName)
-    $ eqs
+testProp :: Prop -> Test.M ()
+testProp (Prop name t) = do
+  t' <- Fusion.run t
+  Test.assertTermEq (printf "prop %s" name) truth t'
+  
+tests :: Test
+tests = id
+  . Test.testWithPrelude "Simplifier" $ do
+      props <- Test.loadFile "src/Elea/Tests/fusion.elea"
+      mapM_ testProp 
+       -- . filter ((== "beta2") . get equationName)
+        $ props
+
