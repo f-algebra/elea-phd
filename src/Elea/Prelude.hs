@@ -1,5 +1,5 @@
 module Elea.Prelude
-       (debug, (++), (!!), concat, intercalate, map, void, concatMap,
+       ((++), (!!), concat, intercalate, map, void, concatMap,
         concatMapM, partitionM, concatEndos, concatEndosM, fromJustT, anyM,
         allM, findM, sortWith, deleteIndices, minimalBy, nubOrd, elemOrd,
         intersectOrd, countOrd, fromRight, fromLeft, setAt, firstM,
@@ -88,9 +88,6 @@ import qualified Data.Nat as Nat
 
 infixr 6 ++
 
-debug :: Bool
-debug = True
-
 (|>) :: a -> (a -> b) -> b
 (|>) = flip ($)
 
@@ -157,9 +154,7 @@ liftMaybe (Just x) = return x
 maybeT :: Monad m => m b -> (a -> m b) -> MaybeT m a -> m b 
 maybeT x f m = do
   mby_a <- runMaybeT m
-  case mby_a of
-    Nothing -> x
-    Just a -> f a
+  maybe x f mby_a
 
 anyM :: (Monad f, Traversable t) => (a -> f Bool) -> t a -> f Bool
 anyM f = liftM or . mapM f
@@ -399,11 +394,14 @@ evalWriterT = liftM fst . runWriterT
 
 -- TODO remove tracE
 tracE :: [(String, String)] -> a -> a
-tracE _ | not debug = id
+#ifdef __TRACE__
+tracE _ = id
+#else
 tracE [] = id
 tracE ((n, s):xs) = id
   . trace ("\n\n[" ++ n ++ "]\n" ++ s) 
   . tracE xs
+#endif
 
 findIndicesM :: Monad m => (a -> m Bool) -> [a] -> m [Nat]
 findIndicesM p = id
