@@ -57,7 +57,7 @@ executable elea
                       text >=0.11,
                       uniplate >=1.6, 
                       MissingH >=1.2, 
-                      keys ==3.0.3, 
+                      keys >=3 && <3.10, 
                       tagged >=0.7, 
                       ghc-prim >=0.3, 
                       recursion-schemes >=4, 
