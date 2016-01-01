@@ -62,6 +62,7 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Poset as Quasi
   
+-- TODO remove tags from constructors
 
 data Term
   = Leq     { leqLeft :: !Term

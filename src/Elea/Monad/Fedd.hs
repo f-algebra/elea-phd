@@ -29,7 +29,7 @@ import qualified Control.Monad.RWS.Strict as RWS
 import qualified Control.Monad.State.Class as State
 import qualified Control.Monad.Writer.Class as Writer
 import qualified Data.Nat as Nat
-  
+
 type Fedd = FeddT Identity
 
 data FeddState 
