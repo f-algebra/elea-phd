@@ -20,9 +20,9 @@ executable elea
   hs-source-dirs:     src
   main-is:            Main.hs
   default-language:   Haskell2010
-  ghc-options:        -cpp
   
-  default-extensions: DoAndIfThenElse
+  default-extensions: CPP
+                      DoAndIfThenElse
                       TemplateHaskell 
                       TypeOperators 
                       FunctionalDependencies 
