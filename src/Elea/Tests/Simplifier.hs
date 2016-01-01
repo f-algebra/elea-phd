@@ -13,16 +13,21 @@ import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Testing as Test
 import qualified Elea.Transform.Prover as Prover
 
-testProp :: Prop -> Test.M ()
-testProp (Prop name t) = do
-  t' <- Prover.run t
-  Test.assertTermEq (printf "prop %s" name) truth t'
+testProp :: String -> Test 
+testProp prop_name = id
+  . Test.testWithPrelude prop_name $ do
+    all_props <- Test.loadFile properties_file
+    let Just (Prop _ prop_t) = find ((== prop_name) . get propName) all_props
+    prop_t' <- Prover.run prop_t
+    Test.assertTermEq "" truth prop_t'
   
-tests :: Test
-tests = id
-  . Test.testWithPrelude "Simplifier" $ do
-      props <- Test.loadFile "src/Elea/Tests/simplifier.elea"
-      mapM_ testProp 
-       -- . filter ((== "beta2") . get equationName)
-        $ props
+tests :: IO Test
+tests = do
+  prop_names <- Test.loadPropertyNamesFromFile properties_file
+  return 
+    . Test.label "Simplifier"
+    . Test.list 
+    $ map testProp prop_names
 
+properties_file :: String
+properties_file = "src/Elea/Tests/simplifier.elea"

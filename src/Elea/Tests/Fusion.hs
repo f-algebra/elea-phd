@@ -15,16 +15,21 @@ import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Transform.Fusion as Fusion
 import qualified Elea.Monad.Definitions as Defs
 
-testProp :: Prop -> Test.M ()
-testProp (Prop name t) = do
-  t' <- Fusion.run t
-  Test.assertTermEq (printf "prop %s" name) truth t'
+testProp :: String -> Test 
+testProp prop_name = id
+  . Test.testWithPrelude prop_name $ do
+    all_props <- Test.loadFile properties_file
+    let Just (Prop _ prop_t) = find ((== prop_name) . get propName) all_props
+    prop_t' <- Fusion.run prop_t
+    Test.assertTermEq "" truth prop_t'
   
-tests :: Test
-tests = id
-  . Test.testWithPrelude "Simplifier" $ do
-      props <- Test.loadFile "src/Elea/Tests/fusion.elea"
-      mapM_ testProp 
-       -- . filter ((== "beta2") . get equationName)
-        $ props
+tests :: IO Test
+tests = do
+  prop_names <- Test.loadPropertyNamesFromFile properties_file
+  return 
+    . Test.label "Fusion"
+    . Test.list 
+    $ map testProp prop_names
 
+properties_file :: String
+properties_file = "src/Elea/Tests/fusion.elea"

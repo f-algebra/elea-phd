@@ -12,10 +12,11 @@ import Elea.Prelude
 import Elea.Show ( showM )
 import Text.Printf
 import System.CPUTime
-import System.Environment ( getArgs )
+import System.Environment ( getArgs, withArgs )
 
 import qualified Elea.Testing as Test
-import qualified Test.Framework as Test
+import qualified Test.Framework as TestFramework
+import qualified Test.Framework.Providers.HUnit as TestFramework
 import qualified Elea.Tests.All as Tests
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Type.Ext as Type
@@ -38,10 +39,12 @@ main :: IO ()
 main = do
   args <- getArgs
   case args !! 0 of
-      "test" -> Test.defaultMainWithArgs Tests.all (tail args)
+      "test" -> do
+        tests <- liftM TestFramework.hUnitTestToTests Tests.all
+        TestFramework.defaultMainWithArgs tests (tail args)
 
 test :: IO ()
-test = Test.defaultMain Tests.all
+test = withArgs ["test"] main
 
 runM :: String -> Test.M String
 runM term_def = do

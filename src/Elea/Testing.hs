@@ -5,6 +5,7 @@ module Elea.Testing
   assertSimpEq,
   label, list,
   loadPrelude, loadFile,
+  loadPropertyNamesFromFile,
   term, _type,
   simplifiedTerm,
   assertTermEq,
@@ -17,7 +18,7 @@ where
 
 import Elea.Prelude
 import Elea.Term
-import Elea.Type
+import Elea.Type hiding ( get )
 import Elea.Show
 import Elea.Monad.Fedd ( FeddT )
 import Test.HUnit ( Test, assertFailure )
@@ -62,7 +63,9 @@ assertTermEq :: String ->Term -> Term -> M ()
 assertTermEq msg (stripTags -> t1) (stripTags -> t2) = do
   t1s <- showM t1
   t2s <- showM t2
-  let prop_s = printf "[%s]\nexpected: %s\nbut got: %s" msg t1s t2s
+  let msg' | null msg = ""
+           | otherwise = printf "[%s]\n" msg
+  let prop_s = printf "%sexpected: %s\nbut got: %s" msg' t1s t2s
   assertEq prop_s t1 t2
 
 assertSimpEq :: String -> Term -> Term -> M ()
@@ -77,6 +80,13 @@ loadFile file_name = do
   Err.noneM 
     . liftM (map uninterpreted) 
     $ Parse.program contents
+
+loadPropertyNamesFromFile :: String -> IO [String]
+loadPropertyNamesFromFile file_name = do
+  all_props <- Fedd.evalT $ do
+    loadPrelude
+    loadFile file_name
+  return (map (get propName) all_props)
 
 loadPrelude :: M ()
 loadPrelude = do
