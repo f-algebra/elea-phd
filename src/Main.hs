@@ -3,8 +3,6 @@ module Main
   module Elea.Prelude,
   main,
   test,
-  run,
-  dec
 )
 where
 
@@ -15,30 +13,30 @@ import System.CPUTime
 import System.Environment ( getArgs, withArgs )
 
 import qualified Elea.Testing as Test
-import qualified Test.Framework as TestFramework
-import qualified Test.Framework.Providers.HUnit as TestFramework
 import qualified Elea.Tests.All as Tests
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Type.Ext as Type
-import qualified Elea.Transform.Fusion as Fusion
+--import qualified Elea.Transform.Fusion as Fusion
 import qualified Elea.Monad.Direction as Direction
-import qualified Elea.Monad.Fedd as Fedd
+--import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Monad.StepCounter as Steps
 import qualified Data.Poset as Quasi
+import qualified Test.Framework as TestFramework
+import qualified Test.Framework.Providers.HUnit as TestFramework
 
 time :: IO t -> IO t
 time a = do
   start <- getCPUTime
   v <- a
   end <- getCPUTime
-  let diff = (fromIntegral (end - start)) / (10**12)
+  let diff = fromIntegral (end - start) / (10**12)
   printf "Computation time: %0.3f sec\n" (diff :: Double)
   return v
     
 main :: IO ()
 main = do
   args <- getArgs
-  case args !! 0 of
+  case head args of
       "test" -> do
         tests <- liftM TestFramework.hUnitTestToTests Tests.all
         TestFramework.defaultMainWithArgs tests (tail args)
@@ -46,6 +44,7 @@ main = do
 test :: IO ()
 test = withArgs ["test"] main
 
+    {-
 runM :: String -> Test.M String
 runM term_def = do
   Test.loadPrelude
@@ -67,3 +66,4 @@ dec term_def = time $ do
     . Direction.local Direction.Dec
     $ runM term_def
   putStrLn result
+-}

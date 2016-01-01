@@ -1,138 +1,85 @@
+{-# ANN module "HLint: ignore Redundant id" #-}
 module Elea.Prelude
-(
-  module Prelude,
-  
-  module Control.Category,
-  module Control.Arrow,
-  module Control.Applicative,
-  module Control.Monad,
-  module Control.Monad.State,
-  module Control.Monad.Reader,
-  module Control.Monad.Writer,
-  module Control.Monad.Trans,
-  module Control.Monad.List,
-  module Control.Monad.RWS.Lazy,
-  module Control.Monad.Identity,
-  module Control.Monad.Trans.Identity,
-  module Control.Monad.Trans.Either,
-  module Control.Monad.Trans.Maybe,
-  module Control.Exception,
-  
-  module Data.Nat,
-  module Data.Label,
-  module Data.Maybe,
-  module Data.Either,
-  module Data.Monoid,
-  module Data.Semigroup,
-  module Data.Map.Strict,
-  module Data.Sequence,
-  module Data.Set,
-  module Data.Traversable,
-  module Data.Foldable,
-  module Data.List,
-  module Data.String,
-  module Data.IORef,
-  module Data.IntMap,
-  module Data.Char,
-  module Data.IntSet,
-  module Data.Function,
-  module Data.Text,
---  module Data.Generics.Uniplate.Operations,
-  module Data.Generics.Str,
-  module Data.Key,
-  module Data.Proxy,
-  
-  module Debug.Trace,
-  module System.IO.Unsafe,
-  module Text.Printf,
-  
-  debug,
-  
-  (++), (!!), concat, intercalate, map, void,
-  concatMap, concatMapM, partitionM,
-  concatEndos, concatEndosM,
-  fromJustT, anyM, allM, findM, sortWith, deleteIndices,
-  minimalBy, nubOrd, elemOrd, intersectOrd, countOrd,
-  fromRight, fromLeft, setAt, firstM, 
-  takeIndices, isNub, foldl1M, seqStr, strSeq,
-  isLeft, isRight, modifyM, removeAt,
-  insertAt, enum, elength, nlength, range,
-  indent, indentBy, debugNth,
-  arrowSum, supremum, (|>), ($>), replaceAt,
-  Maximum (..), Minimum (..), sconcatMap, length,
-  maximum, maximum1, invert,
-  intersects, liftMaybe, maybeT, nth, drop, take, screen,
-  isSubsequenceOf, evalWriter, evalWriterT, 
-  removeAll, tracE, findIndicesM
-)
-where
+       (debug, (++), (!!), concat, intercalate, map, void, concatMap,
+        concatMapM, partitionM, concatEndos, concatEndosM, fromJustT, anyM,
+        allM, findM, sortWith, deleteIndices, minimalBy, nubOrd, elemOrd,
+        intersectOrd, countOrd, fromRight, fromLeft, setAt, firstM,
+        takeIndices, isNub, foldl1M, seqStr, strSeq, isLeft, isRight,
+        modifyM, removeAt, insertAt, enum, elength, nlength, range, indent,
+        indentBy, debugNth, arrowSum, supremum, (|>), ($>), replaceAt,
+        Maximum(..), Minimum(..), sconcatMap, length, maximum, maximum1,
+        invert, intersects, liftMaybe, maybeT, nth, drop, take, screen,
+        isSubsequenceOf, evalWriter, evalWriterT, removeAll, tracE,
+        findIndicesM, module X)
+       where
 
-import Prelude hiding ( mapM, foldl, foldl1, mapM_, minimum, 
-  maximum, sequence_, zip, zipWith, Read (..), length, drop, take,
-  foldr, foldr1, sequence, Maybe (..), maybe, all, any, elem, product,
-  and, concat, notElem, or, concatMap, sum, (++), map, (.), id, (!!) )
+import Prelude as X
+       hiding (mapM, foldl, foldl1, mapM_, minimum, maximum, sequence_,
+               zip, zipWith, Read(..), length, drop, take, foldr, foldr1,
+               sequence, Maybe(..), maybe, all, any, elem, product, and, concat,
+               notElem, or, concatMap, sum, (++), map, (.), id, (!!))
+import Control.Category as X ((.), id)
+import Control.Arrow as X
+       (Arrow(..), (>>>), (<<<), (&&&), (***), first, second, Kleisli(..),
+        runKleisli)
+import Control.Applicative as X hiding (empty)
+import Control.Monad as X
+       (liftM, ap, replicateM, join, zipWithM_, zipWithM, filterM, when,
+        unless, guard, (>=>), (<=<), (>>), MonadPlus(..))
+import Control.Monad.Trans as X (MonadTrans(..), lift, liftIO)
+import Control.Monad.State as X
+       (evalStateT, execState, runState, evalState, MonadState, State(..),
+        StateT(..), mapStateT)
+import Control.Monad.Reader as X
+       (MonadReader(..), Reader(..), ReaderT(..), asks, runReader,
+        mapReaderT, withReaderT, withReader)
+import Control.Monad.Writer as X
+       (execWriter, runWriter, execWriterT, mapWriterT, MonadWriter(..),
+        Writer(..), WriterT(..), censor, listens)
+import Control.Monad.List as X (ListT(..))
+import Control.Monad.Trans.Maybe as X
+import Control.Monad.RWS.Lazy as X
+       (RWS(..), RWST(..), execRWS, evalRWS, runRWS)
+import Control.Monad.Identity as X (Identity(..))
+import Control.Monad.Trans.Identity as X
+       (IdentityT(..), mapIdentityT)
+import Control.Monad.Trans.Either as X (EitherT(..), mapEitherT)
+import Control.Exception as X (assert)
+import Data.Nat as X (Nat, CoNat)
+import Data.Label as X ((:->), get, set, modify, mkLabels, lens)
+import Data.Maybe as X
+import Data.Either as X (lefts, rights, partitionEithers)
+import Data.Monoid as X hiding (Sum, All, (<>), Alt)
+import Data.Semigroup as X (Semigroup(..))
+import Data.Map.Strict as X (Map)
+import Data.Sequence as X (Seq)
+import Data.Set as X (Set, (\\))
+import Data.IntSet as X (IntSet)
+import Data.Traversable as X
+import Data.Foldable as X
+       hiding (concat, concatMap, maximum, minimum, length)
+import Data.List as X
+       (intersperse, unfoldr, partition, isPrefixOf, isSuffixOf,
+        isInfixOf, sort, sortBy, findIndex, delete, elemIndices, intersect,
+        union, transpose, groupBy, subsequences, isSuffixOf, deleteBy,
+        findIndices, elemIndex)
+import Data.IORef as X
+import Data.Char as X
+       (isAlpha, isDigit, isAlphaNum, isSpace, chr, ord)
+import Data.IntMap as X (IntMap)
+import Data.Function as X (on)
+import Data.Text as X (Text)
+import Data.String as X
+import Data.Generics.Str as X
+import Data.Key as X (Zip(..))
+import Data.Proxy as X
+import Debug.Trace as X
+import System.IO.Unsafe as X
+import Text.Printf as X (printf, PrintfType)
 
-import Control.Category ( (.), id )
-import Control.Arrow ( Arrow (..), (>>>), (<<<), (&&&), (***), 
-  first, second, Kleisli (..), runKleisli )
-import Control.Applicative hiding ( empty )
-import Control.Monad ( liftM, ap, replicateM, join, zipWithM_,
-  zipWithM, filterM, when, unless, guard, 
-  (>=>), (<=<), (>>), MonadPlus (..) )
-import Control.Monad.Trans ( MonadTrans (..), lift, liftIO )
-import Control.Monad.State ( evalStateT, execState, runState, evalState,
-  MonadState, State (..), StateT (..), mapStateT )
-import Control.Monad.Reader ( 
-  MonadReader (..), Reader (..), ReaderT (..), 
-  asks, runReader, mapReaderT, withReaderT, withReader )
-import Control.Monad.Writer ( execWriter, runWriter, execWriterT, 
-  mapWriterT,
-  MonadWriter (..), Writer (..), WriterT (..), censor, listens )
-import Control.Monad.List ( ListT (..) )
-import Control.Monad.Trans.Maybe
-import Control.Monad.RWS.Lazy ( RWS (..), RWST (..), execRWS, evalRWS, runRWS )
-import Control.Monad.Identity ( Identity (..) )
-import Control.Monad.Trans.Identity ( IdentityT (..), mapIdentityT )
-import Control.Monad.Trans.Either ( EitherT (..), mapEitherT )
-import Control.Monad.Fix
-import Control.Exception ( assert )
-
-import Data.Nat ( Nat, CoNat )
-import Data.Label ( (:->), get, set, modify, mkLabels, lens )
-import Data.Maybe
-import Data.Either ( lefts, rights, partitionEithers )
-import Data.Monoid hiding ( Sum, All, (<>), Alt )
-import Data.Semigroup ( Semigroup (..) )
-import Data.Map.Strict ( Map )
-import Data.Sequence ( Seq )
-import Data.Set ( Set, (\\) )
 import qualified Data.Set as Set
-import Data.IntSet ( IntSet )
-import Data.Traversable
-import Data.Foldable hiding ( concat, concatMap, maximum, minimum, length )
-import Data.List ( intersperse, unfoldr, partition,
-  isPrefixOf, isSuffixOf, isInfixOf, sort, sortBy, findIndex,
-  delete, elemIndices, intersect, union, transpose, groupBy,
-  subsequences, isSuffixOf, deleteBy, findIndices, elemIndex )
-import Data.IORef
-import Data.Char ( isAlpha, isDigit, isAlphaNum, isSpace, chr, ord )
-import Data.IntMap ( IntMap )
-import Data.IntSet ( IntSet )
-import Data.Function ( on )
-import Data.Text ( Text )
-import Data.String
--- import Data.Generics.Uniplate.Operations
-import Data.Generics.Str
-import Data.Key ( Zip (..) )
-import Data.Proxy
-
-import Debug.Trace
-import System.IO.Unsafe
-import Text.Printf ( printf )
-
 import qualified Prelude as Pre
 import qualified Data.Sequence as Seq
-import qualified Data.Set as Set
 import qualified Data.Label.Partial as Partial
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Nat as Nat
@@ -167,6 +114,7 @@ instance Monad m => Monoid (Kleisli m a a) where
   mempty = arr id
   mappend = (>>>)
 
+{-# ANN concatMap "HLint: ignore Use concatMap" #-}
 concatMap :: (Monoid m, Foldable f) => (a -> m) -> f a -> m
 concatMap f = concat . map f . toList
 
@@ -207,9 +155,7 @@ liftMaybe (Just x) = return x
 maybeT :: Monad m => m b -> (a -> m b) -> MaybeT m a -> m b 
 maybeT x f m = do
   mby_a <- runMaybeT m
-  if isNothing mby_a
-  then x
-  else f (fromJust mby_a)
+  maybe f x mby_a
 
 anyM :: (Monad f, Traversable t) => (a -> f Bool) -> t a -> f Bool
 anyM f = liftM or . mapM f
@@ -247,7 +193,7 @@ concatEndosM = runKleisli . mconcat . map Kleisli . toList
 
 minimalBy :: (a -> a -> Ordering) -> [a] -> [a]
 minimalBy _ [] = []
-minimalBy ord xs = y : (takeWhile ((== EQ) . ord y) ys)
+minimalBy ord xs = y : takeWhile ((== EQ) . ord y) ys
   where (y:ys) = sortBy ord xs
 
 nubOrd :: Ord a => [a] -> [a]
@@ -275,7 +221,7 @@ countOrd n = count . sort
   count (x:xs) =
     case x `compare` n of
       LT -> count xs
-      EQ -> 1 + (count xs)
+      EQ -> 1 + count xs
       GT -> 0
 
 intersectOrd :: Ord a => [a] -> [a] -> [a]
@@ -284,7 +230,7 @@ intersectOrd xs ys = Set.toList
   
 -- | Delete a set of indices from a list
 deleteIndices :: [Int] -> [a] -> [a]
-deleteIndices is xs = d 0 (sort is) xs
+deleteIndices is = d 0 (sort is)
   where
   d :: Int -> [Int] -> [a] -> [a]
   d _ [] xs = xs
@@ -295,7 +241,7 @@ deleteIndices is xs = d 0 (sort is) xs
     
 -- | Only return the given indices of a list
 takeIndices :: [Int] -> [a] -> [a]
-takeIndices is xs = t 0 (sort is) xs
+takeIndices is = t 0 (sort is)
   where
   t :: Int -> [Int] -> [a] -> [a]
   t _ [] _ = []
@@ -318,8 +264,8 @@ isRight _ = False
 
 setAt :: Int -> a -> [a] -> [a]
 setAt _ x [] = [x]
-setAt 0 x xs = x:(tail xs)
-setAt i x (y:ys) = y:(setAt (i - 1) x ys)
+setAt 0 x xs = x : tail xs
+setAt i x (y:ys) = y : setAt (i - 1) x ys
 
 seqStr :: Seq a -> Str a
 seqStr =  listStr . toList
@@ -334,14 +280,14 @@ modifyM r g f = do
    
 insertAt :: Int -> a -> [a] -> [a]
 insertAt 0 x ys = x:ys
-insertAt n x (y:ys) = y:(insertAt (n-1) x ys)
+insertAt n x (y:ys) = y : insertAt (n-1) x ys
 insertAt _ _ [] = 
   error "Can't insert past the end of a list"
   
 removeAt :: Nat -> [a] -> [a]
 removeAt _ [] = error "Can't remove past the end of a list"
 removeAt 0 (x:xs) = xs
-removeAt n (x:xs) = x:(removeAt (n-1) xs)
+removeAt n (x:xs) = x : removeAt (n-1) xs
 
 removeAll :: Set Nat -> [a] -> [a]
 removeAll (Set.toAscList -> is) x = 
@@ -349,7 +295,7 @@ removeAll (Set.toAscList -> is) x =
 
 replaceAt :: Int -> a -> [a] -> [a]
 replaceAt 0 x (y:ys) = x:ys
-replaceAt n x (y:ys) = y:(replaceAt (n-1) x ys)
+replaceAt n x (y:ys) = y: replaceAt (n-1) x ys
 replaceAt _ _ [] = 
   error "Can't replace past the end of a list"
   
@@ -416,7 +362,7 @@ intersects :: Ord a => Set a -> Set a -> Bool
 intersects x = not . Set.null . Set.intersection x
 
 maximum :: (Monoid (Maximum a), Foldable f) => f a -> a
-maximum = getMaximum . concat . map Maximum . toList
+maximum = getMaximum . concatMap Maximum . toList
 
 maximum1 :: (Semigroup (Maximum a), Foldable f) => f a -> a
 maximum1 = getMaximum . foldl1 (<>) . map Maximum . toList
@@ -447,6 +393,7 @@ evalWriter = fst . runWriter
 evalWriterT :: Monad m => WriterT w m a -> m a
 evalWriterT = liftM fst . runWriterT
 
+-- TODO remove tracE
 tracE :: [(String, String)] -> a -> a
 tracE _ | not debug = id
 tracE [] = id
