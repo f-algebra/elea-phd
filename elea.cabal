@@ -53,7 +53,7 @@ executable elea
                       transformers >=0.3, 
                       either >=4, 
                       fclabels >=2 && <3, 
-                      semigroups >=3, 
+                      semigroups >=0.12, 
                       text >=0.11,
                       uniplate >=1.6, 
                       MissingH >=1.2,
