@@ -1,4 +1,3 @@
-{-# ANN module "HLint: ignore Redundant id" #-}
 module Elea.Prelude
        (debug, (++), (!!), concat, intercalate, map, void, concatMap,
         concatMapM, partitionM, concatEndos, concatEndosM, fromJustT, anyM,
@@ -11,7 +10,7 @@ module Elea.Prelude
         invert, intersects, liftMaybe, maybeT, nth, drop, take, screen,
         isSubsequenceOf, evalWriter, evalWriterT, removeAll, tracE,
         findIndicesM, module X)
-       where
+where
 
 import Prelude as X
        hiding (mapM, foldl, foldl1, mapM_, minimum, maximum, sequence_,
@@ -44,6 +43,7 @@ import Control.Monad.Identity as X (Identity(..))
 import Control.Monad.Trans.Identity as X
        (IdentityT(..), mapIdentityT)
 import Control.Monad.Trans.Either as X (EitherT(..), mapEitherT)
+import Control.Monad.IO.Class as X (MonadIO(..))
 import Control.Exception as X (assert)
 import Data.Nat as X (Nat, CoNat)
 import Data.Label as X ((:->), get, set, modify, mkLabels, lens)
@@ -83,6 +83,8 @@ import qualified Data.Sequence as Seq
 import qualified Data.Label.Partial as Partial
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Nat as Nat
+
+{-# ANN module "HLint: ignore Redundant id" #-}
 
 infixr 6 ++
 
@@ -155,7 +157,9 @@ liftMaybe (Just x) = return x
 maybeT :: Monad m => m b -> (a -> m b) -> MaybeT m a -> m b 
 maybeT x f m = do
   mby_a <- runMaybeT m
-  maybe f x mby_a
+  case mby_a of
+    Nothing -> x
+    Just a -> f a
 
 anyM :: (Monad f, Traversable t) => (a -> f Bool) -> t a -> f Bool
 anyM f = liftM or . mapM f

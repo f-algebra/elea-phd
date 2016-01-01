@@ -9,6 +9,9 @@ ghci:
 
 power:
 	ghc --make -o elea.exe -O $(FLAGS) $(EXTS) $(MAIN)
+
+warn:
+	ghc --make -o elea.exe -Wall $(FLAGS) $(EXTS) $(MAIN)
 	
 test:
 	ghc --make -O -o elea.exe $(FLAGS) $(EXTS) $(MAIN)

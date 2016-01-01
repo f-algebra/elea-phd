@@ -1,6 +1,6 @@
 
 name:                 elea
-version:              0.1.0.0
+version:              0.1.1.0
 synopsis:             Automated inductive theorem prover for the simply typed 
                       lambda calculus, based on fixpoint-fusion.
 license:              MIT
