@@ -394,7 +394,7 @@ evalWriterT = liftM fst . runWriterT
 
 -- TODO remove tracE
 tracE :: [(String, String)] -> a -> a
-#ifdef __TRACE__
+#ifndef __TRACE__
 tracE _ = id
 #else
 tracE [] = id
@@ -404,7 +404,7 @@ tracE ((n, s):xs) = id
 #endif
 
 trace :: String -> a -> a
-#ifdef __TRACE__
+#ifndef __TRACE__
 trace _ = id
 #else
 trace = Debug.trace
