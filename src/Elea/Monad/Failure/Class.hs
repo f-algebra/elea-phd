@@ -158,7 +158,7 @@ instance Can m => Can (EitherT e m) where
         Just (Right x) -> return (Right (Just x))
         
 instance Can m => Can (IdentityT m) where
-  here = lift hert 
+  here = lift here
   catch = mapIdentityT catch
   
 instance Can Monoid.First where
