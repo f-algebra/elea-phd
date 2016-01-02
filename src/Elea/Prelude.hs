@@ -9,7 +9,7 @@ module Elea.Prelude
         Maximum(..), Minimum(..), sconcatMap, length, maximum, maximum1,
         invert, intersects, liftMaybe, maybeT, nth, drop, take, screen,
         isSubsequenceOf, evalWriter, evalWriterT, removeAll, tracE,
-        findIndicesM, Zip(..), module X)
+        findIndicesM, module X)
 where
 
 import Prelude as X
@@ -71,6 +71,7 @@ import Data.Function as X (on)
 import Data.Text as X (Text)
 import Data.String as X
 import Data.Generics.Str as X
+import Data.Key as X (Zip(..))
 import Data.Proxy as X
 import Debug.Trace as X
 import System.IO.Unsafe as X
@@ -412,13 +413,3 @@ findIndicesM p = id
     if is 
     then return [i]
     else return []
-
-class Functor f => Zip f where
-  zip :: f a -> f b -> f (a, b)
-
-  zipWith :: (a -> b -> c) -> f a -> f b -> f c
-  zipWith f fa fb = map (uncurry f) (zip fa fb)
-
-instance Zip [] where
-  zip = Pre.zip
-  zipWith = Pre.zipWith
