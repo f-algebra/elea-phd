@@ -9,7 +9,7 @@ module Elea.Prelude
         Maximum(..), Minimum(..), sconcatMap, length, maximum, maximum1,
         invert, intersects, liftMaybe, maybeT, nth, drop, take, screen,
         isSubsequenceOf, evalWriter, evalWriterT, removeAll, tracE,
-        findIndicesM, module X)
+        findIndicesM, trace, module X)
 where
 
 import Prelude as X
@@ -73,7 +73,6 @@ import Data.String as X
 import Data.Generics.Str as X
 import Data.Key as X (Zip(..))
 import Data.Proxy as X
-import Debug.Trace as X
 import System.IO.Unsafe as X
 import Text.Printf as X (printf, PrintfType)
 
@@ -83,6 +82,7 @@ import qualified Data.Sequence as Seq
 import qualified Data.Label.Partial as Partial
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Nat as Nat
+import qualified Debug.Trace as Debug
 
 {-# ANN module "HLint: ignore Redundant id" #-}
 
@@ -399,8 +399,15 @@ tracE _ = id
 #else
 tracE [] = id
 tracE ((n, s):xs) = id
-  . trace ("\n\n[" ++ n ++ "]\n" ++ s) 
+  . Debug.trace ("\n\n[" ++ n ++ "]\n" ++ s) 
   . tracE xs
+#endif
+
+trace :: String -> a -> a
+#ifdef __TRACE__
+trace _ = id
+#else
+trace = Debug.trace
 #endif
 
 findIndicesM :: Monad m => (a -> m Bool) -> [a] -> m [Nat]
