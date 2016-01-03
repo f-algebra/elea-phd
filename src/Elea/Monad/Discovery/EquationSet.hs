@@ -3,16 +3,16 @@ module Elea.Monad.Discovery.EquationSet
   EqSet (..), 
   singleton,
   toList,
-  empty,
+  null,
 )
 where
 
-import Prelude ()
-import Elea.Prelude hiding ( toList )
+import Elea.Prelude hiding ( toList, null )
 import Elea.Term
 import Elea.Monad.Env ()
 import Elea.Show ()
 import qualified Elea.Unification.Map as UMap
+import qualified Elea.Prelude as Prelude
 
 -- | A set of rewrites which have been discovered.
 newtype EqSet
@@ -33,8 +33,8 @@ toList = collapse . runEqSet
     $ map (get equationTerm) eqs `zip` eqs
     -}
     
-empty :: EqSet -> Bool
-empty = null . runEqSet
+null :: EqSet -> Bool
+null = Prelude.null . runEqSet
   
 instance Monoid EqSet where
   mempty = EqSet mempty

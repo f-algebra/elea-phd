@@ -28,7 +28,7 @@ tests = id
 
 testBuildFold :: Test
 testBuildFold = 
-  Test.testWithPrelude "testBuildFold" $ do
+  Test.testWithPrelude "buildFold" $ do
   fold_nat_nat <- Test.term 
     $ "fun (v: nat) (k: nat -> nat) -> "
     ++  "fix (f: nat -> nat) (x: nat) ->"
@@ -50,29 +50,34 @@ testBuildFold =
       
 testConjunction :: Test
 testConjunction = 
-  Test.testWithPrelude "testConjunction" $ do
+  Test.testWithPrelude "conjunction" $ do
     let conj3_t = Simp.run (conjunction 3)
     conj3_t' <- Test.simplifiedTerm "fun (p q r: bool) -> and p (and q r)"
     Test.assertEq "conjunction" conj3_t' conj3_t
       
 testSubterms :: Test
 testSubterms = id
-  . Test.testWithPrelude "testSubterms"
+  . Test.testWithPrelude "subterms"
   . Test.localVars "(x y: nat)" $ do
-      x_plus_1 <- Test.term "add x 1"
+      add_stuff <- Test.term "add (add x y) 1"
       x <- Test.term "x"
       one <- Test.term "1"
       two <- Test.term "2"
       y <- Test.term "y"
+      add_x_y <- Test.term "add x y"
       
-      let free_ts = freeSubtermsOf x_plus_1
+      let free_ts = freeSubtermsOf add_stuff
+          free_vars = freeVars add_stuff
+          free_vars2 = freeVars add_x_y
           removed_ts = removeSubterms [x_plus_1, one, two, y]
-      Test.assertEq "free subterms" free_ts (Set.fromList [x])
-      Test.assertEq "remove subterms" removed_ts [x_plus_1, two, y]
+      Test.assertEq "free subterms" (Set.fromList [x]) free_ts 
+      Test.assertEq "free vars 1" (Set.fromList [x, y]) free_vars
+      Test.assertEq "free vars 2" free_vars free_vars2
+      Test.assertEq "remove subterms" [x_plus_1, two, y] removed_ts 
     
 testAbstract :: Test
 testAbstract = id
-  . Test.testWithPrelude "testAbstract"
+  . Test.testWithPrelude "abstract"
   . Test.localVars "(x y: nat)" $ do
       xy <- Test.term "add x y"
       Var x <- Test.term "x"
@@ -84,7 +89,7 @@ testAbstract = id
     
 testFindArgs :: Test
 testFindArgs = id
-  . Test.testWithPrelude "testFindArgs" 
+  . Test.testWithPrelude "findArgs" 
   . Test.localVars "(f: list<nat> -> list<nat>) (xs: list<nat>) (n x: nat)" $ do
       ctx_t <- Test.term "fun (ys: list<nat>) -> Cons<nat> n ys"
       in_ctx <- Test.term "Cons<nat> n (append<nat> (f xs) (Cons<nat> x Nil<nat>))"
@@ -94,7 +99,7 @@ testFindArgs = id
     
 testEval :: Test
 testEval = id
-  . Test.testWithPrelude "testEval" $ do
+  . Test.testWithPrelude "eval" $ do
       Base nat <- Test._type "nat"
       let id_nat = Eval.run (recursiveId nat)
       id_nat' <- Test.term def_nat_id
@@ -102,7 +107,7 @@ testEval = id
       
 testEquateArgs :: Test
 testEquateArgs = id
-  . Test.testWithPrelude "testEquateArgs"
+  . Test.testWithPrelude "equateArgs"
   . Test.localVars "(f: nat -> nat -> nat -> nat -> nat)" $ do
       t1 <- Test.term "fun (a b c d: nat) -> f a b c d"
       t2 <- Test.term "fun (a b d: nat) -> f a b a d"
@@ -118,7 +123,7 @@ testEquateArgs = id
 
 testStrictWithin :: Test
 testStrictWithin = id
-  . Test.testWithPrelude "testStrictWithin"
+  . Test.testWithPrelude "strictWithin"
   . Test.localVars "(x y z: nat)" $ do
       t1 <- Test.term def_strict_test
       x <- Test.term "x"

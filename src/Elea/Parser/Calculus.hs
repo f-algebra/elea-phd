@@ -25,8 +25,9 @@ import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Error.Class as Err
 import qualified Data.Map as Map
 import Control.Applicative(Applicative(..))
+import Control.Monad (ap)
 
--- parser produced by Happy Version 1.19.4
+-- parser produced by Happy Version 1.19.5
 
 data HappyAbsSyn 
 	= HappyTerminal (Token)
@@ -1901,8 +1902,8 @@ instance Functor HappyIdentity where
     fmap f (HappyIdentity a) = HappyIdentity (f a)
 
 instance Applicative HappyIdentity where
-    pure    = return
-    a <*> b = (fmap id a) <*> b
+    pure  = return
+    (<*>) = ap
 instance Monad HappyIdentity where
     return = HappyIdentity
     (HappyIdentity p) >>= q = q p
@@ -2025,7 +2026,7 @@ instance Monad m => Env.Write (ReaderT Scope m) where
     . modify bindStack addToStack
     where
     addToStack = insertAt (enum at) b
-    addToMap = Map.insert (get bindLabel b) (Var at)
+    addToMap = Map.insert (get bindLabel b) (Var at b)
     
   matched _ = id
   forgetMatches _ = id
@@ -2435,6 +2436,31 @@ instance Show Token where
 {-# LINE 1 "templates\\GenericTemplate.hs" #-}
 {-# LINE 1 "<built-in>" #-}
 {-# LINE 1 "<command-line>" #-}
+
+
+
+
+
+
+{-# LINE 1 "G:\\GitHub\\haskell-platform\\build\\ghc-bindist\\local\\lib/include\\ghcversion.h" #-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+{-# LINE 6 "<command-line>" #-}
 {-# LINE 1 "templates\\GenericTemplate.hs" #-}
 -- Id: GenericTemplate.hs,v 1.26 2005/01/14 14:47:22 simonmar Exp 
 

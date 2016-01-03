@@ -101,7 +101,7 @@ steps =
 -- so we add a new lambda above one if this is the case.
 caseFun :: Step m => Term -> m Term
 caseFun cse@(Case t alts) 
-  | Just new_b <- potentialBinds alts = id
+  | Just new_b <- mby_new_b = id
     . History.check Name.CaseFun cse 
     . Transform.continue
     . Lam new_b
@@ -109,6 +109,7 @@ caseFun cse@(Case t alts)
     $ map appAlt alts
   where
   alt_ts = map (get altInner) alts
+  mby_new_b = potentialBinds alts
   
   potentialBinds :: [Alt] -> Maybe Bind
   potentialBinds = 
@@ -123,7 +124,7 @@ caseFun cse@(Case t alts)
     . Alt con bs
     $ Term.reduce alt_t [arg]
     where
-    arg = Var (elength bs)
+    arg = Var (elength bs) (fromJust mby_new_b)
     
 caseFun _ = Fail.here
   
@@ -175,10 +176,10 @@ constArg term@(App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
     
     -- Remove the lambda, and replace all occurrences of that variable
     -- with index 1 (here index 0 will be the fix variable)
-    . Indices.substAt Indices.omega (Var 1)
+    . Indices.substAt Indices.omega (Var 1 dropped_b)
     . Indices.liftAt 1
     . unflattenLam left_bs
-    . Indices.substAt 0 (Var Indices.omega)
+    . Indices.substAt 0 (Var Indices.omega dropped_b)
     . unflattenLam right_bs
     $ fix_body
     where
@@ -186,9 +187,7 @@ constArg term@(App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
     (left_bs, dropped_b:right_bs) = splitAt (enum arg_i) arg_bs
     
     -- The arguments that will be applied outside the fix
-    outer_args = id
-      . map (Var . enum)
-      $ reverse [1..arg_i]
+    outer_args = zipWith (Var . enum) (reverse [1..arg_i]) left_bs
     
     -- The new type binding for the fix, with the given argument removed
     fix_b' = Bind fix_name fix_ty'
@@ -199,10 +198,10 @@ constArg term@(App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
         $ Type.flatten fix_ty
     
     removeArg :: Term -> Env.TrackIndices Index Term
-    removeArg term@(App (Var f) args) = do   
+    removeArg term@(App (Var f b) args) = do   
       fix_f <- Env.tracked
       if fix_f == f
-      then return (App (Var f) (removeAt arg_i args))
+      then return (App (Var f b) (removeAt arg_i args))
       else return term
     removeArg term = 
       return term
@@ -387,13 +386,13 @@ floatVarMatch term@(Case (App fix@(Fix {}) xs) _)
     $ Fold.collectM usefulVarMatch term
   
   usefulVarMatch :: Term -> MaybeT Env.TrackOffset Term
-  usefulVarMatch (Case (Var x) alts) = do
+  usefulVarMatch (Case (Var x b) alts) = do
     offset <- Env.tracked
     x' <- Indices.tryLowerMany (enum offset) x
     Fail.unless (x' `Set.member` dec_ixs)
-    return (Case (Var x') (map blank alts))
+    return (Case (Var x' b) (map blank alts))
     where
-    blank (Alt con bs _) = Alt con bs (Var 0)
+    blank (Alt con bs _) = Alt con bs empty
   usefulVarMatch _ = 
     Fail.here
     

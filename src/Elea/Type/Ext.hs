@@ -59,7 +59,7 @@ instance HasTypeM Term where
     where
     check :: forall m . (Fail.Can m, Env.Read m) 
       => Term' (Maybe Type) -> m (Maybe Type)
-    check (Var' x) = do
+    check (Var' x _) = do
       has <- Env.isBound x
       if not has
       then return Nothing
@@ -135,13 +135,12 @@ instance HasTypeM Match where
     
 
 -- | I know I said that terms shouldn't have a 'HasType' instance, but
--- we should only call this on closed terms that we know
+-- we should y call this on closed terms that we know
 -- are well typed.
 instance HasType Term where
   assign = Env.emptyT . assignM
 
-  
-    
+
 assertEqM :: (Env.Read m, HasTypeM a, ShowM m a) 
   => String -> a -> a -> m ()
 assertEqM msg x y = do

@@ -25,15 +25,15 @@ import qualified Elea.Type as Type
 data Data
   = Data  { _dbBinds :: [Bind]
           , _dbMatches :: [Match]
-          , _dbRewrites :: [(Tag, Term, Index)] 
+          , _dbRewrites :: [(Tag, Term, Term)] 
           , _dbHistory :: History.Repr
           , _dbDirection :: Direction
           , _flagDisable :: Bool }
           
 mkLabels [ ''Data ]
 
-empty :: Data
-empty = Data mempty mempty mempty History.empty Direction.Inc False
+instance Empty Data where
+  empty = Data mempty mempty mempty empty Direction.Inc False
 
 matches :: Data -> [Match]
 matches = get dbMatches
@@ -54,7 +54,7 @@ matched m
   | otherwise = 
     modify dbMatches (++ [m])
   where
-  Var x = Term.matchedTerm m
+  Var x _ = Term.matchedTerm m
   
   apply (Match cse_t ps n) = 
     Match cse_t' ps n
@@ -65,10 +65,10 @@ forgetMatches :: (Match -> Bool) -> Data -> Data
 forgetMatches when = 
   modify dbMatches (filter when)
 
-rewrites :: Data -> [(Tag, Term, Index)]
+rewrites :: Data -> [(Tag, Term, Term)]
 rewrites = get dbRewrites
 
-addRewrite :: Tag -> Term -> Index -> Data -> Data
+addRewrite :: Tag -> Term -> Term -> Data -> Data
 addRewrite a t x = modify dbRewrites ((a, t, x) :) 
 
 forgetRewrites :: Data -> Data

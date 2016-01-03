@@ -31,7 +31,7 @@ import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Monad.Fedd as Fedd  
 
-import qualified Data.Map as Map
+import qualified Data.Map as Map3
 import qualified Data.Set as Set
 import qualified Data.Poset as Partial
 
@@ -160,8 +160,8 @@ forAll leq@(Leq x y) = do
   Transform.continue (Lam b leq')
   where
   (leq', b) 
-    | Lam b x' <- x = (Leq x' (Term.reduce (Indices.lift y) [Var 0]), b)
-    | Lam b y' <- y = (Leq (app (Indices.lift x) [Var 0]) y',         b)
+    | Lam b x' <- x = (Leq x' (Term.reduce (Indices.lift y) [Var 0 b]), b)
+    | Lam b y' <- y = (Leq (app (Indices.lift x) [Var 0 b]) y',         b)
 forAll _ = Fail.here
 
 
@@ -215,7 +215,7 @@ caseSplitInc leq@(Leq (Case cse_t alts) y) = do
     where
     y' = Indices.liftMany (nlength bs) y
     
-caseSplitInc leq@(Leq left_t (Case cse_t@(Var x) alts)) = do
+caseSplitInc leq@(Leq left_t (Case cse_t@(Var x _) alts)) = do
   Direction.requireInc
   Fail.unless (x `Indices.freeWithin` left_t)
   x_ty <- Type.getM cse_t
@@ -261,13 +261,13 @@ leqMatch _ = Fail.here
 
     
 absurdBranch :: Step m => Term -> m Term
-absurdBranch orig_t@(Case (Var x) alts) = do
+absurdBranch orig_t@(Case (Var x b) alts) = do
   Direction.requireInc
   ty <- Type.getM orig_t
   Fail.unless (Type.Base Type.prop == ty)
   alts' <- zipWithM absurdAlt [0..] alts
   Fail.when (alts' == alts)
-  Transform.continue (Case (Var x) alts')
+  Transform.continue (Case (Var x b) alts')
   where
   absurdAlt n alt@(Alt tcon bs alt_t) 
     | Type.isBaseCase (Tag.untag tcon) = do

@@ -60,11 +60,11 @@ mkLabels [ ''FeddState, ''FeddWriter ]
 
 evalT :: Monad m => FeddT m a -> m a
 evalT fedd = do
-  (x, _, _) <- runRWST (runFeddT fedd) EnvDB.empty emptyState
+  (x, _, _) <- runRWST (runFeddT fedd) empty empty
   return x
 
-emptyState :: FeddState
-emptyState = FS Defs.empty MemoDB.empty 1 Nat.omega
+instance Empty FeddState where
+  empty = FS empty empty 1 Nat.omega
 
 eval :: Fedd a -> a
 eval = runIdentity . evalT

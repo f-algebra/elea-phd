@@ -9,8 +9,7 @@ module Elea.Type
   indName, indConstructors, 
   bindLabel, bindType, 
   constructorOf, constructorIndex,
-  empty, prop, tag, unit, tuple, bool, emptyTy,
-  falsity,
+  prop, tag, unit, tuple, bool, falsity,
   equation, isEquation, true, false,
   returnType, argumentTypes, dropArgs, split,
   isInd, isFun, fromBase,
@@ -32,6 +31,8 @@ import Elea.Term.Tag ( Tagged (..) )
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Failure.Class as Fail
+
+{-# ANN module "HLint: ignore Redundant id" #-}
 
 -- | An argument to a constructor.
 data ConArg 
@@ -199,11 +200,11 @@ instance HasType Bind where
   
   
 -- | The 'empty' type, viz. the constructorless inductive type.
-empty :: Ind
-empty = Ind "empty" []
+instance Empty Ind where
+  empty = Ind "empty" []
 
-emptyTy :: Type
-emptyTy = Base empty
+instance Empty Type where
+  empty = Base empty
 
 -- | Huge hack but the type of fixed-point tags is just the empty type
 tag :: Ind
@@ -257,7 +258,7 @@ isInd (Base _) = True
 isInd _ = False
 
 isFun :: Type -> Bool
-isFun (Fun {}) = True
+isFun Fun{} = True
 isFun _ = False
 
 fromBase :: Type -> Ind
@@ -377,7 +378,7 @@ makeAltBindings (Constructor ind con_n) =
   where
   Bind _ con_ty = unfold ind `nth` enum con_n
   arg_tys = init (flatten con_ty)
-  arg_names = map (\n -> "b" ++ show n) [0..]
+  arg_names = map (printf "b%d") ([0..] :: [Int])
   
   
 -- | Things parameterised by types. 
@@ -478,3 +479,14 @@ instance Show Constructor where
 
 deriving instance Show ConArg
 
+instance PrintfArg Ind where
+  formatArg = formatString . show
+
+instance PrintfArg Bind where
+  formatArg = formatString . show
+
+instance PrintfArg Constructor where
+  formatArg = formatString . show
+
+instance PrintfArg Type where
+  formatArg = formatString . show

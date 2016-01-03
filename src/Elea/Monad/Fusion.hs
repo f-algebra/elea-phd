@@ -13,13 +13,13 @@ import qualified Elea.Monad.Failure.Class as Fail
 import qualified Data.Set as Set
 
 class Monad m => Env m where
-  local :: Tag -> Term -> Index -> m a -> m a
-  rewrites :: m [(Tag, Term, Index)]
+  local :: Tag -> Term -> Term -> m a -> m a
+  rewrites :: m [(Tag, Term, Term)]
   forgetRewrites :: m a -> m a
   disable :: m a -> m a
   isDisabled :: m Bool
   
-findTags :: Env m => Set Tag -> m [(Term, Index)]
+findTags :: Env m => Set Tag -> m [(Term, Term)]
 findTags tags = id
   . liftM (map (\(_, f, t) -> (f, t))) 
   . liftM (filter (\(t, _, _) -> Set.member t tags)) 

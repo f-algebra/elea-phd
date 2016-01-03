@@ -1,7 +1,6 @@
 module Elea.Monad.Definitions.Data
 (
   Data,
-  empty,
   putType,
   getType,
   putTerm,
@@ -33,8 +32,8 @@ data Data
 
 mkLabels [ ''Data ]
 
-empty :: Data
-empty = Data mempty mempty UMap.empty
+instance Empty Data where
+  empty = Data empty empty empty
     
 putType :: String -> Polymorphic Ind -> Data -> Data
 putType name ty =

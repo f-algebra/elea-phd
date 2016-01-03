@@ -2,7 +2,6 @@
 module Elea.Monad.Memo.Data
 (
   Data,
-  empty,
   lookup,
   insert,
 )
@@ -30,8 +29,8 @@ newtype Data
 
 mkLabels [ ''Data ]
 
-empty :: Data
-empty = Data Map.empty
+instance Empty Data where
+  empty = Data Map.empty
   
 -- | Failure means there is no entry. Returning Nothing means
 -- that this step failed and this failure was memoised.

@@ -5,11 +5,9 @@ module Elea.Monad.History
   Name,
   Env (..),
   EnvT,
-  empty,
   size,
   embeds,
   insert,
-  emptyEnvT,
   mapEnvT,
   check,
   memoCheck,
@@ -49,8 +47,8 @@ insert (fromEnum -> name) t = id
   add (Just ts) = Just (t:ts)
   add Nothing = Just [t]
   
-empty :: Repr
-empty = Repr 0 Map.empty
+instance Empty Repr where
+  empty = Repr 0 Map.empty
 
 size :: Repr -> Nat
 size = get reprSize
@@ -91,8 +89,8 @@ newtype EnvT m a
   = EnvT { envT :: ReaderT Repr m a }
   deriving ( Functor, Applicative, Monad, MonadReader Repr, MonadTrans )
 
-emptyEnvT :: EnvT m a -> m a
-emptyEnvT = flip runReaderT empty  . envT
+instance Empty (EnvT m a -> m a) where
+  empty = flip runReaderT empty  . envT
 
 mapEnvT :: (m a -> n b) -> EnvT m a -> EnvT n b
 mapEnvT f = EnvT . mapReaderT f . envT

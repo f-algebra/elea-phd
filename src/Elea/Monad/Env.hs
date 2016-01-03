@@ -30,7 +30,7 @@ module Elea.Monad.Env
 )
 where
 
-import Elea.Prelude
+import Elea.Prelude hiding ( Read (..), empty )
 import Elea.Term.Index
 import Elea.Term
 import Elea.Type ( ContainsTypes (..) )
@@ -87,7 +87,7 @@ isoFree iso = id
   . Fold.isoFoldM iso freeR
   where
   freeR :: Term -> TrackIndices Index (Set Index)
-  freeR (Var x) = do
+  freeR (Var x _) = do
     at <- tracked
     if x >= at
     then return (Set.singleton (x - at))
@@ -109,11 +109,11 @@ isoShift iso f = id
   . Fold.isoTransformM iso shift
   where
   shift :: Term -> TrackIndices Index Term
-  shift (Var x) = do
+  shift (Var x b) = do
     at <- tracked
     let x' | x >= at = f (x - at) + at
            | otherwise = x
-    return (Var x')
+    return (Var x' b)
   shift (Fix i b t) =
     return (Fix (Indices.shift f i) b t)
   shift other = 
@@ -186,14 +186,14 @@ instance Substitutable Term where
     substVar :: Term -> TrackIndices (Index, Term) Term
     substVar (App f xs) =
       return (app f xs)
-    substVar (Var var) = do
+    substVar (Var var b) = do
       (at, with) <- tracked
       return $ case at `compare` var of
         -- Substitution occurs
         EQ -> with
         -- Substitution does not occur
-        LT -> Var (pred var)
-        GT -> Var var
+        LT -> Var (pred var) b
+        GT -> Var var b
     substVar (Fix i b t) =
       return (Fix (Indices.lowerAt at i) b t)
     substVar other = 
@@ -446,7 +446,7 @@ instance (Monad m, Substitutable r, Inner r ~ Term)
     . runTrackAllT
     
   matched match
-    | Var x <- get matchTerm match = id
+    | Var x _ <- get matchTerm match = id
       . TrackAllT
       . local (Indices.replaceAt x w)
       . runTrackAllT
@@ -549,9 +549,11 @@ instance Unifiable Term where
       Unifier.union uni_x uni_y
     uni (Bot _) (Bot _) = 
       return mempty
-    uni (Var x1) (Var x2)
-      | x1 == x2 = return mempty
-    uni (Var idx) t2 = do
+    uni (Var x1 b1) (Var x2 b2)
+      | x1 == x2 = id
+        . assert (b1 == b2) 
+        $ return mempty
+    uni (Var idx _) t2 = do
       free_var_limit <- tracked
       -- If the variable on the left is not locally scoped
       -- then we can substitute it for something.
@@ -596,13 +598,13 @@ instance Unifiable Term where
     replace :: Term -> TrackOffset Term
     replace (App f xs) =
       return (app f xs)
-    replace (Var x) = do
+    replace (Var x b) = do
       n <- offset
       if x < enum n
-      then return (Var x)
+      then return (Var x b)
       else do
         case Map.lookup (x - enum n) uni of 
-          Nothing -> return (Var x)
+          Nothing -> return (Var x b)
           Just t -> return (Indices.liftMany n t)
     replace other = 
       return other
@@ -611,7 +613,7 @@ instance Unifiable Term where
   gcompare t1 t2 = trackOffset (comp t1 t2)
     where
     comp :: Term -> Term -> TrackOffset Ordering
-    comp (Var x) t = do
+    comp (Var x _) t = do
       free_x <- lowerableByOffset x
       free_t <- lowerableByOffset t
       if free_x && free_t
@@ -619,7 +621,7 @@ instance Unifiable Term where
       else if isVar t
       then return (x `compare` fromVar t)
       else return LT
-    comp t (Var y) = do
+    comp t (Var y _) = do
       free_y <- lowerableByOffset y
       free_t <- lowerableByOffset t
       if free_y && free_t

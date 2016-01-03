@@ -22,7 +22,7 @@ module Elea.Monad.Env.Class
 )
 where
 
-import Elea.Prelude
+import Elea.Prelude hiding ( Read (..) )
 import Elea.Term.Index
 import Elea.Term
 import Elea.Unification ( Unifier )

@@ -267,7 +267,7 @@ instance Monad m => Env.Write (ReaderT Scope m) where
     . modify bindStack addToStack
     where
     addToStack = insertAt (enum at) b
-    addToMap = Map.insert (get bindLabel b) (Var at)
+    addToMap = Map.insert (get bindLabel b) (Var at b)
     
   matched _ = id
   forgetMatches _ = id

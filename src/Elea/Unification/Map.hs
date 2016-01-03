@@ -6,7 +6,6 @@ module Elea.Unification.Map
 (
   UMap,
   Generalised (..),
-  empty, 
   singleton,
   lookup, 
   insert,
@@ -46,8 +45,8 @@ instance Unifiable a => Ord (Generalised a) where
 newtype UMap k a = UMap { getMap :: Map (Generalised k) [(k, a)] }
   deriving ( Show )
   
-empty :: UMap k a
-empty = UMap Map.empty
+instance Empty (UMap k v) where
+  empty = UMap empty
 
 singleton :: forall k a . (Ord k, Unifiable k) => k -> a -> UMap k a
 singleton k a = insert k a empty

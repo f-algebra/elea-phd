@@ -34,7 +34,7 @@ newtype DBReaderT m a
 type DBReader = DBReaderT Identity
 
 readEmptyT :: Monad m => DBReaderT m a -> m a
-readEmptyT = flip runReaderT DB.empty . runDBReaderT
+readEmptyT = flip runReaderT empty . runDBReaderT
 
 readEmpty :: DBReader a -> a
 readEmpty = runIdentity . readEmptyT
@@ -51,7 +51,7 @@ newtype DBStateT m a
 type DBState = DBStateT Identity
   
 evalEmptyT :: Monad m => DBStateT m a -> m a
-evalEmptyT = flip evalStateT DB.empty . runDBStateT
+evalEmptyT = flip evalStateT empty . runDBStateT
 
 evalEmpty :: DBState a -> a 
 evalEmpty = runIdentity . evalEmptyT

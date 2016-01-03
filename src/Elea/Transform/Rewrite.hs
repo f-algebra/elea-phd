@@ -101,7 +101,7 @@ rewrite term@(App {}) = do
   rs <- Fusion.findTags (Set.delete Tag.omega (Tag.tags term'))
   Fail.choose (map (apply term') rs)
   where
-  apply :: Term -> (Term, Index) -> m Term
+  apply :: Term -> (Term, Term) -> m Term
   apply term (from_t, h) = do
     ms <- Env.matches
     term_s <- showM term
@@ -112,7 +112,7 @@ rewrite term@(App {}) = do
   --    . trace ("\n\n[unifying] " ++ term_s
     --   ++ "\n\n[with] " ++ show from_t 
      --  ++ "\n\n[gives] " ++ args_s) 
-      $ app (Var h) args
+      $ app h args
   
 rewrite _ = Fail.here
 
@@ -179,9 +179,7 @@ identityFix orig_t@(App fix@(Fix _ _ fix_t) xs) = do
     where       
     id_n = id
       . unflattenLam arg_bs 
-      . Var 
-      . enum
-      $ (length arg_bs - n) - 1
+      $ Var (enum ((length arg_bs - n) - 1)) (arg_bs !! n)
   
 identityFix _ = Fail.here
 
@@ -280,7 +278,7 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
       gapContext idx_offset gap_i = id
         . Lam gap_b
         . app (Con tcon)
-        $ left ++ [Var 0] ++ right
+        $ left ++ [Var 0 gap_b] ++ right
         where
         (left, _:right) = id
           . splitAt (enum gap_i) 
@@ -297,9 +295,8 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
     . unflattenLam arg_bs
     . Term.reduce (Indices.liftMany (nlength arg_bs + 1) ctx_t)
     . (return :: a -> [a])
-    . unflattenApp 
-    . reverse 
-    $ map (Var . enum) [0..length arg_bs]
+    . unflattenApp
+    $ zipWith (Var . enum) (reverse [0..length arg_bs]) (fix_b : arg_bs)
       
   express :: Term -> m Term
   express sugg_t = id
@@ -432,7 +429,9 @@ expressAccumulation fix@(Fix fix_i fix_b fix_t) = do
   Fail.when (isVar acc_t)
   ctx_s <- showM ctx_t
   fix_s <- showM fix
-  let trans_t =
+  acc_ty <- Type.getM acc_t
+  let acc_b = Bind "acc" acc_ty
+      trans_t =
         Indices.replaceAt (elength arg_bs) 
           (Term.reduce ctx_t_here [fun_var])
           body_t
@@ -441,9 +440,9 @@ expressAccumulation fix@(Fix fix_i fix_b fix_t) = do
   simp_t <- id
     . Env.bindMany (fix_b : arg_bs) 
     $ Transform.continue trans_t
-  let replaced_t = Term.replace acc_t (Var Indices.omega) simp_t
+  let replaced_t = Term.replace acc_t (Var Indices.omega acc_b) simp_t
   simp_s <- Env.bindMany (fix_b : arg_bs) $ showM simp_t
-  acc_var <- Env.bindMany (fix_b : arg_bs) $ showM (Var acc_idx)
+  acc_var <- Env.bindMany (fix_b : arg_bs) $ showM (Var acc_idx acc_b)
   trans_s <- Env.bindMany (fix_b : arg_bs) $ showM trans_t
   repl_s <- Env.bindMany (fix_b : arg_bs) $ showM replaced_t
   id
@@ -453,11 +452,11 @@ expressAccumulation fix@(Fix fix_i fix_b fix_t) = do
         , ("acc-fission simplified", simp_s)
         , ("acc-fission replaced", repl_s)
         , ("acc-fission variable", acc_var) ] 
-    $ Fail.when (Var acc_idx `Term.isSubterm` replaced_t)
+    $ Fail.when (acc_idx `Indices.freeWithin` replaced_t)
   let new_fix = id
         . Fix fix_i fix_b 
         . unflattenLam arg_bs
-        . Indices.replaceAt Indices.omega (Var acc_idx)
+        . Indices.replaceAt Indices.omega (Var acc_idx acc_b)
         $ replaced_t
   let final_t = Term.reduce ctx_t [new_fix]
   final_s <- showM final_t
@@ -467,12 +466,10 @@ expressAccumulation fix@(Fix fix_i fix_b fix_t) = do
   [arg_n] = acc_args
   (arg_bs, body_t) = flattenLam fix_t
   acc_idx = (enum . pred) (nlength arg_bs - arg_n) :: Index
-  fun_var = Var (elength arg_bs)
+  fun_var = Var (elength arg_bs) fix_b
   arg_vars = id
     . setAt (enum arg_n) acc_t
-    . reverse
-    . map (Var . enum)
-    $ [0..length arg_bs - 1]
+    $ zipWith (Var . enum) (reverse (range arg_bs)) arg_bs
   Just acc_t = mby_acc
   ctx_t = id
     . unflattenLam (fix_b : arg_bs) 

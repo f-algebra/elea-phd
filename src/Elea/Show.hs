@@ -38,7 +38,7 @@ instance (Env.Read m, Defs.Read m) => ShowM m Term where
 instance Show (Term' (Term, String)) where
   -- Special case for displaying constraints
   show (Case' (_, cse_t) f_alts)
-    -- A constraint is a match with only one non-absurd branch
+  -- A constraint is a match with only one non-absurd b{ranch
     | [Alt' con bs (_, alt_t)] <- non_absurd_alts =
       let pat_s = intercalate " " ([show con] ++ map show bs) in
       "\nassert " ++ pat_s ++ " <- " ++ cse_t ++ " in " ++ alt_t
@@ -76,7 +76,7 @@ instance Show (Term' String) where
     f' | "->" `isInfixOf` f || "end" `isInfixOf` f = "(" ++ f ++ ")"
        | otherwise = f
   show (Fix' inf (show -> b) t) =
-    "\nfix" ++ show inf ++" " ++ b ++ " -> " ++ indent t
+    "\nfix " ++ b ++ " -> " ++ indent t
   show (Lam' (show -> b) t) =
     "\nfun " ++ b ++ " -> " ++ t 
   show (Con' con) = show con
@@ -84,12 +84,6 @@ instance Show (Term' String) where
       "\nmatch " ++ cse_t ++ " with"
     ++ concatMap show f_alts 
     ++ "\nend"
- 
-      
-instance Show FixInfo where
-  show (FixInfo tag)
-    | tag == Tag.omega = ""
-    | otherwise = show tag
   
 instance (Env.Read m, Defs.Read m) => ShowM m FixInfo where
   showM _ = return "" 
@@ -116,7 +110,7 @@ instance Show (Alt' String) where
     pat_s = intercalate " " ([show con] ++ map show bs)
                                        
 instance (Env.Read m, Defs.Read m) => ShowM m (Term' (Term, String)) where
-  showM (Var' idx) = do
+  showM (Var' idx _) = do
     bs <- Env.bindings                   
     if idx >= elength bs
     -- If we don't have a binding for this index 

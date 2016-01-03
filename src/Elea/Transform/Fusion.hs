@@ -110,7 +110,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
     new_fix_t <- id  
      -- . trace ("\n\n[replacing] " ++ t_s')
       . Env.bind new_fix_b
-      . Fusion.local temp_idx rewrite_from 0
+      . Fusion.local temp_idx rewrite_from (Var 0 new_fix_b)
       . Transform.continue
    --   . trace ("\n\n[transforming< " ++ show temp_idx ++ ">] " ++ t_s'')
       . Indices.lift
@@ -536,12 +536,12 @@ matchFix term@(App fix@(Fix {}) xs)
       . Constraint.apply (Type.get term) ct'
       $ app fix_var ctx_oargs
       where
-      toIdx :: Int -> Term
-      toIdx i = Var (enum ((length all_args - i) - 1)) 
+      toIdx :: Int -> Index
+      toIdx i = enum ((length all_args - i) - 1)
       
-      fix_var = Var (elength all_args)
-      ctx_margs = map toIdx [0..length margs-1]
-      ctx_oargs = map toIdx [length margs..length all_args - 1]
+      fix_var = Var (elength all_args) ofix_b
+      ctx_margs = zipWith Var (map toIdx (range margs)) m_bs
+      ctx_oargs = zipWith Var (map toIdx [length margs..length all_args - 1]) o_bs
       ct' = set matchTerm (app mfix' ctx_margs) ct
       mfix' = Indices.liftMany (nlength m_bs + nlength o_bs + 1) mfix
       
@@ -579,14 +579,13 @@ accumulation orig_t@(App fix@(Fix {}) args) = do
     gen_tys = removeAt arg_n arg_tys
     gen_bs = zipWith (\i -> Bind ("X" ++ show i)) [0..] gen_tys
     fun_b = Bind "g" (Type.get fix)
-    fun_var = Var (elength gen_bs) 
+    fun_var = Var (elength gen_bs) fun_b
     
     acc_arg = Indices.liftMany (nlength gen_bs + 1) (args !! arg_n)
-    arg_vars = id 
+
+    arg_vars :: [Term] = id 
       . insertAt (enum arg_n) acc_arg 
-      . reverse 
-      . map (Var . enum)
-      $ [0..length gen_bs - 1]
+      $ Term.bindsToVars gen_bs
     
     ctx_t = unflattenLam (fun_b : gen_bs) (app fun_var arg_vars)
   
@@ -617,7 +616,7 @@ discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
       . Fusion.forgetRewrites 
    --    . tracE [("discovering for", orig_s), ("aiming for", from_s), ("from_f", from_fs), ("args", args_s)] 
       $ findFold from_t
-    let new_t = App fold_t [App (Var to_var) args]
+    let new_t = App fold_t [App to_var args]
     return new_t
   where                    
   tags = Set.delete Tag.omega (Tag.tags orig_t)
@@ -686,25 +685,24 @@ discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
     fold_t = Term.buildFold (Type.fromBase from_ty) orig_ty
     fold_tys = init (Type.argumentTypes (Type.get fold_t))
     c_bs = zipWith (\i ty -> Bind ("c" ++ show i) ty) [0..] fold_tys
-    c_vars = (reverse . map (Var . enum)) [0..length c_bs - 1]
+    c_vars = Term.bindsToVars c_bs
     c_var_set = Set.fromList (map fromVar c_vars)
     from_t' = liftHere from_t
     orig_t' = liftHere orig_t
       
-    free_args
+    free_args :: [Term]
       | fix@(Fix {}) : args <- flattenApp from_t' = id
-        . filter (\x -> Indices.freeWithin x fix)
-        . map fromVar
+        . filter (\(Var x _) -> Indices.freeWithin x fix)
         $ filter isVar args
       | otherwise = []
         
     generaliseProp t
       | is_fixfix = return (Term.tryGeneralise (liftHere to_call) t)
-      | not (null free_args) = Term.tryGeneraliseInFix (head free_args) t
+      | not (null free_args) = Term.tryGeneraliseInFix (varIndex (head free_args)) t
       | otherwise = return t
     ungeneraliseProp t
       | is_fixfix, isLam t = Term.reduce t [liftHere to_call]
-      | not (null free_args), isLam t = Term.reduce t [Var (head free_args)]
+      | not (null free_args), isLam t = Term.reduce t [head free_args]
       | otherwise = t
      
     liftHere = Indices.liftMany (nlength c_bs)
@@ -797,7 +795,7 @@ discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
         found_args = id
           . Indices.lowerMany (nlength arg_bs)
           . map (Unifier.apply uni_with_defaults)
-          $ map Var arg_vars
+          $ zipWith Var arg_vars (reverse arg_bs)
     found_tys <- mapM Type.getM found_args
     Fail.unless (found_tys == arg_tys)
     args_s <- showM found_args

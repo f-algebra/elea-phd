@@ -38,12 +38,12 @@ module Elea.Term
   lowerableAltInner,
   loweredAltInner,
   buildFold,
-  buildEq,
   stripTags,
   beingFused,
   recursiveId,
   isFixPromoted,
   loweredAltTerm,
+  bindsToVars,
 )
 where
 
@@ -61,6 +61,8 @@ import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Poset as Quasi
+
+{-# ANN module "HLint: ignore Redundant id" #-}
   
 -- TODO remove tags from constructors
 
@@ -73,7 +75,8 @@ data Term
   | Seq     { seqOf :: !Term
             , inner :: !Term }
   
-  | Var     { varIndex :: !Index }
+  | Var     { varIndex :: !Index
+            , binding :: !Bind }
 
   | App     !Term ![Term]
 
@@ -124,7 +127,8 @@ data Prop
             
 -- | Information stored about fixpoints, to add efficiency.
 data FixInfo
-  = FixInfo { _fixIndex :: !Tag }
+  = FixInfo { _fixIndex :: !Tag
+            , _fixName :: !(Maybe String) }
   deriving ( Eq, Ord )
 
  
@@ -136,7 +140,7 @@ data Term' a
   = Leq' a a
   | Seq' a a
   | Bot' !Type
-  | Var' !Index
+  | Var' !Index !Bind
   | App' a [a]
   | Lam' !Bind a
   | Fix' !FixInfo !Bind a
@@ -161,7 +165,7 @@ embedAlt (Alt' c bs t) = Alt c bs t
 
 
 instance Fold.Foldable Term where
-  project (Var x) = Var' x
+  project (Var x b) = Var' x b
   project (App f xs) = App' f xs
   project (Lam b t) = Lam' b t
   project (Fix i b t) = Fix' i b t
@@ -172,7 +176,7 @@ instance Fold.Foldable Term where
   project (Bot ty) = Bot' ty
 
 instance Fold.Unfoldable Term where
-  embed (Var' x) = Var x
+  embed (Var' x b) = Var x b
   embed (App' f xs) = App f xs
   embed (Lam' b t) = Lam b t
   embed (Fix' i b t) = Fix i b t
@@ -211,7 +215,7 @@ instance Zip Alt' where
   zip (Alt' con bs t) (Alt' _ _ t') = Alt' con bs (t, t')
   
 instance Zip Term' where
-  zip (Var' x) (Var' _) = Var' x
+  zip (Var' x b) (Var' _ _) = Var' x b
   zip (App' f xs) (App' f' xs') = App' (f, f') (zip xs xs')
   zip (Lam' b t) (Lam' _ t') = Lam' b (t, t')
   zip (Fix' i b t) (Fix' _ _ t') = Fix' i b (t, t')
@@ -267,7 +271,7 @@ isBot (Bot _) = True
 isBot _ = False
 
 fromVar :: Term -> Index
-fromVar (Var x) = x
+fromVar (Var x _) = x
 
 flattenLam :: Term -> ([Bind], Term)
 flattenLam (Lam b t) = first (b:) (flattenLam t)
@@ -290,7 +294,7 @@ arguments :: Term -> [Term]
 arguments = tail . flattenApp
 
 emptyInfo :: FixInfo
-emptyInfo = FixInfo Tag.omega
+emptyInfo = FixInfo Tag.omega Nothing
 
   
 -- | This should maybe be called @fullyApplied@ but it checks whether a fixpoint
@@ -354,8 +358,8 @@ matchFromConstructor tcon cse_t =
   
   mkAlt :: Constructor -> Alt
   mkAlt con
-    | con == Tag.untag tcon = Alt tcon bs (Var 0)
-    | otherwise = Alt (Tag.with Tag.null con) bs (Var 0)
+    | con == Tag.untag tcon = Alt tcon bs empty
+    | otherwise = Alt (Tag.with Tag.null con) bs empty
     where
     bs = Type.makeAltBindings con
     
@@ -379,8 +383,8 @@ makePattern tcon bs =
   
     
 patternTerm :: Pattern -> Term
-patternTerm (Pattern tcon _ xs) =
-  app (Con tcon) (map Var xs)
+patternTerm (Pattern tcon bs xs) =
+  app (Con tcon) (zipWith Var xs bs)
   
 instance Indexed Pattern where
   free = Set.fromList . get patternVars
@@ -432,18 +436,16 @@ buildFold ind@(Type.Ind _ cons) result_ty =
   unflattenLam lam_bs fix_t
   where
   -- Add a fixpoint if the inductive type is recursive
+  fix_b = Bind (printf "fold[%s]" ind) (Fun (Base ind) result_ty)
   fix_t 
     | not (Type.isRecursive ind) = Indices.lower fold_t
     | otherwise = Fix emptyInfo fix_b fold_t
-    where
-    fix_lbl = "fold[" ++ show ind ++ "]"
-    fix_b = Bind fix_lbl (Fun (Base ind) result_ty)
-  
+    
   -- Build the term that represents the fold function body
-  fold_t = id
-    . Lam (Bind ("var_" ++ show ind) (Base ind))
-    $ Case (Var 0) alts
+  fold_t = Lam var_b (Case (Var 0 var_b) alts)
     where
+    var_b = Bind (printf "var_%s" ind) (Base ind)
+
     -- Build every branch of the outer pattern match from the index of 
     -- the function which will be applied down that branch, and the
     -- defintion of the constructor for that branch
@@ -457,27 +459,30 @@ buildFold ind@(Type.Ind _ cons) result_ty =
       buildAlt f_idx con_n = 
         Alt con alt_bs (app f f_args)
         where
-        (_, con_args) = cons !! con_n
+        (name, con_args) = cons !! con_n
         con = Tag.with Tag.null (Constructor ind con_n)
         liftHere = Indices.liftMany (nlength con_args)
         
         -- The index of the fix variable
-        outer_f = liftHere (Var 1)
+        outer_f = liftHere (Var 1 fix_b)
         
         -- The index of the parameter representing the function to be applied
         -- down this branch
-        f = liftHere (Var f_idx)
+        f = liftHere (Var f_idx (makeBind (name, con_args)))
         
         f_args = 
-          zipWith conArgToArg arg_idxs con_args
+          zipWith conArgToArg con_arg_vars con_args
           where
+          con_arg_vars = bindsToVars alt_bs
+
           arg_idxs :: [Index]
           arg_idxs = (map enum . reverse) [0..length con_args - 1]
           
-          conArgToArg :: Index -> ConArg -> Term
-          conArgToArg idx IndVar = app outer_f [Var idx]
-          conArgToArg idx (ConArg _) = Var idx
+          conArgToArg :: Term -> ConArg -> Term
+          conArgToArg var IndVar = app outer_f [var]
+          conArgToArg var (ConArg _) = var
         
+        alt_bs :: [Bind]
         alt_bs = 
           map conArgToBind con_args
           where
@@ -487,22 +492,21 @@ buildFold ind@(Type.Ind _ cons) result_ty =
   -- The bindings for the outer lambdas of the fold function. 
   -- These are the lambdas which receive the functions the constructors get 
   -- replaced with when folding.
-  lam_bs = 
-    map makeBind cons
+  lam_bs = map makeBind cons
+
+  -- Turn a inductive constructor definition into the type of
+  -- the corresponding fold parameter. So for nat lists you'd get,
+  -- where X is 'result_ty':
+  -- ("Nil", []) => X
+  -- ("Cons", [ConArg nat, IndVar]) => nat -> X -> X
+  makeBind :: (String, [ConArg]) -> Bind
+  makeBind (name, conargs) = id
+    . Bind ("case_" ++ name)
+    . Type.unflatten
+    $ map conArgToTy conargs ++ [result_ty]
     where
-    -- Turn a inductive constructor definition into the type of
-    -- the corresponding fold parameter. So for nat lists you'd get,
-    -- where X is 'result_ty':
-    -- ("Nil", []) => X
-    -- ("Cons", [ConArg nat, IndVar]) => nat -> X -> X
-    makeBind :: (String, [ConArg]) -> Bind
-    makeBind (name, conargs) = id
-      . Bind ("case_" ++ name)
-      . Type.unflatten
-      $ map conArgToTy conargs ++ [result_ty]
-      where
-      conArgToTy IndVar = result_ty
-      conArgToTy (ConArg ty) = ty
+    conArgToTy IndVar = result_ty
+    conArgToTy (ConArg ty) = ty
       
       
 -- | Returns the recursive identity function for a given type      
@@ -513,11 +517,13 @@ recursiveId ind@(Ind _ cons) =
   id_fold = buildFold ind (Type.Base ind)
   fold_cons = map (Con . Tag.with Tag.null) (Type.constructors ind)
 
+instance Empty Term where
+  -- For when any term will do
+  empty = Bot empty
   
 truth, falsity :: Term
 truth = Bot (Type.Base Type.prop)
 falsity = Con (Tag.with Tag.null Type.falsity)
-  
     
 false, true :: Term
 true = Con (Tag.with Tag.null Type.true)
@@ -532,10 +538,12 @@ and t t' = app bool_fold [t', false, t]
 -- > conjunction 3 = fun (p q r: bool) -> and p (and q r)
 conjunction :: Indexed Term => Nat -> Term
 conjunction n = id
-  . unflattenLam (replicate (enum n) (Bind "p" (Base Type.bool)))
+  . unflattenLam (replicate (enum n) bool_b)
   . foldr and true
   . reverse
-  $ map (Var . enum) [0..n-1]
+  $ map (\n -> Var (enum n) bool_b) [0..n-1]
+  where 
+  bool_b = Bind "p" (Base Type.bool)
   
   
 implies :: Term -> Term -> Term
@@ -548,7 +556,8 @@ conj :: [Term] -> Term
 conj [] = truth
 conj (p:ps) = neg (implies p (neg (conj ps)))
   
-    
+  {-
+  TODO remove 
 -- | Build an equality function for a given inductive type.
 -- > buildEq nat : nat -> nat -> bool
 buildEq :: (Indexed Term, Show Term) => Type.Ind -> Term
@@ -606,7 +615,7 @@ buildEq ind@(Ind _ cons) =
             app f_var [Var (enum arg_i)]
             where
             f_var = Var (enum (arg_i + 1 + length con_args))
-  
+  -}
 
 -- | Use this to strip all tags and thereby reduce indexed fixed-points
 -- to fixed-points. Useful if you want to check term equality modulo tags.
@@ -673,6 +682,6 @@ instance Quasi.Ord Term where
     b_symbol = fmap (const ()) (Fold.project b)
     
   _ <= _ = False
-    
-    
 
+bindsToVars :: [Bind] -> [Term]
+bindsToVars bs = zipWith (Var . enum) (reverse (range bs)) bs

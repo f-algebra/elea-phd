@@ -31,6 +31,7 @@ module Elea.Term.Ext
   isSubterm,
   removeSubterms,
   freeSubtermsOf,
+  freeVars,
   floatRecCallInwards,
   isLambdaFloated,
   findArguments,
@@ -296,14 +297,14 @@ decreasingArgs fix@(Fix _ fix_b fix_t) =
     $ Fold.allM decreasing fix_body
     where
     -- The deBrujin index of the lambda bound variable we are tracking
-    arg_var = Var (enum (length arg_bs - (enum arg_i + 1)))
+    arg_var = Var (enum (length arg_bs - (enum arg_i + 1))) (arg_bs !! arg_i)
     
     -- The deBrujin index of the fix bound function variable
     fix_var :: Index = elength arg_bs
     
     decreasing :: 
       Term -> Env.TrackSmallerTermsT (Env.TrackIndices Index) Bool
-    decreasing t@(App (Var f) args) = do
+    decreasing t@(App (Var f _) args) = do
       fix_var' <- Trans.lift (Env.liftByOffset fix_var)
       arg_var' <- Trans.lift (Env.liftByOffset arg_var)
       if fix_var' /= f || arg_i >= nlength args
@@ -338,7 +339,7 @@ constantArgs (Fix _ _ fix_t) =
   isConstArg :: Nat -> Bool
   isConstArg arg_i = id
     . not
-    . Env.trackIndices (fix_f, Var arg_x)
+    . Env.trackIndices (fix_f, Var arg_x (arg_bs !! arg_i))
     $ Fold.anyM isntConst fix_body
     where
     -- The index of the argument we are tracking as it was bound
@@ -347,7 +348,7 @@ constantArgs (Fix _ _ fix_t) =
     
     -- Whether this given argument changes at a recursive call site
     isntConst :: Term -> Env.TrackIndices (Index, Term) Bool
-    isntConst (App (Var f) args) = do
+    isntConst (App (Var f _) args) = do
       (fix_f, arg_t) <- Env.tracked
       return 
         $ fix_f == f
@@ -369,10 +370,7 @@ accumulatingArgs fix@(Fix _ _ fix_t)
   where
   (arg_bs, body_t) = flattenLam fix_t
   fix_var :: Index = (enum . length) arg_bs 
-  arg_vars = id
-    . reverse
-    . map (Var . enum) 
-    $ range arg_bs
+  arg_vars = zipWith (Var . enum) (reverse (range arg_bs)) arg_bs
     
   acc_idxss :: [Set Nat]
   acc_idxss = id
@@ -380,7 +378,7 @@ accumulatingArgs fix@(Fix _ _ fix_t)
     $ Fold.foldM accumulates body_t
   
   accumulates :: Term -> Env.TrackOffset [Set Nat]
-  accumulates (App (Var f) xs) = do
+  accumulates (App (Var f _) xs) = do
     fix_var' <- Env.liftByOffset fix_var 
     if fix_var' /= f || length xs /= length arg_vars
     then return []
@@ -430,6 +428,7 @@ generaliseArgs (App func args) run = do
   -- Use the type of every arguments to generate bindings for our new 
   -- generalised variables.
   gen_bs <- mapM makeBind (range args) 
+  let new_vars = zipWith (Var . enum) [0..length args - 1] gen_bs
         
   -- Run the inner computation
   done_t <- id
@@ -442,11 +441,9 @@ generaliseArgs (App func args) run = do
     . zipWith Indices.liftMany [0..]
     $ reverse args
   where
-  new_vars = map (Var . enum) [0..length args - 1]
-  
   makeBind :: Nat -> m Bind
   makeBind n
-    | Var x <- args !! n = Env.boundAt x
+    | Var x _ <- args !! n = Env.boundAt x
   makeBind n = do
     ty <- Type.getM (args !! n)
     let name = "_" ++ show ty
@@ -471,7 +468,7 @@ generaliseTerms (toList -> terms) target run
     done_t <- id
       . Env.bindMany (reverse gen_bs)
       . run liftHere 
-      . mapTerms generalise
+      . mapTerms (generalise gen_bs)
       $ target
       
     -- Reverse the generalisation
@@ -479,17 +476,17 @@ generaliseTerms (toList -> terms) target run
       . foldr Indices.subst done_t
       $ zipWith Indices.liftMany [0..] (reverse terms)
   where
-  generalise :: Term -> Term
-  generalise = id
+  generalise :: [Bind] -> Term -> Term
+  generalise gen_bs = id
     . concatEndos (zipWith replace terms' new_vars)
     . liftHere
     where
     terms' = map liftHere terms
-    new_vars = map (Var . enum) [0..length terms - 1]
+    new_vars = zipWith (Var . enum) [0..length terms - 1] gen_bs
     
   makeBind :: Nat -> m Bind
   makeBind n
-    | Var x <- terms !! n = Env.boundAt x
+    | Var x _ <- terms !! n = Env.boundAt x
   makeBind n = do
     ty <- Type.getM (terms !! n)
     let name = "_" ++ show ty
@@ -508,7 +505,7 @@ generaliseUninterpreted target =
   where
   f_calls = concatMap (collect functionCall) (containedTerms target)
     where
-    functionCall (App (Var f) _) = True
+    functionCall (App (Var f _) _) = True
     functionCall _ = False
     
   
@@ -532,27 +529,28 @@ expressFreeVariable :: Env.Read m => Index -> Term -> m Term
 expressFreeVariable free_var (Fix fix_i (Bind fix_n fix_ty) fix_t) = do
   var_b <- Env.boundAt free_var
   let fix_ty' = Type.Fun (get Type.bindType var_b) fix_ty
+      fix_b = Bind fix_n fix_ty'
   return
-    . (\t -> app t [Var free_var])
-    . Fix fix_i (Bind fix_n fix_ty')
+    . (\t -> app t [Var free_var var_b])
+    . Fix fix_i fix_b
     . Lam var_b
-    . Env.trackOffset
+    . Env.trackIndices (Var 0 var_b, Var 1 fix_b)
     . Fold.transformM update
     $ Indices.lift fix_t
   where
-  update :: Term -> Env.TrackOffset Term
+  update :: Term -> Env.TrackIndices (Term, Term) Term
   -- Update function calls
-  update term@(App (Var f) args) = do
-    idx <- Env.tracked
-    if f == succ idx
-    then return (app (Var (succ idx)) (Var idx : args))
+  update term@(App (Var f _) args) = do
+    (new_var, new_fix) <- Env.tracked
+    if f == varIndex new_fix
+    then return (app new_fix (new_var : args))
     else return term
   -- Update variables occurrences
-  update (Var x) = do
-    idx <- Env.tracked
-    if x == free_var + idx + 2
-    then return (Var idx)
-    else return (Var x)
+  update (Var x b) = do
+    (Var x' b', _) <- Env.tracked
+    if x == free_var + x' + 2
+    then return (Var x' b')
+    else return (Var x b)
   update other = 
     return other
 
@@ -625,7 +623,7 @@ unifyArgs (n:ns) term =
     . reverse
     . map enum
     $ range arg_bs
-  main_var = Var (arg_idxs !! n)
+  main_var = Var (arg_idxs !! n) (arg_bs !! n)
   
   unify m = Indices.replaceAt (arg_idxs !! m) main_var
   body_t' = foldr unify body_t ns
@@ -678,8 +676,12 @@ freeSubtermsOf term = id
   . collect (const True)
   $ term
     
-  
+
+-- | All free variables in a term
+freeVars :: Term -> Set Term
+freeVars = collect isVar
     
+
 -- | If we pattern match on the result of recursive call to a fixpoint
 -- we should float that as far inside the term as possible.
 floatRecCallInwards :: Term -> Term
@@ -694,7 +696,7 @@ floatRecCallInwards =
       $ commuteMatchesWhenM isRecCall fix_t
       
     isRecCall :: Term -> Term -> Env.TrackIndices Index Bool
-    isRecCall outer_t (leftmost -> Var f) = do
+    isRecCall outer_t (leftmost -> Var f _) = do
       fix_f <- Env.tracked
       return (f == fix_f && not (isVar (leftmost outer_t)))
     isRecCall _ _ = return False
@@ -774,7 +776,7 @@ findConstrainedArgs ctx term
 abstractVar :: Bind -> Index -> Term -> Term
 abstractVar b x t = id
   . Lam b 
-  . Indices.replaceAt (succ x) (Var 0) 
+  . Indices.replaceAt (succ x) (Var 0 b) 
   $ Indices.lift t
 
 abstractVars :: [Bind] -> [Index] -> Term -> Term
@@ -784,7 +786,7 @@ abstractVars bs xs =
 abstractTerm :: Term -> Term -> Term
 abstractTerm abs_t in_t = id
   . Lam abs_b 
-  . replace (Indices.lift abs_t) (Var 0) 
+  . replace (Indices.lift abs_t) (Var 0 abs_b) 
   $ Indices.lift in_t
   where
   abs_b = Bind "g" (Type.get abs_t)
@@ -798,14 +800,14 @@ mapFixInfo f = Fold.transform mp
 
 -- > equateArgs 0 2 (\a b c d -> C[a][b][c][d]) = (\a b d -> C[a][b][a][d])
 equateArgs :: Nat -> Nat -> Term -> Term 
-equateArgs i j orig_t
-  | assert (i < j) True
-  , assert (j < nlength bs) True =
-    unflattenLam new_bs new_body
+equateArgs i j orig_t = id
+  . assert (i < j)
+  . assert (j < nlength bs)
+  $ unflattenLam new_bs new_body
   where
   (bs, body_t) = flattenLam orig_t
   new_bs = removeAt j bs
-  new_body = Indices.substAt (toIdx j) (Var (pred (toIdx i))) body_t
+  new_body = Indices.substAt (toIdx j) (Var (pred (toIdx i)) (bs !! i)) body_t
   
   toIdx :: Nat -> Index
   toIdx x = id
@@ -841,7 +843,7 @@ tryGeneralise gen_t (Leq x y)
     Lam gen_b (Leq (gen x) (gen y))
   where
   gen_b = Bind "g" (Type.get gen_t)
-  gen z = replace (Indices.lift gen_t) (Var 0) (Indices.lift z)
+  gen z = replace (Indices.lift gen_t) (Var 0 gen_b) (Indices.lift z)
 tryGeneralise _ t = t
   
 
@@ -852,15 +854,15 @@ tryGeneraliseInFix :: Env.Read m => Index -> Term -> m Term
 tryGeneraliseInFix var_t leq@(Leq {}) = do
   gen_b <- Env.boundAt var_t
   let leq' = id
-        . Env.trackIndices (Indices.lift var_t, 0) 
+        . Env.trackIndices (Indices.lift var_t, Var 0 gen_b) 
         . Fold.transformM genInFix
         $ Indices.lift leq
   return (Lam gen_b leq')
   where
-  genInFix :: Term -> Env.TrackIndices (Index, Index) Term
+  genInFix :: Term -> Env.TrackIndices (Index, Term) Term
   genInFix fix@(Fix {}) = do
     (from_x, to_x) <- Env.tracked
-    return (Indices.replaceAt from_x (Var to_x) fix)
+    return (Indices.replaceAt from_x to_x fix)
   genInFix other = 
     return other
 
@@ -880,21 +882,21 @@ matchedWithin t = id
 
 buildContext :: forall m . Env.Read m => Int -> Term -> m (Term, [Term])
 buildContext arg_i (App fix@(Fix _ fix_b fix_t) args) = do
-  free_bs <- mapM Env.boundAt free_vars
   arg_bs <- zipWithM getArgBind [0..] arg_xs
   return ( build free_bs arg_bs, args' )
   where
-  free_vars = Set.toList (Indices.free fix Set.\\ Indices.free args)
+  free_vars = Set.toList (freeVars fix Set.\\ Set.unions (map freeVars args))
+  free_bs = map binding free_vars
   arg_f : arg_xs = flattenApp (args !! arg_i)
-  args' = map Var free_vars ++ removeAt (enum arg_i) args ++ arg_xs
+  args' = free_vars ++ removeAt (enum arg_i) args ++ arg_xs
   
   getArgBind :: Int -> Term -> m Bind
-  getArgBind _ (Var x) = 
+  getArgBind _ (Var x _) = 
+    -- TODO can replace with new bind + assertion
     Env.boundAt x
   getArgBind n t = do
     ty <- Type.getM t
     return (Bind ("x" ++ show n) ty)
-  
   
   unify_me = id
     . map (map snd)
@@ -905,27 +907,30 @@ buildContext arg_i (App fix@(Fix _ fix_b fix_t) args) = do
     
   build free_bs arg_bs = id 
     . flip (foldr unifyArgs) unify_me 
-    . unflattenLam (free_bs ++ fix_bs ++ arg_bs) 
+    . unflattenLam full_bs 
     $ App fix' args'
     where
     fix_bs = removeAt (enum arg_i) (fst (flattenLam fix_t))
-    
+    full_bs = free_bs ++ fix_bs ++ arg_bs
+
     fix' = id
       . Indices.liftMany (enum full_c)
       . snd
       . flattenLam
-      $ abstractVars free_bs free_vars fix
+      $ abstractVars free_bs (map fromVar free_vars) fix
       
-    args' = id
-      $ left_args ++ [arg'] ++ right_args
+    mkVar :: Enum a => a -> Term
+    mkVar x = Var (enum x) (reverse full_bs !! x)
+
+    args' = left_args ++ [arg'] ++ right_args
       
     left_args =
-      reverse $ map (Var . enum . (+ arg_c)) [0..arg_i-1]
+      reverse $ map (mkVar . (+ arg_c)) [0..arg_i-1]
     right_args = 
-      reverse $ map (Var . enum . (+ arg_c)) [arg_i..fix_c-1]
+      reverse $ map (mkVar . (+ arg_c)) [arg_i..fix_c-1]
     
     arg' = App arg_f' arg_xs'
-    arg_xs' = reverse (map (Var . enum) [0..arg_c-1])
+    arg_xs' = reverse (map mkVar [0..arg_c-1])
     arg_f' = Indices.liftMany (enum (full_c + length free_bs)) arg_f
 
     arg_c = length arg_bs

@@ -152,12 +152,12 @@ traverseMatch _ = Fail.here
 
 traverseBranches :: forall m . Step m => Term -> m Term
 
-traverseBranches term@(Case (Var x) alts) = 
+traverseBranches term@(Case (Var x b) alts) = 
   History.check Name.TraverseVarBranch term $ do
     alts' <- zipWithM traverseAlt [0..] alts
-    let term' = Case (Var x) alts'
+    let term' = Case (Var x b) alts'
     Fail.when (term == term')
-    Transform.continue (Case (Var x) alts')
+    Transform.continue (Case (Var x b) alts')
   where
   traverseAlt n alt@(Alt tcon bs t) = do
     t' <- id
