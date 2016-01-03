@@ -22,7 +22,6 @@ executable elea
   default-language:   Haskell2010
   
   default-extensions: CPP
-                      Safe
                       DoAndIfThenElse
                       TemplateHaskell 
                       TypeOperators 
