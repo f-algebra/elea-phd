@@ -772,16 +772,18 @@ findConstrainedArgs ctx term
     $ Constraint.apply (Type.get term) ct term
 
   
--- | Beta-abstracts the given index
-abstractVar :: Bind -> Index -> Term -> Term
-abstractVar b x t = id
+-- | Beta-abstracts the given variable over the given term
+abstractVar :: Term -> Term -> Term
+abstractVar (Var x b) t = id
   . Lam b 
   . Indices.replaceAt (succ x) (Var 0 b) 
   $ Indices.lift t
+abstractVar t _ = 
+  errorf "Gave abstractVar a non variable term to abstract: %s" t
 
-abstractVars :: [Bind] -> [Index] -> Term -> Term
-abstractVars bs xs = 
-  concatEndos (zipWith abstractVar bs xs)
+abstractVars :: [Term] -> Term -> Term
+abstractVars ts xs = 
+  concatEndos (map abstractVar ts) xs
   
 abstractTerm :: Term -> Term -> Term
 abstractTerm abs_t in_t = id
@@ -917,7 +919,7 @@ buildContext arg_i (App fix@(Fix _ fix_b fix_t) args) = do
       . Indices.liftMany (enum full_c)
       . snd
       . flattenLam
-      $ abstractVars free_bs (map fromVar free_vars) fix
+      $ abstractVars free_vars fix
       
     mkVar :: Enum a => a -> Term
     mkVar x = Var (enum x) (reverse full_bs !! x)

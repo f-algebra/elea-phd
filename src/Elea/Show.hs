@@ -183,4 +183,6 @@ instance Show Prop where
   show (Prop "" t) = show t
   show (Prop name t) = 
     "prop " ++ name ++ " = " ++ show t
-    
+
+instance PrintfArg Term where
+  formatArg = formatString . show

@@ -177,7 +177,7 @@ fixCon orig_t@(App fix@(Fix _ fix_b _) args) = do
   conArg con_i = do
     (built_t, full_args) <- Term.buildContext con_i orig_t
     let (built_bs, App (Fix {}) built_xs) = flattenLam (Indices.lift built_t)
-        gen_fix = Var (elength built_bs)
+        gen_fix = Var (elength built_bs) fix_b
         ctx_t = id
           . unflattenLam (fix_b : built_bs)
           $ App gen_fix built_xs
@@ -206,8 +206,6 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
    -- . tracE [("fix-fix check", orig_s)]
     $ Term.isLambdaFloated o_fix
     
-  o_free_bs <- mapM Env.boundAt o_free_vars
-    
   -- Pick the first one which does not fail
   new_t <- id
     . Fail.choose
@@ -218,7 +216,8 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
   return new_t
   where  
   o_dec_idxs = Term.decreasingArgs o_fix
-  o_free_vars = Set.toList (Indices.free o_fix)
+  o_free_vars = Set.toList (Term.freeVars o_fix)
+  o_free_bs = map binding o_free_vars
   
   fixArg :: [Bind] -> Int -> m Term
   -- Run fix-fix fusion on the argument at the given index
@@ -232,7 +231,7 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
     let (built_bs, built_t) = flattenLam (Indices.lift built_ctx)
         App built_f built_xs = built_t
         Fix {} : i_xs = flattenApp (built_xs !! arg_i)
-        gen_fix = Var (elength built_bs)
+        gen_fix = Var (elength built_bs) i_fix_b
         built_xs' = setAt arg_i (App gen_fix i_xs) built_xs
         ctx_t = unflattenLam (i_fix_b:built_bs) (App built_f built_xs')
 
@@ -259,7 +258,7 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
     i_term = o_args !! arg_i
     i_fix@(Fix _ i_fix_b i_fix_t) : i_args = flattenApp i_term
     i_dec_idxs = Term.decreasingArgs i_fix
-    full_args = map Var o_free_vars ++ o_args' ++ i_args
+    full_args = o_free_vars ++ o_args' ++ i_args
     
     unify_me = id
       . map (map ((+ succ (nlength o_free_bs)) . fst))
@@ -281,26 +280,28 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
 
     old_ctx_t = id 
       . flip (foldr Term.unifyArgs) unify_me 
-      . unflattenLam (i_fix_b : o_free_bs ++ o_fix_bs ++ i_fix_bs) 
+      . unflattenLam full_bs
       $ app o_fix' o_args'
       where
+      full_bs = i_fix_b : o_free_bs ++ o_fix_bs ++ i_fix_bs
+
       o_fix' = id
         . Indices.liftMany (enum arg_c)
         . snd
         . flattenLam
-        $ Term.abstractVars o_free_bs o_free_vars o_fix
+        $ Term.abstractVars o_free_vars o_fix
         
       o_args' = id
         $ left_args ++ [i_term'] ++ right_args
         
       left_args =
-        map (Var . enum . (+ i_arg_c)) [0..arg_i-1]
+        map (bindsToVar full_bs) [0..arg_i-1]
       right_args = 
-        map (Var . enum . (+ i_arg_c)) [arg_i..o_arg_c-1]
+        map (bindsToVar full_bs) [arg_i..o_arg_c-1]
       
       i_term' = App i_fix' i_args'
-      i_args' = reverse (map (Var . enum) [0..i_arg_c - 1])
-      i_fix' = Indices.liftMany (enum (arg_c + length o_free_bs)) (Var 0)
+      i_args' = Term.bindsToVars (reverse i_fix_bs)
+      i_fix' = Indices.liftMany (enum (arg_c + length o_free_bs)) (Var 0 i_fix_b)
  
       o_arg_c  = length o_fix_bs
       i_arg_c = length i_fix_bs   
@@ -322,20 +323,22 @@ decreasingFreeVar orig_t@(App fix@(Fix _ _ fix_t) args) = do
   
   App expr_fix@(Fix _ expr_b _) expr_args <- 
     Term.expressFreeVariables var_args fix
+
+  let (orig_bs, _) = flattenLam fix_t
   
   Fail.assert ("expressFreeVariables failed in dec-free-var " 
               ++ "\n[expressing] " ++ show var_args
               ++ "\n[in] " ++ show fix
               ++ "\n[yielded] " ++ show expr_fix)
-    $ expr_args == map Var var_args
+    $ expr_args == zipWith Var var_args orig_bs
     
-  let (orig_bs, _) = flattenLam fix_t
+  let ctx_var_idxs = []
+        ++ map (\v -> (length orig_bs - enum v) - 1) var_arg_is
+        ++ reverse [0..length orig_bs - 1]
+      ctx_vars = zipWith (Var . enum) ctx_var_idxs (reverse orig_bs) 
       ctx_t = id
         . unflattenLam (expr_b:orig_bs)
-        . app (Var (elength orig_bs))
-        . map (Var . enum) 
-        $ map (\v -> (length orig_bs - enum v) - 1) var_arg_is
-        ++ reverse [0..length orig_bs - 1]
+        $ app (Var (elength orig_bs) expr_b) ctx_vars
         
       full_t = Term.reduce ctx_t (expr_fix:args)
         
@@ -364,7 +367,7 @@ decreasingFreeVar orig_t@(App fix@(Fix _ _ fix_t) args) = do
     $ Term.decreasingArgs fix
     where
     isFreeVar arg_i 
-      | Var x <- args !! arg_i =
+      | Var x _ <- args !! arg_i =
         x `Indices.freeWithin` fix
     isFreeVar _ = False
     
@@ -411,7 +414,7 @@ repeatedArg term@(App fix@(Fix _ fix_b fix_t) args) = do
     Transform.continue (app new_fix args)
     where
     Just var_i = find (Term.isVar . (args !!)) arg_is
-    Var arg_x = args !! var_i
+    Var arg_x _ = args !! var_i
     -- ^ One is guaranteed to be a variable 
     -- or this function will have been unfolded
     full_t = Term.reduce ctx_t [fix]
@@ -419,9 +422,9 @@ repeatedArg term@(App fix@(Fix _ fix_b fix_t) args) = do
     ctx_t = id
       . Term.unifyArgs (map (succ . enum) arg_is)
       . unflattenLam (fix_b:fix_bs)
-      . app (Var (elength fix_bs))
-      . map (Var . enum)
-      $ reverse (range fix_bs)
+      . app (Var (elength fix_bs) fix_b)
+      . reverse 
+      $ Term.bindsToVars fix_bs
 
 repeatedArg _ = Fail.here
 
@@ -540,7 +543,7 @@ matchFix term@(App fix@(Fix {}) xs)
       toIdx i = enum ((length all_args - i) - 1)
       
       fix_var = Var (elength all_args) ofix_b
-      ctx_margs = zipWith Var (map toIdx (range margs)) m_bs
+      ctx_margs = zipWith Var (map (toIdx . enum) (range margs)) m_bs
       ctx_oargs = zipWith Var (map toIdx [length margs..length all_args - 1]) o_bs
       ct' = set matchTerm (app mfix' ctx_margs) ct
       mfix' = Indices.liftMany (nlength m_bs + nlength o_bs + 1) mfix

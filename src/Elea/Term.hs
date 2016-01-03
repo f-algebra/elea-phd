@@ -43,7 +43,7 @@ module Elea.Term
   recursiveId,
   isFixPromoted,
   loweredAltTerm,
-  bindsToVars,
+  bindsToVars, bindsToVar,
 )
 where
 
@@ -683,5 +683,10 @@ instance Quasi.Ord Term where
     
   _ <= _ = False
 
+-- | Variables matching the given bindings, if they are topmost
 bindsToVars :: [Bind] -> [Term]
 bindsToVars bs = zipWith (Var . enum) (reverse (range bs)) bs
+
+-- | The variable at a given deBruijn index given the topmost bindings
+bindsToVar :: Enum a => [Bind] -> a -> Term
+bindsToVar bs i = bindsToVars bs !! i

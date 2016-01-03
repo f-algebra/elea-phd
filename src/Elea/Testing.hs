@@ -109,7 +109,7 @@ localVars bs_s run = do
     zipWithM defineBind [0..] (reverse bs)
     run
   where
-  defineBind idx (Bind lbl _) =
+  defineBind idx b@(Bind lbl _) =
     Defs.defineTerm lbl p_term
     where
-    p_term = polymorphic [] (const (Var (enum idx)))
+    p_term = polymorphic [] (const (Var (enum idx) b))

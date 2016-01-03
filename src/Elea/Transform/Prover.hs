@@ -194,11 +194,8 @@ lfp (Leq x y) = do
   fixInduction :: Term -> Term -> Term
   fixInduction (flattenApp -> Fix _ _ fix_t : xs) y = id
     . (\f -> Term.reduce f xs)
-    . Indices.subst (Term.abstractVars x_bs x_vars y)
+    . Indices.subst (Term.abstractVars xs y)
     $ fix_t
-    where
-    x_vars = map fromVar xs
-    x_bs = fst (flattenLam fix_t)
     
 lfp _ = Fail.here
 

@@ -9,8 +9,8 @@ module Elea.Prelude
         Maximum(..), Minimum(..), sconcatMap, length, maximum, maximum1,
         invert, intersects, liftMaybe, maybeT, nth, drop, take, screen,
         isSubsequenceOf, evalWriter, evalWriterT, removeAll, tracE,
-        findIndicesM, trace, assert, error, __trace__, __check__,
-        Empty (..),
+        findIndicesM, trace, assert, assertM, error, errorf,
+        Empty (..), __trace__, __check__,
         module X)
 where
 
@@ -154,7 +154,6 @@ nlength = elength
 
 range :: Foldable f => f a -> [Nat]
 range xs = map enum [0..length xs - 1]
-
 
 partitionM :: Monad m => (a -> m Bool) -> [a] -> m ([a], [a])
 partitionM f = foldrM f' ([], [])  
@@ -437,17 +436,29 @@ findIndicesM p = id
     then return [i]
     else return []
 
+-- TODO add a (msg :: String) as a first argument
 {-# INLINE assert #-}
 assert :: Bool -> a -> a
 assert b 
   | not __check__ || b = id
 assert False = 
-  errorWithStackTrace "Assertion failed"
+  errorWithStackTrace "assertion failed"
+
+{-# INLINE assertM #-}
+assertM :: Monad m => String -> Bool -> m ()
+assertM msg b 
+  | not __check__ || b = return ()
+assertM msg False = 
+  errorWithStackTrace (printf "assertion failed: %s" msg)
 
 {-# INLINE error #-}
 error :: String -> a
 error = errorWithStackTrace
  
+{-# INLINE errorf #-}
+errorf :: PrintfArg a => String -> a -> b
+errorf fmsg a = error (printf fmsg a)
+
 -- | For default/informationless instances of things
 class Empty a where
   empty :: a
