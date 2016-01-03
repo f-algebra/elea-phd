@@ -9,12 +9,14 @@ module Elea.Prelude
         Maximum(..), Minimum(..), sconcatMap, length, maximum, maximum1,
         invert, intersects, liftMaybe, maybeT, nth, drop, take, screen,
         isSubsequenceOf, evalWriter, evalWriterT, removeAll, tracE,
-        findIndicesM, trace, module X)
+        findIndicesM, trace, assert, error, __trace__, __check__,
+        Empty (..),
+        module X)
 where
 
 import Prelude as X
        hiding (mapM, foldl, foldl1, mapM_, minimum, maximum, sequence_,
-               zip, zipWith, Read(..), length, drop, take, foldr, foldr1,
+               zip, zipWith, length, drop, take, foldr, foldr1, error,
                sequence, Maybe(..), maybe, all, any, elem, product, and, concat,
                notElem, or, concatMap, sum, (++), map, (.), id, (!!))
 import Control.Category as X ((.), id)
@@ -44,7 +46,6 @@ import Control.Monad.Trans.Identity as X
        (IdentityT(..), mapIdentityT)
 import Control.Monad.Trans.Either as X (EitherT(..), mapEitherT)
 import Control.Monad.IO.Class as X (MonadIO(..))
-import Control.Exception as X (assert)
 import Data.Nat as X (Nat, CoNat)
 import Data.Label as X ((:->), get, set, modify, mkLabels, lens)
 import Data.Maybe as X
@@ -74,9 +75,11 @@ import Data.Generics.Str as X
 import Data.Key as X (Zip(..))
 import Data.Proxy as X
 import System.IO.Unsafe as X
-import Text.Printf as X (printf, PrintfType)
+import Text.Printf as X (printf, PrintfArg (..), formatString)
+import GHC.Stack ( errorWithStackTrace )
 
 import qualified Data.Set as Set
+import qualified Data.Map as Map
 import qualified Prelude as Pre
 import qualified Data.Sequence as Seq
 import qualified Data.Label.Partial as Partial
@@ -87,6 +90,23 @@ import qualified Debug.Trace as Debug
 {-# ANN module "HLint: ignore Redundant id" #-}
 
 infixr 6 ++
+
+{-# INLINE __trace__ #-}
+__trace__ :: Bool
+#ifdef __TRACE__
+__trace__ = True
+#else
+__trace__ = False
+#endif
+
+{-# INLINE __check__ #-}
+__check__ :: Bool
+#ifdef __CHECK__
+__check__ = True
+#else
+__check__ = False
+#endif
+
 
 (|>) :: a -> (a -> b) -> b
 (|>) = flip ($)
@@ -392,23 +412,19 @@ evalWriter = fst . runWriter
 evalWriterT :: Monad m => WriterT w m a -> m a
 evalWriterT = liftM fst . runWriterT
 
--- TODO remove tracE
+-- TODO replace tracE with printf
+{-# INLINE tracE #-}
 tracE :: [(String, String)] -> a -> a
-#ifndef __TRACE__
-tracE _ = id
-#else
+tracE _ | not __trace__ = id
 tracE [] = id
 tracE ((n, s):xs) = id
   . Debug.trace ("\n\n[" ++ n ++ "]\n" ++ s) 
   . tracE xs
-#endif
 
+{-# INLINE trace #-}
 trace :: String -> a -> a
-#ifndef __TRACE__
-trace _ = id
-#else
-trace = Debug.trace
-#endif
+trace | __trace__ = Debug.trace
+      | otherwise  = \_ -> id
 
 findIndicesM :: Monad m => (a -> m Bool) -> [a] -> m [Nat]
 findIndicesM p = id
@@ -420,3 +436,27 @@ findIndicesM p = id
     if is 
     then return [i]
     else return []
+
+{-# INLINE assert #-}
+assert :: Bool -> a -> a
+assert b 
+  | not __check__ || b = id
+assert False = 
+  errorWithStackTrace "Assertion failed"
+
+{-# INLINE error #-}
+error :: String -> a
+error = errorWithStackTrace
+ 
+-- | For default/informationless instances of things
+class Empty a where
+  empty :: a
+
+instance Empty (Map k v) where
+  empty = Map.empty
+
+instance Empty (Set a) where
+  empty = Set.empty
+
+instance Empty [a] where
+  empty = []
