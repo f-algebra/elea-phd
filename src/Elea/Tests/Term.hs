@@ -70,7 +70,7 @@ testSubterms = id
           free_vars = freeVars add_stuff
           free_vars2 = freeVars add_x_y
           removed_ts = removeSubterms [add_stuff, one, two, y]
-      Test.assertEq "free subterms" (Set.fromList [x]) free_ts 
+      Test.assertEq "free subterms" (Set.fromList [add_x_y]) free_ts 
       Test.assertEq "free vars 1" (Set.fromList [x, y]) free_vars
       Test.assertEq "free vars 2" free_vars free_vars2
       Test.assertEq "remove subterms" [add_stuff, two] removed_ts 
@@ -83,8 +83,7 @@ testAbstract = id
       x <- Test.term "x"
       y <- Test.term "y"
       abs_xy <- Test.term "fun (x y: nat) -> add y x"
-      let abs_bs = fst (flattenLam abs_xy)
-          abs_xy' = abstractVars [y, x] xy
+      let abs_xy' = abstractVars [y, x] xy
       Test.assertTermEq "abstract" abs_xy abs_xy'
     
 testFindArgs :: Test

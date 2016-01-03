@@ -45,7 +45,7 @@ fromEither (Right x) = return x
 {-# INLINE assert #-}
 -- | Force the evaluation of the assertion by tying it to the failure monad
 assert :: Can m => String -> Bool -> m ()
-assert _ p = Prelude.assert p (when p)
+assert msg p = Prelude.assert msg p (when p)
 
 has :: Maybe a -> Bool
 has = isNothing

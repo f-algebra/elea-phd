@@ -327,7 +327,7 @@ constructorBind (Constructor ind n) =
 -- | Return the positions of the recursive arguments of a given constructor
 recursiveArgs :: Constructor -> [Nat]
 recursiveArgs (Constructor (Ind _ cons) n) = id
-  . assert (nlength cons > n)
+  . assert "constructor index out of range" (nlength cons > n)
   . map enum
   $ findIndices (== IndVar) con_args
   where
@@ -342,7 +342,7 @@ recursiveArgs (Constructor (Ind _ cons) n) = id
 -- > recursiveArgIndices nlist 1 == [0]
 recursiveArgIndices :: Constructor -> [Index]
 recursiveArgIndices con@(Constructor ind@(Ind _ cons) n) = id
-  . assert (nlength cons > n)
+  . assert "constructor index out of range" (nlength cons > n)
   . map enum
   . invert
   $ recursiveArgs con
@@ -351,7 +351,7 @@ recursiveArgIndices con@(Constructor ind@(Ind _ cons) n) = id
 -- | Returns the opposite indices to 'recursiveArgs'
 nonRecursiveArgs :: Constructor -> [Int]
 nonRecursiveArgs (Constructor (Ind _ cons) n) = id
-  . assert (elength cons > n)
+  . assert "constructor index out of range" (elength cons > n)
   $ findIndices (/= IndVar) con_args
   where
   (_, con_args) = cons `nth` enum n

@@ -803,8 +803,8 @@ mapFixInfo f = Fold.transform mp
 -- > equateArgs 0 2 (\a b c d -> C[a][b][c][d]) = (\a b d -> C[a][b][a][d])
 equateArgs :: Nat -> Nat -> Term -> Term 
 equateArgs i j orig_t = id
-  . assert (i < j)
-  . assert (j < nlength bs)
+  . assert "arguments out of range" (i < j)
+  . assert "arguments out of range" (j < nlength bs)
   $ unflattenLam new_bs new_body
   where
   (bs, body_t) = flattenLam orig_t
@@ -813,7 +813,7 @@ equateArgs i j orig_t = id
   
   toIdx :: Nat -> Index
   toIdx x = id
-    . assert (x < nlength bs) 
+    . assert "argument out of range" (x < nlength bs) 
     $ enum ((nlength bs - x) - 1)
   
   

@@ -6,6 +6,7 @@ where
 
 import Prelude
 import Data.Function ( on )
+import Text.Printf ( PrintfArg (..), formatInt )
 
 -- | Natural numbers. Use 'toEnum' to construct.
 newtype Nat = Nat Int
@@ -80,6 +81,9 @@ instance Num CoNat where
   abs = id
   negate = error "Cannot negate a co-natural number"
   fromInteger = CoNat . fromInteger
+
+instance PrintfArg Nat where
+  formatArg (Nat n) = formatInt n
 
 omega :: CoNat
 omega = Omega

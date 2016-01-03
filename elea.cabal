@@ -50,7 +50,7 @@ executable elea
                       containers >=0.5, 
                       HUnit >=1, 
                       mtl >=2, 
-                      transformers >=0.3, 
+                      transformers >=0,
                       either >=4, 
                       fclabels >=2 && <3, 
                       semigroups >=0.12, 

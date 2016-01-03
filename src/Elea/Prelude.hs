@@ -75,7 +75,7 @@ import Data.Generics.Str as X
 import Data.Key as X (Zip(..))
 import Data.Proxy as X
 import System.IO.Unsafe as X
-import Text.Printf as X (printf, PrintfArg (..), formatString)
+import Text.Printf as X (printf, PrintfArg (..), formatString, formatInt)
 import GHC.Stack ( errorWithStackTrace )
 
 import qualified Data.Set as Set
@@ -436,13 +436,12 @@ findIndicesM p = id
     then return [i]
     else return []
 
--- TODO add a (msg :: String) as a first argument
 {-# INLINE assert #-}
-assert :: Bool -> a -> a
-assert b 
+assert :: String -> Bool -> a -> a
+assert _  b 
   | not __check__ || b = id
-assert False = 
-  errorWithStackTrace "assertion failed"
+assert msg False = 
+  errorWithStackTrace (printf "assertion failed: %s" msg)
 
 {-# INLINE assertM #-}
 assertM :: Monad m => String -> Bool -> m ()

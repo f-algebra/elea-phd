@@ -551,7 +551,7 @@ instance Unifiable Term where
       return mempty
     uni (Var x1 b1) (Var x2 b2)
       | x1 == x2 = id
-        . assert (b1 == b2) 
+        . assert "variable indices match but bindings do not" (b1 == b2) 
         $ return mempty
     uni (Var idx _) t2 = do
       free_var_limit <- tracked

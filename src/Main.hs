@@ -3,6 +3,8 @@ module Main
   module Elea.Prelude,
   main,
   test,
+  run,
+  dec
 )
 where
 
@@ -16,9 +18,9 @@ import qualified Elea.Testing as Test
 import qualified Elea.Tests.All as Tests
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Type.Ext as Type
---import qualified Elea.Transform.Fusion as Fusion
+import qualified Elea.Transform.Fusion as Fusion
 import qualified Elea.Monad.Direction as Direction
---import qualified Elea.Monad.Fedd as Fedd
+import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Monad.StepCounter as Steps
 import qualified Data.Poset as Quasi
 import qualified Test.Framework as TestFramework
@@ -44,7 +46,6 @@ main = do
 test :: IO ()
 test = withArgs ["test"] main
 
-    {-
 runM :: String -> Test.M String
 runM term_def = do
   Test.loadPrelude
@@ -66,4 +67,3 @@ dec term_def = time $ do
     . Direction.local Direction.Dec
     $ runM term_def
   putStrLn result
--}

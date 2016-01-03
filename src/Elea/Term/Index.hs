@@ -66,7 +66,9 @@ lowerManyAt :: Indexed a => Nat -> Index -> a -> a
 lowerManyAt n at = shift lower
   where
   lower x
-    | at <= x = assert (x >= enum n) (x - enum n)
+    | at <= x = id
+      . assert (printf "unable to lower index %d by %d" x n) (x >= enum n) 
+      $ x - enum n
     | otherwise = x
     
 lowerAt :: Indexed a => Index -> a -> a
@@ -149,3 +151,5 @@ omega = Index Nat.omega
 containsOmega :: Indexed t => t -> Bool
 containsOmega = freeWithin omega
 
+instance PrintfArg Index where
+  formatArg = formatString . show 
