@@ -9,7 +9,7 @@ module Elea.Type
   indName, indConstructors, 
   bindLabel, bindType, 
   constructorOf, constructorIndex,
-  prop, tag, unit, tuple, bool, falsity,
+  prop, tag, unit, tuple, bool, falsity, propTy,
   equation, isEquation, true, false,
   returnType, argumentTypes, dropArgs, split,
   isInd, isFun, fromBase,
@@ -18,16 +18,17 @@ module Elea.Type
   constructors,
   isBaseCase, isRecursive, 
   makeAltBindings,
+  bindEq,
   
   Polymorphic, 
   polymorphic, polymorphicM, 
   monomorphic, uninterpreted,
 )
-where
+where 
 
 import Elea.Prelude hiding ( get )
 import Elea.Term.Index
-import Elea.Term.Tag ( Tagged (..) )
+import Elea.Term.Tag ( Tagged )
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Failure.Class as Fail
@@ -165,38 +166,17 @@ instance ContainsTypes Constructor where
 instance ContainsTypes a => ContainsTypes (Tagged a) where
   mapTypesM f = mapM (mapTypesM f)
   
--- | Things that have a closed, always correct type. 
--- This is not terms, they could be badly typed, or require a type environment
--- to be typeable. This is for things like constructors, or names.
 class Show a => HasType a where
-  assign :: Fail.Can m => a -> m (Maybe Type) 
-
   get :: a -> Type
-  get (assign -> Just (Just ty)) = ty
-  get x = 
-    error ("[Type.get failed] " ++ show x) 
-  
-  has :: a -> Bool
-  has x = 
-    case assign x of
-      Just (Just _) -> True
-      Just Nothing -> False
-      Nothing ->
-        error ("[Type.has failed] " ++ show x)
-  
-  valid :: a -> Bool
-  valid (assign -> Just _) = True
-  valid _ = False
-  
   
 instance HasType Constructor where
-  assign = assign . constructorBind
+  get = get . constructorBind
   
 instance HasType a => HasType (Tagged a) where
-  assign = assign . Tag.untag
+  get = get . Tag.untag
   
 instance HasType Bind where
-  assign = return . Just . _bindType
+  get = _bindType
   
   
 -- | The 'empty' type, viz. the constructorless inductive type.
@@ -216,6 +196,9 @@ unit = Ind "unit" [("()", [])]
 
 prop :: Ind 
 prop = Ind "prop" [("ff", [])]
+
+propTy :: Type
+propTy = Base prop
 
 falsity :: Constructor
 falsity = Constructor prop 0
@@ -490,3 +473,8 @@ instance PrintfArg Constructor where
 
 instance PrintfArg Type where
   formatArg = formatString . show
+
+-- TODO turn Eq into bindEq such that none of the checks break
+bindEq :: Bind -> Bind -> Bool
+bindEq (Bind x ty) (Bind x' ty') = 
+  x == x' && ty == ty'

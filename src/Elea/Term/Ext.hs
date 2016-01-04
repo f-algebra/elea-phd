@@ -54,14 +54,17 @@ module Elea.Term.Ext
 )
 where
 
-import Elea.Prelude hiding ( replace )
+import Elea.Prelude hiding ( replace, and )
 import Elea.Term
+import Elea.Type ( HasType )
+import qualified Elea.Prelude as Prelude
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Term.Constraint as Constraint
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Unification as Unifier
 import qualified Elea.Foldable as Fold
+import qualified Elea.Foldable.WellFormed as WF
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
@@ -840,8 +843,7 @@ revertMatches term = do
 tryGeneralise :: Term -> Term -> Term
 tryGeneralise gen_t (Leq x y)
   | gen_t `isSubterm` x 
-  , gen_t `isSubterm` y
-  , Type.has gen_t =
+  , gen_t `isSubterm` y =
     Lam gen_b (Leq (gen x) (gen y))
   where
   gen_b = Bind "g" (Type.get gen_t)
@@ -967,3 +969,55 @@ isProductive (Fix _ _ fix_t) = id
       fix_f :: Index <- liftM enum Env.tracked
       return (not (fix_f `Indices.freeWithin` t))-}
       
+instance HasType Term where
+  get = Fold.cata phi
+    where
+    phi :: Term' Type -> Type
+    phi (Var' _ b) = Type.get b
+    phi (App' f_ty x_tys) = id
+      . Type.unflatten
+      . drop (length x_tys)
+      $ Type.flatten f_ty
+    phi (Bot' ty) = ty
+    phi (Seq' _ ty) = ty
+    phi (Leq' _ _) = Type.propTy
+    phi (Lam' b ty) = Type.Fun (get Type.bindType b) ty
+    phi (Con' tcon) = Type.get tcon
+    phi (Fix' _ fix_b _) = Type.get fix_b
+    phi (Case' _ alt_tys) = get altInner' (head alt_tys)
+
+instance WF.WellFormed (Reader [Bind]) Term where
+  checkLocal (Var x b) = do
+    is_local <- Env.isBound x 
+    if not is_local
+    then return WF.LocalPass
+    else do
+      b' <- Env.boundAt x
+      if Type.bindEq b b'
+      then return WF.LocalPass
+      else return 
+        . WF.LocalFail 
+        $ printf "local variable binding %s does not match %s" b b'
+  checkLocal (Leq x y) = do
+    if Type.get x == Type.get y 
+    then return WF.LocalPass
+    else return 
+      . WF.LocalFail
+      $ printf "types on either side of preorder do not match %s =< %s" 
+          (Type.get x) (Type.get y)
+  checkLocal (App f xs) = do
+    if not (Prelude.and (zipWith (==) arg_tys arg_tys'))
+    then return WF.LocalPass
+    else return
+      . WF.LocalFail
+      $ printf "type of arguments %s does not match argument types %s"
+          (show arg_tys) (show arg_tys')
+    where
+    arg_tys, arg_tys' :: [Type]
+    arg_tys = map Type.get xs
+    (arg_tys', _) = id
+      . splitAt (length xs) 
+      . Type.flatten 
+      $ Type.get f
+  checkLocal _ = 
+    return WF.LocalPass

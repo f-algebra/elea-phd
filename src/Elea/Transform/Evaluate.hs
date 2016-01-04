@@ -7,12 +7,11 @@ module Elea.Transform.Evaluate
   transformSteps, 
   traverseSteps,
   --floatVarMatches,
-  
   caseOfCon,
 )
 where
 
-import Elea.Prelude
+import Elea.Prelude hiding ( run )
 import Elea.Term.Index
 import Elea.Term
 import qualified Elea.Type.Ext as Type
@@ -85,8 +84,7 @@ unwrapDepth = 2
 -- Need to add pattern matching over absurdity, but how to find the type?
 strictness :: Step m => Term -> m Term
 strictness term 
-  | Type.has term
-  , isUndef term = 
+  | isUndef term = 
     return (Bot (Type.get term))
   where 
   isUndef (App (Bot _) _) = True
@@ -276,8 +274,8 @@ caseApp _ = Fail.here
 
 
 reduceSeq :: Step m => Term -> m Term
-reduceSeq (Seq (Bot _) t) 
-  | Type.has t = return (Bot (Type.get t))
+reduceSeq (Seq (Bot _) t) = 
+  return (Bot (Type.get t))
 reduceSeq (Seq (leftmost -> Con {}) t) =
   return t
 reduceSeq _ = Fail.here

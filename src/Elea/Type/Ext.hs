@@ -132,13 +132,6 @@ instance HasTypeM Match where
       (Just ty, _) -> return (Just ty)
       (_, Just ty) -> return (Just ty)
       _ -> return Nothing
-    
-
--- | I know I said that terms shouldn't have a 'HasType' instance, but
--- we should y call this on closed terms that we know
--- are well typed.
-instance HasType Term where
-  assign = Env.emptyT . assignM
 
 
 assertEqM :: (Env.Read m, HasTypeM a, ShowM m a) 
@@ -166,4 +159,3 @@ assertEqM msg x y = do
   showTyping Nothing = "[invalid type]"
   showTyping (Just Nothing) = "[type unknown]"
   showTyping (Just (Just ty)) = show ty
-

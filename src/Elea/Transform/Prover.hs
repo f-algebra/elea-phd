@@ -8,7 +8,7 @@ module Elea.Transform.Prover
 where
 
 
-import Elea.Prelude hiding ( negate )
+import Elea.Prelude hiding ( negate, run )
 import Elea.Term hiding ( constructor )
 import Elea.Show ( showM )
 import Elea.Unification ( Unifier )

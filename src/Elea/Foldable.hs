@@ -1,7 +1,6 @@
 -- | Boilerplate code for recursing over data types using their representation
 -- as the fixpoint of a functor.
--- The 'iso' code and 'selectiveTransformM' is not working properly though,
--- and I don't know where the problem is.
+-- TODO move this into a separate github repo and Hackage project (data-foldable-monadic?)
 module Elea.Foldable
 (
   module Data.Functor.Foldable,
@@ -36,7 +35,6 @@ type Refoldable t = (Foldable t, Unfoldable t)
 
 -- | Monadic cata- and para-morphisms for a provided monadic constraint.
 class (Monad m, Refoldable t) => FoldableM m t where
-
   -- We can implement all of these transformations purely in terms
   -- of this distributivity law. Sexy.
   distM :: Base t (m a, t) -> m (Base t a)

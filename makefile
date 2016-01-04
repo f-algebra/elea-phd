@@ -11,8 +11,8 @@ power:
 	ghc --make -o elea.exe -O $(FLAGS) $(EXTS) $(MAIN)
 
 debug:
-	cabal configure --enable-profiling --ghc-option=-auto-all
-	cabal build --ghc-options="-D__TRACE__ -D__CHECK__" 
+	cabal configure --enable-profiling --ghc-options="-D__CHECK__ -fprof-auto"
+	cabal build
 	xcopy /y .\dist\build\elea\elea.exe .\elea-debug.exe
 
 warn:

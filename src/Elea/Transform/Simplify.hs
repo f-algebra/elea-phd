@@ -12,7 +12,7 @@ module Elea.Transform.Simplify
 )
 where
 
-import Elea.Prelude
+import Elea.Prelude hiding ( run )
 import Elea.Term
 import Elea.Show ( showM )
 import qualified Elea.Term.Ext as Term

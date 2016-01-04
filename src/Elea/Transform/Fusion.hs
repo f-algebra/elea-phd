@@ -6,7 +6,7 @@ module Elea.Transform.Fusion
 )
 where
 
-import Elea.Prelude
+import Elea.Prelude hiding ( run )
 import Elea.Term
 import Elea.Show ( showM )
 import Elea.Unification ( Unifier )
@@ -603,7 +603,6 @@ discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
    -- Direction.requireInc
     Fail.unless (Set.size tags == 1)
     Fail.unless (Set.size to_calls == 1)
-    Fail.unless (Type.has orig_t)
     Fail.unless (is_fixfix || is_other)
     -- ^ Time saving heuristic
     [(from_f, to_var)] <- Fusion.findTags tags
@@ -642,7 +641,6 @@ discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
   -- term within this context
   findFold :: Term -> m Term
   findFold from_t = do
-    Fail.unless (Type.has from_t)
     Fail.unless (Type.isInd from_ty)
     prop <- id
       . Env.bindMany c_bs

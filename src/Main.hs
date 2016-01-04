@@ -8,7 +8,7 @@ module Main
 )
 where
 
-import Elea.Prelude
+import Elea.Prelude hiding ( run )
 import Elea.Show ( showM )
 import Text.Printf
 import System.CPUTime

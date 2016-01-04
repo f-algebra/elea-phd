@@ -9,7 +9,7 @@ module Elea.Transform.Rewrite
 )
 where
 
-import Elea.Prelude
+import Elea.Prelude hiding ( run )
 import Elea.Term
 import Elea.Show ( showM )
 import Elea.Unification ( Unifier )

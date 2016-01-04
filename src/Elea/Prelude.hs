@@ -10,7 +10,8 @@ module Elea.Prelude
         invert, intersects, liftMaybe, maybeT, nth, drop, take, screen,
         isSubsequenceOf, evalWriter, evalWriterT, removeAll, tracE,
         findIndicesM, trace, assert, assertM, error, errorf,
-        Empty (..), __trace__, __check__,
+        Empty (..), Runnable (..),
+        __trace__, __check__,
         module X)
 where
 
@@ -470,3 +471,12 @@ instance Empty (Set a) where
 
 instance Empty [a] where
   empty = []
+
+class Runnable m where
+  run :: m a -> a
+
+instance Monoid w => Runnable (Reader w) where
+  run = ($ mempty) . runReader
+
+class SyntacticEq a where
+  (===) :: a -> a -> Bool
