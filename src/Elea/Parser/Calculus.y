@@ -4,6 +4,7 @@
 -- and explicit absurdity.
 module Elea.Parser.Calculus
 (
+  Env,
   program, term, _type, bindings
 )
 where
@@ -276,10 +277,9 @@ instance Err.Throws m => Env.Read (ReaderT Scope m) where
   bindings = asks (get bindStack)
   
 type ParserMonad m a = 
-  ParserEnv m => ReaderT Scope m a
+  Env m => ReaderT Scope m a
   
-type ParserEnv m = 
-  (Err.Throws m, Defs.Has m, Tag.Gen m)
+type Env m = (Err.Throws m, Defs.Has m, Tag.Gen m)
 
 localTypeArgs :: ContainsTypes t => 
   [String] -> ParserMonad m t -> ParserMonad m (Polymorphic t)
@@ -298,7 +298,7 @@ localDef name term = id
   $ modify bindMap 
   $ Map.insert name term
   
-term :: (ParserEnv m, Env.Read m) => String -> m Term
+term :: (Env m, Env.Read m) => String -> m Term
 term str = do
   bs <- Env.bindings
   withEmptyScope
@@ -309,21 +309,21 @@ term str = do
     . lexer
     $ str
   
-_type :: ParserEnv m => String -> m Type
+_type :: Env m => String -> m Type
 _type = id
   . withEmptyScope
   . parseRawType
   . happyType 
   . lexer
   
-bindings :: ParserEnv m => String -> m [Bind]
+bindings :: Env m => String -> m [Bind]
 bindings = id
   . withEmptyScope
   . mapM parseRawBind
   . happyBindings
   . lexer
   
-program :: forall m . ParserEnv m 
+program :: forall m . Env m 
   => String -> m [Polymorphic Prop]
 program text = 
   withEmptyScope $ do

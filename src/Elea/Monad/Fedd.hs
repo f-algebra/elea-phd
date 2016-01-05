@@ -3,6 +3,8 @@ module Elea.Monad.Fedd
 (
   FeddT, Fedd,
   evalT, eval,
+  setDefinitions,
+  getDefinitions,
 )
 where
 
@@ -69,6 +71,15 @@ instance Empty FeddState where
 eval :: Fedd a -> a
 eval = runIdentity . evalT
 
+setDefinitions :: Monad m => Defs.Data -> FeddT m ()
+setDefinitions = State.modify . set fsDefs
+
+getDefinitions :: Monad m => FeddT m Defs.Data
+getDefinitions = State.gets (get fsDefs)
+
+instance Runnable Fedd where
+  run = eval
+
 stepTaken :: FeddWriter 
 stepTaken = FW mempty 1
 
@@ -79,7 +90,7 @@ instance Monad m => Env.Write (FeddT m) where
   bindAt at b = local (EnvDB.bindAt at b)
   matched m = local (EnvDB.matched m)
   forgetMatches w = local (EnvDB.forgetMatches w)
-  
+
 instance Monad m => Env.Read (FeddT m) where
   bindings = asks EnvDB.bindings
   

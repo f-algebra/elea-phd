@@ -77,6 +77,7 @@ import Data.Key as X (Zip(..))
 import Data.Proxy as X
 import System.IO.Unsafe as X
 import Text.Printf as X (printf, PrintfArg (..), formatString, formatInt)
+import Text.Read as X ( Read (..) )
 import GHC.Stack ( errorWithStackTrace )
 
 import qualified Data.Set as Set

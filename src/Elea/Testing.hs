@@ -4,7 +4,7 @@ module Elea.Testing
   test, testWithPrelude,
   assertSimpEq,
   label, list,
-  loadPrelude, loadFile,
+  loadFile,
   loadPropertyNamesFromFile,
   term, _type,
   simplifiedTerm,
@@ -24,9 +24,10 @@ import Elea.Monad.Fedd ( FeddT )
 import Test.HUnit ( Test, assertFailure )
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Ext as Term
+import qualified Elea.Include as Include
+import qualified Elea.Parser.Calculus as Parse
 import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Monad.Env as Env
-import qualified Elea.Parser.Calculus as Parse
 import qualified Elea.Transform.Simplify as Simp
 import qualified Elea.Transform.Fusion as Fusion
 import qualified Elea.Monad.Definitions as Defs
@@ -51,7 +52,7 @@ list :: [Test] -> Test
 list = HUnit.TestList
 
 testWithPrelude :: String -> M () -> Test
-testWithPrelude label = test label . (loadPrelude >>)
+testWithPrelude label = test label . (Include.loadPrelude >>)
 
 assertBool :: String -> Bool -> M ()
 assertBool msg = Trans.lift . HUnit.assertBool msg
@@ -84,15 +85,10 @@ loadFile file_name = do
 loadPropertyNamesFromFile :: String -> IO [String]
 loadPropertyNamesFromFile file_name = do
   all_props <- Fedd.evalT $ do
-    loadPrelude
+    Include.loadPrelude
     loadFile file_name
   return (map (get propName) all_props)
 
-loadPrelude :: M ()
-loadPrelude = do
-  [] <- loadFile "prelude.elea"
-  return ()
-    
 term :: (Tag.Gen m, Defs.Has m, Env.Read m) => String -> m Term
 term = Err.noneM . Parse.term
 

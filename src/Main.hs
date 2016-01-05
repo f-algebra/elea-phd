@@ -15,6 +15,7 @@ import System.CPUTime
 import System.Environment ( getArgs, withArgs )
 
 import qualified Elea.Testing as Test
+import qualified Elea.Include as Include
 import qualified Elea.Tests.All as Tests
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Type.Ext as Type
@@ -48,7 +49,7 @@ test = withArgs ["test"] main
 
 runM :: String -> Test.M String
 runM term_def = do
-  Test.loadPrelude
+  Include.loadPrelude
   term <- Test.term term_def
   (term', steps_taken) <- Steps.listen (Fusion.run term)
   term_s <- showM term'
