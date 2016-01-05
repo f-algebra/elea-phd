@@ -1,5 +1,5 @@
 module Elea.Include
-  ( loadPrelude )
+  ( loadPrelude, evalWithPrelude )
 where
 
 import Elea.Prelude
@@ -27,6 +27,10 @@ preludeDefs = Fedd.eval loadPrelude
 
 loadPrelude :: Monad m => Fedd.FeddT m ()
 loadPrelude = Fedd.setDefinitions preludeDefs
+
+evalWithPrelude :: Fedd.Fedd a -> a
+evalWithPrelude =
+  Fedd.eval . (loadPrelude >>)
 
 instance Read Term where
   readPrec = undefined
