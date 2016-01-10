@@ -25,6 +25,7 @@ import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.History as History
 import qualified Elea.Monad.Error.Class as Err
+import qualified Elea.Monad.Error.Assertion as Assert
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Discovery.Class as Discovery
@@ -320,7 +321,7 @@ decreasingFreeVar orig_t@(App fix@(Fix _ _ fix_t) args) = do
     $ Term.isLambdaFloated fix
   
   App expr_fix@(Fix _ expr_b _) expr_args <- 
-    Term.expressFreeVariables var_args fix
+    Term.expressFreeVariables var_arg_idxs fix
 
   let (orig_bs, _) = flattenLam fix_t
   
@@ -328,21 +329,20 @@ decreasingFreeVar orig_t@(App fix@(Fix _ _ fix_t) args) = do
               ++ "\n[expressing] " ++ show var_args
               ++ "\n[in] " ++ show fix
               ++ "\n[yielded] " ++ show expr_fix)
-    $ expr_args == zipWith Var var_args orig_bs
+    $ expr_args ==  var_args
     
-  let ctx_var_idxs = []
-        ++ map (\v -> (length orig_bs - enum v) - 1) var_arg_is
-        ++ reverse [0..length orig_bs - 1]
-      ctx_vars = zipWith (Var . enum) ctx_var_idxs (reverse orig_bs) 
+  let ctx_vars = var_args ++ reverse (zipWith (Var . enum) (range orig_bs) orig_bs)
       ctx_t = id
         . unflattenLam (expr_b:orig_bs)
         $ app (Var (elength orig_bs) expr_b) ctx_vars
         
       full_t = Term.reduce ctx_t (expr_fix:args)
-        
-  Fail.assert "dec-free-var generated an incorrectly typed context"
-    $ Type.get full_t == Type.get orig_t
-  
+       
+  Assert.checkM
+    . Assert.augment "dec-free-var generated an incorrectly typed context"
+    . Assert.augment (printf "context term %s" ctx_t)
+    $ Type.assertEq orig_t full_t
+
   orig_s <- showM orig_t
   ctx_s <- showM ctx_t
   fix_s <- showM (Term.reduce ctx_t [expr_fix])
@@ -356,6 +356,10 @@ decreasingFreeVar orig_t@(App fix@(Fix _ _ fix_t) args) = do
     
   Transform.continue (app new_fix args)
   where
+  var_args = zipWith Var var_arg_idxs var_arg_bs
+  var_arg_bs = map (\i -> binding (args !! i)) var_arg_is
+  var_arg_idxs = nubOrd (map (fromVar . (args !!)) var_arg_is)
+
   -- The variable arguments we should attempt this technique on.
   -- They must be a decreasing argument, and free within the fixpoint itself. 
   var_arg_is :: [Nat]
@@ -369,9 +373,6 @@ decreasingFreeVar orig_t@(App fix@(Fix _ _ fix_t) args) = do
         x `Indices.freeWithin` fix
     isFreeVar _ = False
     
-  var_args :: [Index]
-  var_args = nubOrd (map (fromVar . (args !!)) var_arg_is) 
-  
 decreasingFreeVar _ = Fail.here
 
 

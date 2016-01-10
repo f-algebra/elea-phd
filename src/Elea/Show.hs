@@ -29,7 +29,7 @@ showBinds = intercalate " " . map show
 getName :: Term -> Maybe String
 getName (Var _ b) = Just (get bindLabel b)
 getName (Con c) = Just (show c)
-getName (Fix inf _ _) = get fixName inf
+-- getName (Fix inf _ _) = get fixName inf
 getName _ = Nothing
 
 instance Show Term where
