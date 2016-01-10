@@ -1,9 +1,9 @@
--- | This is just a renaming of 'MonadError', and with some useful
--- new functions.
+-- | This is just a renaing/extension of 'MonadError'
 {-# LANGUAGE UndecidableInstances #-}
 module Elea.Monad.Error.Class
-  ( Throws (..), ErrorT, Error, Stack,
-    wasThrown, when, unless )
+  ( Throws (..), ErrorT, Error, Stack
+  , wasThrown, when, unless, noneM, none
+  , augmentf, throwf )
 where
 
 import Elea.Prelude hiding ( catch, when, unless, print )
@@ -44,6 +44,18 @@ instance Runnable ErrorT where
     case e of
       Left stk -> error (show stk)
       Right val -> return val
+
+throwf :: (Throws e m, Read e, PrintfArg a) => String -> a -> m b
+throwf str args = throw (readf str args)
+
+augmentf :: (Throws e m, Read e, PrintfArg a) => String -> a -> m b -> m b
+augmentf str args = augment (readf str args)
+
+noneM :: Monad m => ErrorT m a -> m a
+noneM = runM
+
+none :: Error a -> a
+none = run
 
 wasThrown :: Error a -> Bool
 wasThrown err = 

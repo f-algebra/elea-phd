@@ -18,7 +18,7 @@ where
 
 import Elea.Prelude hiding ( assertEq )
 import Elea.Term
-import Elea.Type hiding ( get )
+import Elea.Type hiding ( get, assertEq )
 import Elea.Show
 import Elea.Monad.Fedd ( FeddT )
 import Test.HUnit ( Test, assertFailure )
@@ -71,8 +71,8 @@ assertTermEq msg (stripTags -> t1) (stripTags -> t2) = do
 
 assertSimpEq :: String -> Term -> Term -> M ()
 assertSimpEq msg t1 t2 = do
-  t1' <- Simp.runM t1
-  t2' <- Simp.runM t2
+  t1' <- Simp.applyM t1
+  t2' <- Simp.applyM t2
   assertTermEq msg t1 t2
 
 loadFile :: String -> M [Prop]
@@ -93,7 +93,7 @@ term :: (Tag.Gen m, Defs.Has m, Env.Read m) => String -> m Term
 term = Err.noneM . Parse.term
 
 simplifiedTerm :: (Tag.Gen m, Defs.Has m, Env.Read m) => String -> m Term
-simplifiedTerm = liftM Simp.run . term
+simplifiedTerm = liftM Simp.apply . term
 
 _type :: (Tag.Gen m, Defs.Has m) => String -> m Type
 _type = Err.noneM . Parse._type

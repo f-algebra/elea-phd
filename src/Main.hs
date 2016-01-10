@@ -3,7 +3,7 @@ module Main
   module Elea.Prelude,
   main,
   test,
-  run,
+  apply,
   dec
 )
 where
@@ -47,18 +47,18 @@ main = do
 test :: IO ()
 test = withArgs ["test"] main
 
-runM :: String -> Test.M String
-runM term_def = do
+applyM :: String -> Test.M String
+applyM term_def = do
   Fedd.loadPrelude
   term <- Test.term term_def
-  (term', steps_taken) <- Steps.listen (Fusion.run term)
+  (term', steps_taken) <- Steps.listen (Fusion.applyM term)
   term_s <- showM term'
   ty_s <- liftM show (Type.getM term')
   return ("\n" ++ term_s ++ "\n\n: " ++ ty_s ++ "\n\n in " ++ show steps_taken ++ " steps")
     
-run :: String -> IO ()
-run term_def = time $ do
-  result <- Fedd.evalT (runM term_def)
+apply :: String -> IO ()
+apply term_def = time $ do
+  result <- Fedd.evalT (applyM term_def)
   putStrLn result
 
 dec :: String -> IO ()
@@ -66,5 +66,5 @@ dec term_def = time $ do
   result <- id
     . Fedd.evalT 
     . Direction.local Direction.Dec
-    $ runM term_def
+    $ applyM term_def
   putStrLn result

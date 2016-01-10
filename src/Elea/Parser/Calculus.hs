@@ -25,6 +25,7 @@ import qualified Elea.Transform.Simplify as Simp
 import qualified Elea.Transform.Evaluate as Eval
 import qualified Elea.Monad.Definitions.Class as Defs      
 import qualified Elea.Monad.Error.Class as Err
+import qualified Elea.Monad.Error.Assertion as Assert
 import qualified Data.Map as Map
 import Control.Applicative(Applicative(..))
 import Control.Monad (ap)
@@ -2033,13 +2034,13 @@ instance Monad m => Env.Write (ReaderT Scope m) where
   matched _ = id
   forgetMatches _ = id
   
-instance Err.Throws m => Env.Read (ReaderT Scope m) where
+instance Monad m => Env.Read (ReaderT Scope m) where
   bindings = asks (get bindStack)
   
 type ParserMonad m a = 
   Env m => ReaderT Scope m a
   
-type Env m = (Err.Throws m, Defs.Has m, Tag.Gen m)
+type Env m = (Err.Throws Err.Stack m, Defs.Has m, Tag.Gen m)
 
 localTypeArgs :: ContainsTypes t => 
   [String] -> ParserMonad m t -> ParserMonad m (Polymorphic t)
@@ -2062,7 +2063,7 @@ term :: (Env m, Env.Read m) => String -> m Term
 term str = do
   bs <- Env.bindings
   withEmptyScope
-    . liftM Eval.run
+    . liftM Eval.apply
     . Env.bindMany (reverse bs)
     . parseAndCheckTerm 
     . happyTerm 
@@ -2131,7 +2132,7 @@ program text =
   
   defineTerm ((name, ty_args), raw_term) = do
     p_term <- localTypeArgs ty_args (parseAndCheckTerm raw_term)
-    Defs.defineTerm name (fmap Simp.run p_term)
+    Defs.defineTerm name (fmap Simp.apply p_term)
     
 lookupTerm :: ParamCall -> ParserMonad m Term
 lookupTerm (name, raw_ty_args) = do
@@ -2142,7 +2143,7 @@ lookupTerm (name, raw_ty_args) = do
     ty_args <- mapM parseRawType raw_ty_args
     mby_term <- Defs.lookupTerm name ty_args
     case mby_term of
-      Nothing -> Err.throw ("Undefined term: " ++ name)
+      Nothing -> Err.throwf "undefined term %s" name
       Just (Con null_tcon) -> do
         tcon <- Tag.tag (Tag.untag null_tcon)
         return (Con tcon)
@@ -2158,14 +2159,13 @@ lookupType (name, raw_ty_args) = do
     mby_ind <- Defs.lookupType name ty_args
     if isJust mby_ind
     then return (Base (fromJust mby_ind))
-    else Err.throw $ "Undefined inductive type: " ++ name
+    else Err.throwf "undefined inductive type %s" name
     
 parseAndCheckTerm :: RawTerm -> ParserMonad m Term
 parseAndCheckTerm rt = do
   t <- parseRawTerm rt
-  case WF.findErrors t of
-    Nothing -> return t
-    Just err -> error err
+  Assert.toError (WF.assert t)
+  return t
   
 parseRawType :: RawType -> ParserMonad m Type
 parseRawType (TyBase name) =
@@ -2187,11 +2187,10 @@ parseRawBind (TBind label raw_ty) = do
 -- and the inductive type it is matching on, and returns the constructor
 -- index and the new bindings of the pattern variables.
 parsePattern :: Ind -> [String] -> ParserMonad m (Nat, [Bind])
-parsePattern ind (con_lbl:var_lbls) 
-  | null mby_con_i = 
-    Err.throw 
-      $ "Invalid constructor \"" ++ con_lbl 
-      ++ "\" for type [" ++ show ind ++ "]"
+parsePattern ind (con_lbl : var_lbls) 
+  | null mby_con_i = id
+    . Err.augmentf "parsing pattern for \"\"" ind
+    $ Err.throwf "invalid constructor \"%s\"" con_lbl
   | otherwise = 
     return (enum con_i, var_bs)
   where
@@ -2276,8 +2275,7 @@ parseRawTerm (TCase rt ralts) = do
   where
   parseRawAlt ind_ty (TAlt pat ralt_t)
     | not (Type.isInd ind_ty) =
-      Err.throw 
-        $ "Pattern matching over non inductive type [" ++ show ind_ty ++ "]"
+      Err.throwf "pattern matching over non inductive type \"%s\"" ind_ty
     | otherwise = do
       (con_n, var_bs) <- parsePattern ind pat
       t <- Env.bindMany var_bs (parseRawTerm ralt_t)

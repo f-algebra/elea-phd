@@ -13,6 +13,7 @@ import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Parser.Calculus as Parse
 import qualified Elea.Monad.Definitions.Data as Defs
 import qualified Elea.Monad.Error.Class as Err
+import qualified Elea.Monad.Error.Assertion as Assert
 import qualified System.IO.Unsafe as Unsafe
 import qualified Text.ParserCombinators.ReadPrec as ReadPrec
 
@@ -25,7 +26,7 @@ preludeDefs = Fedd.eval loadPrelude
 
   loadPrelude :: Fedd.Fedd Defs.Data
   loadPrelude = do
-    Err.noneM 
+    Err.noneM
       . liftM (map uninterpreted) 
       $ Parse.program prelude_src
     Fedd.getDefinitions
@@ -39,8 +40,8 @@ evalWithPrelude =
 
 readWithPrelude :: String -> Term
 readWithPrelude term_def = id
-  . evalWithPrelude 
-  . Err.noneM 
+  . evalWithPrelude
+  . Err.noneM
   $ Parse.term term_def
 
 instance Read Term where
@@ -48,5 +49,5 @@ instance Read Term where
     term_def <- ReadPrec.look
     let term = readWithPrelude term_def    
     -- Seems like a decent enough place to check that "read . show == id"
-    assertEq "read . show == id" term (readWithPrelude (show term))
+    Assert.assertEq "read . show == id" term (readWithPrelude (show term))
       $ return term

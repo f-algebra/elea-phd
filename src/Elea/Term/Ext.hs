@@ -32,6 +32,7 @@ module Elea.Term.Ext
   removeSubterms,
   freeSubtermsOf,
   freeVars,
+  freeVarSet,
   floatRecCallInwards,
   isLambdaFloated,
   findArguments,
@@ -1014,7 +1015,6 @@ instance WF.WellFormed Term where
 
 assertValidRewrite :: Term -> Term -> Assert.Assert
 assertValidRewrite from to = id
-  . Assert.augment (printf "rewriting %b to %b" from to)
-  $ do
+  . Assert.augment (printf "rewriting %b to %b" from to) $ do
     Type.assertEq from to
     WF.assert to

@@ -52,7 +52,7 @@ testBuildFold =
 testConjunction :: Test
 testConjunction = 
   Test.testWithPrelude "conjunction" $ do
-    let conj3_t = Simp.run (conjunction 3)
+    let conj3_t = Simp.apply (conjunction 3)
     conj3_t' <- Test.simplifiedTerm "fun (p q r: bool) -> and p (and q r)"
     Test.assertEq "conjunction" conj3_t' conj3_t
       
@@ -68,10 +68,10 @@ testSubterms = id
       add_x_y <- Test.term "add x y"
       
       let free_ts = freeSubtermsOf add_stuff
-          free_vars = freeVars add_stuff
-          free_vars2 = freeVars add_x_y
+          free_vars = freeVarSet add_stuff
+          free_vars2 = freeVarSet add_x_y
           removed_ts = removeSubterms [add_stuff, one, two, y]
-      Test.assertEq "free subterms" (Set.fromList [add_x_y]) free_ts 
+      Test.assertEq "free subterms" (Set.fromList [add_x_y]) (Set.fromList free_ts) 
       Test.assertEq "free vars 1" (Set.fromList [x, y]) free_vars
       Test.assertEq "free vars 2" free_vars free_vars2
       Test.assertEq "remove subterms" [add_stuff, two] removed_ts 
@@ -101,7 +101,7 @@ testEval :: Test
 testEval = id
   . Test.testWithPrelude "eval" $ do
       Base nat <- Test._type "nat"
-      let id_nat = Eval.run (recursiveId nat)
+      let id_nat = Eval.apply (recursiveId nat)
       id_nat' <- Test.term def_nat_id
       Test.assertTermEq "eval" id_nat' id_nat
       

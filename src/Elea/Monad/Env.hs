@@ -43,6 +43,7 @@ import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Discovery.Class as Discovery
 import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Monad.History as History
+import qualified Elea.Monad.StepCounter as Steps
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Unification as Unifier 
@@ -330,6 +331,13 @@ instance (Indexed r, Memo.Can m) => Memo.Can (AlsoTrack r m) where
   maybeMemo n t = 
     mapAlsoTrack (Memo.maybeMemo n t)
 
+instance (Indexed r, Steps.Counter m) => Steps.Counter (AlsoTrack r m) where
+  take = Trans.lift Steps.take
+  listen = mapAlsoTrack Steps.listen
+
+instance (Indexed r, Steps.Limiter m) => Steps.Limiter (AlsoTrack r m) where
+  limit n = mapAlsoTrack (Steps.limit n)
+  remaining = Trans.lift Steps.remaining
   
 -- | To stop effects reaching the inner monad we
 -- just wrap it in an 'IdentityT'.

@@ -1,6 +1,6 @@
 module Elea.Monad.Error.Assertion
   ( Assert, bool, equal, check, checkM, augment,
-    success, failure, isSuccess, firstFailure,
+    success, failure, isSuccess, firstFailure, toError,
     assert, assertEq )
 where
 
@@ -16,7 +16,10 @@ failure :: String -> Assert
 failure msg = Err.throw (read msg)
 
 isSuccess :: Assert -> Bool
-isSuccess = Err.wasThrown
+isSuccess = not . Err.wasThrown
+
+fromFailure :: Assert -> Err.Stack
+fromFailure (runEitherT -> Identity (Left stk)) = stk 
 
 -- | Returns the first failure, if one exists.
 firstFailure :: [Assert] -> Assert
@@ -41,6 +44,11 @@ check (Failure stack) =
 checkM assert =
   check assert (if isSuccess assert then return () else fail "")
 #endif
+
+toError :: Err.Throws Err.Stack m => Assert -> m ()
+toError assert 
+  | isSuccess assert = return ()
+  | otherwise = Err.throw (fromFailure assert)
 
 bool :: Bool -> Assert
 bool b = if b then success else failure ""

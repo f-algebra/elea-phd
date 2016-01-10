@@ -1,7 +1,7 @@
 -- | Some term transformation steps that rely on fixpoint fusion.
 module Elea.Transform.Fusion
 (
-  run,
+  applyM,
   Env
 )
 where
@@ -56,8 +56,8 @@ type Step m =
   , Env m )
  
   
-run :: Env m => Term -> m Term
-run = Transform.fix (Transform.compose all_steps)
+applyM :: Env m => Term -> m Term
+applyM = Transform.compose all_steps
   where
   all_steps = []
     ++ Eval.transformSteps
@@ -71,17 +71,15 @@ run = Transform.fix (Transform.compose all_steps)
     ++ steps
     
   
-steps :: Step m => [Term -> m Term]
+steps :: Step m => [(String, Term -> m Term)]
 steps = 
-  [ const Fail.here
-  , fixfix
-  , fixCon
-  , accumulation
-  , decreasingFreeVar
-  , repeatedArg
-  , matchFix
-  , discoverFold
-  ]
+  [ ("fix-fix fusion", fixfix)
+  , ("fix-con fusion", fixCon)
+  , ("accumulator fusion", accumulation)
+  , ("free-var fusion", decreasingFreeVar)
+  , ("repeated-argument fusion", repeatedArg)
+  , ("assertion fusion", matchFix)
+  , ("fold discovery", discoverFold) ]
 
 
 fusion :: Step m=> Term -> Term -> m Term
@@ -96,7 +94,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
     rewrite_from <- id
       . tracE [("fusing <" ++ show temp_idx ++ ">", t_s)]
       . Env.bind fix_b
-      . Simp.runWithoutUnfoldM
+      . Simp.applyWithoutUnfoldM
       -- We cannot use unfold because it will break fixCon fusion
       -- but we need constArg for free-arg fusion
       . Indices.lift
@@ -105,7 +103,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
     Type.assertEqM "[fixfix]" (Indices.lower rewrite_from) orig_t
            
     t_s' <- Env.bind new_fix_b $ showM rewrite_from
-   -- t_s'' <- showM (Eval.run (app ctx_t [Term.unfoldFix temp_fix]))
+   -- t_s'' <- showM (Eval.apply (app ctx_t [Term.unfoldFix temp_fix]))
     
     new_fix_t <- id  
      -- . trace ("\n\n[replacing] " ++ t_s')
@@ -117,7 +115,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
       -- ^ Make room for our new variables we are rewriting to
       $ app ctx_t [Term.unfoldFix temp_fix]
       
-    t_s''' <- showM (Eval.run (Fix fix_i new_fix_b new_fix_t))
+    t_s''' <- showM (Eval.apply (Fix fix_i new_fix_b new_fix_t))
       
     new_t <- do
       if not (0 `Indices.freeWithin` new_fix_t) 
@@ -126,10 +124,10 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
        --   $ trace ("\n\n[fusing <" ++ show temp_idx   ++ ">] " ++ t_s)
           . tracE [("failing <" ++ show temp_idx ++ ">", t_s''')]
           $ Fail.here
-        Simp.runM
+        Simp.applyM
           $ Indices.lower new_fix_t
       else id
-        . Rewrite.run
+        . Rewrite.applyM
        -- . trace ("\n\n[fusing <" ++ show temp_idx   ++ ">] " ++ t_s)
         . tracE [("yielding <" ++ show temp_idx ++ ">", t_s''')] 
         . Fix fix_i new_fix_b 
@@ -216,7 +214,7 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
   return new_t
   where  
   o_dec_idxs = Term.decreasingArgs o_fix
-  o_free_vars = Set.toList (Term.freeVars o_fix)
+  o_free_vars = Set.toList (Term.freeVarSet o_fix)
   o_free_bs = map binding o_free_vars
   
   fixArg :: [Bind] -> Int -> m Term
@@ -444,7 +442,7 @@ matchFix term@(App fix@(Fix {}) xs)
       $ fuseConstraints cts term
     term'' <- id  
       . Direction.prover
-      . Rewrite.run 
+      . Rewrite.applyM
       $ Constraint.removeAll term'
     Fail.unless (term'' Quasi.< term)
     
@@ -634,7 +632,7 @@ discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
     get fixIndex fix_i == tag
   taggedFixCall _ = False
   
-  to_calls = Term.collect taggedFixCall orig_t
+  to_calls = Set.fromList (Term.collect taggedFixCall orig_t)
   to_call@(App _ to_args) = (head . Set.toList) to_calls
   
   -- | Finds a context such that the original term is equal to the given

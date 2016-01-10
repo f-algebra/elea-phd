@@ -46,3 +46,11 @@ instance Counter m => Counter (MaybeT m) where
 instance Limiter m => Limiter (MaybeT m) where
   limit n = mapMaybeT (limit n)
   remaining = Trans.lift remaining
+
+instance Counter m => Counter (IdentityT m) where
+  take = Trans.lift take
+  listen = mapIdentityT listen
+
+instance Limiter m => Limiter (IdentityT m) where
+  limit n = mapIdentityT (limit n)
+  remaining = Trans.lift remaining

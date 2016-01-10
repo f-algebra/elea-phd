@@ -2,14 +2,8 @@
 -- transformations but fundamentally those which make terms smaller and simpler.
 -- They do not require fusion and they do not need to make use of 'Elea.Embed'.
 module Elea.Transform.Simplify
-(
-  Step,
-  Env,
-  run, 
-  runM,
-  runWithoutUnfoldM,
-  steps,
-)
+  ( Step, Env,
+    apply, applyM, applyWithoutUnfoldM, steps )
 where
 
 import Elea.Prelude hiding ( run )
@@ -56,11 +50,12 @@ type Env m =
 
 type Step m = (Eval.Step m, Env m)
 
-run :: Term -> Term
-run = Fedd.eval . runM        
+-- TODO remove occurrences of this, it's almost certainly gonna cause issues
+apply :: Term -> Term
+apply = Fedd.eval . applyM        
     
-runM :: (Steps.Limiter m, Env m) => Term -> m Term
-runM = Transform.fix (Transform.compose all_steps)
+applyM :: (Steps.Limiter m, Env m) => Term -> m Term
+applyM = Transform.compose all_steps
   where
   all_steps = []
     ++ Eval.transformSteps 
@@ -68,23 +63,22 @@ runM = Transform.fix (Transform.compose all_steps)
     ++ steps       
    
 -- Bit of a hack which is needed for free-arg fusion
-runWithoutUnfoldM :: Env m => Term -> m Term
-runWithoutUnfoldM = Transform.fix
+applyWithoutUnfoldM :: Env m => Term -> m Term
+applyWithoutUnfoldM = id
   . Transform.compose
   $ Eval.transformSteps
   ++ Eval.traverseSteps
-  ++ [ constArg ]
+  ++ [ ("constant argument fusion", constArg) ]
     
-steps :: Step m => [Term -> m Term]
+steps :: Step m => [(String, Term -> m Term)]
 steps =
-  [ const Fail.here
-  , caseFun
-  , constArg
-  , identityCase
+  [ ("lambda branch", caseFun)
+  , ("constant argument fusion", constArg)
+  , ("identity case-of", identityCase)
 --  , undefinedCase
-  , constantFix
-  , unfold
-  , unfoldCase
+  , ("subterm fission", constantFix)
+  , ("unfold", unfold)
+  , ("unfold case-of term", unfoldCase)
   {-
  -- , floatVarMatch
   , propagateMatch
@@ -258,7 +252,7 @@ constantFix t@(flattenApp -> Fix _ fix_b fix_t : args)
   
   mby_results = id
     . potentialResults
-    . Eval.run
+    . Eval.apply
     $ Indices.substAt 0 (Bot fix_ty) fix_t
   
   potentialResults :: Term -> Maybe [Term]
@@ -294,7 +288,7 @@ constantFix t@(flattenApp -> Fix _ fix_b fix_t : args)
       . Indices.liftMany (nlength arg_bs)
       $ guess_t
       
-    fix_t' = Eval.run (Indices.substAt 0 rec_f fix_t)
+    fix_t' = Eval.apply (Indices.substAt 0 rec_f fix_t)
     mby_results' = potentialResults fix_t'
         
 constantFix _ = 
@@ -381,7 +375,6 @@ floatVarMatch term@(Case (App fix@(Fix {}) xs) _)
   dec_ixs = (Set.fromList . map fromVar . filter isVar) dec_xs
   
   useful_ms = id
-    . Set.toList
     . Env.trackOffset
     $ Fold.collectM usefulVarMatch term
   

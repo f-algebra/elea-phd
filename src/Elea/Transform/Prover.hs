@@ -43,30 +43,29 @@ type Env m =
 
 type Step m = ( Env m , Simp.Step m )
 
-steps :: Step m => [Term -> m Term]
+steps :: Step m => [(String, Term -> m Term)]
 steps = 
-  [ const Fail.here   
-  , reflexivity
-  , bottom
-  , implication
-  , doubleNeg
-  , forAll
-  , removeForAll
-  , leftTrans
-  , rightTrans
-  , caseSplitInc
-  , caseSplitDec
-  , constructor
-  , lfp
-  , unfoldProductive
-  , leqMatch
+  [ ("reflexivity of =<", reflexivity)
+  , ("forall a . _|_ =< A", bottom)
+  , ("=< as reverse implication", implication)
+  , ("double negation", doubleNeg)
+  , ("function to forall", forAll)
+  , ("remove forall", removeForAll)
+  , ("left transitivity of =<", leftTrans)
+  , ("right transitivity of =<", rightTrans)
+  , ("case-split =<", caseSplitInc)
+  , ("case-split >=", caseSplitDec)
+  , ("=< constructor", constructor)
+  , ("least fixed-point rule", lfp)
+  , ("productive unfold =<", unfoldProductive)
+  , ("case-of =<", leqMatch)
  -- , generalise
-  , absurdBranch
+  , ("prove branch absurd", absurdBranch)
   ]
 
 -- | Theorem prover without fusion; use Fusion.run for the full prover  
 run :: Env m => Term -> m Term
-run = Transform.fix (Transform.compose all_steps)
+run = Transform.compose all_steps
   where
   all_steps = []
     ++ Eval.transformSteps 
@@ -216,7 +215,7 @@ caseSplitInc leq@(Leq left_t (Case cse_t@(Var x _) alts)) = do
   Direction.requireInc
   Fail.unless (x `Indices.freeWithin` left_t)
   x_ty <- Type.getM cse_t
-  left_t_bot <- Simp.runM (Indices.replaceAt x (Bot x_ty) left_t)
+  left_t_bot <- Simp.applyM (Indices.replaceAt x (Bot x_ty) left_t)
   Fail.unless (isBot left_t_bot)
   History.check Name.CaseSplit leq $ do
     let leq' = Case cse_t (map leqAlt alts)

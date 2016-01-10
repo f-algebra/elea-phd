@@ -3,7 +3,7 @@
 module Elea.Transform.Rewrite
 (
   Step,
-  run,
+  applyM,
   rewriteSteps,
   expressSteps
 )
@@ -54,9 +54,8 @@ type Env m =
 type Step m = (Env m, Prover.Step m)
   
 
-run :: Env m => Term -> m Term
-run = id
-  . Transform.fix (Transform.compose all_steps)
+applyM :: Env m => Term -> m Term
+applyM = Transform.compose all_steps
   where
   all_steps = []
     ++ Eval.transformSteps
@@ -69,23 +68,19 @@ run = id
     ++ Prover.steps
     
     
-rewriteSteps :: Step m => [Term -> m Term]
+rewriteSteps :: Step m => [(String, Term -> m Term)]
 rewriteSteps =
-  [ const Fail.here
-  , rewritePattern
-  , rewrite
-  ] 
+  [ ("rewrite pattern", rewritePattern)
+  , ("rewrite", rewrite) ] 
 
-expressSteps :: Step m => [Term -> m Term]
+expressSteps :: Step m => [(String, Term -> m Term)]
 expressSteps = 
-  [ const Fail.here
-  , expressConstructor
-  , commuteConstraint
-  , expressAccumulation
-  , matchVar    
-  , finiteCaseFix
-  , identityFix
-  ] 
+  [ ("constructor fission", expressConstructor)
+  , ("commute constraint", commuteConstraint)
+  , ("accumulation fission", expressAccumulation)
+  , ("unfold var match for fix-con fusion", matchVar)    
+  , ("unfold finitely used fix", finiteCaseFix)
+  , ("identity fission", identityFix) ] 
   
 
 rewritePattern :: Step m => Term -> m Term
@@ -304,7 +299,7 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
     . Env.trackIndicesT sugg_t
     . Env.bind fix_b
     . strip
-    . Simp.run
+    . Simp.apply
     $ Indices.replaceAt 0 ctx_comp fix_t
     where
     ctx_comp = suggestionToContext sugg_t

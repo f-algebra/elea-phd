@@ -3,7 +3,7 @@
 module Elea.Transform.Evaluate 
 (
   Step,
-  run, 
+  apply, 
   transformSteps, 
   traverseSteps,
   --floatVarMatches,
@@ -11,7 +11,7 @@ module Elea.Transform.Evaluate
 )
 where
 
-import Elea.Prelude hiding ( run )
+import Elea.Prelude
 import Elea.Term.Index
 import Elea.Term
 import qualified Elea.Type.Ext as Type
@@ -36,7 +36,7 @@ import qualified Data.Poset as Quasi
 -- TODO absurdity needs to properly evaluate strictness of arguments
 -- TODO traverses should be successively applied to 
   -- the tallest branch downwards
-  
+-- TODO SPECIALISE  
 
 type Step m = 
   ( Transform.Step m
@@ -44,35 +44,35 @@ type Step m =
   , History.Env m )
   
 
-run :: Term -> Term
-run = id
-    . Fedd.eval
-    . Transform.fix (Transform.compose all_steps)
+apply :: Term -> Term
+apply = id
+  . Fedd.eval
+  . Transform.compose all_steps
   where
   all_steps = []
     ++ transformSteps 
     ++ traverseSteps
   
   
-transformSteps :: Step m => [Term -> m Term]
+transformSteps :: Step m => [(String, Term -> m Term)]
 transformSteps =
-  [ normaliseApp
-  , strictness
-  , beta
-  , caseOfCon 
-  , caseApp
-  , appCase
-  , caseCase
-  , reduceSeq
+  [ ("normalise app", normaliseApp)
+  , ("propagate _|_", strictness)
+  , ("beta reduction", beta)
+  , ("case-of reduction", caseOfCon) 
+  , ("commute case-app", caseApp)
+  , ("commute app-case", appCase)
+  , ("commute case-case", caseCase)
+  , ("seq reduction", reduceSeq)
   ]
 
-traverseSteps :: Step m => [Term -> m Term]
+traverseSteps :: Step m => [(String, Term -> m Term)]
 traverseSteps = 
-  [ traverseMatch
-  , traverseBranches
-  , traverseFun
-  , traverseApp
-  , traverseFix
+  [ ("traverse match", traverseMatch)
+  , ("traverse branches", traverseBranches)
+  , ("traverse fun", traverseFun)
+  , ("traverse app", traverseApp)
+  , ("traverse fix", traverseFix)
   ]
   
 unwrapDepth :: Nat
