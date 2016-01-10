@@ -22,7 +22,6 @@ import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Type as Type
 import qualified Elea.Foldable as Fold
-import qualified Elea.Errors.Typing as Err
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Error.Class as Err

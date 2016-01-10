@@ -10,6 +10,7 @@ import Elea.Term.Ext
 import Elea.Type
 import Elea.Show
 import Elea.Testing ( Test )
+import Elea.Monad.Fedd.Include ()
 import qualified Elea.Type as Type
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.Env as Env

@@ -10,7 +10,6 @@ import Elea.Testing ( Test )
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Transform.Simplify as Simp
 import qualified Elea.Testing as Test
-import qualified Elea.Type.Ext as Type
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Transform.Fusion as Fusion
 import qualified Elea.Monad.Definitions as Defs

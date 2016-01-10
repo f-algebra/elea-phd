@@ -20,6 +20,7 @@ import qualified Elea.Term.Ext as Term
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Foldable as Fold
+import qualified Elea.Foldable.WellFormed as WF
 import qualified Elea.Transform.Simplify as Simp
 import qualified Elea.Transform.Evaluate as Eval
 import qualified Elea.Monad.Definitions.Class as Defs      
@@ -403,12 +404,9 @@ lookupType (name, raw_ty_args) = do
 parseAndCheckTerm :: RawTerm -> ParserMonad m Term
 parseAndCheckTerm rt = do
   t <- parseRawTerm rt
-  valid <- Type.validM t
-  if valid
-  then return t
-  else do
-    ts <- showM t
-    error ("parsed term has invalid type: " ++ ts)
+  case WF.findErrors t of
+    Nothing -> return t
+    Just err -> error err
   
 parseRawType :: RawType -> ParserMonad m Type
 parseRawType (TyBase name) =

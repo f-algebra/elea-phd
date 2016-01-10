@@ -19,13 +19,60 @@ import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Definitions as Defs
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import qualified Text.Printf as Printf
 
+-- TODO remove all usages of showM
+
+showBinds :: [Bind] -> String
+showBinds = intercalate " " . map show
 
 instance Show Term where
-  show = emptyEnv . showM
+  show (Var x b) = get Type.bindLabel b
+  show (Con c) = show c
+  show (Leq x y) = printf "%b =< %b" x y
+  show (Bot ty) = printf "_|_ %s" ty
+  show (Seq x y) = printf "seq %b %b" x y
+  show (Fix inf b t) 
+    | Just name <- get fixName inf = name
+    | otherwise = printf "fix %s -> %n" b t
+  show t@Lam{} = printf "fun %s -> %n" (showBinds bs) body_t
     where
-    emptyEnv :: ReaderT [Bind] Defs.DBReader a -> a
-    emptyEnv = Defs.readEmpty . flip runReaderT [] 
+    (bs, body_t) = flattenLam t
+  show (App f xs) = printf "%b %s" f xs_s
+    where
+    xs_s = intercalate " " (map (printf "%b") xs)
+  show (Case cse_t alts) = 
+    printf "match %s with %s\nend" cse_t alts_s
+    where
+    alts_s :: String = concatMap (printf "%n") alts
+
+instance Show Alt where
+  show (Alt tcon bs t) = 
+    printf "| %s %s -> %n" tcon (showBinds bs) t
+
+instance PrintfArg Alt where
+  formatArg alt format rest =
+    case Printf.fmtChar format of
+      's' -> show alt ++ rest
+      'n' -> "\n" ++ show alt ++ rest
+
+instance PrintfArg Term where
+  formatArg term format rest = 
+    case Printf.fmtChar format of
+      's' -> show term ++ rest
+      'b' -> showBracketed term ++ rest
+      'n' -> showNewLine term ++ rest
+    where
+    -- If a term requires brackets this will place brackets around it.
+    showBracketed t 
+      | isVar t || isCon t = show t
+      | otherwise = "(" ++ show t ++ ")"
+
+    -- If a term requires a new line and indentation
+    showNewLine t
+      | isFix (leftmost t) || isCase t || isLam t = indent ("\n" ++ show t)
+      | otherwise = show t
+
     
 bracketIfNeeded :: String -> String
 bracketIfNeeded s 
@@ -183,6 +230,3 @@ instance Show Prop where
   show (Prop "" t) = show t
   show (Prop name t) = 
     "prop " ++ name ++ " = " ++ show t
-
-instance PrintfArg Term where
-  formatArg = formatString . show

@@ -50,15 +50,16 @@ module Elea.Term.Ext
   unifyArgs,
   buildContext,
   buildCase,
-  isProductive
+  isProductive,
+  assertValidRewrite
 )
 where
 
 import Elea.Prelude hiding ( replace, and )
 import Elea.Term
 import Elea.Type ( HasType )
-import qualified Elea.Prelude as Prelude
 import qualified Elea.Type.Ext as Type
+import qualified Elea.Prelude as Prelude
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Term.Constraint as Constraint
 import qualified Elea.Monad.Env as Env
@@ -67,6 +68,7 @@ import qualified Elea.Foldable as Fold
 import qualified Elea.Foldable.WellFormed as WF
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Monad.Error.Class as Err
+import qualified Elea.Monad.Error.Assertion as Assert
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs
 import qualified Elea.Monad.Fusion as Fusion
@@ -176,7 +178,7 @@ unwrapFix n fix@(Fix _ _ fix_t) =
 -- The variables of these terms must be free outside the original term,
 -- and will be automatically lowered to the correct indices.
 collectM :: forall m . Env.Write m => 
-  (Term -> m Bool) -> Term -> m (Set Term)
+  (Term -> m Bool) -> Term -> m [Term]
 collectM p = Env.alsoTrack 0 . Fold.collectM collect
   where
   collect :: Term -> MaybeT (Env.AlsoTrack Index m) Term
@@ -190,7 +192,7 @@ collectM p = Env.alsoTrack 0 . Fold.collectM collect
     Env.lowerByOffset t
     
 -- | See 'collectM'
-collect :: (Term -> Bool) -> Term -> Set Term
+collect :: (Term -> Bool) -> Term -> [Term]
 collect p = runIdentity . collectM (Identity . p)
 
 
@@ -498,13 +500,12 @@ generaliseTerms (toList -> terms) target run
   liftHere :: Indexed b => b -> b
   liftHere = Indices.liftMany (nlength terms)
   
-  
 -- | Finds uninterpreted function calls and generalises them.
 generaliseUninterpreted :: ( Env.Read m, Defs.Read m, ContainsTerms t
                            , Substitutable a, Inner a ~ Term ) =>
   t -> (Indices.Shift -> t -> m a) -> m a
 generaliseUninterpreted target =
-  generaliseTerms f_calls target
+  generaliseTerms (Set.fromList f_calls) target
   where
   f_calls = concatMap (collect functionCall) (containedTerms target)
     where
@@ -665,24 +666,24 @@ removeSubterms = foldr remove []
 
 -- | Returns all the subterms of a term which contain free variables and nothing
 -- but free variables.
-freeSubtermsOf :: Term -> Set Term
+freeSubtermsOf :: Term -> [Term]
 freeSubtermsOf term = id
-  . Set.fromList
   -- Remove any terms which are subterms of another term in the set
   . removeSubterms
   -- Make sure they actually contain free variables
   . filter (not . Set.null . Indices.free)
-  . Set.toList
   -- We only want strict subterms
-  . Set.delete term
+  . filter (/= term)
   -- Collect all free subterms
-  . collect (const True)
-  $ term
+  $ collect (const True) term
     
 
 -- | All free variables in a term
-freeVars :: Term -> Set Term
+freeVars :: Term -> [Term]
 freeVars = collect isVar
+
+freeVarSet :: Term -> Set Term
+freeVarSet = Set.fromList . freeVars
     
 
 -- | If we pattern match on the result of recursive call to a fixpoint
@@ -708,7 +709,7 @@ floatRecCallInwards =
     
 
 instance Tag.Has Term where
-  tags = Fold.collect tags'
+  tags = Set.fromList . Fold.collect tags'
     where
     tags' :: Term -> Maybe Tag 
     tags' (Fix inf _ _) = Just (get fixIndex inf)
@@ -806,8 +807,8 @@ mapFixInfo f = Fold.transform mp
 -- > equateArgs 0 2 (\a b c d -> C[a][b][c][d]) = (\a b d -> C[a][b][a][d])
 equateArgs :: Nat -> Nat -> Term -> Term 
 equateArgs i j orig_t = id
-  . assert "arguments out of range" (i < j)
-  . assert "arguments out of range" (j < nlength bs)
+  . Assert.assert "arguments out of range" (i < j)
+  . Assert.assert "arguments out of range" (j < nlength bs)
   $ unflattenLam new_bs new_body
   where
   (bs, body_t) = flattenLam orig_t
@@ -816,7 +817,7 @@ equateArgs i j orig_t = id
   
   toIdx :: Nat -> Index
   toIdx x = id
-    . assert "argument out of range" (x < nlength bs) 
+    . Assert.assert "argument out of range" (x < nlength bs) 
     $ enum ((nlength bs - x) - 1)
   
   
@@ -889,7 +890,7 @@ buildContext arg_i (App fix@(Fix _ fix_b fix_t) args) = do
   arg_bs <- zipWithM getArgBind [0..] arg_xs
   return ( build free_bs arg_bs, args' )
   where
-  free_vars = Set.toList (freeVars fix Set.\\ Set.unions (map freeVars args))
+  free_vars = Set.toList (freeVarSet fix Set.\\ Set.unions (map freeVarSet args))
   free_bs = map binding free_vars
   arg_f : arg_xs = flattenApp (args !! arg_i)
   args' = free_vars ++ removeAt (enum arg_i) args ++ arg_xs
@@ -986,30 +987,18 @@ instance HasType Term where
     phi (Fix' _ fix_b _) = Type.get fix_b
     phi (Case' _ alt_tys) = get altInner' (head alt_tys)
 
-instance WF.WellFormed (Reader [Bind]) Term where
-  checkLocal (Var x b) = do
-    is_local <- Env.isBound x 
-    if not is_local
-    then return WF.LocalPass
-    else do
-      b' <- Env.boundAt x
-      if Type.bindEq b b'
-      then return WF.LocalPass
-      else return 
-        . WF.LocalFail 
-        $ printf "local variable binding %s does not match %s" b b'
-  checkLocal (Leq x y) = do
-    if Type.get x == Type.get y 
-    then return WF.LocalPass
-    else return 
-      . WF.LocalFail
-      $ printf "types on either side of preorder do not match %s =< %s" 
-          (Type.get x) (Type.get y)
-  checkLocal (App f xs) = do
-    if not (Prelude.and (zipWith (==) arg_tys arg_tys'))
-    then return WF.LocalPass
-    else return
-      . WF.LocalFail
+
+instance WF.WellFormed Term where
+  assertLocal (Leq x y) = id
+    . Assert.augment "types on either side of preorder do not match"
+    $ Type.assertEq x y
+  assertLocal (App f []) = 
+    Assert.failure "term application given zero arguments"
+  assertLocal (App f _) 
+    | isApp f = Assert.failure "term application not normalised"
+  assertLocal (App f xs) 
+    | not (Prelude.and (zipWith (==) arg_tys arg_tys')) = id
+      . Assert.failure 
       $ printf "type of arguments %s does not match argument types %s"
           (show arg_tys) (show arg_tys')
     where
@@ -1019,5 +1008,13 @@ instance WF.WellFormed (Reader [Bind]) Term where
       . splitAt (length xs) 
       . Type.flatten 
       $ Type.get f
-  checkLocal _ = 
-    return WF.LocalPass
+  assertLocal _ = 
+    Assert.success
+
+
+assertValidRewrite :: Term -> Term -> Assert.Assert
+assertValidRewrite from to = id
+  . Assert.augment (printf "rewriting %b to %b" from to)
+  $ do
+    Type.assertEq from to
+    WF.assert to

@@ -9,9 +9,9 @@ module Elea.Prelude
         Maximum(..), Minimum(..), sconcatMap, length, maximum, maximum1,
         invert, intersects, liftMaybe, maybeT, nth, drop, take, screen,
         isSubsequenceOf, evalWriter, evalWriterT, removeAll, tracE,
-        findIndicesM, trace, assert, assertM, error, errorf,
-        Empty (..), Runnable (..),
-        __trace__, __check__,
+        findIndicesM, trace, error, errorf,
+        Empty (..), Runnable (..), run, readf,
+        __trace__,
         module X)
 where
 
@@ -95,18 +95,10 @@ infixr 6 ++
 
 {-# INLINE __trace__ #-}
 __trace__ :: Bool
-#ifdef __TRACE__
+#ifdef TRACE
 __trace__ = True
 #else
 __trace__ = False
-#endif
-
-{-# INLINE __check__ #-}
-__check__ :: Bool
-#ifdef __CHECK__
-__check__ = True
-#else
-__check__ = False
 #endif
 
 
@@ -438,20 +430,6 @@ findIndicesM p = id
     then return [i]
     else return []
 
-{-# INLINE assert #-}
-assert :: String -> Bool -> a -> a
-assert _  b 
-  | not __check__ || b = id
-assert msg False = 
-  errorWithStackTrace (printf "assertion failed: %s" msg)
-
-{-# INLINE assertM #-}
-assertM :: Monad m => String -> Bool -> m ()
-assertM msg b 
-  | not __check__ || b = return ()
-assertM msg False = 
-  errorWithStackTrace (printf "assertion failed: %s" msg)
-
 {-# INLINE error #-}
 error :: String -> a
 error = errorWithStackTrace
@@ -473,11 +451,14 @@ instance Empty (Set a) where
 instance Empty [a] where
   empty = []
 
-class Runnable m where
-  run :: m a -> a
+class MonadTrans t => Runnable t where
+  runM :: Monad m => t m a -> m a
 
-instance Monoid w => Runnable (Reader w) where
-  run = ($ mempty) . runReader
+run :: Runnable t => t Identity a -> a
+run = runIdentity . runM
 
-class SyntacticEq a where
-  (===) :: a -> a -> Bool
+instance Monoid w => Runnable (ReaderT w) where
+  runM = ($ mempty) . runReaderT
+
+readf :: (Read a, PrintfArg r) => String -> r -> a
+readf str args = read (printf str args)

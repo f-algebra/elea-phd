@@ -13,6 +13,7 @@ module Elea.Term.Index
 where
 
 import Elea.Prelude hiding ( lift, replaceAt )
+import Elea.Monad.Error.Assertion ( assert )
 import qualified Data.Nat as Nat
 import qualified Data.Map as Map
 import qualified Elea.Monad.Failure.Class as Fail

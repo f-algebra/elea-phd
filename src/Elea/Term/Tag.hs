@@ -123,4 +123,5 @@ instance Gen m => Gen (EitherT e m) where
 instance Show a => Show (Tagged a) where
   show (Tagged t x) = show x
   
-  
+instance PrintfArg a => PrintfArg (Tagged a) where
+  formatArg = formatArg . untag

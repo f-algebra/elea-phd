@@ -13,6 +13,7 @@ import Prelude ()
 import Elea.Prelude hiding ( catch, when, unless, fromMaybe, assert )
 import Control.Monad.State hiding ( unless, when )
 import qualified Elea.Prelude as Prelude
+import qualified Elea.Monad.Error.Assertion as Assert
 import qualified Data.Monoid as Monoid
 import qualified Data.Map as Map
 
@@ -41,11 +42,14 @@ fromEither :: Can m => Either a b -> m b
 fromEither (Left _) = here
 fromEither (Right x) = return x
 
--- TODO replace this with assertM
+-- TODO remove usages of this crap
 {-# INLINE assert #-}
 -- | Force the evaluation of the assertion by tying it to the failure monad
 assert :: Can m => String -> Bool -> m ()
-assert msg p = Prelude.assert msg p (when p)
+assert msg p = id
+  . flip Assert.check (when p)
+  . Assert.augment msg 
+  $ Assert.bool p
 
 has :: Maybe a -> Bool
 has = isNothing

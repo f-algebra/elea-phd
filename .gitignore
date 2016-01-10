@@ -9,3 +9,4 @@ dist/*
 *.marks
 *.txt
 test-results.xml
+debug.bat

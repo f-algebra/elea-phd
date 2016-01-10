@@ -36,6 +36,7 @@ import Elea.Term
 import Elea.Type ( ContainsTypes (..) )
 import Elea.Unification ( Unifiable, Unifier )
 import Elea.Monad.Env.Class
+import Elea.Monad.Error.Assertion ( assert, assertEq )
 import qualified Elea.Type as Type
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions.Class as Defs
@@ -551,7 +552,7 @@ instance Unifiable Term where
       return mempty
     uni (Var x1 b1) (Var x2 b2)
       | x1 == x2 = id
-        . assert "variable indices match but bindings do not" (b1 == b2) 
+        . assertEq "variable indices match but bindings do not" b1 b2
         $ return mempty
     uni (Var idx _) t2 = do
       free_var_limit <- tracked

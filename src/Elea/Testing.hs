@@ -16,7 +16,7 @@ module Elea.Testing
 ) 
 where
 
-import Elea.Prelude
+import Elea.Prelude hiding ( assertEq )
 import Elea.Term
 import Elea.Type hiding ( get )
 import Elea.Show
@@ -24,7 +24,7 @@ import Elea.Monad.Fedd ( FeddT )
 import Test.HUnit ( Test, assertFailure )
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Ext as Term
-import qualified Elea.Include as Include
+import qualified Elea.Monad.Fedd.Include as Fedd
 import qualified Elea.Parser.Calculus as Parse
 import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Monad.Env as Env
@@ -52,7 +52,7 @@ list :: [Test] -> Test
 list = HUnit.TestList
 
 testWithPrelude :: String -> M () -> Test
-testWithPrelude label = test label . (Include.loadPrelude >>)
+testWithPrelude label = test label . (Fedd.loadPrelude >>)
 
 assertBool :: String -> Bool -> M ()
 assertBool msg = Trans.lift . HUnit.assertBool msg
@@ -85,7 +85,7 @@ loadFile file_name = do
 loadPropertyNamesFromFile :: String -> IO [String]
 loadPropertyNamesFromFile file_name = do
   all_props <- Fedd.evalT $ do
-    Include.loadPrelude
+    Fedd.loadPrelude
     loadFile file_name
   return (map (get propName) all_props)
 

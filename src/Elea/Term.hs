@@ -18,10 +18,10 @@ module Elea.Term
   matchFromCase, matchFromConstructor,
   patternConstructor, patternBindings, patternVars,
   patternInd,
-  fixIndex,
+  fixIndex, fixName,
   flattenApp, leftmost, arguments,
   flattenLam, unflattenLam, unflattenApp,
-  isCon, isLam, isVar,
+  isCon, isLam, isVar, isApp,
   isFix, isBot, isCase, isSeq,
   isLeq, isQuantifiedLeq,
   emptyInfo,
@@ -269,6 +269,10 @@ isCase _ = False
 isBot :: Term -> Bool
 isBot (Bot _) = True
 isBot _ = False
+
+isApp :: Term -> Bool
+isApp App{} = True
+isApp _ = False
 
 fromVar :: Term -> Index
 fromVar (Var x _) = x

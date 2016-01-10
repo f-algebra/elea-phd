@@ -119,18 +119,18 @@ allM, anyM :: WriterTransformableM Monoid.All m t =>
 allM = isoAllM id
 anyM = isoAnyM id
 
-collectM :: (Ord b, WriterTransformableM (Set b) m t) =>
-  (t -> MaybeT m b) -> t -> m (Set b)
+collectM :: (Ord b, WriterTransformableM [b] m t) =>
+  (t -> MaybeT m b) -> t -> m [b]
 collectM = isoCollectM id
 
-isoCollect :: (Ord b, WriterTransformableM (Set b) Identity t) =>
-  Iso a t -> (a -> Maybe b) -> a -> Set b
+isoCollect :: (Ord b, WriterTransformableM [b] Identity t) =>
+  Iso a t -> (a -> Maybe b) -> a -> [b]
 isoCollect iso f = id
   . runIdentity 
   . isoCollectM iso (MaybeT . Identity . f)
 
-collect :: (Ord b, WriterTransformableM (Set b) Identity t) =>
-  (t -> Maybe b) -> t -> Set b
+collect :: (Ord b, WriterTransformableM [b] Identity t) =>
+  (t -> Maybe b) -> t -> [b]
 collect = isoCollect id 
 
 all, any :: WriterTransformableM Monoid.All Identity t =>
@@ -167,10 +167,10 @@ isoFold :: WriterTransformableM w Identity t =>
   Iso a t -> (a -> w) -> a -> w
 isoFold iso f = runIdentity . isoFoldM iso (Identity . f)
 
-isoCollectM :: (Ord b, WriterTransformableM (Set b) m t) =>
-  Iso a t -> (a -> MaybeT m b) -> a -> m (Set b)
+isoCollectM :: (Ord b, WriterTransformableM [b] m t) =>
+  Iso a t -> (a -> MaybeT m b) -> a -> m [b]
 isoCollectM iso f = 
-  isoFoldM iso (liftM (maybe mempty Set.singleton) . runMaybeT . f)
+  isoFoldM iso (liftM (maybe mempty pure) . runMaybeT . f)
   
 isoCountM :: WriterTransformableM (Monoid.Sum Int) m t => 
   Iso a t -> (a -> m Bool) -> a -> m Int

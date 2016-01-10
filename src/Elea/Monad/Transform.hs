@@ -4,9 +4,7 @@ module Elea.Monad.Transform
 (
   Step (..),
   StepT (..),
-  fix,
   compose,
-  traceCont,
   mapStepT,
 )
 where
@@ -15,6 +13,7 @@ import Elea.Prelude
 import Elea.Term 
 import Elea.Show ( showM )
 import qualified Elea.Type.Ext as Type
+import qualified Elea.Term.Ext as Term
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Monad.Definitions.Class as Defs
@@ -23,6 +22,7 @@ import qualified Elea.Monad.Discovery.Class as Discovery
 import qualified Elea.Monad.History as History
 import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Monad.Direction as Direction
+import qualified Elea.Monad.Error.Assertion as Assert
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Monad.StepCounter as Steps
 import qualified Control.Monad.Reader.Class as Reader
@@ -31,14 +31,12 @@ import qualified Control.Monad.Trans.Class as Trans
 import qualified Data.Poset as Quasi
 import qualified Data.Map as Map
 
-{-# INLINEABLE fix #-}
-{-# INLINEABLE compose #-}
+{-# INLINE compose #-}
 
 
 class (Steps.Limiter m, Fail.Can m) => Step m where
-  -- | Accessing the recursive call to our transformation 
+  -- | Accessing the recursive call to our transformation
   continue :: Term -> m Term
-
 
 -- | Carry around a call to a simplification function
 newtype StepT m a 
@@ -49,36 +47,24 @@ mapStepT :: forall m a b . Monad m
   => (m (Maybe a) -> m (Maybe b)) -> StepT m a -> StepT m b
 mapStepT f = StepT . mapReaderT (mapMaybeT f) . stepT
     
+compose :: forall m . (Steps.Limiter m, Env.Read m, History.Env m, Defs.Read m) 
+  => [(String, Term -> StepT m Term)] -> Term -> m Term
+compose all_steps = applyOneStep all_steps
+  where
+  applyOneStep :: [(String, Term -> StepT m Term)] -> Term -> m Term
+  applyOneStep [] t = return t
+  applyOneStep ((step_name, step_fun) : steps) t = do
+    mby_t' <- runMaybeT (runReaderT (stepT (step_fun t)) (compose all_steps))
+    case mby_t' of
+      Nothing -> applyOneStep steps t
+      Just t' -> do
+        Steps.take
+        let valid_rewrite = id
+              . Assert.augment (printf "within step \"%s\"" step_name)
+              $ Term.assertValidRewrite t t'
+        Assert.check valid_rewrite
+          $ return t'
 
-fix :: forall m . (Steps.Limiter m, Env.Read m, History.Env m, Defs.Read m) 
-  => (Term -> StepT m Term) -> Term -> m Term
-fix f t = do
-  hist <- History.ask
-  mby_t' <- runMaybeT (runReaderT (stepT (f t)) (fix f))
-  case mby_t' of
-    Just t' -> do
-      Steps.take
-      Type.assertEqM "[fix]" t t' 
-      return t'
-    _ -> 
-      return t
-  
-
-traceCont :: Step m => String -> Term -> Term -> m Term
-traceCont step_name orig new = 
-  trace 
-    ("\n\n[" ++ step_name ++ "]\n" ++ show orig ++ "\n==>\n" ++ show new) 
-    (continue new)
-
-compose :: Fail.Can m => [Term -> m Term] -> Term -> m Term
-compose [] _ = Fail.here
-compose (f:fs) t = do
-  mby_t' <- Fail.catch (f t)
-  case mby_t' of
-    Nothing -> compose fs t
-    Just t' -> return t'
-
-    
 instance MonadTrans StepT where
   lift m = StepT (ReaderT (\_ -> Trans.lift m))
   

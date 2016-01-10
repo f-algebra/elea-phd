@@ -19,6 +19,7 @@ module Elea.Type
   isBaseCase, isRecursive, 
   makeAltBindings,
   bindEq,
+  assertEq,
   
   Polymorphic, 
   polymorphic, polymorphicM, 
@@ -31,6 +32,7 @@ import Elea.Term.Index
 import Elea.Term.Tag ( Tagged )
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Foldable as Fold
+import qualified Elea.Monad.Error.Assertion as Assert
 import qualified Elea.Monad.Failure.Class as Fail
 
 {-# ANN module "HLint: ignore Redundant id" #-}
@@ -310,7 +312,7 @@ constructorBind (Constructor ind n) =
 -- | Return the positions of the recursive arguments of a given constructor
 recursiveArgs :: Constructor -> [Nat]
 recursiveArgs (Constructor (Ind _ cons) n) = id
-  . assert "constructor index out of range" (nlength cons > n)
+  . Assert.assert "constructor index out of range" (nlength cons > n)
   . map enum
   $ findIndices (== IndVar) con_args
   where
@@ -325,7 +327,7 @@ recursiveArgs (Constructor (Ind _ cons) n) = id
 -- > recursiveArgIndices nlist 1 == [0]
 recursiveArgIndices :: Constructor -> [Index]
 recursiveArgIndices con@(Constructor ind@(Ind _ cons) n) = id
-  . assert "constructor index out of range" (nlength cons > n)
+  . Assert.assert "constructor index out of range" (nlength cons > n)
   . map enum
   . invert
   $ recursiveArgs con
@@ -334,7 +336,7 @@ recursiveArgIndices con@(Constructor ind@(Ind _ cons) n) = id
 -- | Returns the opposite indices to 'recursiveArgs'
 nonRecursiveArgs :: Constructor -> [Int]
 nonRecursiveArgs (Constructor (Ind _ cons) n) = id
-  . assert "constructor index out of range" (elength cons > n)
+  . Assert.assert "constructor index out of range" (elength cons > n)
   $ findIndices (/= IndVar) con_args
   where
   (_, con_args) = cons `nth` enum n
@@ -449,7 +451,7 @@ instance Show Type where
     
 instance Show Bind where
   show (Bind name ty) =
-    "(" ++ name ++ ": " ++ show ty ++ ")" 
+    "(" ++ name ++ ": " ++ show ty ++ ")"
     
 instance (ContainsTypes a, Show a) => Show (Polymorphic a) where
   show p@(Poly ns _) =
@@ -478,3 +480,8 @@ instance PrintfArg Type where
 bindEq :: Bind -> Bind -> Bool
 bindEq (Bind x ty) (Bind x' ty') = 
   x == x' && ty == ty'
+
+assertEq :: (PrintfArg a, HasType a) => a -> a -> Assert.Assert
+assertEq x y = id
+  . Assert.augment (printf "comparing types of %b and %b" x y)
+  $ Assert.equal (get x) (get y)

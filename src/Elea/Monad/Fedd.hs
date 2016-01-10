@@ -11,7 +11,6 @@ where
 import Elea.Prelude
 import Elea.Term
 import Elea.Show
-import qualified Elea.Type.Ext as Type
 import qualified Elea.Monad.History as History
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Monad.Fusion as Fusion
@@ -77,8 +76,8 @@ setDefinitions = State.modify . set fsDefs
 getDefinitions :: Monad m => FeddT m Defs.Data
 getDefinitions = State.gets (get fsDefs)
 
-instance Runnable Fedd where
-  run = eval
+instance Runnable FeddT where
+  runM = evalT
 
 stepTaken :: FeddWriter 
 stepTaken = FW mempty 1

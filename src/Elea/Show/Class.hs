@@ -7,6 +7,8 @@ where
 import Elea.Prelude
 import qualified Data.Map as Map
 
+-- TODO remove this module
+
 -- | A monadic variant of 'show'
 class Monad m => ShowM m a where
   showM :: a -> m String

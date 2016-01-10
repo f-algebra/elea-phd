@@ -5,13 +5,13 @@ MAIN = src/Main.hs
 .PHONY : ghci happy clean
 
 ghci:
-	ghci -fobject-code -D__TRACE__ -D__CHECK__ $(FLAGS) $(EXTS) $(MAIN)
+	ghci -fobject-code -DTRACE -DASSERT $(FLAGS) $(EXTS) $(MAIN)
 
 power:
 	ghc --make -o elea.exe -O $(FLAGS) $(EXTS) $(MAIN)
 
 debug:
-	cabal configure --enable-profiling --ghc-options="-D__CHECK__ -fprof-auto"
+	cabal configure --enable-profiling --ghc-options="-DASSERT -fprof-auto"
 	cabal build
 	xcopy /y .\dist\build\elea\elea.exe .\elea-debug.exe
 
