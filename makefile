@@ -5,7 +5,7 @@ MAIN = src/Main.hs
 .PHONY : ghci happy clean
 
 ghci:
-	ghci -fobject-code -DTRACE -DASSERT $(FLAGS) $(EXTS) $(MAIN)
+	ghci -fobject-code -DASSERT $(FLAGS) $(EXTS) $(MAIN)
 
 power:
 	ghc --make -o elea.exe -O $(FLAGS) $(EXTS) $(MAIN)

@@ -192,10 +192,10 @@ constArg term@(App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
         $ Type.flatten fix_ty
     
     removeArg :: Term -> Env.TrackIndices Index Term
-    removeArg term@(App (Var f b) args) = do   
+    removeArg term@(App (Var f _) args) = do   
       fix_f <- Env.tracked
       if fix_f == f
-      then return (App (Var f b) (removeAt arg_i args))
+      then return (App (Var f fix_b') (removeAt arg_i args))
       else return term
     removeArg term = 
       return term

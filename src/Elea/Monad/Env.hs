@@ -215,6 +215,9 @@ instance ContainsTypes Term where
     mapTy (Lam b t) = do
       b' <- mapTypesM f' b
       return (Lam b' t)
+    mapTy (Var x b) = do
+      b' <- mapTypesM f' b
+      return (Var x b')
     mapTy (Fix i b t) = do
       b' <- mapTypesM f' b
       return (Fix i b' t)
@@ -559,9 +562,7 @@ instance Unifiable Term where
     uni (Bot _) (Bot _) = 
       return mempty
     uni (Var x1 b1) (Var x2 b2)
-      | x1 == x2 = id
-        . assertEq "variable indices match but bindings do not" b1 b2
-        $ return mempty
+      | x1 == x2 = return mempty
     uni (Var idx _) t2 = do
       free_var_limit <- tracked
       -- If the variable on the left is not locally scoped

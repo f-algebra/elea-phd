@@ -29,32 +29,37 @@ tests = id
 
 testBuildFold :: Test
 testBuildFold = 
-  Test.testWithPrelude "buildFold" $ do
-  fold_nat_nat <- Test.term 
-    $ "fun (v: nat) (k: nat -> nat) -> "
-    ++  "fix (f: nat -> nat) (x: nat) ->"
-    ++  "match x with | 0 -> v | Suc x' -> k (f x') end"
+  Test.testWithPrelude "build fold" $ do
+    Base nat <- Test._type "nat"
+    Base ntree <- Test._type "tree<nat>"
+    Base nlist <- Test._type "list<nat>"
     
-  fold_ntree_nlist <- Test.term
+    Test.assertSimpEq "fold: nat -> nat" 
+      fold_nat_nat (buildFold nat (Base nat))
+    Test.assertSimpEq "fold: tree<nat> -> list<nat>" 
+      fold_ntree_nlist (buildFold ntree (Base nlist))
+  where
+  Base nat = read "nat"
+  Base ntree = read "tree<nat>"
+  Base nlist = read "list<nat>"
+
+  fold_nat_nat = read
+    $ "fun (v: nat) (k: nat -> nat) -> "
+    ++  "fix (f: nat -> nat) (x: nat) -> "
+    ++  "match x with | 0 -> v | Suc x' -> k (f x') end"
+
+  fold_ntree_nlist = read
     $ "fun (v: list<nat>) (k: list<nat> -> nat -> list<nat> -> list<nat>) -> "
     ++  "fix (f: tree<nat> -> list<nat>) (t: tree<nat>) -> "
     ++  "match t with | Leaf -> v | Node t1 x t2 -> k (f t1) x (f t2) end"
-  
-  Base nat <- Test._type "nat"
-  Base ntree <- Test._type "tree<nat>"
-  Base nlist <- Test._type "list<nat>"
-  
-  Test.assertSimpEq "fold: nat -> nat" 
-    fold_nat_nat (buildFold nat (Base nat))
-  Test.assertSimpEq "fold: tree<nat> -> list<nat>" 
-    fold_ntree_nlist (buildFold ntree (Base nlist))
       
+
 testConjunction :: Test
 testConjunction = 
-  Test.testWithPrelude "conjunction" $ do
-    let conj3_t = Simp.apply (conjunction 3)
-    conj3_t' <- Test.simplifiedTerm "fun (p q r: bool) -> and p (and q r)"
-    Test.assertEq "conjunction" conj3_t' conj3_t
+  Test.test "conjunction" $ do
+    Test.assertSimpEq "conjunction" 
+      (read "fun (p q r: bool) -> and p (and q r)")
+      (conjunction 3)
       
 testSubterms :: Test
 testSubterms = id

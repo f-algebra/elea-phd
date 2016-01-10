@@ -2132,7 +2132,12 @@ program text =
   
   defineTerm ((name, ty_args), raw_term) = do
     p_term <- localTypeArgs ty_args (parseAndCheckTerm raw_term)
-    Defs.defineTerm name (fmap Simp.apply p_term)
+    Defs.defineTerm name 
+      $ fmap (Simp.apply . nameFix) p_term
+    where
+    nameFix (Fix inf b t) = 
+      Fix (set fixName (Just (printf "$%s" name)) inf) b t
+    nameFix other_t = other_t
     
 lookupTerm :: ParamCall -> ParserMonad m Term
 lookupTerm (name, raw_ty_args) = do

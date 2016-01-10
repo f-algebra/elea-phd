@@ -26,7 +26,7 @@ all = id
   , return Term.tests
 --  , UMap.tests
 --  , Checker.tests 
- -- , Simplifier.tests
+  , Simplifier.tests
  -- , Constraints.tests
  -- , Context.tests
  -- , Inventor.tests

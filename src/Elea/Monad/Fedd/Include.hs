@@ -38,16 +38,20 @@ evalWithPrelude :: Fedd.Fedd a -> a
 evalWithPrelude =
   Fedd.eval . (loadPrelude >>)
 
-readWithPrelude :: String -> Term
-readWithPrelude term_def = id
-  . evalWithPrelude
-  . Err.noneM
-  $ Parse.term term_def
-
 instance Read Term where
-  readPrec = do
-    term_def <- ReadPrec.look
-    let term = readWithPrelude term_def    
+  readsPrec _ term_def = id
     -- Seems like a decent enough place to check that "read . show == id"
-    Assert.assertEq "read . show == id" term (readWithPrelude (show term))
-      $ return term
+    -- TODO get this check working
+   -- . Assert.assertEq "read . show == id" term (readTerm (show term))
+    $ [(term, "")]
+    where
+    readTerm = evalWithPrelude . Err.noneM . Parse.term
+    term = readTerm term_def
+
+instance Read Type where
+  readsPrec _ type_def = id
+    . Assert.assertEq "read . show == id" ty (readType (show ty))
+    $ [(ty, "")]
+    where
+    readType = evalWithPrelude . Err.noneM . Parse._type
+    ty = readType type_def

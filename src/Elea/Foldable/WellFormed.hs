@@ -15,13 +15,7 @@ class (Fold.Refoldable t, PrintfArg t, Foldable (Fold.Base t)) => WellFormed t w
   assert = Fold.para phi
     where
     phi :: forall t . WellFormed t => Fold.Base t (t, Assert) -> Assert
-    phi = id
-      . Assert.firstFailure 
-      . toList 
-      . map getTrace
-      where
-      getTrace :: (t, Assert) -> Assert
-      getTrace (t, inner) = do
-        Assert.augment (read msg) inner
-        where
-        msg = printf "not well-formed %n" t
+    phi base = 
+      Assert.augment (printf "not well-formed %n" (Fold.recover base)) $ do
+        Assert.firstFailure (toList (map snd base))
+        assertLocal (Fold.recover base)

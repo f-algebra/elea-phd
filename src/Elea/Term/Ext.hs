@@ -983,13 +983,16 @@ instance HasType Term where
     phi (Bot' ty) = ty
     phi (Seq' _ ty) = ty
     phi (Leq' _ _) = Type.propTy
-    phi (Lam' b ty) = Type.Fun (get Type.bindType b) ty
+    phi (Lam' b ty) 
+      -- P : Prop |- forall x . P : Prop
+      | ty == Type.propTy = Type.propTy
+      | otherwise = Type.Fun (get Type.bindType b) ty
     phi (Con' tcon) = Type.get tcon
     phi (Fix' _ fix_b _) = Type.get fix_b
     phi (Case' _ alt_tys) = get altInner' (head alt_tys)
 
 
-instance WF.WellFormed Term where
+instance WF.WellFormed Term where 
   assertLocal (Leq x y) = id
     . Assert.augment "types on either side of preorder do not match"
     $ Type.assertEq x y
@@ -1009,6 +1012,16 @@ instance WF.WellFormed Term where
       . splitAt (length xs) 
       . Type.flatten 
       $ Type.get f
+  assertLocal (Lam b t) 
+    | Just b' <- find (not . Type.bindEq b) eq_free_binds = id
+      . Assert.failure
+      $ printf "internal binding %s does not match lambda binding %s" b' b
+    where
+    eq_free_binds = id
+      . filter (== b)
+      . map binding
+      . filter ((== 0). varIndex)
+      $ freeVars t
   assertLocal _ = 
     Assert.success
 

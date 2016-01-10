@@ -34,13 +34,13 @@ augment = Err.augment . read
 {-# INLINE check #-}
 check :: Assert -> a -> a
 checkM :: Monad m => Assert -> m ()
-#ifdef ASSERT
+#ifndef ASSERT
 check _ = id
 checkM _ = return ()
 #else
-check Success = id
-check (Failure stack) = 
-  error (intercalate " caused by\n" line)
+check asrt 
+  | isSuccess asrt = id
+  | otherwise = error (show (fromFailure asrt))
 checkM assert =
   check assert (if isSuccess assert then return () else fail "")
 #endif

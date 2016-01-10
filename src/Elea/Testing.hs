@@ -73,7 +73,7 @@ assertSimpEq :: String -> Term -> Term -> M ()
 assertSimpEq msg t1 t2 = do
   t1' <- Simp.applyM t1
   t2' <- Simp.applyM t2
-  assertTermEq msg t1 t2
+  assertTermEq msg t1' t2'
 
 loadFile :: String -> M [Prop]
 loadFile file_name = do

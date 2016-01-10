@@ -18,7 +18,7 @@ type Error = ErrorT Identity
 
 instance Show Stack where
   show (Stack stk) = id
-    . intercalate ", caused by " 
+    . intercalate ", caused by\n" 
     $ filter (not . null) stk
 
 instance PrintfArg Stack where
@@ -34,9 +34,7 @@ instance Monoid Stack where
   mappend (Stack xs) (Stack ys) = Stack (xs ++ ys)
 
 instance Read Stack where
-  readPrec = do
-    msg <- ReadPrec.look
-    return (Stack [msg])
+  readsPrec _ str = [(Stack [str], "")]
 
 instance Runnable ErrorT where
   runM et = do

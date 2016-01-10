@@ -26,15 +26,18 @@ import qualified Text.Printf as Printf
 showBinds :: [Bind] -> String
 showBinds = intercalate " " . map show
 
+getName :: Term -> Maybe String
+getName (Var _ b) = Just (get bindLabel b)
+getName (Con c) = Just (show c)
+getName (Fix inf _ _) = get fixName inf
+getName _ = Nothing
+
 instance Show Term where
-  show (Var x b) = get Type.bindLabel b
-  show (Con c) = show c
+  show t | Just name <- getName t = name
   show (Leq x y) = printf "%b =< %b" x y
   show (Bot ty) = printf "_|_ %s" ty
   show (Seq x y) = printf "seq %b %b" x y
-  show (Fix inf b t) 
-    | Just name <- get fixName inf = name
-    | otherwise = printf "fix %s -> %n" b t
+  show (Fix inf b t) = printf "fix %s -> %n" b t
   show t@Lam{} = printf "fun %s -> %n" (showBinds bs) body_t
     where
     (bs, body_t) = flattenLam t
@@ -65,7 +68,7 @@ instance PrintfArg Term where
     where
     -- If a term requires brackets this will place brackets around it.
     showBracketed t 
-      | isVar t || isCon t = show t
+      | isJust (getName t) = show t
       | otherwise = "(" ++ show t ++ ")"
 
     -- If a term requires a new line and indentation
