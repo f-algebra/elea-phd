@@ -214,7 +214,7 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
   return new_t
   where  
   o_dec_idxs = Term.decreasingArgs o_fix
-  o_free_vars = Set.toList (Term.freeVarSet o_fix)
+  o_free_vars = Set.toList (Term.freeVarSet $ error "hi") --- o_fix)
   o_free_bs = map binding o_free_vars
   
   fixArg :: [Bind] -> Int -> m Term

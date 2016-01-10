@@ -47,7 +47,7 @@ fromEither (Right x) = return x
 -- | Force the evaluation of the assertion by tying it to the failure monad
 assert :: Can m => String -> Bool -> m ()
 assert msg p = id
-  . flip Assert.check (when p)
+  . flip Assert.check (unless p)
   . Assert.augment msg 
   $ Assert.bool p
 

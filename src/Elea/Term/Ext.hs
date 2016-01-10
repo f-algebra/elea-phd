@@ -1018,10 +1018,18 @@ instance WF.WellFormed Term where
       $ printf "internal binding %s does not match lambda binding %s" b' b
     where
     eq_free_binds = id
-      . filter (== b)
       . map binding
       . filter ((== 0). varIndex)
       $ freeVars t
+  assertLocal (Case cse_t alts) = do
+    Assert.augment "case-of non inductively typed term"
+      . Assert.bool 
+      $ Type.isInd (Type.get cse_t)
+    Assert.augment "case-of branches have different types"
+      . Assert.bool 
+      $ all (== alt_ty) alt_tys
+    where
+    alt_ty : alt_tys = map (Type.get . get altInner) alts
   assertLocal _ = 
     Assert.success
 
@@ -1029,5 +1037,5 @@ instance WF.WellFormed Term where
 assertValidRewrite :: Term -> Term -> Assert.Assert
 assertValidRewrite from to = id
   . Assert.augment (printf "rewriting %b to %b" from to) $ do
-    Type.assertEq from to
     WF.assert to
+    Type.assertEq from to
