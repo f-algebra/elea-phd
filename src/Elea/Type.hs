@@ -8,7 +8,7 @@ module Elea.Type
   
   indName, indConstructors, 
   bindLabel, bindType, 
-  constructorOf, constructorIndex,
+  constructorOf, constructorIndex, constructorTyArgs,
   prop, tag, unit, tuple, bool, falsity, propTy,
   equation, isEquation, true, false,
   returnType, argumentTypes, dropArgs, split,
@@ -24,12 +24,14 @@ module Elea.Type
   Polymorphic, 
   polymorphic, polymorphicM, 
   monomorphic, uninterpreted,
+  typeArgs,
 )
 where 
 
 import Elea.Prelude hiding ( get )
 import Elea.Term.Index
 import Elea.Term.Tag ( Tagged )
+import Elea.Foldable.WellFormed ( WellFormed (..) )
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Foldable as Fold
 import qualified Elea.Monad.Error.Assertion as Assert
@@ -49,7 +51,8 @@ data ConArg
 -- | @Ind@uctive type
 data Ind 
   = Ind   { _indName :: !String
-          , _indConstructors :: ![(String, [ConArg])] }
+          , _indConstructors :: ![(String, [ConArg])]
+          , _indTyArgs :: [Type] }
   
 data Type 
   -- | Base types are inductive data types.
@@ -70,7 +73,8 @@ data Bind
           
 data Constructor
   = Constructor { _constructorOf :: !Ind
-                , _constructorIndex :: !Nat }
+                , _constructorIndex :: !Nat
+                , _constructorTyArgs :: [Type] }
   deriving ( Eq, Ord )
           
 -- Equality ignores labels.
@@ -100,7 +104,7 @@ data ConArg' a
   deriving ( Functor, Foldable, Traversable )
   
 data Ind' a 
-  = Ind' String [(String, [ConArg' a])]
+  = Ind' String [(String, [ConArg' a])] [a]
   deriving ( Functor, Foldable, Traversable )
   
 type instance Fold.Base Type = Type'
@@ -110,14 +114,16 @@ projectConArg IndVar = IndVar'
 projectConArg (ConArg ty) = ConArg' ty
 
 projectInd :: Ind -> Ind' Type
-projectInd (Ind n cs) = Ind' n (map (second (map projectConArg)) cs)
+projectInd (Ind n cs ty_args) = 
+  Ind' n (map (second (map projectConArg)) cs) ty_args
 
 embedConArg :: ConArg' Type -> ConArg 
 embedConArg IndVar' = IndVar
 embedConArg (ConArg' ty) = ConArg ty
 
 embedInd :: Ind' Type -> Ind
-embedInd (Ind' n cs) = Ind n (map (second (map embedConArg)) cs)
+embedInd (Ind' n cs ty_args) = 
+  Ind n (map (second (map embedConArg)) cs) ty_args
 
 instance Fold.Foldable Type where
   project (Base ind) = Base' (projectInd ind)
@@ -155,15 +161,18 @@ instance ContainsTypes Bind where
     return (Bind name) `ap` f ty
   
 instance ContainsTypes Ind where
-  mapTypesM f (Ind name cons) = do
+  mapTypesM f (Ind name cons type_args) = do
     args' <- mapM (mapM (mapTypesM f)) args
-    return (Ind name (zip names args'))
+    type_args' <- mapM (mapTypesM f) type_args
+    return (Ind name (zip names args') type_args')
     where
     args :: [[ConArg]]
     (names, args) = unzip cons
     
 instance ContainsTypes Constructor where
-  mapTypesM f = modifyM constructorOf (mapTypesM f)
+  mapTypesM f = return
+    >=> modifyM constructorOf (mapTypesM f)
+    >=> modifyM constructorTyArgs (mapM (mapTypesM f))
  
 instance ContainsTypes a => ContainsTypes (Tagged a) where
   mapTypesM f = mapM (mapTypesM f)
@@ -183,7 +192,7 @@ instance HasType Bind where
   
 -- | The 'empty' type, viz. the constructorless inductive type.
 instance Empty Ind where
-  empty = Ind "empty" []
+  empty = Ind "empty" [] []
 
 instance Empty Type where
   empty = Base empty
@@ -194,22 +203,22 @@ tag = empty
 
 -- | The unit type, viz. the single parameterless constructor inductive type.
 unit :: Ind
-unit = Ind "unit" [("()", [])]
+unit = Ind "unit" [("()", [])] []
 
 prop :: Ind 
-prop = Ind "prop" [("ff", [])]
+prop = Ind "prop" [("ff", [])] []
 
 propTy :: Type
 propTy = Base prop
 
 falsity :: Constructor
-falsity = Constructor prop 0
+falsity = Constructor prop 0 []
 
 -- | Cartesian n-product.
 tuple :: [Type] -> Ind
 tuple tys 
   | length tys > 1 = 
-    Ind name [("tuple", map ConArg tys)]
+    Ind name [("tuple", map ConArg tys)] []
   where
   name = "(" ++ intercalate "," (map show tys) ++ ")"  
 
@@ -218,22 +227,22 @@ tuple tys
 -- This also has a special display rule in "Elea.Show".
 equation :: Type -> Constructor
 equation a = 
-  Constructor ind 0
+  Constructor ind 0 []
   where
   name = "==[" ++ show a ++ "]"
-  ind = Ind name [("==", [ConArg a, ConArg a])]
+  ind = Ind name [("==", [ConArg a, ConArg a])] []
   
 isEquation :: Constructor -> Maybe Type
-isEquation (Constructor (Ind name [("==", [ConArg ty1, ConArg ty2])]) 0) 
+isEquation (Constructor (Ind name [("==", [ConArg ty1, ConArg ty2])] []) 0 []) 
   | take 3 name == "==[" && ty1 == ty2 = return ty1
 isEquation _ = Nothing
 
 bool :: Ind
-bool = Ind "bool" [("True", []), ("False", [])]
+bool = Ind "bool" [("True", []), ("False", [])] []
 
 true, false :: Constructor
-true = Constructor bool 0
-false = Constructor bool 1
+true = Constructor bool 0 []
+false = Constructor bool 1 []
 
   
 -- Helpful functions
@@ -279,7 +288,7 @@ dropArgs n (Fun _ ty) = dropArgs (pred n) ty
 dropArgs _ _ = error "Type does not have enough arguments"
 
 unfold :: Ind -> [Bind]
-unfold ind@(Ind _ cons) =
+unfold ind@(Ind _ cons _) =
   map unfoldCon cons
   where
   unfoldCon :: (String, [ConArg]) -> Bind
@@ -295,23 +304,23 @@ unfold ind@(Ind _ cons) =
     
 -- | All the constructors of an inductive type
 constructors :: Ind -> [Constructor]
-constructors ind@(Ind _ cons) =
-  map (Constructor ind . fst) ([0..] `zip` cons)
+constructors ind@(Ind _ cons ty_args) =
+  map (\n -> Constructor ind n ty_args) (range cons)
   
 constructorType :: Constructor -> Type
-constructorType (Constructor ind n) = id
+constructorType (Constructor ind n _) = id
   . _bindType
   . (!! n)
   $ unfold ind
     
 constructorBind :: Constructor -> Bind
-constructorBind (Constructor ind n) = 
+constructorBind (Constructor ind n _) = 
   unfold ind !! n
 
     
 -- | Return the positions of the recursive arguments of a given constructor
 recursiveArgs :: Constructor -> [Nat]
-recursiveArgs (Constructor (Ind _ cons) n) = id
+recursiveArgs (Constructor (Ind _ cons _) n _) = id
   . Assert.assert "constructor index out of range" (nlength cons > n)
   . map enum
   $ findIndices (== IndVar) con_args
@@ -326,7 +335,7 @@ recursiveArgs (Constructor (Ind _ cons) n) = id
 -- > recursiveArgs nlist 1 == [1]
 -- > recursiveArgIndices nlist 1 == [0]
 recursiveArgIndices :: Constructor -> [Index]
-recursiveArgIndices con@(Constructor ind@(Ind _ cons) n) = id
+recursiveArgIndices con@(Constructor ind@(Ind _ cons _) n _) = id
   . Assert.assert "constructor index out of range" (nlength cons > n)
   . map enum
   . invert
@@ -335,7 +344,7 @@ recursiveArgIndices con@(Constructor ind@(Ind _ cons) n) = id
   
 -- | Returns the opposite indices to 'recursiveArgs'
 nonRecursiveArgs :: Constructor -> [Int]
-nonRecursiveArgs (Constructor (Ind _ cons) n) = id
+nonRecursiveArgs (Constructor (Ind _ cons _) n _) = id
   . Assert.assert "constructor index out of range" (elength cons > n)
   $ findIndices (/= IndVar) con_args
   where
@@ -358,7 +367,7 @@ isRecursive = not . all isBaseCase . constructors
 -- appropriate bindings for a pattern match on that constructor.
 -- > makeAltBindings nlist 1 = [Bind "b0" nat, Bind "b1" nlist]
 makeAltBindings :: Constructor -> [Bind]
-makeAltBindings (Constructor ind con_n) =
+makeAltBindings (Constructor ind con_n _) =
   zipWith Bind arg_names arg_tys
   where
   Bind _ con_ty = unfold ind `nth` enum con_n
@@ -393,17 +402,25 @@ polymorphicM :: (Monad m, ContainsTypes t)
   -> m (Polymorphic t)
 polymorphicM arg_ns make = id
   . liftM (Poly arg_ns)
-  $ make (map Base inds)
-  where
-  -- We use specially named empty inductive types to mark type arguments
-  inds = map makeInd [0..length arg_ns - 1]
-    where
-    makeInd i = Ind ("$" ++ show i) []
+  . make 
+  $ makePolyTyArgs arg_ns
     
 polymorphic :: ContainsTypes t => [String] -> ([Type] -> t) -> Polymorphic t
 polymorphic ns f = 
   runIdentity (polymorphicM ns (return . f))
 
+makePolyTyArgs :: [String] -> [Type]
+makePolyTyArgs arg_names = 
+  map Base inds
+  where
+  -- We use specially named empty inductive types to mark type arguments
+  inds = map makeInd [0..length arg_names - 1]
+  makeInd i = Ind ("$" ++ show i) [] []
+
+typeArgs :: Polymorphic a -> [Type]
+typeArgs (Poly arg_names _) =
+  makePolyTyArgs arg_names
+  
 -- | Apply type arguments to a polymorphic instance to get a monomorphic one
 monomorphic :: (Show t, ContainsTypes t) => [Type] -> Polymorphic t -> t
 monomorphic args poly@(Poly ns _)
@@ -415,7 +432,7 @@ monomorphic args poly@(Poly ns _)
 monomorphic args poly@(Poly _ t) =
   mapTypes (Fold.transform applyArgs) t
   where
-  applyArgs (Base (Ind ('$':idx) [])) = 
+  applyArgs (Base (Ind ('$':idx) [] [])) = 
     args `nth` read idx
   applyArgs other = other
   
@@ -425,12 +442,12 @@ uninterpreted :: (Show t, ContainsTypes t) => Polymorphic t -> t
 uninterpreted poly@(Poly ns _) = 
   monomorphic (map Base inds) poly
   where
-  inds = map (\n -> Ind n []) ns
+  inds = map (\n -> Ind n [] []) ns
   
   
 instance Show Ind where
-  show (Ind name cons) = name
-  --  "(ind " ++ name ++ " with" ++ concatMap showCon cons ++ " end)"
+  show (Ind name cons ty_args) = 
+    name ++ showTyArgs ty_args
     where
     showCon :: (String, [ConArg]) -> String
     showCon (con_name, args) = 
@@ -459,8 +476,12 @@ instance (ContainsTypes a, Show a) => Show (Polymorphic a) where
     ++ show (uninterpreted p)
     
 instance Show Constructor where
-  show (Constructor (Ind _ cons) n) = 
-    fst (cons !! n)
+  show (Constructor (Ind _ cons _) n ty_args) = 
+    fst (cons !! n) ++ showTyArgs ty_args
+
+showTyArgs :: [Type] -> String
+showTyArgs [] = ""
+showTyArgs ty_args = printf "<%s>" (intercalate "," (map show ty_args))
 
 deriving instance Show ConArg
 
@@ -485,3 +506,8 @@ assertEq :: (PrintfArg a, HasType a) => a -> a -> Assert.Assert
 assertEq x y = id
   . Assert.augment (printf "comparing types of %b and %b" x y)
   $ Assert.equal (get x) (get y)
+
+instance WellFormed Constructor where
+  assert (Constructor (Ind _ _ ty_args) _ ty_args') = id
+    . Assert.augment "Constructor type arguments must match those of its inductive type"
+    $ Assert.equal ty_args ty_args'

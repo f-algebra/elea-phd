@@ -52,7 +52,7 @@ module Elea.Term.Ext
   buildContext,
   buildCase,
   isProductive,
-  assertValidRewrite
+  assertValidRewrite,
 )
 where
 
@@ -523,7 +523,7 @@ tuple ts
     ind <- id
       . liftM Type.tuple
       $ mapM Type.getM ts
-    return (app (Con (Tag.with Tag.null (Type.Constructor ind 0))) ts)
+    return (app (Con (Tag.with Tag.null (Type.Constructor ind 0 []))) ts)
  
     
 -- | Take a free variable of a fixpoint and express it as a new first argument
@@ -992,7 +992,7 @@ instance HasType Term where
     phi (Case' _ alt_tys) = get altInner' (head alt_tys)
 
 
-instance WF.WellFormed Term where 
+instance WF.LocallyWellFormed Term where 
   assertLocal (Leq x y) = id
     . Assert.augment "types on either side of preorder do not match"
     $ Type.assertEq x y
@@ -1030,8 +1030,24 @@ instance WF.WellFormed Term where
       $ all (== alt_ty) alt_tys
     where
     alt_ty : alt_tys = map (Type.get . get altInner) alts
+  assertLocal (Con tcon) =
+    WF.assert (Tag.untag tcon)
+  assertLocal fix_t@Fix{ fixInfo = fix_info
+                       , inner = fix_body } = do
+    WF.assert fix_info
+    when has_closed_body
+      . Assert.augment "Fixed-point has conflicting closed-body definitions."
+      $ Assert.equal fix_body closed_body
+    where
+    Just closed_body = get fixClosedBody fix_info 
+    has_closed_body = True
+      && not (get fixDirty fix_info)
+      && isJust (get fixClosedBody fix_info)
   assertLocal _ = 
     Assert.success
+
+instance WF.WellFormed Term where
+  assert = WF.assertAll
 
 
 assertValidRewrite :: Term -> Term -> Assert.Assert

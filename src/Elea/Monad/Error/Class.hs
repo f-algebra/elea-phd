@@ -1,5 +1,4 @@
 -- | This is just a renaing/extension of 'MonadError'
-{-# LANGUAGE UndecidableInstances #-}
 module Elea.Monad.Error.Class
   ( Throws (..), ErrorT, Error, Stack
   , wasThrown, when, unless, noneM, none
@@ -24,10 +23,11 @@ instance Show Stack where
 instance PrintfArg Stack where
   formatArg = formatArg . show
 
-class (Monoid e, Monad m) => Throws e m | m -> e where
-  throw :: e -> m a
-  catch :: m a -> (e -> m a) -> m a
-  augment :: e -> m a -> m a
+class (Monoid (Err m), Monad m) => Throws m where
+  type Err m :: *
+  throw :: Err m -> m a
+  catch :: m a -> (Err m -> m a) -> m a
+  augment :: Err m -> m a -> m a
 
 instance Monoid Stack where
   mempty = Stack mempty
@@ -43,10 +43,10 @@ instance Runnable ErrorT where
       Left stk -> error (show stk)
       Right val -> return val
 
-throwf :: (Throws e m, Read e, PrintfArg a) => String -> a -> m b
+throwf :: (Throws m, Read (Err m), PrintfArg a) => String -> a -> m b
 throwf str args = throw (readf str args)
 
-augmentf :: (Throws e m, Read e, PrintfArg a) => String -> a -> m b -> m b
+augmentf :: (Throws m, Read (Err m), PrintfArg a) => String -> a -> m b -> m b
 augmentf str args = augment (readf str args)
 
 noneM :: Monad m => ErrorT m a -> m a
@@ -61,14 +61,16 @@ wasThrown err =
     Left _ -> True
     Right _ -> False
 
-when :: Throws e m => Bool -> e -> m ()
+when :: Throws m => Bool -> Err m -> m ()
 when True = throw
 when False = const (return ())
 
-unless :: Throws e m => Bool -> e -> m ()
+unless :: Throws m => Bool -> Err m -> m ()
 unless = when . not
 
-instance Monad m => Throws Stack (ErrorT m) where
+instance Monad m => Throws (ErrorT m) where
+  type Err (ErrorT m) = Stack
+
   throw = EitherT . return . Left
   
   catch et handle = do
@@ -84,12 +86,14 @@ instance Monad m => Throws Stack (ErrorT m) where
     aug (Left stk) = Left (err ++ stk)
     aug right = right
   
-instance Throws e m => Throws e (ReaderT r m) where
+instance Throws m => Throws (ReaderT r m) where
+  type Err (ReaderT r m) = Err m
   throw = lift . throw
   catch = Reader.liftCatch catch
   augment e = mapReaderT (augment e)
             
-instance Throws e m => Throws e (MaybeT m) where
+instance Throws m => Throws (MaybeT m) where
+  type Err (MaybeT m) = Err m
   throw = lift . throw
   catch =  Maybe.liftCatch catch
   augment e = mapMaybeT (augment e)

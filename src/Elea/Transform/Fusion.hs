@@ -131,6 +131,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
         . Rewrite.applyM
        -- . trace ("\n\n[fusing <" ++ show temp_idx   ++ ">] " ++ t_s)
         . tracE [("yielding <" ++ show temp_idx ++ ">", t_s''')] 
+        . Term.dirtyFix
         . Fix fix_i new_fix_b 
         $ Tag.replace temp_idx orig_idx new_fix_t
     Discovery.rewritesTo orig_t new_t

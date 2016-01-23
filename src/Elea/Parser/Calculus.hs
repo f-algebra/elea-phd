@@ -10,7 +10,7 @@ module Elea.Parser.Calculus
 where
 
 import Elea.Prelude
-import Elea.Type hiding ( get )
+import Elea.Type hiding ( get, typeArgs )
 import Elea.Term
 import Elea.Show ( showM )
 import qualified Elea.Term.Constraint as Constraint
@@ -2040,7 +2040,7 @@ instance Monad m => Env.Read (ReaderT Scope m) where
 type ParserMonad m a = 
   Env m => ReaderT Scope m a
   
-type Env m = (Err.Throws Err.Stack m, Defs.Has m, Tag.Gen m)
+type Env m = (Err.Throws m, Defs.Has m, Tag.Gen m, Err.Err m ~ Err.Stack)
 
 localTypeArgs :: ContainsTypes t => 
   [String] -> ParserMonad m t -> ParserMonad m (Polymorphic t)
@@ -2105,10 +2105,11 @@ program text =
       return (Prop name (unflattenLam bs t'))
   
   defineType :: TypeDef -> ParserMonad m ()
-  defineType ((ind_name, ty_args), raw_cons) = do
-    ind_ty <- localTypeArgs ty_args $ do
+  defineType ((ind_name, ty_arg_names), raw_cons) = do
+    ind_ty <- localTypeArgs ty_arg_names $ do
+      ty_args <- mapM lookupType (zip ty_arg_names (repeat []))
       cons <- mapM mkCon raw_cons
-      return (Type.Ind ind_name cons)
+      return (Type.Ind ind_name cons ty_args)
     Defs.defineType ind_name ind_ty
     mapM_ (defCon ind_ty) (range raw_cons)
     where
@@ -2127,9 +2128,11 @@ program text =
       Defs.defineTerm name poly_con 
       where
       poly_con = fmap untaggedCon poly_ind
+      ty_args = Type.typeArgs poly_ind
       name = head (raw_cons !! n)   
-      untaggedCon ind = Con (Tag.with Tag.null (Constructor ind (enum n)))
+      untaggedCon ind = Con (Tag.with Tag.null (Constructor ind (enum n) ty_args))
   
+  defineTerm :: TermDef -> ParserMonad m ()
   defineTerm ((name, ty_args), raw_term) = do
     p_term <- localTypeArgs ty_args (parseAndCheckTerm raw_term)
     Defs.defineTerm name 
@@ -2249,7 +2252,7 @@ parseRawTerm (TFix rbs rt) = do
   bs <- mapM parseRawBind rbs
   t <- Env.bindMany bs (parseRawTerm rt)
   return 
-    $ Fix emptyInfo (head bs) 
+    $ Fix empty (head bs) 
     $ unflattenLam (tail bs) t 
 parseRawTerm (TLam rbs rt) = do
   bs <- mapM parseRawBind rbs
@@ -2262,7 +2265,8 @@ parseRawTerm (TAssert pat ron_t rin_t) = do
   on_t <- parseRawTerm ron_t
   on_ty@(Type.Base ind) <- Type.getM on_t
   (con_n, var_bs) <- parsePattern ind pat'
-  tcon <- Tag.tag (Constructor ind con_n)
+  let Ind _ _ ty_args = ind
+  tcon <- Tag.tag (Constructor ind con_n ty_args)
   in_t <- Env.bindMany var_bs (parseRawTerm rin_t)
   in_ty <- Env.bindMany var_bs (Type.getM in_t)
   let ct = Term.matchFromConstructor tcon on_t
@@ -2284,7 +2288,8 @@ parseRawTerm (TCase rt ralts) = do
     | otherwise = do
       (con_n, var_bs) <- parsePattern ind pat
       t <- Env.bindMany var_bs (parseRawTerm ralt_t)
-      con <-  Tag.tag (Constructor ind con_n)
+      let Base (Ind _ _ arg_tys) = ind_ty
+      con <- Tag.tag (Constructor ind con_n arg_tys)
       return (con_n, Alt con var_bs t)
     where 
     Type.Base ind = ind_ty

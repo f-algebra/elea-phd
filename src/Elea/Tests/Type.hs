@@ -19,6 +19,6 @@ tests =
   where
   Base nat = read "nat"
   Base bool = read "bool"
-  true = Constructor bool 0
-  zero = Constructor nat 0
-  succ = Constructor nat 1
+  true = Constructor bool 0 []
+  zero = Constructor nat 0 []
+  succ = Constructor nat 1 []

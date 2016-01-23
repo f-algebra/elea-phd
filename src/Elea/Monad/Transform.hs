@@ -1,5 +1,6 @@
 -- | A transformation monad carries around a 'Term -> m Term' function
 -- allowing it to apply the transformation recursively.
+{-# LANGUAGE UndecidableInstances #-}
 module Elea.Monad.Transform
 (
   Step (..),
@@ -9,7 +10,7 @@ module Elea.Monad.Transform
 )
 where
 
-import Elea.Prelude
+import Elea.Prelude hiding ( liftCatch )
 import Elea.Term 
 import Elea.Show ( showM )
 import qualified Elea.Type.Ext as Type
@@ -22,10 +23,13 @@ import qualified Elea.Monad.Discovery.Class as Discovery
 import qualified Elea.Monad.History as History
 import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Monad.Direction as Direction
+import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Error.Assertion as Assert
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Monad.StepCounter as Steps
 import qualified Control.Monad.Reader.Class as Reader
+import qualified Control.Monad.Trans.Reader as Reader hiding ( ask )
+import qualified Control.Monad.Trans.Maybe as Maybe
 import qualified Control.Monad.Trans.Class as Trans
 
 import qualified Data.Poset as Quasi
@@ -65,6 +69,15 @@ compose all_steps = applyOneStep all_steps
         Assert.check valid_rewrite
           $ return t'
 
+liftCatch :: Monad m 
+  => (m (Maybe a) -> (e -> m (Maybe a)) -> m (Maybe a))
+  -> StepT m a -> (e -> StepT m a) -> StepT m a
+liftCatch catch step_t handle = 
+  StepT (catch' (stepT step_t) handle')
+  where
+  handle' = stepT . handle
+  catch' = Reader.liftCatch (Maybe.liftCatch catch)
+
 instance MonadTrans StepT where
   lift m = StepT (ReaderT (\_ -> Trans.lift m))
   
@@ -92,6 +105,12 @@ instance Defs.Read m => Defs.Read (StepT m) where
   lookupTerm n = Trans.lift . Defs.lookupTerm n
   lookupType n = Trans.lift . Defs.lookupType n
   lookupName = Trans.lift . Defs.lookupName
+
+instance Err.Throws m => Err.Throws (StepT m) where
+  type Err (StepT m) = Err.Err m
+  throw = Trans.lift . Err.throw
+  catch = liftCatch Err.catch
+  augment e = mapStepT (Err.augment e)
   
 instance Tag.Gen m => Tag.Gen (StepT m) where
   generateId = Trans.lift Tag.generateId

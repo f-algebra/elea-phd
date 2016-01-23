@@ -18,13 +18,12 @@ module Elea.Term
   matchFromCase, matchFromConstructor,
   patternConstructor, patternBindings, patternVars,
   patternInd,
-  fixIndex, fixName,
+  fixIndex, fixName, fixClosedBody, fixDirty,
   flattenApp, leftmost, arguments,
   flattenLam, unflattenLam, unflattenApp,
   isCon, isLam, isVar, isApp,
   isFix, isBot, isCase, isSeq,
   isLeq, isQuantifiedLeq,
-  emptyInfo,
   inductivelyTyped, 
   fromVar, 
   truth, falsity,
@@ -44,6 +43,7 @@ module Elea.Term
   isFixPromoted,
   loweredAltTerm,
   bindsToVars, bindsToVar,
+  dirtyFix,
 )
 where
 
@@ -52,11 +52,13 @@ import Elea.Term.Index ( Index, Indexed, Substitutable, Inner )
 import Elea.Type ( Type (..), Ind (..), ConArg (..)
                  , Bind (..), Constructor (..) )
 import Elea.Term.Tag ( Tag, Tagged )
+import Elea.Foldable.WellFormed ( WellFormed (..) )
 import qualified Elea.Prelude as Prelude
 import qualified Elea.Type as Type
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Monad.Failure.Class as Fail
+import qualified Elea.Monad.Error.Assertion as Assert
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 import qualified Data.Map as Map
@@ -128,7 +130,13 @@ data Prop
 -- | Information stored about fixpoints, to add efficiency.
 data FixInfo
   = FixInfo { _fixIndex :: !Tag
-            , _fixName :: !(Maybe String) }
+            , _fixName :: !(Maybe String)
+            -- | Nothing here means the fixed-point is not closed,
+            -- Just provides the body of the fixed-point if it is closed.
+            , _fixClosedBody :: !(Maybe Term)
+            -- | Whether this fixed-point has been modified and so might need
+            -- its state fields updated, like fixName
+            , _fixDirty :: !Bool }
   deriving ( Eq, Ord )
 
  
@@ -297,8 +305,8 @@ leftmost = head . flattenApp
 arguments :: Term -> [Term]
 arguments = tail . flattenApp
 
-emptyInfo :: FixInfo
-emptyInfo = FixInfo Tag.omega Nothing
+instance Empty FixInfo where
+  empty = FixInfo Tag.omega Nothing Nothing True
 
   
 -- | This should maybe be called @fullyApplied@ but it checks whether a fixpoint
@@ -381,7 +389,7 @@ makePattern :: Tagged Constructor -> [Bind] -> Pattern
 makePattern tcon bs = 
   Pattern tcon bs vars
   where
-  Constructor (Type.Ind _ cons) n = Tag.untag tcon
+  Constructor (Type.Ind _ cons _) n _ = Tag.untag tcon
   vars = (reverse . map enum) [0..arg_count-1]
   arg_count = (length . snd . (cons !!)) n
   
@@ -436,14 +444,14 @@ buildFold :: Indexed Term
   => Type.Ind  -- The inductive argument type of the fold function 
   -> Type      -- The return type of the fold function
   -> Term
-buildFold ind@(Type.Ind _ cons) result_ty = 
+buildFold ind@(Type.Ind _ cons ty_args) result_ty = 
   unflattenLam lam_bs fix_t
   where
   -- Add a fixpoint if the inductive type is recursive
   fix_b = Bind (printf "fold[%s]" ind) (Fun (Base ind) result_ty)
   fix_t 
     | not (Type.isRecursive ind) = Indices.lower fold_t
-    | otherwise = Fix emptyInfo fix_b fold_t
+    | otherwise = Fix empty fix_b fold_t
     
   -- Build the term that represents the fold function body
   fold_t = Lam var_b (Case (Var 0 var_b) alts)
@@ -464,7 +472,7 @@ buildFold ind@(Type.Ind _ cons) result_ty =
         Alt con alt_bs (app f f_args)
         where
         (name, con_args) = cons !! con_n
-        con = Tag.with Tag.null (Constructor ind con_n)
+        con = Tag.with Tag.null (Constructor ind con_n ty_args)
         liftHere = Indices.liftMany (nlength con_args)
         
         -- The index of the fix variable
@@ -515,7 +523,7 @@ buildFold ind@(Type.Ind _ cons) result_ty =
       
 -- | Returns the recursive identity function for a given type      
 recursiveId :: Indexed Term => Type.Ind -> Term
-recursiveId ind@(Ind _ cons) = 
+recursiveId ind@(Ind _ cons _) = 
   app id_fold fold_cons
   where
   id_fold = buildFold ind (Type.Base ind)
@@ -694,3 +702,24 @@ bindsToVars bs = zipWith (Var . enum) (reverse (range bs)) bs
 -- | The variable at a given deBruijn index given the topmost bindings
 bindsToVar :: Enum a => [Bind] -> a -> Term
 bindsToVar bs i = bindsToVars bs !! i
+
+-- | Declares that a fixed-point's definition has been modified
+-- and hence some of its fields need to be updated
+dirtyFix :: Term -> Term
+dirtyFix fix_t@Fix{ fixInfo = fix_info } =
+  fix_t { fixInfo = set fixDirty True fix_info }
+  where
+  dirty_info = id
+    . set fixDirty True 
+    $ fix_info
+dirtyFix (App f@Fix{} xs) =
+  App (dirtyFix f) xs
+
+instance WellFormed FixInfo where
+  assert info = id
+    . Assert.augment "A fixed-point can only be named if it is closed"
+    $ Assert.bool (not invalid)
+    where
+    invalid = not (get fixDirty info)
+      && isJust (get fixName info)
+      && isNothing (get fixClosedBody info)

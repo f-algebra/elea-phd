@@ -27,6 +27,8 @@ import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Monad.Transform as Transform
+import qualified Elea.Monad.Error.Class as Err
+import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Transform.Names as Name
 import qualified Elea.Monad.History as History
 
@@ -41,6 +43,7 @@ import qualified Data.Poset as Quasi
 type Step m = 
   ( Transform.Step m
   , Env.Write m
+  , Defs.Read m
   , History.Env m )
   
 
@@ -64,6 +67,7 @@ transformSteps =
   , ("commute app-case", appCase)
   , ("commute case-case", caseCase)
   , ("seq reduction", reduceSeq)
+  , ("clean fix", cleanFix)
   ]
 
 traverseSteps :: Step m => [(String, Term -> m Term)]
@@ -220,7 +224,9 @@ traverseFix fix@(Fix inf b t) = do
     . Env.bind b
     $ Transform.continue t
   Fail.when (t == t')
-  return (Fix inf b t')
+  return
+    . Term.dirtyFix
+    $ Fix inf b t'
     
 traverseFix _ = Fail.here
 
@@ -317,3 +323,19 @@ caseCase outer_cse@(Case inner_cse@(Case inner_t inner_alts) outer_alts) =
     alts_here = map (Indices.liftMany (nlength bs)) outer_alts
 caseCase _ = Fail.here
 
+
+cleanFix :: Step m => Term -> m Term
+cleanFix fix_t@Fix{ fixInfo = fix_info } 
+  | get fixDirty fix_info = do
+    mby_name <- (liftM (map fst) . Defs.lookupName) fix_t
+    let fix_info' = id
+          . set fixName mby_name 
+          . set fixDirty False
+          . set fixClosedBody closed_body
+          $ fix_info
+    return fix_t { fixInfo = fix_info' }
+    where
+    closed_body | Set.null (Term.freeVarSet fix_t) = Just fix_t
+                | otherwise = Nothing
+cleanFix _ = 
+  Fail.here

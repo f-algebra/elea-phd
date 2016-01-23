@@ -29,7 +29,7 @@ showBinds = intercalate " " . map show
 getName :: Term -> Maybe String
 getName (Var _ b) = Just (get bindLabel b)
 getName (Con c) = Just (show c)
--- getName (Fix inf _ _) = get fixName inf
+getName (Fix inf _ _) = get fixName inf
 getName _ = Nothing
 
 instance Show Term where
@@ -37,10 +37,13 @@ instance Show Term where
   show (Leq x y) = printf "%b =< %b" x y
   show (Bot ty) = printf "_|_ %s" ty
   show (Seq x y) = printf "seq %b %b" x y
-  show (Fix inf b t) = printf "fix %s -> %n" b t
+  show (Fix inf b t) = printf "fix %s %s -> %n" b (showBinds bs) body_t
+    where
+    (bs, body_t) = flattenLam t
   show t@Lam{} = printf "fun %s -> %n" (showBinds bs) body_t
     where
     (bs, body_t) = flattenLam t
+ -- show (App f@(Fix _ b _) ) 
   show (App f xs) = printf "%b %s" f xs_s
     where
     xs_s = intercalate " " (map (printf "%b") xs)
@@ -51,7 +54,9 @@ instance Show Term where
 
 instance Show Alt where
   show (Alt tcon bs t) = 
-    printf "| %s %s -> %n" tcon (showBinds bs) t
+    printf "| %s %s -> %n" con_without_ty_args (showBinds bs) t
+    where
+    con_without_ty_args = fmap (set Type.constructorTyArgs []) tcon
 
 instance PrintfArg Alt where
   formatArg alt format rest =

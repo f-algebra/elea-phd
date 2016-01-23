@@ -45,7 +45,7 @@ checkM assert =
   check assert (if isSuccess assert then return () else fail "")
 #endif
 
-toError :: Err.Throws Err.Stack m => Assert -> m ()
+toError :: (Err.Throws m, Err.Err m ~ Err.Stack) => Assert -> m ()
 toError assert 
   | isSuccess assert = return ()
   | otherwise = Err.throw (fromFailure assert)
@@ -53,13 +53,14 @@ toError assert
 bool :: Bool -> Assert
 bool b = if b then success else failure ""
 
-equal :: (PrintfArg a, Eq a) => a -> a -> Assert
+equal :: (Show a, Eq a) => a -> a -> Assert
 equal x y 
   | x == y = success
-  | otherwise = failure (printf "expected %s but got %s" x y)
+  | otherwise = failure (printf "expected %s but got %s" (show x) (show y))
 
 assert :: String -> Bool -> a -> a
 assert msg = check . augment msg . bool 
 
-assertEq :: (PrintfArg a, Eq a) => String -> a -> a -> b -> b
+assertEq :: (Show a, Eq a) => String -> a -> a -> b -> b
 assertEq msg x y = check . augment msg $ equal x y 
+
