@@ -12,7 +12,6 @@ where
 import Elea.Prelude
 import Elea.Type hiding ( get, typeArgs )
 import Elea.Term
-import Elea.Show ( showM )
 import qualified Elea.Term.Constraint as Constraint
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Term.Tag as Tag

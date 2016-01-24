@@ -10,7 +10,6 @@ where
 
 import Elea.Prelude hiding ( negate, run )
 import Elea.Term hiding ( constructor )
-import Elea.Show ( showM )
 import Elea.Unification ( Unifier )
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Ext as Term

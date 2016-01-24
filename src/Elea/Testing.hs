@@ -19,7 +19,6 @@ where
 import Elea.Prelude hiding ( assertEq )
 import Elea.Term
 import Elea.Type hiding ( get, assertEq )
-import Elea.Show
 import Elea.Monad.Fedd ( FeddT )
 import Test.HUnit ( Test, assertFailure )
 import qualified Elea.Term.Tag as Tag

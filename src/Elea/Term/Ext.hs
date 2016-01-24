@@ -59,7 +59,6 @@ where
 import Elea.Prelude hiding ( replace, and )
 import Elea.Term
 import Elea.Type ( HasType )
-import qualified Elea.Type.Ext as Type
 import qualified Elea.Prelude as Prelude
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Term.Constraint as Constraint
@@ -1032,17 +1031,8 @@ instance WF.LocallyWellFormed Term where
     alt_ty : alt_tys = map (Type.get . get altInner) alts
   assertLocal (Con tcon) =
     WF.assert (Tag.untag tcon)
-  assertLocal fix_t@Fix{ fixInfo = fix_info
-                       , inner = fix_body } = do
+  assertLocal fix_t@Fix{ fixInfo = fix_info } =
     WF.assert fix_info
-    when has_closed_body
-      . Assert.augment "Fixed-point has conflicting closed-body definitions."
-      $ Assert.equal fix_body closed_body
-    where
-    Just closed_body = get fixClosedBody fix_info 
-    has_closed_body = True
-      && not (get fixDirty fix_info)
-      && isJust (get fixClosedBody fix_info)
   assertLocal _ = 
     Assert.success
 
@@ -1055,3 +1045,85 @@ assertValidRewrite from to = id
   . Assert.augment (printf "rewriting %b to %b" from to) $ do
     WF.assert to
     Type.assertEq from to
+
+
+showBinds :: [Bind] -> String
+showBinds = intercalate " " . map show
+
+showTermBracketedM :: Env.Read m => Term -> m String
+showTermBracketedM term = do
+  term_s <- showTermM term
+  if ' ' `elem` term_s
+  then return (printf "(%s)" term_s)
+  else return term_s
+  
+showTermNewlineM :: Env.Read m => Term -> m String
+showTermNewlineM term = do
+  term_s <- showTermM term
+  if isFix (leftmost term) 
+    || isCase term
+    || isLam term 
+  then return (indent ("\n" ++ term_s))
+  else return term_s
+
+
+showTermM :: Env.Read m => Term -> m String
+showTermM (Con c) = return (show c)
+showTermM Fix { fixInfo = fix_info}
+  | Just fix_name <- get fixName fix_info = return fix_name
+showTermM Var { binding = bind } = do
+  all_bindings <- Env.bindings
+  return (printf "%s[%s]" (show (get Type.bindLabel bind)) (show all_bindings))
+
+showTermM (Leq x y) = do
+  x_s <- showTermBracketedM x
+  y_s <- showTermBracketedM y
+  return (printf "%s =< %s" x_s y_s)
+showTermM (Bot ty) = 
+  return (printf "_|_ %s" ty)
+showTermM (Seq x y) = do
+  x_s <- showTermBracketedM x
+  y_s <- showTermBracketedM y
+  return (printf "seq %s %s" x_s y_s)
+showTermM (Fix inf b t) = do
+  body_s <- Env.bindMany (b : bs) (showTermNewlineM body_t)
+  return (printf "fix %s -> %s" (showBinds (b: bs)) body_s)
+  where
+  (bs, body_t) = flattenLam t
+
+showTermM t@Lam{} = do
+  body_s <- Env.bindMany bs (showTermNewlineM body_t)
+  return (printf "fun %s -> %s" (showBinds bs) body_s)
+  where
+  (bs, body_t) = flattenLam t
+
+showTermM (App func args) = do
+  func_s <- showTermBracketedM func
+  args_s <- mapM showTermM args
+  return 
+    $ printf "%s %s" func_s (intercalate " " args_s)
+
+showTermM (Case cse_t alts) = do
+  alts_s <- mapM showAltM alts
+  cse_s <- showTermM cse_t
+  return
+    $ printf "match %s with %s\nend" cse_s (concat alts_s)
+
+
+showAltM :: Env.Read m => Alt -> m String
+showAltM (Alt tcon bs t) = do
+  t_s <- Env.bindMany bs (showTermNewlineM t)
+  return (printf "| %s %s -> %s" con_without_ty_args bind_names t_s)
+  where
+  con_without_ty_args = fmap (set Type.constructorTyArgs []) tcon
+  bind_names = intercalate " " (map (get Type.bindLabel) bs)
+
+instance Show Term where
+  show term =
+    runReader (showTermM term) var_binds
+    where
+    free_vars = freeVars term
+    var_binds = map binding free_vars
+
+instance PrintfArg Term where
+  formatArg = formatArg . show

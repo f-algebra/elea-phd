@@ -8,7 +8,6 @@ where
 
 import Elea.Prelude hiding ( run )
 import Elea.Term
-import Elea.Show ( showM )
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Term.Tag as Tag

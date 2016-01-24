@@ -10,7 +10,6 @@ where
 
 import Elea.Prelude
 import Elea.Term
-import Elea.Show
 import qualified Elea.Monad.History as History
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Monad.Fusion as Fusion

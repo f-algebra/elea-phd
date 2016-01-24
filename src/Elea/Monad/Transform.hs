@@ -11,8 +11,7 @@ module Elea.Monad.Transform
 where
 
 import Elea.Prelude hiding ( liftCatch )
-import Elea.Term 
-import Elea.Show ( showM )
+import Elea.Term
 import qualified Elea.Type.Ext as Type
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Monad.Failure.Class as Fail

@@ -8,7 +8,6 @@ where
 
 import Elea.Prelude hiding ( run )
 import Elea.Term
-import Elea.Show ( showM )
 import Elea.Unification ( Unifier )
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Monad.Transform as Transform

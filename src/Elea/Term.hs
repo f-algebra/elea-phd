@@ -18,7 +18,7 @@ module Elea.Term
   matchFromCase, matchFromConstructor,
   patternConstructor, patternBindings, patternVars,
   patternInd,
-  fixIndex, fixName, fixClosedBody, fixDirty,
+  fixIndex, fixName, fixIsClosed, fixIsDirty,
   flattenApp, leftmost, arguments,
   flattenLam, unflattenLam, unflattenApp,
   isCon, isLam, isVar, isApp,
@@ -131,12 +131,11 @@ data Prop
 data FixInfo
   = FixInfo { _fixIndex :: !Tag
             , _fixName :: !(Maybe String)
-            -- | Nothing here means the fixed-point is not closed,
-            -- Just provides the body of the fixed-point if it is closed.
-            , _fixClosedBody :: !(Maybe Term)
+            -- | Whether this fixed-point has any free variables
+            , _fixIsClosed :: !Bool
             -- | Whether this fixed-point has been modified and so might need
             -- its state fields updated, like fixName
-            , _fixDirty :: !Bool }
+            , _fixIsDirty :: !Bool }
   deriving ( Eq, Ord )
 
  
@@ -306,7 +305,7 @@ arguments :: Term -> [Term]
 arguments = tail . flattenApp
 
 instance Empty FixInfo where
-  empty = FixInfo Tag.omega Nothing Nothing True
+  empty = FixInfo Tag.omega Nothing False True
 
   
 -- | This should maybe be called @fullyApplied@ but it checks whether a fixpoint
@@ -707,10 +706,10 @@ bindsToVar bs i = bindsToVars bs !! i
 -- and hence some of its fields need to be updated
 dirtyFix :: Term -> Term
 dirtyFix fix_t@Fix{ fixInfo = fix_info } =
-  fix_t { fixInfo = set fixDirty True fix_info }
+  fix_t { fixInfo = set fixIsDirty True fix_info }
   where
   dirty_info = id
-    . set fixDirty True 
+    . set fixIsDirty True 
     $ fix_info
 dirtyFix (App f@Fix{} xs) =
   App (dirtyFix f) xs
@@ -720,6 +719,6 @@ instance WellFormed FixInfo where
     . Assert.augment "A fixed-point can only be named if it is closed"
     $ Assert.bool (not invalid)
     where
-    invalid = not (get fixDirty info)
+    invalid = not (get fixIsDirty info)
       && isJust (get fixName info)
-      && isNothing (get fixClosedBody info)
+      && not (get fixIsClosed info)

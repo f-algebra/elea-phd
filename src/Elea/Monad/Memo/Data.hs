@@ -12,7 +12,6 @@ import Elea.Prelude hiding ( lookup )
 import Elea.Term
 import Elea.Unification ( Unifier )
 import Elea.Monad.Env ()
-import Elea.Show
 import Elea.Transform.Names ( Name )
 import qualified Elea.Type as Type
 import qualified Elea.Term.Index as Indices

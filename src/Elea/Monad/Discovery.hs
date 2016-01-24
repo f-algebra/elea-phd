@@ -15,7 +15,6 @@ where
 
 import Elea.Prelude hiding ( tell, listen, trace )
 import Elea.Term
-import Elea.Show
 import Elea.Monad.Discovery.Class
 import Elea.Monad.Discovery.EquationSet ( EqSet )
 import qualified Elea.Monad.Discovery.EquationSet as EqSet

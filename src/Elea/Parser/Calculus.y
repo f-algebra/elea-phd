@@ -12,12 +12,11 @@ where
 import Elea.Prelude
 import Elea.Type hiding ( get, typeArgs )
 import Elea.Term
-import Elea.Show ( showM )
 import qualified Elea.Term.Constraint as Constraint
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Ext as Term
-import qualified Elea.Type.Ext as Type
+import qualified Elea.Type as Type
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Foldable as Fold
 import qualified Elea.Foldable.WellFormed as WF

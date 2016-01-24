@@ -11,7 +11,6 @@ where
 
 import Elea.Prelude hiding ( run )
 import Elea.Term
-import Elea.Show ( showM )
 import Elea.Unification ( Unifier )
 import qualified Elea.Foldable as Fold
 import qualified Elea.Term.Tag as Tag

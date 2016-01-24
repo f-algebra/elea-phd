@@ -325,17 +325,14 @@ caseCase _ = Fail.here
 
 
 cleanFix :: Step m => Term -> m Term
-cleanFix fix_t@Fix{ fixInfo = fix_info } 
-  | get fixDirty fix_info = do
+cleanFix fix_t@Fix{ fixInfo = fix_info, inner = fix_body } 
+  | get fixIsDirty fix_info = do
     mby_name <- (liftM (map fst) . Defs.lookupName) fix_t
     let fix_info' = id
           . set fixName mby_name 
-          . set fixDirty False
-          . set fixClosedBody closed_body
+          . set fixIsDirty False
+          . set fixIsClosed (Set.null (Term.freeVarSet fix_t))
           $ fix_info
     return fix_t { fixInfo = fix_info' }
-    where
-    closed_body | Set.null (Term.freeVarSet fix_t) = Just fix_t
-                | otherwise = Nothing
 cleanFix _ = 
   Fail.here
