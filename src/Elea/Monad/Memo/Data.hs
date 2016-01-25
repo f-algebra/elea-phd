@@ -13,6 +13,7 @@ import Elea.Term
 import Elea.Unification ( Unifier )
 import Elea.Monad.Env ()
 import Elea.Transform.Names ( Name )
+import qualified Elea.Term.Ext as Term
 import qualified Elea.Type as Type
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Unification as Unifier

@@ -13,7 +13,7 @@ import Elea.Term hiding ( constructor )
 import Elea.Unification ( Unifier )
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Ext as Term
-import qualified Elea.Type.Ext as Type
+import qualified Elea.Type as Type
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.History as History
 import qualified Elea.Transform.Names as Name
@@ -179,15 +179,11 @@ lfp (Leq x y) = do
     && not (isVar y) 
     && Unifier.exists y x 
     && not (Unifier.alphaEq x y)
-  History.check Name.LFP (Leq x y) $ do
-    let x' = fixInduction x y
-    from_s <- showM (Leq x y)
-    to_s <- showM (Leq x' y)
-    leq' <- id
-      . tracE [("leq from", from_s), ("leq to", to_s)] 
-      $ Transform.continue (Leq x' y)
-    return leq'
+  History.check Name.LFP (Leq x y)
+    $ Transform.continue (Leq x' y)
   where
+  x' = fixInduction x y
+
   -- > fixInduction ((fix F) x) y = F (\x -> y)
   fixInduction :: Term -> Term -> Term
   fixInduction (flattenApp -> Fix _ _ fix_t : xs) y = id
@@ -213,13 +209,14 @@ caseSplitInc leq@(Leq (Case cse_t alts) y) = do
 caseSplitInc leq@(Leq left_t (Case cse_t@(Var x _) alts)) = do
   Direction.requireInc
   Fail.unless (x `Indices.freeWithin` left_t)
-  x_ty <- Type.getM cse_t
-  left_t_bot <- Simp.applyM (Indices.replaceAt x (Bot x_ty) left_t)
+  left_t_bot <- Simp.applyM (Indices.replaceAt x (Bot cse_ty) left_t)
   Fail.unless (isBot left_t_bot)
   History.check Name.CaseSplit leq $ do
     let leq' = Case cse_t (map leqAlt alts)
     Transform.continue leq'
   where 
+  cse_ty = Type.get cse_t
+
   leqAlt (Alt tc bs alt_t) =
     Alt tc bs (Leq left_t' alt_t)
     where
@@ -258,12 +255,13 @@ leqMatch _ = Fail.here
 absurdBranch :: Step m => Term -> m Term
 absurdBranch orig_t@(Case (Var x b) alts) = do
   Direction.requireInc
-  ty <- Type.getM orig_t
-  Fail.unless (Type.Base Type.prop == ty)
+  Fail.unless (Type.Base Type.prop == orig_ty)
   alts' <- zipWithM absurdAlt [0..] alts
   Fail.when (alts' == alts)
   Transform.continue (Case (Var x b) alts')
   where
+  orig_ty = Type.get orig_t
+
   absurdAlt n alt@(Alt tcon bs alt_t) 
     | Type.isBaseCase (Tag.untag tcon) = do
       is_abs <- id
@@ -272,8 +270,7 @@ absurdBranch orig_t@(Case (Var x b) alts) = do
         $ absurdEnv
       if is_abs 
       then do
-        ty <- Type.getM orig_t
-        return (Alt tcon bs (Bot ty))
+        return (Alt tcon bs (Bot orig_ty))
       else
         return alt
     | otherwise = 
@@ -312,7 +309,6 @@ absurdBranch _ = Fail.here
 generalise :: Step m => Term -> m Term
 generalise leq@(Leq (flattenApp -> Fix {} : args) right_t) 
   | not (null to_gen) = do
-    leq_s <- showM leq
     Transform.continue 
       $ foldr Term.tryGeneralise leq to_gen
   where 

@@ -13,7 +13,7 @@ import qualified Elea.Monad.Env as Env
 import qualified Elea.Monad.Transform as Transform
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Term.Constraint as Constraint
-import qualified Elea.Type.Ext as Type
+import qualified Elea.Type as Type
 import qualified Elea.Unification as Unifier
 import qualified Elea.Transform.Names as Name
 import qualified Elea.Transform.Evaluate as Eval
@@ -86,13 +86,10 @@ fusion :: Step m=> Term -> Term -> m Term
 fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
   . Env.forgetAllMatches 
   . Memo.memo Name.Fusion orig_t $ do
-    t_s <- showM orig_t
-  
     temp_idx <- Tag.make
     let temp_i = set fixIndex temp_idx fix_i
         temp_fix = Fix temp_i fix_b fix_t
     rewrite_from <- id
-      . tracE [("fusing <" ++ show temp_idx ++ ">", t_s)]
       . Env.bind fix_b
       . Simp.applyWithoutUnfoldM
       -- We cannot use unfold because it will break fixCon fusion
@@ -100,36 +97,25 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
       . Indices.lift
       $ Term.reduce ctx_t [temp_fix]
       
-    Type.assertEqM "[fixfix]" (Indices.lower rewrite_from) orig_t
-           
-    t_s' <- Env.bind new_fix_b $ showM rewrite_from
-   -- t_s'' <- showM (Eval.apply (app ctx_t [Term.unfoldFix temp_fix]))
+    Assert.checkM
+      $ Type.assertEq (Indices.lower rewrite_from) orig_t
     
     new_fix_t <- id  
-     -- . trace ("\n\n[replacing] " ++ t_s')
       . Env.bind new_fix_b
       . Fusion.local temp_idx rewrite_from (Var 0 new_fix_b)
       . Transform.continue
-   --   . trace ("\n\n[transforming< " ++ show temp_idx ++ ">] " ++ t_s'')
       . Indices.lift
       -- ^ Make room for our new variables we are rewriting to
       $ app ctx_t [Term.unfoldFix temp_fix]
       
-    t_s''' <- showM (Eval.apply (Fix fix_i new_fix_b new_fix_t))
-      
     new_t <- do
       if not (0 `Indices.freeWithin` new_fix_t) 
       then do 
-        when (Set.member temp_idx (Tag.tags new_fix_t)) 
-       --   $ trace ("\n\n[fusing <" ++ show temp_idx   ++ ">] " ++ t_s)
-          . tracE [("failing <" ++ show temp_idx ++ ">", t_s''')]
-          $ Fail.here
+        Fail.when (Set.member temp_idx (Tag.tags new_fix_t))
         Simp.applyM
           $ Indices.lower new_fix_t
       else id
         . Rewrite.applyM
-       -- . trace ("\n\n[fusing <" ++ show temp_idx   ++ ">] " ++ t_s)
-        . tracE [("yielding <" ++ show temp_idx ++ ">", t_s''')] 
         . Term.dirtyFix
         . Fix fix_i new_fix_b 
         $ Tag.replace temp_idx orig_idx new_fix_t
@@ -182,13 +168,9 @@ fixCon orig_t@(App fix@(Fix _ fix_b _) args) = do
           $ App gen_fix built_xs
         
     let gen_t = Term.reduce ctx_t (fix:full_args)
-    gen_s <- showM gen_t
     History.check Name.ConFusion gen_t $ do
       fused_t <- fusion ctx_t fix
-      let new_t = Term.reduce fused_t full_args
-      new_s <- showM new_t
-      -- tracE [("fixcon input", gen_s), ("fixcon output", new_s)]
-      Transform.continue new_t
+      Transform.continue (Term.reduce fused_t full_args)
         
 fixCon _ = Fail.here
 
@@ -198,13 +180,9 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
   -- ^ o_ is outer, i_ is inner
   Fusion.checkEnabled
   Fail.when (Term.beingFused o_fix)
-  orig_s <- showM o_term
-  Fail.assert ("fixfix given non lambda floated outer fixed-point" 
-              ++ show o_fix ++ "\n" ++ show (Type.argumentTypes (Type.get o_fix))
-                ++ ", " ++ show (fst (flattenLam o_fix_t)))
-   -- . tracE [("fix-fix check", orig_s)]
-    $ Term.isLambdaFloated o_fix
-    
+  Assert.checkM
+    . Assert.augment "fixfix given non lambda floated outer fixed-point" 
+    $ Assert.bool (Term.isLambdaFloated o_fix)
   -- Pick the first one which does not fail
   new_t <- id
     . Fail.choose
@@ -236,22 +214,14 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
 
         gen_t = Term.reduce ctx_t [i_fix]
         full_t = Term.reduce ctx_t (i_fix : full_args)
-        
- --   gen_s <- showM full_t
-  --  gen_s' <- showM (Term.reduce old_ctx_t (i_fix : full_args))
-  --  ctx_s' <- showM old_ctx_t
-  --  ctx_s <- showM ctx_t
-   -- tracE [("fixfix on", gen_s), ("old gen", gen_s'), 
-    --       ("context", ctx_s), ("old context", ctx_s')]
-    Type.assertEqM "fix-fix created an incorrectly typed context" o_term full_t
+
+    Assert.checkM
+      . Assert.augment "fix-fix created an incorrectly typed context"
+      $ Type.assertEq o_term full_t
 
     History.check Name.FixFixFusion gen_t $ do
       new_fix <- fusion ctx_t i_fix
-      let new_term = app new_fix full_args
-      new_term' <- Transform.continue new_term
-      ts <- showM new_term'
-     -- trace ("\n\n[fixfix yielded]\n" ++ ts)
-      return new_term'
+      Transform.continue (app new_fix full_args)
     where
     
     i_term = o_args !! arg_i
@@ -343,15 +313,8 @@ decreasingFreeVar orig_t@(App fix@(Fix _ _ fix_t) args) = do
     . Assert.augment (printf "context term %s" ctx_t)
     $ Type.assertEq orig_t full_t
 
-  orig_s <- showM orig_t
-  ctx_s <- showM ctx_t
-  fix_s <- showM (Term.reduce ctx_t [expr_fix])
-  
   new_fix <- id
     . History.check Name.FreeArgFusion full_t
-    . tracE [ ("dec-free from", orig_s),
-              ("dec-free context", ctx_s),
-              ("dec-free expressed fix", fix_s) ]
     $ fusion ctx_t expr_fix
     
   Transform.continue (app new_fix args)
@@ -402,11 +365,7 @@ repeatedArg term@(App fix@(Fix _ fix_b fix_t) args) = do
   
   fuseRepeated :: [Int] -> m Term
   fuseRepeated arg_is = do
-    full_s <- showM full_t
-    orig_s <- showM term
-    ctx_s <- showM ctx_t
     new_fix <- id
-      . tracE [("rep-arg orig", orig_s), ("rep-arg ctx", ctx_s), ("rep-arg full", full_s)]
       . History.check Name.RepArgFusion full_t
       $ fusion ctx_t fix
       
@@ -434,7 +393,6 @@ matchFix term@(App fix@(Fix {}) xs)
   | not (any (isFix . leftmost) xs) =  do
     Fusion.checkEnabled
     cts <- Env.findConstraints usefulConstraint
-    ctss <- showM cts
     let ct_set = Set.fromList cts
     Fail.when (null cts)
     
@@ -446,13 +404,7 @@ matchFix term@(App fix@(Fix {}) xs)
       . Rewrite.applyM
       $ Constraint.removeAll term'
     Fail.unless (term'' Quasi.< term)
-    
-    ts <- showM term
-    ts' <- showM term''
-    trace ("\n\n[match fix from] "
-        ++ ts ++ "\n\n[context] " 
-        ++ ctss ++ "\n\n[to] " ++ ts') 
-        $ return term''
+    return term''
   where
   usefulConstraint :: Constraint -> Bool 
   usefulConstraint ct 
@@ -487,18 +439,9 @@ matchFix term@(App fix@(Fix {}) xs)
       
     Fail.assert "fix-match somehow generated a null set of matching variables" 
       $ length matched_is > 0
-      
-    m_s <- showM ct
-    ctx_s <- showM (Term.reduce ctx_t (ofix:new_args))
-    o_s <- showM oterm
     
-    Type.assertEqM 
-      ( "match-fix created an incorrectly typed context: " ++ ctx_s 
-        ++ "\nmatch term: " ++ m_s 
-        ++ "\ntarget term: " ++ o_s)
-      (app ctx_t (ofix:new_args)) oterm
-      
     fused_t <- id
+      . Assert.check (Type.assertEq (app ctx_t (ofix:new_args)) oterm)
       . History.check Name.MatchFixFusion full_t $ do
         new_fix <- fusion ctx_t ofix  
         let new_fix' 
@@ -561,20 +504,16 @@ accumulation orig_t@(App fix@(Fix {}) args) = do
   Fail.when (Term.beingFused fix)
   Fail.when (null acc_args)
   History.check Name.AccFusion orig_t $ do
-    arg_tys <- mapM Type.getM args
-    orig_s <- showM fix  
-  --  tracE [("acc args of", orig_s), ("are", show acc_args)]
     new_t <- Fail.choose (map (tryArg arg_tys) acc_args)
     Transform.continue new_t
   where
   acc_args = Term.accumulatingArgs fix
+  arg_tys = map Type.get args
   
   tryArg :: [Type] -> Nat -> m Term
   tryArg arg_tys arg_n = do
     Fail.when (isVar (leftmost acc_arg))
     Fail.unless (isSimple acc_arg)
-    ctx_s <- showM ctx_t
-    orig_s <- showM orig_t
     new_fix <- fusion ctx_t fix
     return (app new_fix (removeAt arg_n args))
     where
@@ -608,14 +547,8 @@ discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
     args <- findArgs from_f
     let from_t = Term.reduce from_f args
     Fail.when (orig_t Quasi.<= from_t)
-    from_s <- showM from_t   
-    args_s <- showM args
-    from_fs <- showM from_f
-    orig_s <- showM orig_t
-    to_s <- showM to_call
     fold_t <- id  
       . Fusion.forgetRewrites 
-   --    . tracE [("discovering for", orig_s), ("aiming for", from_s), ("from_f", from_fs), ("args", args_s)] 
       $ findFold from_t
     let new_t = App fold_t [App to_var args]
     return new_t
@@ -646,22 +579,16 @@ discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
       . generaliseProp
       . Leq orig_t' 
       $ Term.reduce fold_t (c_vars ++ [from_t'])
-    prop_s <- Env.bindMany c_bs (showM prop)
     prop' <- id
-      . Env.bindMany c_bs    
-      . tracE [("discovery prop (before)", prop_s)]       
+      . Env.bindMany c_bs       
       . Memo.memo Name.FoldDiscovery prop 
       . Direction.prover
       . Transform.continue
       $ Tag.map (const Tag.omega) prop
-    prop_s' <- Env.bindMany c_bs (showM prop')
-    unis <- id         
-      . tracE [("discovery prop", prop_s')]                      
+    unis <- id             
       . Env.trackOffsetT
       $ Fold.isoFoldM Term.branches solve prop'
-    uni_s <- Env.bindMany c_bs $ showM (map Map.toList unis)
     uni <- joinUnifiers unis
-    uni_s' <- Env.bindMany c_bs $ showM uni
     Fail.unless (Unifier.domain uni == c_var_set)
     
     hopefully_true <- id
@@ -671,10 +598,7 @@ discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
       . Unifier.apply uni 
       . ungeneraliseProp 
       $ prop'
-    t_s <- Env.bindMany c_bs $ showM (Unifier.apply uni $ ungeneraliseProp prop')
-    t_s' <- Env.bindMany c_bs (showM hopefully_true)
-    tracE [("hopefully true (before)", t_s), ("hopefully true", t_s')]
-      $ Fail.unless (hopefully_true == Term.truth)
+    Fail.unless (hopefully_true == Term.truth)
     
     return  
       . Indices.lowerMany (nlength c_vars)
@@ -784,24 +708,15 @@ discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
       . zipWith Unifier.find from_args 
       $ Indices.liftMany (nlength arg_bs) orig_args
     
-    from_s <- showM from_f
-    to_s <- showM orig_t
-    uni_s <- Env.bindMany arg_bs $ showM (Map.toList uni)
-    id
-     -- . tracE [("find-args from", from_s), ("find-args to", to_s), ("unifier", uni_s)]
-      $ Fail.unless (Unifier.domain uni == required_vars)  
+    Fail.unless (Unifier.domain uni == required_vars)  
       
     let uni_with_defaults = Map.union uni default_uni
         found_args = id
           . Indices.lowerMany (nlength arg_bs)
           . map (Unifier.apply uni_with_defaults)
           $ zipWith Var arg_vars (reverse arg_bs)
-    found_tys <- mapM Type.getM found_args
-    Fail.unless (found_tys == arg_tys)
-    args_s <- showM found_args
-    id
-     -- . tracE [("find-args args", args_s)]
-      $ return found_args
+    Fail.unless (map Type.get found_args == arg_tys)
+    return found_args
     where
     (arg_bs, from_t) = flattenLam from_f
     from_calls = Term.collect taggedFixCall from_t

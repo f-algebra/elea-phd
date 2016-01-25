@@ -8,10 +8,8 @@ import Elea.Prelude
 import Elea.Term
 import Elea.Term.Ext
 import Elea.Type
-import Elea.Show
 import Elea.Testing ( Test )
 import Elea.Monad.Fedd.Include ()
-import qualified Elea.Type as Type
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Unification as Unifier

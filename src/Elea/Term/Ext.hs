@@ -61,6 +61,7 @@ import Elea.Term
 import Elea.Type ( HasType )
 import qualified Elea.Prelude as Prelude
 import qualified Elea.Term.Index as Indices
+import qualified Elea.Type as Type
 import qualified Elea.Term.Constraint as Constraint
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Unification as Unifier
@@ -76,6 +77,7 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
 import qualified Control.Monad.Trans as Trans
+import qualified Text.Printf as Printf
 
 -- | A wrapper around 'Term' for the 'branchesOnly' isomorphism.
 newtype BranchesOnly = BranchesOnly { notBranchesOnly :: Term }
@@ -450,7 +452,7 @@ generaliseArgs (App func args) run = do
   makeBind n
     | Var x _ <- args !! n = Env.boundAt x
   makeBind n = do
-    ty <- Type.getM (args !! n)
+    let ty = Type.get (args !! n)
     let name = "_" ++ show ty
     return (Bind name ty)
   
@@ -493,7 +495,7 @@ generaliseTerms (toList -> terms) target run
   makeBind n
     | Var x _ <- terms !! n = Env.boundAt x
   makeBind n = do
-    ty <- Type.getM (terms !! n)
+    let ty = Type.get (terms !! n)
     let name = "_" ++ show ty
     return (Bind name ty)
   
@@ -516,13 +518,12 @@ generaliseUninterpreted target =
 -- | Construct an n-tuple of the given terms. Needs to read the type of the
 -- terms so it can construct the appropriate n-tuple type for
 -- the constructor.
-tuple :: (Defs.Read m, Env.Read m) => [Term]-> m Term
+tuple :: [Term]-> Term
 tuple ts
-  | length ts > 1 = do
-    ind <- id
-      . liftM Type.tuple
-      $ mapM Type.getM ts
-    return (app (Con (Tag.with Tag.null (Type.Constructor ind 0 []))) ts)
+  | length ts > 1 =
+    app (Con (Tag.with Tag.null (Type.Constructor ind 0 []))) ts
+  where 
+  ind = Type.tuple (map Type.get ts)
  
     
 -- | Take a free variable of a fixpoint and express it as a new first argument
@@ -899,9 +900,8 @@ buildContext arg_i (App fix@(Fix _ fix_b fix_t) args) = do
   getArgBind _ (Var x _) = 
     -- TODO can replace with new bind + assertion
     Env.boundAt x
-  getArgBind n t = do
-    ty <- Type.getM t
-    return (Bind ("x" ++ show n) ty)
+  getArgBind n t =
+    return (Bind ("x" ++ show n) (Type.get t))
   
   unify_me = id
     . map (map snd)
@@ -943,12 +943,13 @@ buildContext arg_i (App fix@(Fix _ fix_b fix_t) args) = do
     full_c = fix_c + arg_c
     
 
-buildCase :: Env.Read m => Term -> Term -> m Term
-buildCase match_t branch_t = do
-  Type.Base match_ind <- Type.getM match_t
-  let cons = Type.constructors match_ind
-  return (Case match_t (map buildAlt cons))
+buildCase :: Term -> Term -> Term
+buildCase match_t branch_t =
+  Case match_t (map buildAlt cons)
   where
+  Type.Base match_ind = Type.get match_t
+  cons = Type.constructors match_ind
+
   buildAlt :: Constructor -> Alt
   buildAlt con = 
     Alt tcon bs (Indices.liftMany (nlength bs) branch_t)
@@ -1050,6 +1051,26 @@ assertValidRewrite from to = id
 showBinds :: [Bind] -> String
 showBinds = intercalate " " . map show
 
+renameBind :: Env.Read m => Bind -> m Bind
+renameBind bind = do
+  all_binds <- Env.bindings
+  let same_label_count = id
+        . length
+        . filter ((== this_label) . get Type.bindLabel) 
+        $ all_binds
+      new_label 
+        | same_label_count > 0 = printf "%s%d" this_label same_label_count
+        | otherwise = this_label
+  return (modify (set Type.bindLabel new_label) bind)
+  where
+  this_label = get Type.bindLabel bind
+
+renameBinds :: Env.Read m => [Bind] -> m [Bind]
+renameBinds [] = return []
+renameBinds (b : bs) = do
+  b' <- renameBind b
+  Env.bind 
+
 showTermBracketedM :: Env.Read m => Term -> m String
 showTermBracketedM term = do
   term_s <- showTermM term
@@ -1071,9 +1092,9 @@ showTermM :: Env.Read m => Term -> m String
 showTermM (Con c) = return (show c)
 showTermM Fix { fixInfo = fix_info}
   | Just fix_name <- get fixName fix_info = return fix_name
-showTermM Var { binding = bind } = do
-  all_bindings <- Env.bindings
-  return (printf "%s[%s]" (show (get Type.bindLabel bind)) (show all_bindings))
+showTermM Var { varIndex = var_index } = do
+  b <- Env.boundAt var_index
+  return (printf "%s" (get Type.bindLabel b))
 
 showTermM (Leq x y) = do
   x_s <- showTermBracketedM x
@@ -1119,11 +1140,23 @@ showAltM (Alt tcon bs t) = do
   bind_names = intercalate " " (map (get Type.bindLabel) bs)
 
 instance Show Term where
-  show term =
-    runReader (showTermM term) var_binds
-    where
-    free_vars = freeVars term
-    var_binds = map binding free_vars
+  show = runShowTerm showTermM
+
+runShowTerm :: (Term -> Reader [Bind] String) -> Term -> String
+runShowTerm runM term = 
+  runReader (runM term) var_binds
+  where
+  free_vars = freeVars term
+  var_binds = map binding free_vars
+
 
 instance PrintfArg Term where
-  formatArg = formatArg . show
+  formatArg term fmt rest = 
+    case Printf.fmtChar fmt of 
+      's' -> show term ++ rest
+      'b' -> runShowTerm showTermBracketedM term ++ rest
+      'n' -> runShowTerm showTermNewlineM term ++ rest
+
+instance Show Prop where
+  show (Prop name term) = 
+    printf "prop %s %s" name (show term)

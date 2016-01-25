@@ -9,7 +9,6 @@ module Main
 where
 
 import Elea.Prelude hiding ( run )
-import Elea.Show ( showM )
 import Text.Printf
 import System.CPUTime
 import System.Environment ( getArgs, withArgs )
@@ -18,7 +17,7 @@ import qualified Elea.Testing as Test
 import qualified Elea.Monad.Fedd.Include as Fedd
 import qualified Elea.Tests.All as Tests
 import qualified Elea.Term.Ext as Term
-import qualified Elea.Type.Ext as Type
+import qualified Elea.Type as Type
 import qualified Elea.Transform.Fusion as Fusion
 import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.Fedd as Fedd
@@ -52,9 +51,8 @@ applyM term_def = do
   Fedd.loadPrelude
   term <- Test.term term_def
   (term', steps_taken) <- Steps.listen (Fusion.applyM term)
-  term_s <- showM term'
-  ty_s <- liftM show (Type.getM term')
-  return ("\n" ++ term_s ++ "\n\n: " ++ ty_s ++ "\n\n in " ++ show steps_taken ++ " steps")
+  return 
+    $ printf "\n%s\n\n:%s\n\nin %d steps" term' (Type.get term') steps_taken
     
 apply :: String -> IO ()
 apply term_def = time $ do

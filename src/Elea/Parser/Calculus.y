@@ -339,8 +339,7 @@ program text =
     localTypeArgs ty_args $ do
       bs <- mapM parseRawBind rbs
       t <- Env.bindMany bs (parseAndCheckTerm rt)
-      ty <- Type.getM t
-      let t' | Type.returnType ty == Type.bool = Term.Leq t (Term.true)
+      let t' | Type.returnType (Type.get t) == Type.bool = Term.Leq t (Term.true)
              | otherwise = t
       return (Prop name (unflattenLam bs t'))
   
@@ -458,7 +457,7 @@ parsePattern ind (con_lbl : var_lbls)
 parseRawTerm :: RawTerm -> ParserMonad m Term
 parseRawTerm (TTuple rts) = do
   ts <- mapM parseRawTerm rts
-  Term.tuple ts
+  return (Term.tuple ts)
 parseRawTerm (TFold raw_ty) = do
   ty <- parseRawType raw_ty
   case ty of
@@ -503,12 +502,12 @@ parseRawTerm (TLet name rt1 rt2) = do
   localDef name t1 (parseRawTerm rt2)
 parseRawTerm (TAssert pat ron_t rin_t) = do
   on_t <- parseRawTerm ron_t
-  on_ty@(Type.Base ind) <- Type.getM on_t
+  let on_ty@(Type.Base ind) = Type.get on_t
   (con_n, var_bs) <- parsePattern ind pat'
   let Ind _ _ ty_args = ind
   tcon <- Tag.tag (Constructor ind con_n ty_args)
   in_t <- Env.bindMany var_bs (parseRawTerm rin_t)
-  in_ty <- Env.bindMany var_bs (Type.getM in_t)
+  let in_ty = Type.get in_t
   let ct = Term.matchFromConstructor tcon on_t
   return (Constraint.apply in_ty ct in_t)
   where
@@ -517,7 +516,7 @@ parseRawTerm (TAssert pat ron_t rin_t) = do
   
 parseRawTerm (TCase rt ralts) = do
   t <- parseRawTerm rt
-  ind_ty <- Type.getM t
+  let ind_ty = Type.get t
   alts <- mapM (parseRawAlt ind_ty) ralts
   let alts' = map snd (sortBy (compare `on` fst) alts)
   return (Case t alts')

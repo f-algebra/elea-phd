@@ -61,11 +61,9 @@ assertEq msg x y = Trans.lift (HUnit.assertEqual msg x y)
 
 assertTermEq :: String ->Term -> Term -> M ()
 assertTermEq msg (stripTags -> t1) (stripTags -> t2) = do
-  t1s <- showM t1
-  t2s <- showM t2
   let msg' | null msg = ""
            | otherwise = printf "[%s]\n" msg
-  let prop_s = printf "%sexpected: %s\nbut got: %s" msg' t1s t2s
+  let prop_s = printf "%sexpected: %s\nbut got: %s" msg' t1 t2
   assertEq prop_s t1 t2
 
 assertSimpEq :: String -> Term -> Term -> M ()

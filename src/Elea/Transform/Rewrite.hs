@@ -15,7 +15,7 @@ import Elea.Unification ( Unifier )
 import qualified Elea.Foldable as Fold
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Ext as Term
-import qualified Elea.Type.Ext as Type
+import qualified Elea.Type as Type
 import qualified Elea.Term.Constraint as Constraint
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.History as History
@@ -34,6 +34,7 @@ import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.StepCounter as Steps
 import qualified Elea.Monad.Memo.Class as Memo
+import qualified Elea.Monad.Error.Assertion as Assert
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -98,15 +99,9 @@ rewrite term@(App {}) = do
   apply :: Term -> (Term, Term) -> m Term
   apply term (from_t, h) = do
     ms <- Env.matches
-    term_s <- showM term
     args <- Term.findConstrainedArgs from_t term
     Fail.when (any isFinite args)
-    args_s <- showM args
-    return
-  --    . trace ("\n\n[unifying] " ++ term_s
-    --   ++ "\n\n[with] " ++ show from_t 
-     --  ++ "\n\n[gives] " ++ args_s) 
-      $ app h args
+    return (app h args)
   
 rewrite _ = Fail.here
 
@@ -117,8 +112,6 @@ matchVar term@(App fix@(Fix {}) xs) = do
   Direction.requireInc  
   [(from_f, to_f)] <- Fusion.findTags (Set.singleton tag)
   let from_t = snd (flattenLam from_f)
-  from_s <- showM from_f
-  t_s <- showM term
   id 
   --  . tracE [("match-var from", from_s), ("match-var with", t_s)]
     $ Fail.unless (Term.beingFused (leftmost from_t))
@@ -133,9 +126,10 @@ matchVar term@(App fix@(Fix {}) xs) = do
   tryMatch (App _ xs') arg_i = do
     Fail.unless (isCon (leftmost (xs' !! arg_i)))
     Fail.unless (isVar (xs !! arg_i))
-    new_t <- Term.buildCase (xs !! arg_i) term
     History.check Name.MatchVar new_t
       $ Transform.continue new_t
+    where
+    new_t = Term.buildCase (xs !! arg_i) term
     
 matchVar _ = Fail.here
 
@@ -182,25 +176,15 @@ expressConstructor :: forall m . Step m => Term -> m Term
 expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
   Fail.when (Tag.tags term == Set.singleton Tag.omega) 
   Fail.when (Set.null suggestions)
-  
-  ts <- showM fix
-  sug_s <- showM (Set.toList suggestions)
-  ctx_s <- Env.bind fix_b $ showM (sugg_ctxs)
-  sugg_tys <- id
-    -- . tracE [("con-fission input", ts), ("con-fission suggestions", ctx_s)]
-    $ mapM Type.getM (Set.toList suggestions)
   Fail.assert "express-constructor suggestions not correctly typed"
     $ all (== sugg_ty) sugg_tys
    -- ^ Check all the suggestions are correctly typed
     
   fix' <- id
     . Fail.choose 
-    -- . trace ("\n\n[expr-con] " ++ ts ++ "\n\n[suggested] " ++ suggs)
     . map express 
     $ toList suggestions
-    
-  -- ts' <- showM (Eval.run (app fix' args))
-    
+
   term' <- id
     . History.check Name.ExpressCon fix
     . Transform.continue
@@ -214,6 +198,7 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
   gap_b = Bind "gap" term_ty 
   term_ty = Type.get term
   sugg_ty = Type.Fun term_ty term_ty
+  sugg_tys = map Type.get (Set.toList suggestions)
   
   sugg_ctxs = id
     . map suggestionToContext 
@@ -387,16 +372,11 @@ finiteCaseFix term@(Case cse_t@(App fix@(Fix _ _ fix_t) args) alts) = do
   Fail.unless (all finiteAlt alts)
  
   History.memoCheck Name.FiniteCaseFix term $ do
-    ts <- showM term
     term' <- id
       . Transform.continue 
-     -- . trace ("\n\n[unfold finite] " ++ ts)
       $ Case (Term.reduce (Term.unfoldFix fix) args) alts
     -- standard progress check
-    ts' <- showM term'
-    Fail.when 
-      -- . trace ("\n\n[finite yield] " ++ ts')
-      $ term Quasi.<= term'
+    Fail.when (term Quasi.<= term')
     return term'
   where  
   cse_ind = Type.fromBase (Type.get cse_t)
@@ -421,40 +401,24 @@ expressAccumulation fix@(Fix fix_i fix_b fix_t) = do
   Fail.unless (acc_idx `Indices.freeWithin` acc_t)  
   Fail.unless (Fold.any isCase body_t) 
   Fail.when (isVar acc_t)
-  ctx_s <- showM ctx_t
-  fix_s <- showM fix
-  acc_ty <- Type.getM acc_t
-  let acc_b = Bind "acc" acc_ty
+  let acc_b = Bind "acc" (Type.get acc_t)
       trans_t =
         Indices.replaceAt (elength arg_bs) 
           (Term.reduce ctx_t_here [fun_var])
           body_t
-  Env.bindMany (fix_b : arg_bs)
-    $ Type.assertEqM "expressAccumulation" body_t trans_t
   simp_t <- id
+    . Assert.check (Type.assertEq body_t trans_t)
     . Env.bindMany (fix_b : arg_bs) 
     $ Transform.continue trans_t
   let replaced_t = Term.replace acc_t (Var Indices.omega acc_b) simp_t
-  simp_s <- Env.bindMany (fix_b : arg_bs) $ showM simp_t
-  acc_var <- Env.bindMany (fix_b : arg_bs) $ showM (Var acc_idx acc_b)
-  trans_s <- Env.bindMany (fix_b : arg_bs) $ showM trans_t
-  repl_s <- Env.bindMany (fix_b : arg_bs) $ showM replaced_t
-  id
-   . tracE [ ("acc-fission for", fix_s)
-        , ("acc-fission context", ctx_s)
-        , ("acc-fission substituted", trans_s)
-        , ("acc-fission simplified", simp_s)
-        , ("acc-fission replaced", repl_s)
-        , ("acc-fission variable", acc_var) ] 
-    $ Fail.when (acc_idx `Indices.freeWithin` replaced_t)
+  Fail.when (acc_idx `Indices.freeWithin` replaced_t)
   let new_fix = id
         . Fix fix_i fix_b 
         . unflattenLam arg_bs
         . Indices.replaceAt Indices.omega (Var acc_idx acc_b)
         $ replaced_t
   let final_t = Term.reduce ctx_t [new_fix]
-  final_s <- showM final_t
-  tracE [("acc-fission result", final_s)] $ return final_t
+  return final_t
   where
   acc_args = Term.accumulatingArgs fix
   [arg_n] = acc_args

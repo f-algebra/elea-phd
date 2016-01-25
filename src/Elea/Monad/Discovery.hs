@@ -53,20 +53,19 @@ listenerT = liftM (second EqSet.toList) . runWriterT . runListenerT
 listener :: Listener a -> (a, [Prop])
 listener = runIdentity . listenerT
 
-trace :: forall m a . (Defs.Read m, Env.Read m, Listens m) 
+trace :: forall m a . Listens m
   => m a -> m a
 trace run = do
   (x, eqs) <- listen run
   if null eqs
   then return x
-  else id
+  else return
     . Prelude.trace "[Discovered Equations]"
-    $ foldrM traceEq x eqs
+    $ foldr traceEq x eqs
   where
-  traceEq :: Prop -> a -> m a
-  traceEq eq x = do
-    eq_s <- showM eq
-    Prelude.trace ("\n" ++ eq_s) (return x)
+  traceEq :: Prop -> a -> a
+  traceEq eq x =
+    Prelude.trace ("\n" ++ show eq) x
     
 mapListenerT :: Monad m 
   => (m (a, EqSet) -> n (b, EqSet)) 

@@ -9,7 +9,7 @@ where
 import Elea.Prelude hiding ( run )
 import Elea.Term
 import qualified Elea.Term.Ext as Term
-import qualified Elea.Type.Ext as Type
+import qualified Elea.Type as Type
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Term.Constraint as Constraint
@@ -19,6 +19,7 @@ import qualified Elea.Unification as Unifier
 import qualified Elea.Transform.Names as Name
 import qualified Elea.Transform.Evaluate as Eval
 import qualified Elea.Foldable as Fold
+import qualified Elea.Monad.Error.Assertion as Assert
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Definitions as Defs
@@ -138,8 +139,6 @@ constArg term@(App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
     
     -- Run evaluation to reduce all the new lambdas
     let term' = Term.reduce fix' args'
-    ts <- showM term
-    ts' <- showM term'
     Transform.continue term' 
   where
   arg_idxs = Term.constantArgs fix ++ Term.unusedArgs fix
@@ -367,9 +366,9 @@ floatVarMatch term@(Case (App fix@(Fix {}) xs) _)
   , (not . null) useful_ms =
     History.check Name.FloatVarMatch term $ do
       let term' = Term.applyCases useful_ms term
-      Type.assertEqM "float var match invalidated type" term term'
-      Transform.continue term'
-  where   
+      Assert.check (Type.assertEq term term')
+        $ Transform.continue term'
+  where
   dec_xs = map (xs !!) (Term.decreasingArgs fix) 
   dec_ixs = (Set.fromList . map fromVar . filter isVar) dec_xs
   
@@ -395,7 +394,6 @@ unfoldCase :: Step m => Term -> m Term
 unfoldCase term@(Case (flattenApp -> fix@(Fix {}) : xs) alts)
   | assert_fun || only_prod  =
     History.check Name.UnfoldCase term $ do
-      ts <- showM term
       let term' = Case (Term.reduce (Term.unfoldFix fix) xs) alts
       term'' <- Transform.continue term'
       Fail.when (term Quasi.<= term'')

@@ -14,7 +14,7 @@ where
 import Elea.Prelude
 import Elea.Term.Index
 import Elea.Term
-import qualified Elea.Type.Ext as Type
+import qualified Elea.Type as Type
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Monad.Env as Env

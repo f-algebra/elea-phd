@@ -10,6 +10,7 @@ where
 import Elea.Prelude hiding ( toList, null )
 import Elea.Term
 import Elea.Monad.Env ()
+import qualified Elea.Term.Ext as Term
 import qualified Elea.Unification.Map as UMap
 import qualified Elea.Prelude as Prelude
 
