@@ -1,5 +1,5 @@
 EXTS = -XStandaloneDeriving -XNoImplicitPrelude -XTemplateHaskell -XTypeOperators -XFunctionalDependencies -XGADTs -XMultiParamTypeClasses -XFlexibleContexts -XFlexibleInstances -XScopedTypeVariables -XTypeSynonymInstances -XViewPatterns -XTypeFamilies -XBangPatterns -XDeriveFunctor -XDeriveFoldable -XDeriveTraversable -XRecursiveDo -XRankNTypes -XGeneralizedNewtypeDeriving -XConstraintKinds
-FLAGS = -package ghc -O -cpp -hidir obj -odir obj -isrc -itest 
+FLAGS = -package ghc -cpp -hidir obj -odir obj -isrc -itest 
 MAIN = src/Main.hs
 
 .PHONY : ghci happy clean

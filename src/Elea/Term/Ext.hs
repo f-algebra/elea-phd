@@ -1051,25 +1051,36 @@ assertValidRewrite from to = id
 showBinds :: [Bind] -> String
 showBinds = intercalate " " . map show
 
-renameBind :: Env.Read m => Bind -> m Bind
-renameBind bind = do
+captureAvoidingBind :: Env.Read m => Bind -> m a -> m (a, Bind)
+captureAvoidingBind bind run = do
   all_binds <- Env.bindings
-  let same_label_count = id
-        . length
-        . filter ((== this_label) . get Type.bindLabel) 
-        $ all_binds
-      new_label 
-        | same_label_count > 0 = printf "%s%d" this_label same_label_count
-        | otherwise = this_label
-  return (modify (set Type.bindLabel new_label) bind)
+  let new_label = nonClashingLabel all_binds
+      new_bind = set Type.bindLabel new_label bind
+  x <- Env.bind new_bind run
+  return (x, new_bind)
   where
-  this_label = get Type.bindLabel bind
+  bind_label = get Type.bindLabel bind
 
-renameBinds :: Env.Read m => [Bind] -> m [Bind]
-renameBinds [] = return []
-renameBinds (b : bs) = do
-  b' <- renameBind b
-  Env.bind 
+  nonClashingLabel :: [Bind] -> String
+  nonClashingLabel binds = id
+    . fromJust
+    . find (not . clashing)
+    $ map superscript [0..]
+    where
+    used_labels = map (get Type.bindLabel) binds
+
+    superscript :: Int -> String
+    superscript 0 = bind_label
+    superscript n = printf "%s%d" bind_label n
+
+    clashing :: String -> Bool
+    clashing label = any (== label) used_labels
+
+captureAvoidingBindMany :: Env.Read m => [Bind] -> m a -> m (a, [Bind])
+captureAvoidingBindMany [] m = liftM (\x -> (x, [])) m
+captureAvoidingBindMany (b : bs) m = do
+  ((x, bs'), b') <- captureAvoidingBind b (captureAvoidingBindMany bs m)
+  return (x, b' : bs')
 
 showTermBracketedM :: Env.Read m => Term -> m String
 showTermBracketedM term = do
@@ -1107,14 +1118,14 @@ showTermM (Seq x y) = do
   y_s <- showTermBracketedM y
   return (printf "seq %s %s" x_s y_s)
 showTermM (Fix inf b t) = do
-  body_s <- Env.bindMany (b : bs) (showTermNewlineM body_t)
-  return (printf "fix %s -> %s" (showBinds (b: bs)) body_s)
+  (body_s, nonclashing_bs) <- captureAvoidingBindMany (b : bs) (showTermNewlineM body_t)
+  return (printf "fix %s -> %s" (showBinds nonclashing_bs) body_s)
   where
   (bs, body_t) = flattenLam t
 
 showTermM t@Lam{} = do
-  body_s <- Env.bindMany bs (showTermNewlineM body_t)
-  return (printf "fun %s -> %s" (showBinds bs) body_s)
+  (body_s, nonclashing_bs) <- captureAvoidingBindMany bs (showTermNewlineM body_t)
+  return (printf "fun %s -> %s" (showBinds nonclashing_bs) body_s)
   where
   (bs, body_t) = flattenLam t
 
@@ -1146,7 +1157,7 @@ runShowTerm :: (Term -> Reader [Bind] String) -> Term -> String
 runShowTerm runM term = 
   runReader (runM term) var_binds
   where
-  free_vars = freeVars term
+  free_vars = sortBy (compare `on` varIndex) (Set.toList (freeVarSet term))
   var_binds = map binding free_vars
 
 
