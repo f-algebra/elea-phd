@@ -28,6 +28,7 @@ import qualified Elea.Monad.StepCounter as Steps
 import qualified Control.Monad.RWS.Strict as RWS
 import qualified Control.Monad.State.Class as State
 import qualified Control.Monad.Writer.Class as Writer
+import qualified Control.Monad.Trans.Class as Trans
 import qualified Data.Nat as Nat
 
 type Fedd = FeddT Identity
@@ -180,3 +181,6 @@ instance Monad m => Steps.Limiter (FeddT m) where
     return ret_val
 
   remaining = State.gets (get fsStepsRemaining)
+
+instance MonadIO m => MonadIO (FeddT m) where
+  liftIO = Trans.lift . liftIO

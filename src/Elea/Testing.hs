@@ -12,6 +12,7 @@ module Elea.Testing
   assertBool,
   assertEq,
   localVars,
+  printTimeTaken,
   module Test.HUnit
 ) 
 where
@@ -21,6 +22,7 @@ import Elea.Term
 import Elea.Type hiding ( get, assertEq )
 import Elea.Monad.Fedd ( FeddT )
 import Test.HUnit ( Test, assertFailure )
+import Control.Exception ( catch, SomeException )
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Monad.Fedd.Include as Fedd
@@ -35,6 +37,7 @@ import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Memo.Class as Memo
 import qualified Test.HUnit as HUnit
 import qualified Control.Monad.Trans.Class as Trans
+import qualified System.CPUTime as System
 
 type M = FeddT IO
 
@@ -42,6 +45,8 @@ test :: String -> M () -> Test
 test label = id
   . HUnit.TestLabel label 
   . HUnit.TestCase 
+  . flip catch (\(e :: SomeException) -> assertFailure (show e))
+  -- ^ Not sure why this isn't built in
   . Fedd.evalT
 
 label :: String -> Test -> Test
@@ -106,3 +111,12 @@ localVars bs_s run = do
     Defs.defineTerm lbl p_term
     where
     p_term = polymorphic [] (const (Var (enum idx) b))
+
+printTimeTaken :: MonadIO m => String -> m a -> m a
+printTimeTaken run_name run = do
+  time_before <- liftIO System.getCPUTime
+  result <- run
+  time_after <- liftIO System.getCPUTime
+  let time_diff_ms = (time_after - time_before) `div` (10 ^ 9)
+  liftIO $ putStrLn $ printf "%s took %dms" run_name time_diff_ms
+  return result

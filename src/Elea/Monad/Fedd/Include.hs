@@ -41,8 +41,7 @@ evalWithPrelude =
 instance Read Term where
   readsPrec _ term_def = id
     -- Seems like a decent enough place to check that "read . show == id"
-    -- TODO get this check working
-   -- . Assert.assertEq "read . show == id" term (readTerm (show term))
+    . Assert.assertEq "read . show == id" term (readTerm (show term))
     $ [(term, "")]
     where
     readTerm = evalWithPrelude . Err.noneM . Parse.term

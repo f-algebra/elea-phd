@@ -44,7 +44,7 @@ main = do
         TestFramework.defaultMainWithArgs tests (tail args)
 
 test :: IO ()
-test = withArgs ["test"] main
+test = withArgs ["test", "--plain"] main
 
 applyM :: String -> Test.M String
 applyM term_def = do
