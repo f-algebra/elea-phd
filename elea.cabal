@@ -64,5 +64,5 @@ executable elea
                       keys >=3,
                       lattices >=1,
                       test-framework-hunit >= 0.3,
-                      test-framework >= 0.8
+                      test-framework >= 0.8,
                       boxes >= 0.1.4
