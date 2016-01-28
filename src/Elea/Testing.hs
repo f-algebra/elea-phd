@@ -12,7 +12,8 @@ module Elea.Testing
   assertBool,
   assertEq,
   localVars,
-  printTimeTaken,
+  recordTimeTaken,
+  printTestTimes,
   module Test.HUnit
 ) 
 where
@@ -37,9 +38,15 @@ import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Memo.Class as Memo
 import qualified Test.HUnit as HUnit
 import qualified Control.Monad.Trans.Class as Trans
+import qualified Data.IORef as Data
 import qualified System.CPUTime as System
+import qualified Text.PrettyPrint.Boxes as Box
 
 type M = FeddT IO
+
+{-# NOINLINE testTimes #-}
+testTimes :: Data.IORef [(String, Integer)]
+testTimes = unsafePerformIO (Data.newIORef [])
 
 test :: String -> M () -> Test
 test label = id
@@ -112,11 +119,23 @@ localVars bs_s run = do
     where
     p_term = polymorphic [] (const (Var (enum idx) b))
 
-printTimeTaken :: MonadIO m => String -> m a -> m a
-printTimeTaken run_name run = do
+recordTimeTaken :: MonadIO m => String -> m a -> m a
+recordTimeTaken run_name run = do
   time_before <- liftIO System.getCPUTime
   result <- run
   time_after <- liftIO System.getCPUTime
   let time_diff_ms = (time_after - time_before) `div` (10 ^ 9)
-  liftIO $ putStrLn $ printf "%s took %dms" run_name time_diff_ms
+  liftIO 
+    $ Data.atomicModifyIORef' testTimes 
+    $ \msgs -> (msgs ++ [(run_name, time_diff_ms)], ())
   return result
+
+printTestTimes :: IO ()
+printTestTimes = do
+  msgs <- Data.atomicModifyIORef' testTimes 
+            $ \msgs -> ([], msgs)
+  let (keys, vals) = unzip msgs
+  putStrLn "\n<Test times>"
+  Box.printBox (vbox keys Box.<+> vbox (map (printf "%dms") vals))
+  where
+  vbox = Box.vcat Box.top . map Box.text

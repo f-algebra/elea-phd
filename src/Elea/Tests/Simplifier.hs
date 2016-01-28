@@ -18,7 +18,7 @@ testProp prop_name = id
   . Test.testWithPrelude prop_name $ do
     all_props <- Test.loadFile properties_file
     let Just (Prop _ prop_t) = find ((== prop_name) . get propName) all_props
-    prop_t' <-Test.printTimeTaken prop_name (Prover.run prop_t)
+    prop_t' <-Test.recordTimeTaken prop_name (Prover.run prop_t)
     Test.assertTermEq "" truth prop_t'
   
 tests :: IO Test

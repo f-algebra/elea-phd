@@ -25,6 +25,8 @@ import qualified Elea.Monad.StepCounter as Steps
 import qualified Data.Poset as Quasi
 import qualified Test.Framework as TestFramework
 import qualified Test.Framework.Providers.HUnit as TestFramework
+import qualified Control.Exception as Control
+
 
 time :: IO t -> IO t
 time a = do
@@ -37,14 +39,21 @@ time a = do
     
 main :: IO ()
 main = do
-  args <- getArgs
-  case head args of
-      "test" -> do
-        tests <- liftM TestFramework.hUnitTestToTests Tests.all
-        TestFramework.defaultMainWithArgs tests (tail args)
+  Control.finally runTests Test.printTestTimes
+  where
+  runTests = do
+    args <- getArgs
+    case head args of
+        "test" -> do
+          tests <- liftM TestFramework.hUnitTestToTests Tests.all
+          TestFramework.defaultMainWithArgs tests (tail args)
+
+  printMessages = do
+    putStrLn "Test runtimes"
+
 
 test :: IO ()
-test = withArgs ["test", "--plain"] main
+test = withArgs ["test"] main
 
 applyM :: String -> Test.M String
 applyM term_def = do
