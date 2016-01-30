@@ -56,15 +56,13 @@ test :: IO ()
 test = withArgs ["test"] main
 
 applyM :: String -> Test.M String
-applyM term_def = do
-  Fedd.loadPrelude
-  term <- Test.term term_def
-  (term', steps_taken) <- Steps.listen (Fusion.applyM term)
+applyM (read -> term) = do
+  term' <- Fusion.applyM term
   return 
-    $ printf "\n%s\n\n:%s\n\nin %d steps" term' (Type.get term') steps_taken
+    $ printf "\n%s\n\n:%s" term' (Type.get term')
     
 apply :: String -> IO ()
-apply term_def = time $ do
+apply term_def = do
   result <- Fedd.evalT (applyM term_def)
   putStrLn result
 

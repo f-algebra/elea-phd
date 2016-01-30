@@ -14,6 +14,7 @@ module Elea.Testing
   localVars,
   recordTimeTaken,
   printTestTimes,
+  withEnv,
   module Test.HUnit
 ) 
 where
@@ -98,10 +99,10 @@ loadPropertyNamesFromFile file_name = do
     loadFile file_name
   return (map (get propName) all_props)
 
-term :: (Tag.Gen m, Defs.Has m, Env.Read m) => String -> m Term
-term = Err.noneM . Parse.term
+term :: Monad m => String -> m Term
+term = return . read
 
-simplifiedTerm :: (Tag.Gen m, Defs.Has m, Env.Read m) => String -> m Term
+simplifiedTerm :: Monad m => String -> m Term
 simplifiedTerm = liftM Simp.apply . term
 
 _type :: (Tag.Gen m, Defs.Has m) => String -> m Type
@@ -139,3 +140,7 @@ printTestTimes = do
   Box.printBox (vbox keys Box.<+> vbox (map (printf "%dms") vals))
   where
   vbox = Box.vcat Box.top . map Box.text
+
+withEnv :: String -> [String] -> [Term]
+withEnv env_str =
+  map (\t -> read (printf "env %s in (%s)" env_str t)) 

@@ -40,12 +40,17 @@ evalWithPrelude =
 
 instance Read Term where
   readsPrec _ term_def = id
-    -- Seems like a decent enough place to check that "read . show == id"
-    . Assert.assertEq "read . show == id" term (readTerm (show term))
+    -- Seems like a decent enough place to check that 
+    -- "read . show" and "show . read" are idempotent
+    . Assert.assertEq "(read . show) is idempotent" (read_show term) (read_show (read_show term))
+    . Assert.assertEq "(show . read) is idempotent" (show_read term_def) (show_read (show_read term_def))
     $ [(term, "")]
     where
     readTerm = evalWithPrelude . Err.noneM . Parse.term
     term = readTerm term_def
+    read_show = readTerm . show
+    show_read = show . readTerm
+    
 
 instance Read Type where
   readsPrec _ type_def = id

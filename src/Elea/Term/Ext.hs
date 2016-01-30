@@ -1049,7 +1049,15 @@ assertValidRewrite from to = id
 
 
 showBinds :: [Bind] -> String
-showBinds = intercalate " " . map show
+showBinds = id
+  . intercalate " " 
+  . map showGroup
+  . groupBy ((==) `on` get Type.bindType)
+  where
+  showGroup binds = printf "(%s: %s)" (intercalate " " labels) (show _type)
+    where
+    labels = map (get Type.bindLabel) binds
+    _type = get Type.bindType (head binds)
 
 captureAvoidingBind :: Env.Read m => Bind -> m a -> m (a, Bind)
 captureAvoidingBind bind run = do
@@ -1131,7 +1139,7 @@ showTermM t@Lam{} = do
 
 showTermM (App func args) = do
   func_s <- showTermBracketedM func
-  args_s <- mapM showTermM args
+  args_s <- mapM showTermBracketedM args
   return 
     $ printf "%s %s" func_s (intercalate " " args_s)
 
@@ -1145,7 +1153,7 @@ showTermM (Case cse_t alts) = do
 showAltM :: Env.Read m => Alt -> m String
 showAltM (Alt tcon bs t) = do
   t_s <- Env.bindMany bs (showTermNewlineM t)
-  return (printf "| %s %s -> %s" con_without_ty_args bind_names t_s)
+  return (printf "\n| %s %s -> %s" con_without_ty_args bind_names t_s)
   where
   con_without_ty_args = fmap (set Type.constructorTyArgs []) tcon
   bind_names = intercalate " " (map (get Type.bindLabel) bs)
@@ -1154,11 +1162,27 @@ instance Show Term where
   show = runShowTerm showTermM
 
 runShowTerm :: (Term -> Reader [Bind] String) -> Term -> String
-runShowTerm runM term = 
-  runReader (runM term) var_binds
+runShowTerm runM term 
+  | null free_vars = term_str
+  | otherwise = printf "env %s in %s" (showBinds new_binds') term_str
   where
-  free_vars = sortBy (compare `on` varIndex) (Set.toList (freeVarSet term))
-  var_binds = map binding free_vars
+  free_vars = Set.toDescList (freeVarSet term)
+  complete_var_binds 
+    | null free_vars = []
+    | otherwise = map binding complete_vars
+    where
+    complete_vars = map varAtIndex (reverse [0..enum max_free_var])
+    max_free_var = varIndex (head free_vars)
+
+  varAtIndex idx
+    | Just var <- find ((== idx) . varIndex) free_vars = var
+    | otherwise = Var idx (Bind "__temp__" empty)
+
+  (term_str, new_binds) = id
+    . flip runReader []
+    . captureAvoidingBindMany complete_var_binds 
+    $ runM term
+  new_binds' = filter ((/= empty) . get Type.bindType) new_binds
 
 
 instance PrintfArg Term where

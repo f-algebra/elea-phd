@@ -20,6 +20,8 @@ executable elea
   hs-source-dirs:     src
   main-is:            Main.hs
   default-language:   Haskell2010
+  build-tools:        happy
+  other-modules:      Elea.Parser.Calculus
   
   default-extensions: CPP
                       DoAndIfThenElse
@@ -65,4 +67,5 @@ executable elea
                       lattices >=1,
                       test-framework-hunit >= 0.3,
                       test-framework >= 0.8,
-                      boxes >= 0.1.4
+                      boxes >= 0.1.4,
+                      array >= 0.5

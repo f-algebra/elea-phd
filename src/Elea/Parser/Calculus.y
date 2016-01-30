@@ -56,6 +56,7 @@ import qualified Data.Map as Map
   '>'         { TokenCA }
   ','         { TokenComma }
   '_|_'       { TokenUnr }
+  env         { TokenEnv }
   match       { TokenMatch }
   with        { TokenWith }
   fun         { TokenFun }
@@ -142,6 +143,7 @@ Term :: { RawTerm }
   | Term '>=' Term                    { TLeq $3 $1 }
   | Term '==' Term                    { TEq $1 $3 }
   | let name '=' Term in Term         { TLet $2 $4 $6 }
+  | env Bindings in Term              { TTurnstile $2 $4 }
   | 'fold[' Type ']'                  { TFold $2 }
   | match Term with Matches end       { TCase $2 $4 }
   | assert Pattern '<-' Term in Term  { TAssert $2 $4 $6 }
@@ -202,10 +204,12 @@ data RawType
   = TyBase ParamCall
   | TyFun RawType RawType
   | TyTuple [RawType]
+  deriving ( Show )
 
 data RawBind 
   = TBind { rawLabel :: String
           , rawType :: RawType }
+  deriving ( Show )
 
 data RawTerm
   = TVar ParamCall
@@ -222,9 +226,12 @@ data RawTerm
   | TFold RawType
   | TTuple [RawTerm]
   | TAssert [String] RawTerm RawTerm
-  
+  | TTurnstile [RawBind] RawTerm
+  deriving ( Show )
+
 data RawAlt
   = TAlt [String] RawTerm
+  deriving ( Show )
   
 data Scope 
   = Scope { _bindMap :: Map String Term
@@ -500,6 +507,9 @@ parseRawTerm (TLam rbs rt) = do
 parseRawTerm (TLet name rt1 rt2) = do
   t1 <- parseRawTerm rt1
   localDef name t1 (parseRawTerm rt2)
+parseRawTerm (TTurnstile raw_binds raw_term) = do
+  binds <- mapM parseRawBind raw_binds
+  Env.bindMany binds (parseRawTerm raw_term)
 parseRawTerm (TAssert pat ron_t rin_t) = do
   on_t <- parseRawTerm ron_t
   let on_ty@(Type.Base ind) = Type.get on_t
@@ -572,6 +582,7 @@ data Token
   | TokenEqEq
   | TokenAssert
   | TokenAssBool
+  | TokenEnv
   
 happyError :: [Token] -> a
 happyError tokens = error $ "Parse error\n" ++ (show tokens)
@@ -636,6 +647,7 @@ lexer (c:cs)
       ("fold", '[':rest) -> TokenFold : lexer rest
       ("assertBool", rest) -> TokenAssBool : lexer rest
       ("assert", rest) -> TokenAssert : lexer rest
+      ("env", rest) -> TokenEnv : lexer rest
       (name, rest) -> TokenName name : lexer rest
 lexer cs = error $ "Unrecognized symbol " ++ take 1 cs
 
@@ -675,6 +687,7 @@ instance Show Token where
   show (TokenInj n) = "inj" ++ show n
   show TokenAssert = "assert"
   show TokenSeq = "seq"
+  show TokenEnv = "env"
   
   showList = (++) . intercalate " " . map show
 }

@@ -5,7 +5,7 @@ MAIN = src/Main.hs
 .PHONY : ghci happy clean
 
 ghci:
-	ghci -fobject-code -DASSERT $(FLAGS) $(EXTS) $(MAIN)
+	ghci -fobject-code -DASSERT -DTRACE $(FLAGS) $(EXTS) $(MAIN)
 
 power:
 	cabal configure
@@ -13,7 +13,7 @@ power:
 	xcopy /y .\dist\build\elea\elea.exe .\elea.exe
 
 debug:
-	cabal configure --enable-profiling --ghc-options="-DASSERT -fprof-auto"
+	cabal configure --enable-profiling --ghc-options="-DASSERT -DTRACE -fprof-auto"
 	cabal build
 	xcopy /y .\dist\build\elea\elea.exe .\elea.exe
 
