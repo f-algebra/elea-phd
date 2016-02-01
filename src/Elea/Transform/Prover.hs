@@ -2,7 +2,7 @@ module Elea.Transform.Prover
 (
   Step,
   steps,
-  run,
+  applyM,
   check,
 )
 where
@@ -21,6 +21,7 @@ import qualified Elea.Transform.Evaluate as Eval
 import qualified Elea.Transform.Simplify as Simp
 import qualified Elea.Transform.Names as Name
 import qualified Elea.Unification as Unifier
+import qualified Elea.Foldable.WellFormed as WellFormed
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Monad.Transform as Transform
 import qualified Elea.Monad.Definitions.Class as Defs
@@ -29,8 +30,7 @@ import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Monad.Fedd as Fedd  
-
-import qualified Data.Map as Map3
+import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Poset as Partial
 
@@ -63,8 +63,10 @@ steps =
   ]
 
 -- | Theorem prover without fusion; use Fusion.run for the full prover  
-run :: Env m => Term -> m Term
-run = Transform.compose all_steps
+applyM :: Env m => Term -> m Term
+applyM = id
+  . Transform.compose all_steps
+  . WellFormed.check
   where
   all_steps = []
     ++ Eval.transformSteps 

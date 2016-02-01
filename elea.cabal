@@ -47,6 +47,7 @@ executable elea
                       PatternGuards
                       NoImplicitPrelude
                       StandaloneDeriving
+                      ImplicitParams
   
   build-depends:      base >=4, 
                       containers >=0.5, 

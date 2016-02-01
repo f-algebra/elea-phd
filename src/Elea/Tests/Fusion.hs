@@ -19,16 +19,18 @@ testProp prop_name = id
   . Test.testWithPrelude prop_name $ do
     all_props <- Test.loadFile properties_file
     let Just (Prop _ prop_t) = find ((== prop_name) . get propName) all_props
-    prop_t' <- Fusion.applyM prop_t
+    prop_t' <- Test.recordTimeTaken prop_name (Fusion.applyM prop_t)
     Test.assertTermEq "" truth prop_t'
-  
+
 tests :: IO Test
 tests = do
   prop_names <- Test.loadPropertyNamesFromFile properties_file
   return 
     . Test.label "Fusion"
     . Test.list 
-    $ map testProp prop_names
+    . map testProp 
+    . filter (== "zeno6")
+    $ prop_names
 
 properties_file :: String
 properties_file = "src/Elea/Tests/fusion.elea"

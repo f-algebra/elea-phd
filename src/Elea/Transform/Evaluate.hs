@@ -22,6 +22,7 @@ import qualified Elea.Unification as Unifier
 import qualified Elea.Term.Constraint as Constraint
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Foldable as Fold
+import qualified Elea.Foldable.WellFormed as WellFormed
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.Env.Class as Env
@@ -51,6 +52,7 @@ apply :: Term -> Term
 apply = id
   . Fedd.eval
   . Transform.compose all_steps
+  . WellFormed.check
   where
   all_steps = []
     ++ transformSteps 

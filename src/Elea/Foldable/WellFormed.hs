@@ -1,5 +1,6 @@
 module Elea.Foldable.WellFormed 
-  ( WellFormed (..), LocallyWellFormed (..) )
+  ( WellFormed (..), LocallyWellFormed (..), 
+    check, is )
 where
 
 import Elea.Prelude hiding ( assert )
@@ -23,3 +24,10 @@ class (Fold.Refoldable t, PrintfArg t, Foldable (Fold.Base t))
 
 class WellFormed t where
   assert :: t -> Assert
+
+is :: WellFormed t => t -> Bool
+is = Assert.isSuccess . assert
+
+{-# INLINE check #-}
+check :: (?loc :: CallStack, WellFormed t) => t -> t
+check t = Assert.check (assert t) t

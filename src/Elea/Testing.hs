@@ -53,7 +53,7 @@ test :: String -> M () -> Test
 test label = id
   . HUnit.TestLabel label 
   . HUnit.TestCase 
-  . flip catch (\(e :: SomeException) -> assertFailure (show e))
+  -- . flip catch (\(e :: SomeException) -> assertFailure (show e))
   -- ^ Not sure why this isn't built in
   . Fedd.evalT
 

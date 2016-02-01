@@ -22,13 +22,13 @@ all = id
   . liftM Test.list
   $ sequence 
   [ return Prelude.tests
-  , return Type.tests
-  , return Term.tests
+--  , return Type.tests
+ -- , return Term.tests
 --  , UMap.tests
 --  , Checker.tests 
-  , Simplifier.tests
+ -- , Simplifier.tests
  -- , Constraints.tests
  -- , Context.tests
  -- , Inventor.tests
- -- , Fusion.tests  
+  , Fusion.tests  
   ]

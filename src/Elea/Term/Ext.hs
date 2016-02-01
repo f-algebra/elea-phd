@@ -185,18 +185,17 @@ collectM p = Env.alsoTrack 0 . Fold.collectM collect
   where
   collect :: Term -> MaybeT (Env.AlsoTrack Index m) Term
   collect t = do
-    condition <- (Trans.lift . Trans.lift . p) t
+    t' <- Env.tryLowerByOffset t
+    condition <- (Trans.lift . Trans.lift . p) t'
     Fail.unless condition
-    
-    lowerable <- Env.lowerableByOffset t
-    Fail.unless lowerable
-    
-    Env.lowerByOffset t
+    return t'
     
 -- | See 'collectM'
 collect :: (Term -> Bool) -> Term -> [Term]
 collect p = runIdentity . collectM (Identity . p)
 
+subterms :: Term -> [Term]
+subterms = Fold.collect Just
 
 -- | The variables or uninterpreted function application terms
 -- whose value must be known in order to evaluate the given term.
@@ -563,8 +562,11 @@ expressFreeVariable free_var (Fix fix_i (Bind fix_n fix_ty) fix_t) = do
 -- The order of the new variables applied to the output term will match
 -- the order of the indices input.
 -- > expressFreeVariables [x, y, z] (fix F) = (fix G) x y z
-expressFreeVariables :: forall m . Env.Read m => [Index] -> Term -> m Term
-expressFreeVariables = flip (foldrM express) 
+expressFreeVariables :: forall m . (?loc :: CallStack, Env.Read m) 
+  => [Index] -> Term -> m Term
+expressFreeVariables idxs = id
+  . liftM WF.check
+  . flip (foldrM express) idxs
   where
   express :: Index -> Term -> m Term
   express free_var (flattenApp -> fix : args) = do
@@ -671,17 +673,18 @@ freeSubtermsOf :: Term -> [Term]
 freeSubtermsOf term = id
   -- Remove any terms which are subterms of another term in the set
   . removeSubterms
-  -- Make sure they actually contain free variables
-  . filter (not . Set.null . Indices.free)
-  -- We only want strict subterms
-  . filter (/= term)
-  -- Collect all free subterms
-  $ collect (const True) term
+  $ collect freeSubterm term
+  where
+  freeSubterm t = t /= term && not (Set.null (Indices.free t))
     
-
 -- | All free variables in a term
-freeVars :: Term -> [Term]
-freeVars = collect isVar
+freeVars :: (?loc :: CallStack) => Term -> [Term]
+freeVars term = id
+  . Assert.check (Assert.bool (all (\x -> Indices.freeWithin x term) var_idxs))
+  $ vars
+  where
+  vars = collect isVar term
+  var_idxs = map varIndex vars
 
 freeVarSet :: Term -> Set Term
 freeVarSet = Set.fromList . freeVars
@@ -1012,15 +1015,8 @@ instance WF.LocallyWellFormed Term where
       . splitAt (length xs) 
       . Type.flatten 
       $ Type.get f
-  assertLocal (Lam b t) 
-    | Just b' <- find (not . Type.bindEq b) eq_free_binds = id
-      . Assert.failure
-      $ printf "internal binding %s does not match lambda binding %s" b' b
-    where
-    eq_free_binds = id
-      . map binding
-      . filter ((== 0). varIndex)
-      $ freeVars t
+  assertLocal (Lam b t) = do
+    wellFormedVar 0 b t
   assertLocal (Case cse_t alts) = do
     Assert.augment "case-of non inductively typed term"
       . Assert.bool 
@@ -1028,18 +1024,56 @@ instance WF.LocallyWellFormed Term where
     Assert.augment "case-of branches have different types"
       . Assert.bool 
       $ all (== alt_ty) alt_tys
+    mapM_ wfAlt alts
     where
     alt_ty : alt_tys = map (Type.get . get altInner) alts
+    wfAlt Alt { _altBindings = binds, _altInner = alt_t } =
+      wellFormedVars (zip [0..] (reverse binds)) alt_t
+
   assertLocal (Con tcon) =
     WF.assert (Tag.untag tcon)
-  assertLocal fix_t@Fix{ fixInfo = fix_info } =
+  assertLocal Fix{ fixInfo = fix_info, binding = bind, inner = fix_t } = do
     WF.assert fix_info
+    wellFormedVar 0 bind fix_t
   assertLocal _ = 
     Assert.success
 
 instance WF.WellFormed Term where
-  assert = WF.assertAll
+  assert term = do
+    forM_ free_var_binds WF.assert
+    WF.assertAll term
+    where
+    free_var_binds :: [[Bind]]
+    free_var_binds = id
+      . map (map binding)
+      . groupBy ((==) `on` varIndex) 
+      . sortBy (compare `on` varIndex) 
+      $ freeVars term
 
+
+instance WF.WellFormed [Bind] where
+  assert [] = Assert.success
+  assert bind_group@(bind : binds) = 
+    Assert.augment msg $ do
+      Assert.bool (all (Type.bindEq bind) binds)
+    where
+    msg = printf "conflicting free binding labels/types %s" (show bind_group)
+
+wellFormedVar :: Index -> Bind -> Term -> Assert.Assert
+wellFormedVar var_idx var_bind within_term =
+  -- This is a bit heavy-weight, even for an assertion
+  WF.assert (var_bind : all_binds)
+  where
+  all_binds = id
+    . map binding
+    . filter ((== var_idx) . varIndex)
+    $ freeVars within_term
+
+wellFormedVars :: [(Index, Bind)] -> Term -> Assert.Assert
+wellFormedVars [] _ = Assert.success
+wellFormedVars ((var_idx, var_bind) : rest) term = do
+  wellFormedVar var_idx var_bind term
+  wellFormedVars rest term
 
 assertValidRewrite :: Term -> Term -> Assert.Assert
 assertValidRewrite from to = id
@@ -1111,10 +1145,9 @@ showTermM :: Env.Read m => Term -> m String
 showTermM (Con c) = return (show c)
 showTermM Fix { fixInfo = fix_info}
   | Just fix_name <- get fixName fix_info = return fix_name
-showTermM Var { varIndex = var_index } = do
+showTermM Var { varIndex = var_index, binding = bind } = do
   b <- Env.boundAt var_index
   return (printf "%s" (get Type.bindLabel b))
-
 showTermM (Leq x y) = do
   x_s <- showTermBracketedM x
   y_s <- showTermBracketedM y

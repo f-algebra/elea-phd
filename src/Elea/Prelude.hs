@@ -78,7 +78,7 @@ import Data.Proxy as X
 import System.IO.Unsafe as X
 import Text.Printf as X (printf, PrintfArg (..), formatString, formatInt)
 import Text.Read as X ( Read (..) )
-import GHC.Stack ( errorWithStackTrace )
+import GHC.Stack as X ( errorWithStackTrace, CallStack, showCallStack )
 
 import qualified Data.Set as Set
 import qualified Data.Map as Map

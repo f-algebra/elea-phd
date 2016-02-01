@@ -13,7 +13,7 @@ module Elea.Foldable
   rewriteM', isoRewritePhasesM, isoRewriteStepsM',
   rewritePhases,
   allM, findM, anyM, any, all, isoFold, isoAny, isoAll, find,
-  collect, isoCollect,
+  collect, isoCollect, collectAll,
   transform, rewrite, recover,
   rewriteStepsM, rewriteSteps,
   isoCountM, isoCount, countM, count,
@@ -131,7 +131,10 @@ isoCollect iso f = id
 
 collect :: (Ord b, WriterTransformableM [b] Identity t) =>
   (t -> Maybe b) -> t -> [b]
-collect = isoCollect id 
+collect = isoCollect id
+
+collectAll ::  (Ord t, WriterTransformableM [t] Identity t) => t -> [t]
+collectAll = collect Just
 
 all, any :: WriterTransformableM Monoid.All Identity t =>
   (t -> Bool) -> t -> Bool

@@ -24,6 +24,7 @@ import qualified Elea.Transform.Evaluate as Eval
 import qualified Elea.Transform.Simplify as Simp
 import qualified Elea.Transform.Prover as Prover
 import qualified Elea.Unification as Unifier
+import qualified Elea.Foldable.WellFormed as WellFormed
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Monad.Transform as Transform
@@ -55,7 +56,9 @@ type Step m = (Env m, Prover.Step m)
   
 
 applyM :: Env m => Term -> m Term
-applyM = Transform.compose all_steps
+applyM = id
+  . Transform.compose all_steps
+  . WellFormed.check
   where
   all_steps = []
     ++ Eval.transformSteps

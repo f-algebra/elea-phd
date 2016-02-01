@@ -32,6 +32,7 @@ import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Monad.Fusion as Fusion
 import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.StepCounter as Steps
+import qualified Elea.Foldable.WellFormed as WellFormed
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 import qualified Data.Map as Map
@@ -82,7 +83,7 @@ steps =
   , ("fold discovery", discoverFold) ]
 
 
-fusion :: Step m=> Term -> Term -> m Term
+fusion :: (?loc :: CallStack, Step m) => Term -> Term -> m Term
 fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
   . Env.forgetAllMatches 
   . Memo.memo Name.Fusion orig_t $ do
@@ -104,11 +105,12 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
       . Env.bind new_fix_b
       . Fusion.local temp_idx rewrite_from (Var 0 new_fix_b)
       . Transform.continue
+      . WellFormed.check
       . Indices.lift
       -- ^ Make room for our new variables we are rewriting to
       $ app ctx_t [Term.unfoldFix temp_fix]
       
-    new_t <- do
+    mby_new_t <- Fail.catch $ do
       if not (0 `Indices.freeWithin` new_fix_t) 
       then do 
         Fail.when (Set.member temp_idx (Tag.tags new_fix_t))
@@ -119,10 +121,18 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
         . Term.dirtyFix
         . Fix fix_i new_fix_b 
         $ Tag.replace temp_idx orig_idx new_fix_t
-    Discovery.rewritesTo orig_t new_t
-    return new_t
+    case mby_new_t of
+      Nothing -> 
+        trace (printf "[Failed, fusing] %s\n[into] %s\n[yielded] %s" fix ctx_t new_fix_t) 
+          Fail.here
+      Just new_t -> do
+        Discovery.rewritesTo orig_t new_t
+        trace (printf "[Success, fusing] %s\n[into] %s\n[yielded] %s" fix ctx_t new_t)
+          $ return new_t
   where
-  orig_t = Term.reduce ctx_t [fix]
+  orig_t = id
+    . WellFormed.check
+    $ Term.reduce ctx_t [fix]
   orig_idx = get fixIndex fix_i
   
   new_fix_b = set Type.bindType (Type.get orig_t) fix_b
@@ -301,12 +311,13 @@ decreasingFreeVar orig_t@(App fix@(Fix _ _ fix_t) args) = do
               ++ "\n[yielded] " ++ show expr_fix)
     $ expr_args ==  var_args
     
-  let ctx_vars = var_args ++ reverse (zipWith (Var . enum) (range orig_bs) orig_bs)
+  let ctx_vars = var_args ++ reverse (zipWith (Var . enum) (range orig_bs) (reverse orig_bs))
       ctx_t = id
-        . unflattenLam (expr_b:orig_bs)
+        . WellFormed.check
+        . unflattenLam (expr_b : orig_bs)
         $ app (Var (elength orig_bs) expr_b) ctx_vars
         
-      full_t = Term.reduce ctx_t (expr_fix:args)
+      full_t = Term.reduce ctx_t (expr_fix : args)
        
   Assert.checkM
     . Assert.augment "dec-free-var generated an incorrectly typed context"

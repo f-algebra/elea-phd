@@ -32,15 +32,18 @@ augment :: String -> Assert -> Assert
 augment = Err.augment . read
 
 {-# INLINE check #-}
-check :: Assert -> a -> a
-checkM :: Monad m => Assert -> m ()
+check :: (?loc :: CallStack) => Assert -> a -> a
+{-# INLINE checkM #-}
+checkM :: (?loc :: CallStack, Monad m) => Assert -> m ()
 #ifndef ASSERT
 check _ = id
 checkM _ = return ()
 #else
-check asrt 
-  | isSuccess asrt = id
-  | otherwise = error (show (fromFailure asrt))
+check assert 
+  | isSuccess assert = id
+  | otherwise = error (show (fromFailure assert'))
+  where
+  assert' = augment (showCallStack ?loc) assert
 checkM assert =
   check assert (if isSuccess assert then return () else fail "")
 #endif
@@ -63,4 +66,3 @@ assert msg = check . augment msg . bool
 
 assertEq :: (Show a, Eq a) => String -> a -> a -> b -> b
 assertEq msg x y = check . augment msg $ equal x y 
-

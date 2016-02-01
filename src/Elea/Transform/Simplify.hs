@@ -19,6 +19,7 @@ import qualified Elea.Unification as Unifier
 import qualified Elea.Transform.Names as Name
 import qualified Elea.Transform.Evaluate as Eval
 import qualified Elea.Foldable as Fold
+import qualified Elea.Foldable.WellFormed as WellFormed
 import qualified Elea.Monad.Error.Assertion as Assert
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Failure.Class as Fail
@@ -55,7 +56,9 @@ apply :: Term -> Term
 apply = Fedd.eval . applyM        
     
 applyM :: (Steps.Limiter m, Env m) => Term -> m Term
-applyM = Transform.compose all_steps
+applyM = id
+  . Transform.compose all_steps
+  . WellFormed.check 
   where
   all_steps = []
     ++ Eval.transformSteps 
@@ -65,10 +68,13 @@ applyM = Transform.compose all_steps
 -- Bit of a hack which is needed for free-arg fusion
 applyWithoutUnfoldM :: Env m => Term -> m Term
 applyWithoutUnfoldM = id
-  . Transform.compose
-  $ Eval.transformSteps
-  ++ Eval.traverseSteps
-  ++ [ ("constant argument fusion", constArg) ]
+  . Transform.compose eval_and_constArg
+  . WellFormed.check
+  where
+  eval_and_constArg = []
+    ++ Eval.transformSteps
+    ++ Eval.traverseSteps
+    ++ [ ("constant argument fusion", constArg) ]
     
 steps :: Step m => [(String, Term -> m Term)]
 steps =

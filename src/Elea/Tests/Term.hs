@@ -17,12 +17,13 @@ import qualified Elea.Testing as Test
 import qualified Elea.Transform.Evaluate as Eval
 import qualified Elea.Transform.Simplify as Simp
 import qualified Elea.Foldable as Fold
+import qualified Elea.Foldable.WellFormed as WellFormed
 import qualified Data.Set as Set
 
 tests = id
   . Test.label "Term" 
   . Test.list 
-  $ [ testBuildFold, testConjunction, testSubterms, testAbstract
+  $ [ testRead, testBuildFold, testConjunction, testSubterms, testAbstract
     , testFindArgs, testRecursiveId, testEquateArgs, testStrictWithin ]
 
 testBuildFold :: Test
@@ -46,6 +47,14 @@ testBuildFold =
     $ "fun (v: list<nat>) (k: list<nat> -> nat -> list<nat> -> list<nat>) -> "
     ++  "fix (f: tree<nat> -> list<nat>) (t: tree<nat>) -> "
     ++  "match t with | Leaf -> v | Node t1 x t2 -> k (f t1) x (f t2) end"
+
+testRead :: Test
+testRead = Test.test "read terms" $ do
+  forM_ all_subterms 
+    $ \t -> Test.assertBool (show t) ((WellFormed.is . readTerm . show) t)
+  where
+  readTerm :: String -> Term = read
+  all_subterms = Fold.collectAll (readTerm def_take_drop)
 
 testConjunction :: Test
 testConjunction = 
@@ -160,3 +169,14 @@ def_strict_test =
   ++ "| 0 -> match y with | 0 -> False | Suc y' -> eq z z end "
   ++ "| Suc x' -> eq y z end"
     
+def_take_drop = unlines
+  [ "fun (n: nat) (xs: list<nat>) -> "
+  , "(fix (take: nat -> list<nat> -> nat -> list<nat> -> list<nat>) (n1: nat) (xs1: list<nat>) (n2: nat) (xs2: list<nat>) -> "
+  , "match n2 with"
+  , "| 0  -> drop<nat> n1 xs1"
+  , "| Suc n' ->"
+  ,   "match xs2 with"
+  ,    "| Nil  -> drop<nat> n1 xs1"
+  ,    "| Cons y ys -> Cons<nat> y (take n1 xs1 n' ys)"
+  ,    "end"
+  ,  "end) n xs n xs" ]
