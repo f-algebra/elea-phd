@@ -39,21 +39,11 @@ import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
 import qualified Data.Poset as Quasi
 
-
 type Env m = 
-  ( Defs.Read m
-  , Env.All m
-  , Discovery.Tells m
-  , Tag.Gen m
-  , History.Env m 
-  , Fusion.Env m
-  , Memo.Can m
-  , Direction.Has m
-  , Steps.Limiter m )
-  
+  ( Rewrite.Env m )
   
 type Step m =
-  ( Prover.Step m
+  ( Rewrite.Step m
   , Env m )
  
   

@@ -2,7 +2,7 @@
 -- Needs heavy use of 'Elea.Embed'.
 module Elea.Transform.Rewrite
 (
-  Step,
+  Step, Env,
   applyM,
   rewriteSteps,
   expressSteps
@@ -42,15 +42,9 @@ import qualified Data.Set as Set
 import qualified Data.Poset as Quasi
 
 type Env m = 
-  ( Defs.Read m
+  ( Prover.Env m
   , Discovery.Tells m
-  , Env.All m
-  , Tag.Gen m
-  , History.Env m 
-  , Fusion.Env m
-  , Memo.Can m
-  , Direction.Has m
-  , Steps.Limiter m )
+  , Tag.Gen m )
 
 type Step m = (Env m, Prover.Step m)
   

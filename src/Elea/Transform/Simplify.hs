@@ -41,13 +41,11 @@ import qualified Control.Monad.Trans as Trans
 -- TODO properly tweak step order
 
 type Env m = 
-  ( Env.All m
-  , Defs.Read m
+  ( Eval.Env m
+  , Env.All m
   , Direction.Has m
   , Fusion.Env m
-  , History.Env m
   , Steps.Limiter m )
-
 
 type Step m = (Eval.Step m, Env m)
 

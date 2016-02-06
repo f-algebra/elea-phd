@@ -25,6 +25,7 @@ import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Monad.Env.Data as EnvDB
 import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.StepCounter as Steps
+import qualified Elea.Monad.Transform as Transform
 import qualified Control.Monad.RWS.Strict as RWS
 import qualified Control.Monad.State.Class as State
 import qualified Control.Monad.Writer.Class as Writer
@@ -184,3 +185,8 @@ instance Monad m => Steps.Limiter (FeddT m) where
 
 instance MonadIO m => MonadIO (FeddT m) where
   liftIO = Trans.lift . liftIO
+
+instance Monad m => Transform.Env (FeddT m) where
+  applyContext term = asks (EnvDB.applyContext term)
+  augmentContext with = local (EnvDB.augmentContext with)
+  clearContext = local EnvDB.clearContext

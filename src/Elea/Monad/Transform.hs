@@ -5,6 +5,7 @@ module Elea.Monad.Transform
 (
   Step (..),
   StepT (..),
+  Env (..),
   compose,
   mapStepT,
 )
@@ -50,23 +51,25 @@ mapStepT :: forall m a b . Monad m
   => (m (Maybe a) -> m (Maybe b)) -> StepT m a -> StepT m b
 mapStepT f = StepT . mapReaderT (mapMaybeT f) . stepT
     
-compose :: forall m . (Steps.Limiter m, Env.Read m, History.Env m, Defs.Read m) 
+compose :: forall m . (Steps.Limiter m, Env.Read m, History.Env m, Defs.Read m, Env m) 
   => [(String, Term -> StepT m Term)] -> Term -> m Term
 compose all_steps = applyOneStep all_steps
   where
   applyOneStep :: [(String, Term -> StepT m Term)] -> Term -> m Term
-  applyOneStep [] t = return t
-  applyOneStep ((step_name, step_fun) : steps) t = do
-    mby_t' <- runMaybeT (runReaderT (stepT (step_fun t)) (compose all_steps))
-    case mby_t' of
-      Nothing -> applyOneStep steps t
-      Just t' -> do
+  applyOneStep [] term = return term
+  applyOneStep ((step_name, step_fun) : steps) term = do
+    mby_term' <- runMaybeT (runReaderT (stepT (step_fun term)) (compose all_steps))
+    case mby_term' of
+      Nothing -> applyOneStep steps term
+      Just term' -> do
         Steps.take
         let valid_rewrite = id
               . Assert.augment (printf "within step \"%s\"" step_name)
-              $ Term.assertValidRewrite t t'
+              $ Term.assertValidRewrite term term'
+        full_term' <- applyContext term'
         Assert.check valid_rewrite
-          $ return t'
+          . trace (printf "Applied step \"%s\", yielding: %s" step_name full_term')
+          $ return term'
 
 liftCatch :: Monad m 
   => (m (Maybe a) -> (e -> m (Maybe a)) -> m (Maybe a))
@@ -149,3 +152,13 @@ instance Steps.Counter m => Steps.Counter (StepT m) where
 instance Steps.Limiter m => Steps.Limiter (StepT m) where
   limit n = StepT . Steps.limit n . stepT
   remaining = Trans.lift Steps.remaining
+
+instance Env m => Env (StepT m) where
+  clearContext = mapStepT clearContext
+  augmentContext = mapStepT . augmentContext
+  applyContext = Trans.lift . applyContext
+
+class Monad m => Env m where
+  applyContext :: Term -> m Term
+  augmentContext :: (Term -> Term) -> m a -> m a
+  clearContext :: m a -> m a

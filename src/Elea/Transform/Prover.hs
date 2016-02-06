@@ -1,6 +1,6 @@
 module Elea.Transform.Prover
 (
-  Step,
+  Step, Env,
   steps,
   applyM,
   check,
@@ -36,8 +36,6 @@ import qualified Data.Poset as Partial
 
 type Env m = 
   ( Simp.Env m
-  , Env.All m
-  , Fusion.Env m
   , Memo.Can m )
 
 type Step m = ( Env m , Simp.Step m )

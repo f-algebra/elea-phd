@@ -2,7 +2,7 @@
 -- plus a couple of functions which strongly rely on evaluation.
 module Elea.Transform.Evaluate 
 (
-  Step,
+  Step, Env,
   apply, 
   transformSteps, 
   traverseSteps,
@@ -41,12 +41,13 @@ import qualified Data.Poset as Quasi
   -- the tallest branch downwards
 -- TODO SPECIALISE  
 
-type Step m = 
-  ( Transform.Step m
-  , Env.Write m
+type Step m = (Env m, Transform.Step m)
+
+type Env m = 
+  ( Env.Write m
   , Defs.Read m
-  , History.Env m )
-  
+  , History.Env m
+  , Transform.Env m )
 
 apply :: Term -> Term
 apply = id

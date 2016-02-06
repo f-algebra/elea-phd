@@ -19,6 +19,7 @@ class Monad m => Env m where
   disable :: m a -> m a
   isDisabled :: m Bool
   
+  
 findTags :: Env m => Set Tag -> m [(Term, Term)]
 findTags tags = id
   . liftM (map (\(_, f, t) -> (f, t))) 

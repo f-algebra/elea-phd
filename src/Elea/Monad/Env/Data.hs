@@ -6,7 +6,8 @@ module Elea.Monad.Env.Data
   rewrites, addRewrite, forgetRewrites,
   history, forgetMatches,
   direction,
-  disableFlag
+  disableFlag,
+  clearContext, augmentContext, applyContext
 )
 where
 
@@ -23,17 +24,18 @@ import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Type as Type
 
 data Data
-  = Data  { _dbBinds :: [Bind]
-          , _dbMatches :: [Match]
-          , _dbRewrites :: [(Tag, Term, Term)] 
-          , _dbHistory :: History.Repr
-          , _dbDirection :: Direction
-          , _flagDisable :: Bool }
+  = Data  { _dbBinds :: ![Bind]
+          , _dbMatches :: ![Match]
+          , _dbRewrites :: ![(Tag, Term, Term)] 
+          , _dbHistory :: !History.Repr
+          , _dbDirection :: !Direction
+          , _flagDisable :: !Bool
+          , _dbTermContext :: !(Term -> Term) }
           
 mkLabels [ ''Data ]
 
 instance Empty Data where
-  empty = Data mempty mempty mempty empty Direction.Inc False
+  empty = Data mempty mempty mempty empty Direction.Inc False id
 
 matches :: Data -> [Match]
 matches = get dbMatches
@@ -89,5 +91,11 @@ direction = dbDirection
 disableFlag :: (Data :-> Bool)
 disableFlag = flagDisable
 
+clearContext :: Data -> Data
+clearContext = set dbTermContext id
 
+augmentContext :: (Term -> Term) -> Data -> Data
+augmentContext context = modify dbTermContext (. context)
 
+applyContext :: Term -> Data -> Term
+applyContext gap_term = ($ gap_term) . get dbTermContext

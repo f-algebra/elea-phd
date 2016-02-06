@@ -29,7 +29,7 @@ tests = do
     . Test.label "Fusion"
     . Test.list 
     . map testProp 
-    . filter (== "zeno6")
+    . filter (== "zennoterealo2")
     $ prop_names
 
 properties_file :: String

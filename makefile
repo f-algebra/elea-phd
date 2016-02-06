@@ -8,7 +8,12 @@ ghci:
 	ghci -fobject-code -DASSERT -DTRACE $(FLAGS) $(EXTS) $(MAIN)
 
 power:
-	cabal configure
+	cabal configure --enable-optimization
+	cabal build
+	xcopy /y /F .\dist\build\elea\elea.exe .\elea.exe
+
+trace: 
+	cabal configure --enable-optimization --ghc-options="-DTRACE"
 	cabal build
 	xcopy /y .\dist\build\elea\elea.exe .\elea.exe
 
