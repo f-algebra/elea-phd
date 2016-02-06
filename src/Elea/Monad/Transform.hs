@@ -8,6 +8,7 @@ module Elea.Monad.Transform
   Env (..),
   compose,
   mapStepT,
+  whenTraceSteps,
 )
 where
 
@@ -35,8 +36,8 @@ import qualified Control.Monad.Trans.Class as Trans
 import qualified Data.Poset as Quasi
 import qualified Data.Map as Map
 
-{-# INLINE compose #-}
 
+{-# INLINE compose #-}
 
 class (Steps.Limiter m, Fail.Can m) => Step m where
   -- | Accessing the recursive call to our transformation
@@ -68,7 +69,7 @@ compose all_steps = applyOneStep all_steps
               $ Term.assertValidRewrite term term'
         full_term' <- applyContext term'
         Assert.check valid_rewrite
-          . trace (printf "Applied step \"%s\", yielding: %s" step_name full_term')
+          . whenTraceSteps (printf "Applied step \"%s\", yielding: %s" step_name full_term')
           $ return term'
 
 liftCatch :: Monad m 
@@ -157,8 +158,25 @@ instance Env m => Env (StepT m) where
   clearContext = mapStepT clearContext
   augmentContext = mapStepT . augmentContext
   applyContext = Trans.lift . applyContext
+  traceSteps = Trans.lift traceSteps
+  enableTraceSteps = mapStepT enableTraceSteps
 
 class Monad m => Env m where
   applyContext :: Term -> m Term
   augmentContext :: (Term -> Term) -> m a -> m a
   clearContext :: m a -> m a
+
+  traceSteps :: m Bool
+  enableTraceSteps :: m a -> m a
+
+{-# INLINE whenTraceSteps #-}
+whenTraceSteps :: Env m => String -> m a -> m a
+#ifndef TRACE
+whenTraceSteps _ = id
+#else
+whenTraceSteps msg run = do
+  should <- traceSteps
+  if should
+  then trace msg run
+  else run
+#endif

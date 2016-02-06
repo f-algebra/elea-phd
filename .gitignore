@@ -10,3 +10,4 @@ dist/*
 *.txt
 test-results.xml
 debug.bat
+src/Elea/Parser/Calculus.hs

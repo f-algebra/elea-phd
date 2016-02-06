@@ -7,7 +7,8 @@ module Elea.Monad.Env.Data
   history, forgetMatches,
   direction,
   disableFlag,
-  clearContext, augmentContext, applyContext
+  clearContext, augmentContext, applyContext,
+  traceStepsFlag,
 )
 where
 
@@ -30,12 +31,13 @@ data Data
           , _dbHistory :: !History.Repr
           , _dbDirection :: !Direction
           , _flagDisable :: !Bool
-          , _dbTermContext :: !(Term -> Term) }
+          , _dbTermContext :: !(Term -> Term)
+          , _flagTraceSteps :: !Bool }
           
 mkLabels [ ''Data ]
 
 instance Empty Data where
-  empty = Data mempty mempty mempty empty Direction.Inc False id
+  empty = Data mempty mempty mempty empty Direction.Inc False id False
 
 matches :: Data -> [Match]
 matches = get dbMatches
@@ -99,3 +101,6 @@ augmentContext context = modify dbTermContext (. context)
 
 applyContext :: Term -> Data -> Term
 applyContext gap_term = ($ gap_term) . get dbTermContext
+
+traceStepsFlag :: Data :-> Bool
+traceStepsFlag = flagTraceSteps

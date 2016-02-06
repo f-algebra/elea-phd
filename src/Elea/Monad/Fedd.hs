@@ -190,3 +190,6 @@ instance Monad m => Transform.Env (FeddT m) where
   applyContext term = asks (EnvDB.applyContext term)
   augmentContext with = local (EnvDB.augmentContext with)
   clearContext = local EnvDB.clearContext
+
+  traceSteps = asks (get EnvDB.traceStepsFlag)
+  enableTraceSteps = local (set EnvDB.traceStepsFlag True)

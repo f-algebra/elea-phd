@@ -113,12 +113,12 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
         $ Tag.replace temp_idx orig_idx new_fix_t
     case mby_new_t of
       Nothing -> 
-        trace (printf "[Failed, fusing] %s\n[into] %s\n[yielded] %s" fix ctx_t new_fix_t) 
+  --      trace (printf "[Failed, fusing] %s\n[into] %s\n[yielded] %s" fix ctx_t new_fix_t) 
           Fail.here
       Just new_t -> do
         Discovery.rewritesTo orig_t new_t
-        trace (printf "[Success, fusing] %s\n[into] %s\n[yielded] %s" fix ctx_t new_t)
-          $ return new_t
+   --     trace (printf "[Success, fusing] %s\n[into] %s\n[yielded] %s" fix ctx_t new_t)
+        return new_t
   where
   orig_t = id
     . WellFormed.check
