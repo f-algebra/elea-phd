@@ -65,19 +65,19 @@ applyM = id
     ++ Prover.steps
     
     
-rewriteSteps :: Step m => [(String, Term -> m Term)]
+rewriteSteps :: Env m => [Transform.NamedStep m]
 rewriteSteps =
-  [ ("rewrite pattern", rewritePattern)
-  , ("rewrite", rewrite) ] 
+  [ Transform.visible "rewrite pattern" rewritePattern
+  , Transform.visible "rewrite" rewrite ] 
 
-expressSteps :: Step m => [(String, Term -> m Term)]
+expressSteps :: Env m => [Transform.NamedStep m]
 expressSteps = 
-  [ ("constructor fission", expressConstructor)
-  , ("commute constraint", commuteConstraint)
-  , ("accumulation fission", expressAccumulation)
-  , ("unfold var match for fix-con fusion", matchVar)    
-  , ("unfold finitely used fix", finiteCaseFix)
-  , ("identity fission", identityFix) ] 
+  [ Transform.visible "constructor fission" expressConstructor
+  , Transform.visible "commute constraint" commuteConstraint
+  , Transform.visible "accumulation fission" expressAccumulation
+  , Transform.visible "unfold var match for fix-con fusion" matchVar    
+  , Transform.visible "unfold finitely used fix" finiteCaseFix
+  , Transform.visible "identity fission" identityFix ]
   
 
 rewritePattern :: Step m => Term -> m Term

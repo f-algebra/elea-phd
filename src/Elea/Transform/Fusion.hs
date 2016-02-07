@@ -62,15 +62,15 @@ applyM = Transform.compose all_steps
     ++ steps
     
   
-steps :: Step m => [(String, Term -> m Term)]
+steps :: Env m => [Transform.NamedStep m]
 steps = 
-  [ ("fix-fix fusion", fixfix)
-  , ("fix-con fusion", fixCon)
-  , ("accumulator fusion", accumulation)
-  , ("free-var fusion", decreasingFreeVar)
-  , ("repeated-argument fusion", repeatedArg)
-  , ("assertion fusion", matchFix)
-  , ("fold discovery", discoverFold) ]
+  [ Transform.visible "fix-fix fusion" fixfix
+  , Transform.visible "fix-con fusion" fixCon
+  , Transform.visible "accumulator fusion" accumulation
+  , Transform.visible "free-var fusion" decreasingFreeVar
+  , Transform.visible "repeated-argument fusion" repeatedArg
+  , Transform.visible "assertion fusion" matchFix
+  , Transform.visible "fold discovery" discoverFold ]
 
 
 fusion :: (?loc :: CallStack, Step m) => Term -> Term -> m Term

@@ -72,17 +72,16 @@ applyWithoutUnfoldM = id
   eval_and_constArg = []
     ++ Eval.transformSteps
     ++ Eval.traverseSteps
-    ++ [ ("constant argument fusion", constArg) ]
+    ++ [ Transform.visible "constant argument fusion" constArg ]
     
-steps :: Step m => [(String, Term -> m Term)]
+steps :: Env m => [Transform.NamedStep m]
 steps =
-  [ ("lambda branch", caseFun)
-  , ("constant argument fusion", constArg)
-  , ("identity case-of", identityCase)
---  , undefinedCase
-  , ("subterm fission", constantFix)
-  , ("unfold", unfold)
-  , ("unfold case-of term", unfoldCase)
+  [ Transform.visible "lambda branch" caseFun
+  , Transform.visible "constant argument fusion" constArg
+  , Transform.visible "identity case-of" identityCase
+  , Transform.visible "subterm fission" constantFix
+  , Transform.visible "unfold" unfold
+  , Transform.visible "unfold case-of term" unfoldCase
   {-
  -- , floatVarMatch
   , propagateMatch

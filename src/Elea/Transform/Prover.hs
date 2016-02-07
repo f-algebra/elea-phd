@@ -40,25 +40,23 @@ type Env m =
 
 type Step m = ( Env m , Simp.Step m )
 
-steps :: Step m => [(String, Term -> m Term)]
+steps :: Env m => [Transform.NamedStep m]
 steps = 
-  [ ("reflexivity of =<", reflexivity)
-  , ("forall a . _|_ =< A", bottom)
-  , ("=< as reverse implication", implication)
-  , ("double negation", doubleNeg)
-  , ("function to forall", forAll)
-  , ("remove forall", removeForAll)
-  , ("left transitivity of =<", leftTrans)
-  , ("right transitivity of =<", rightTrans)
-  , ("case-split =<", caseSplitInc)
-  , ("case-split >=", caseSplitDec)
-  , ("=< constructor", constructor)
-  , ("least fixed-point rule", lfp)
-  , ("productive unfold =<", unfoldProductive)
-  , ("case-of =<", leqMatch)
- -- , generalise
-  , ("prove branch absurd", absurdBranch)
-  ]
+  [ Transform.visible "reflexivity of =<" reflexivity
+  , Transform.visible "forall a . _|_ =< A" bottom
+  , Transform.visible "=< as reverse implication" implication
+  , Transform.visible "double negation" doubleNeg
+  , Transform.visible "function to forall" forAll
+  , Transform.visible "remove forall" removeForAll
+  , Transform.visible "left transitivity of =<" leftTrans
+  , Transform.visible "right transitivity of =<" rightTrans
+  , Transform.visible "case-split =<" caseSplitInc
+  , Transform.visible "case-split >=" caseSplitDec
+  , Transform.visible "=< constructor" constructor
+  , Transform.visible "least fixed-point rule" lfp
+  , Transform.visible "productive unfold =<" unfoldProductive
+  , Transform.visible "case-of =<" leqMatch
+  , Transform.visible "prove branch absurd" absurdBranch ]
 
 -- | Theorem prover without fusion; use Fusion.run for the full prover  
 applyM :: Env m => Term -> m Term

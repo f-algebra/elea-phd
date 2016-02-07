@@ -32,6 +32,8 @@ import qualified Control.Monad.Writer.Class as Writer
 import qualified Control.Monad.Trans.Class as Trans
 import qualified Data.Nat as Nat
 
+-- TODO disable context tracking if both TRACE and ASSERT are off?
+
 type Fedd = FeddT Identity
 
 data FeddState 

@@ -40,6 +40,7 @@ import qualified Data.Poset as Quasi
 -- TODO traverses should be successively applied to 
   -- the tallest branch downwards
 -- TODO SPECIALISE  
+-- TODO equality checking after traverse steps is ridiculous
 
 type Step m = (Env m, Transform.Step m)
 
@@ -60,27 +61,25 @@ apply = id
     ++ traverseSteps
   
   
-transformSteps :: Step m => [(String, Term -> m Term)]
+transformSteps :: Env m => [Transform.NamedStep m]
 transformSteps =
-  [ ("normalise app", normaliseApp)
-  , ("propagate _|_", strictness)
-  , ("beta reduction", beta)
-  , ("case-of reduction", caseOfCon) 
-  , ("commute case-app", caseApp)
-  , ("commute app-case", appCase)
-  , ("commute case-case", caseCase)
-  , ("seq reduction", reduceSeq)
-  , ("clean fix", cleanFix)
-  ]
+  [ Transform.visible "normalise app" normaliseApp
+  , Transform.visible "propagate _|_" strictness
+  , Transform.visible "beta reduction" beta
+  , Transform.visible "case-of reduction" caseOfCon
+  , Transform.visible "commute case-app" caseApp
+  , Transform.visible "commute app-case" appCase
+  , Transform.visible "commute case-case" caseCase
+  , Transform.visible "seq reduction" reduceSeq
+  , Transform.invisible "clean fix" cleanFix ]
 
-traverseSteps :: Step m => [(String, Term -> m Term)]
+traverseSteps :: Env m => [Transform.NamedStep m]
 traverseSteps = 
-  [ ("traverse match", traverseMatch)
-  , ("traverse branches", traverseBranches)
-  , ("traverse fun", traverseFun)
-  , ("traverse app", traverseApp)
-  , ("traverse fix", traverseFix)
-  ]
+  [ Transform.invisible "traverse match" traverseMatch
+  , Transform.invisible "traverse branches" traverseBranches
+  , Transform.invisible "traverse fun" traverseFun
+  , Transform.invisible "traverse app" traverseApp
+  , Transform.invisible "traverse fix" traverseFix ]
   
 unwrapDepth :: Nat
 unwrapDepth = 2
@@ -149,34 +148,15 @@ caseOfCon _ = Fail.here
 traverseMatch :: Step m => Term -> m Term
 traverseMatch term@(Case cse_t alts) = 
   History.check Name.TraverseMatch term $ do 
-    cse_t' <- Transform.continue cse_t  
+    cse_t' <- id
+      . Transform.augmentContext (\t -> Case t alts)
+      $ Transform.continue cse_t  
     Fail.when (cse_t == cse_t')
     Transform.continue (Case cse_t' alts)
 traverseMatch _ = Fail.here
 
 
 traverseBranches :: forall m . Step m => Term -> m Term
-
-traverseBranches term@(Case (Var x b) alts) = 
-  History.check Name.TraverseVarBranch term $ do
-    alts' <- zipWithM traverseAlt [0..] alts
-    let term' = Case (Var x b) alts'
-    Fail.when (term == term')
-    Transform.continue (Case (Var x b) alts')
-  where
-  traverseAlt n alt@(Alt tcon bs t) = do
-    t' <- id
-      . Env.bindMany bs
-      . Env.matched (Term.matchFromCase n term)
-      . Transform.continue 
-      -- Substitute the variable we have just bound for the 
-      -- pattern it has been bound to
-      $ Indices.replaceAt x_here pat_t t
-    return (Alt tcon bs t')
-    where
-    x_here = Indices.liftMany (nlength bs) x
-    pat_t = (patternTerm . altPattern) alt
-
 traverseBranches term@(Case cse_t alts) = 
   History.check Name.TraverseBranch term $ do
     alts' <- zipWithM traverseAlt [0..] alts
@@ -186,22 +166,32 @@ traverseBranches term@(Case cse_t alts) =
   where
   traverseAlt n alt@(Alt con bs t) = do
     t' <- id
+      . Transform.augmentContext altContext
       . Env.bindMany bs
       . Env.matched (Term.matchFromCase n term)
-      $ Transform.continue t
+      . Transform.continue 
+      $ substituteVar t
     return (Alt con bs t')
     where
     cse_t_here = Indices.liftMany (nlength bs) cse_t
     pat_t = (patternTerm . altPattern) alt
 
-    
-    
+    substituteVar 
+      | Var { varIndex = var } <- cse_t_here = Indices.replaceAt var pat_t
+      | otherwise = id
+
+    altContext gap_t = Case cse_t ctx_alts
+      where
+      ctx_alts = setAt (enum n) (Alt con bs gap_t) alts
 traverseBranches _ = Fail.here
 
 
 traverseFun :: Step m => Term -> m Term
 traverseFun (Lam b t) = do
-  t' <- Env.bind b (Transform.continue t)
+  t' <- id
+    . Transform.augmentContext (\t -> Lam b t)
+    . Env.bind b 
+    $ Transform.continue t
   Fail.when (t == t')
   if t' == Term.truth || t' == Term.falsity
   then return t'
@@ -209,14 +199,21 @@ traverseFun (Lam b t) = do
 traverseFun _ = Fail.here
 
 
-traverseApp :: Step m => Term -> m Term
+traverseApp :: forall m . Step m => Term -> m Term
 traverseApp term@(App f xs) = 
   History.check Name.TraverseApp term $ do
-    xs' <- mapM Transform.continue xs
-    f' <- Transform.continue f
+    xs' <- mapM traverseArg (range xs)
+    f' <- id
+      . Transform.augmentContext (\f -> App f xs)
+      $ Transform.continue f
     let term' = App f' xs'
     Fail.when (term == term')
     Transform.continue term'
+  where
+  traverseArg :: Nat -> m Term
+  traverseArg n = id
+    . Transform.augmentContext (\t -> App f (setAt (enum n) t xs))
+    $ Transform.continue (xs !! n)
   
 traverseApp _ = Fail.here
 
@@ -224,6 +221,7 @@ traverseApp _ = Fail.here
 traverseFix :: Step m => Term -> m Term
 traverseFix fix@(Fix inf b t) = do
   t' <- id
+    . Transform.augmentContext (\t -> Fix inf b t)
     . Env.bind b
     $ Transform.continue t
   Fail.when (t == t')
