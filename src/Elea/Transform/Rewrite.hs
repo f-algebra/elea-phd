@@ -64,11 +64,17 @@ applyM = id
     ++ Simp.steps
     ++ Prover.steps
     
+
+{-# SPECIALISE rewriteSteps :: [Transform.NamedStep (Fedd.FeddT IO)] #-}
+{-# INLINEABLE rewriteSteps #-}  
     
 rewriteSteps :: Env m => [Transform.NamedStep m]
 rewriteSteps =
   [ Transform.visible "rewrite pattern" rewritePattern
   , Transform.visible "rewrite" rewrite ] 
+
+{-# SPECIALISE expressSteps :: [Transform.NamedStep (Fedd.FeddT IO)] #-}
+{-# INLINEABLE expressSteps #-}    
 
 expressSteps :: Env m => [Transform.NamedStep m]
 expressSteps = 

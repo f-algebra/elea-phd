@@ -1145,7 +1145,7 @@ showTermM Fix { fixInfo = fix_info}
   | Just fix_name <- get fixName fix_info = return fix_name
 showTermM Var { varIndex = var_index, binding = bind } = do
   b <- Env.boundAt var_index
-  return (printf "(%s : %s)" (get Type.bindLabel b) (get Type.bindType b))
+  return (printf "%s" (get Type.bindLabel b))
 showTermM (Leq x y) = do
   x_s <- showTermBracketedM x
   y_s <- showTermBracketedM y

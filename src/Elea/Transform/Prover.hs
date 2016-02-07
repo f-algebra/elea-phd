@@ -40,6 +40,9 @@ type Env m =
 
 type Step m = ( Env m , Simp.Step m )
 
+{-# SPECIALISE steps :: [Transform.NamedStep (Fedd.FeddT IO)] #-}
+{-# INLINEABLE steps #-}  
+
 steps :: Env m => [Transform.NamedStep m]
 steps = 
   [ Transform.visible "reflexivity of =<" reflexivity
@@ -70,9 +73,12 @@ applyM = id
     ++ Simp.steps
     ++ steps 
     
-check :: (Fail.Can m, Transform.Step m) => Term -> m ()
+check :: (Fail.Can m, Step m) => Term -> m ()
 check prop_t = do
-  prop_t' <- Transform.continue prop_t
+  prop_t' <- id
+    . Transform.whenTraceSteps (printf "<checking property> %n" prop_t)
+    . Transform.clearContext
+    $ Transform.continue prop_t
   Fail.unless (prop_t' == Term.truth)
   
 reflexivity :: Fail.Can m => Term -> m Term
@@ -212,7 +218,10 @@ caseSplitInc leq@(Leq (Case cse_t alts) y) = do
 caseSplitInc leq@(Leq left_t (Case cse_t@(Var x _) alts)) = do
   Direction.requireInc
   Fail.unless (x `Indices.freeWithin` left_t)
-  left_t_bot <- Simp.applyM (Indices.replaceAt x (Bot cse_ty) left_t)
+  left_t_bot <- id
+    . Transform.clearContext
+    . Simp.applyM 
+    $ Indices.replaceAt x (Bot cse_ty) left_t
   Fail.unless (isBot left_t_bot)
   History.check Name.CaseSplit leq $ do
     let leq' = Case cse_t (map leqAlt alts)
@@ -226,6 +235,7 @@ caseSplitInc leq@(Leq left_t (Case cse_t@(Var x _) alts)) = do
     left_t' = Indices.liftMany (nlength bs) left_t 
     
 caseSplitInc _ = Fail.here
+
 
 caseSplitDec :: Step m => Term -> m Term
 caseSplitDec leq@(Leq x (Case cse_t alts)) = do

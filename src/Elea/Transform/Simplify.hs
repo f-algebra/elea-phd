@@ -73,6 +73,9 @@ applyWithoutUnfoldM = id
     ++ Eval.transformSteps
     ++ Eval.traverseSteps
     ++ [ Transform.visible "constant argument fusion" constArg ]
+
+{-# SPECIALISE steps :: [Transform.NamedStep (Fedd.FeddT IO)] #-}
+{-# INLINEABLE steps #-}  
     
 steps :: Env m => [Transform.NamedStep m]
 steps =

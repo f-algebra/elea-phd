@@ -60,7 +60,11 @@ apply = id
     ++ transformSteps 
     ++ traverseSteps
   
-  
+{-# SPECIALISE transformSteps :: [Transform.NamedStep (Fedd.FeddT IO)] #-}
+{-# SPECIALISE traverseSteps :: [Transform.NamedStep (Fedd.FeddT IO)] #-}
+{-# INLINEABLE transformSteps #-}  
+{-# INLINEABLE traverseSteps #-}
+
 transformSteps :: Env m => [Transform.NamedStep m]
 transformSteps =
   [ Transform.visible "normalise app" normaliseApp

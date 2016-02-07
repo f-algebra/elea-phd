@@ -32,6 +32,7 @@ import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Monad.Fusion as Fusion
 import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.StepCounter as Steps
+import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Foldable.WellFormed as WellFormed
 import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
@@ -61,7 +62,10 @@ applyM = Transform.compose all_steps
     ++ Simp.steps
     ++ steps
     
-  
+
+{-# SPECIALISE steps :: [Transform.NamedStep (Fedd.FeddT IO)] #-}
+{-# INLINEABLE steps #-}  
+
 steps :: Env m => [Transform.NamedStep m]
 steps = 
   [ Transform.visible "fix-fix fusion" fixfix
@@ -82,6 +86,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
         temp_fix = Fix temp_i fix_b fix_t
     rewrite_from <- id
       . Env.bind fix_b
+      . Transform.clearContext
       . Simp.applyWithoutUnfoldM
       -- We cannot use unfold because it will break fixCon fusion
       -- but we need constArg for free-arg fusion
@@ -586,6 +591,8 @@ discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
       . Env.bindMany c_bs       
       . Memo.memo Name.FoldDiscovery prop 
       . Direction.prover
+      . Transform.whenTraceSteps (printf "<fold-discovery> %n" prop)
+      . Transform.clearContext
       . Transform.continue
       $ Tag.map (const Tag.omega) prop
     unis <- id             
@@ -597,6 +604,7 @@ discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
     hopefully_true <- id
       . Env.bindMany c_bs 
       . Direction.prover
+      . Transform.clearContext
       . Transform.continue
       . Unifier.apply uni 
       . ungeneraliseProp 
