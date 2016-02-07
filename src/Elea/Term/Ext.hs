@@ -1022,11 +1022,9 @@ instance WF.LocallyWellFormed Term where
       . Assert.bool 
       $ Type.isInd (Type.get cse_t)
     Assert.augment "case-of branches have different types"
-      . Assert.bool 
-      $ all (== alt_ty) alt_tys
+      $ Assert.allEqual (map (Type.get . get altInner) alts)
     mapM_ wfAlt alts
     where
-    alt_ty : alt_tys = map (Type.get . get altInner) alts
     wfAlt Alt { _altBindings = binds, _altInner = alt_t } =
       wellFormedVars (zip [0..] (reverse binds)) alt_t
 
@@ -1077,7 +1075,7 @@ wellFormedVars ((var_idx, var_bind) : rest) term = do
 
 assertValidRewrite :: Term -> Term -> Assert.Assert
 assertValidRewrite from to = id
-  . Assert.augment (printf "rewriting %b to %b" from to) $ do
+  . Assert.augment (printf "<rewriting> %n\n<to> %n" from to) $ do
     WF.assert to
     Type.assertEq from to
 
@@ -1147,7 +1145,7 @@ showTermM Fix { fixInfo = fix_info}
   | Just fix_name <- get fixName fix_info = return fix_name
 showTermM Var { varIndex = var_index, binding = bind } = do
   b <- Env.boundAt var_index
-  return (printf "%s" (get Type.bindLabel b))
+  return (printf "(%s : %s)" (get Type.bindLabel b) (get Type.bindType b))
 showTermM (Leq x y) = do
   x_s <- showTermBracketedM x
   y_s <- showTermBracketedM y

@@ -279,9 +279,9 @@ constantFix t@(flattenApp -> Fix _ fix_b fix_t : args)
   correctGuess :: Term -> Bool
   correctGuess guess_t
     | Just [] <- mby_results' = True
-    | Just [guess_t'] <- mby_results' = do
-      tracE [("orig", show t), ("guess", show guess_t), ("guess check", show guess_t')]
-      $ guess_t == guess_t'
+    | Just [guess_t'] <- mby_results' =
+    --  tracE [("orig", show t), ("guess", show guess_t), ("guess check", show guess_t')]
+      guess_t == guess_t'
     | otherwise = False
     where
     rec_f = id

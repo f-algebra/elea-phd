@@ -1,5 +1,5 @@
 module Elea.Monad.Error.Assertion
-  ( Assert, bool, equal, check, checkM, augment,
+  ( Assert, bool, equal, check, checkM, augment, allEqual,
     success, failure, isSuccess, firstFailure, toError,
     assert, assertEq )
 where
@@ -60,6 +60,12 @@ equal :: (Show a, Eq a) => a -> a -> Assert
 equal x y 
   | x == y = success
   | otherwise = failure (printf "expected %s but got %s" (show x) (show y))
+
+allEqual :: (Show a, Eq a) => [a] -> Assert
+allEqual [] = success
+allEqual xs@(y : ys)
+  | all (== y) ys = success
+  | otherwise = failure (printf "expected all equal: %s" (show xs))
 
 assert :: String -> Bool -> a -> a
 assert msg = check . augment msg . bool 

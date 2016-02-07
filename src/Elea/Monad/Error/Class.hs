@@ -17,7 +17,7 @@ type Error = ErrorT Identity
 
 instance Show Stack where
   show (Stack stk) = id
-    . intercalate ", caused by\n" 
+    . concatMap (\str -> printf "\n<caused-by>%s\n" (indent ("\n" ++ str)))
     $ filter (not . null) stk
 
 instance PrintfArg Stack where

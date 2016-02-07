@@ -94,6 +94,8 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
     new_fix_t <- id  
       . Env.bind new_fix_b
       . Fusion.local temp_idx rewrite_from (Var 0 new_fix_b)
+      . Transform.whenTraceSteps (printf "<fusing> %n" orig_t)
+      . Transform.clearContext
       . Transform.continue
       . WellFormed.check
       . Indices.lift

@@ -135,7 +135,9 @@ unfoldProductive _ =
 leftTrans :: Step m => Term -> m Term
 leftTrans leq@(Leq x y) = 
   History.check Name.LeftTrans leq $ do
-    x' <- Transform.continue x  
+    x' <- id
+      . Transform.augmentContext (\t -> Leq t y)
+      $ Transform.continue x  
     Fail.when (x' == x)
     Transform.continue (Leq x' y)
 leftTrans _ = Fail.here
@@ -144,7 +146,10 @@ leftTrans _ = Fail.here
 rightTrans :: Step m => Term -> m Term
 rightTrans leq@(Leq x y) = do
   History.check Name.RightTrans leq $ do
-    y' <- Direction.invert (Transform.continue y)
+    y' <- id
+      . Direction.invert 
+      . Transform.augmentContext (\t -> Leq x t)
+      $ Transform.continue y
     Fail.when (y' == y)
     Transform.continue (Leq x y')
 rightTrans _ = Fail.here
