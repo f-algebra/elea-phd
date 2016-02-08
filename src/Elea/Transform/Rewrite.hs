@@ -70,20 +70,20 @@ applyM = id
     
 rewriteSteps :: Env m => [Transform.NamedStep m]
 rewriteSteps =
-  [ Transform.visible "rewrite pattern" rewritePattern
-  , Transform.visible "rewrite" rewrite ] 
+  [ Transform.step "rewrite pattern" rewritePattern
+  , Transform.step "rewrite" rewrite ] 
 
 {-# SPECIALISE expressSteps :: [Transform.NamedStep (Fedd.FeddT IO)] #-}
 {-# INLINEABLE expressSteps #-}    
 
 expressSteps :: Env m => [Transform.NamedStep m]
 expressSteps = 
-  [ Transform.visible "constructor fission" expressConstructor
-  , Transform.visible "commute constraint" commuteConstraint
-  , Transform.visible "accumulation fission" expressAccumulation
-  , Transform.visible "unfold var match for fix-con fusion" matchVar    
-  , Transform.visible "unfold finitely used fix" finiteCaseFix
-  , Transform.visible "identity fission" identityFix ]
+  [ Transform.step "constructor fission" expressConstructor
+  , Transform.step "commute constraint" commuteConstraint
+  , Transform.step "accumulation fission" expressAccumulation
+  , Transform.step "unfold var match for fix-con fusion" matchVar    
+  , Transform.step "unfold finitely used fix" finiteCaseFix
+  , Transform.step "identity fission" identityFix ]
   
 
 rewritePattern :: Step m => Term -> m Term
@@ -97,7 +97,8 @@ rewrite :: forall m . Step m => Term -> m Term
 rewrite term@(App {}) = do
   term' <- Term.revertMatches term
   rs <- Fusion.findTags (Set.delete Tag.omega (Tag.tags term'))
-  Fail.choose (map (apply term') rs)
+  term' <- Fail.choose (map (apply term') rs)
+  Transform.finish term'
   where
   apply :: Term -> (Term, Term) -> m Term
   apply term (from_t, h) = do
@@ -120,7 +121,8 @@ matchVar term@(App fix@(Fix {}) xs) = do
     $ Fail.unless (Term.beingFused (leftmost from_t))
   -- ^ Make sure this is for a fixCon rewrite
   Fail.unless (length (Term.arguments from_t) == length xs) 
-  Fail.choose (map (tryMatch from_t . enum) dec_idxs)
+  term' <- Fail.choose (map (tryMatch from_t . enum) dec_idxs)
+  Transform.finish term'
   where
   tag = get fixIndex (fixInfo fix)
   dec_idxs = Term.decreasingArgs fix
@@ -141,11 +143,12 @@ identityFix :: forall m . Step m => Term -> m Term
 identityFix orig_t@(App fix@(Fix _ _ fix_t) xs) = do
   Direction.requireInc
   Fail.unless (worthATry fix_t) 
-  Memo.memo Name.IdFix orig_t $ do    
+  term' <- Memo.memo Name.IdFix orig_t $ do    
     Fail.choose 
       . map tryArg
       . filter potentialArg
       $ [0..length xs - 1]
+  Transform.finish term'
   where
   (arg_bs, body_t) = flattenLam fix_t
   (arg_tys, body_ty) = Type.split (Type.get fix)
@@ -190,12 +193,12 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
 
   term' <- id
     . History.check Name.ExpressCon fix
-    . Transform.continue
+    . Transform.restart
     $ app fix' args
     
   Fail.when (term Quasi.<= term')
   Discovery.rewritesTo term term'
-  return term'
+  Transform.finish term'
   where
   (arg_bs, _) = Term.flattenLam fix_t
   gap_b = Bind "gap" term_ty 
@@ -376,11 +379,11 @@ finiteCaseFix term@(Case cse_t@(App fix@(Fix _ _ fix_t) args) alts) = do
  
   History.memoCheck Name.FiniteCaseFix term $ do
     term' <- id
-      . Transform.continue 
+      . Transform.restart 
       $ Case (Term.reduce (Term.unfoldFix fix) args) alts
     -- standard progress check
     Fail.when (term Quasi.<= term')
-    return term'
+    Transform.finish term'
   where  
   cse_ind = Type.fromBase (Type.get cse_t)
   
@@ -412,7 +415,7 @@ expressAccumulation fix@(Fix fix_i fix_b fix_t) = do
   simp_t <- id
     . Assert.check (Type.assertEq body_t trans_t)
     . Env.bindMany (fix_b : arg_bs) 
-    $ Transform.continue trans_t
+    $ Transform.restart trans_t
   let replaced_t = Term.replace acc_t (Var Indices.omega acc_b) simp_t
   Fail.when (acc_idx `Indices.freeWithin` replaced_t)
   let new_fix = id
@@ -421,7 +424,7 @@ expressAccumulation fix@(Fix fix_i fix_b fix_t) = do
         . Indices.replaceAt Indices.omega (Var acc_idx acc_b)
         $ replaced_t
   let final_t = Term.reduce ctx_t [new_fix]
-  return final_t
+  Transform.finish final_t
   where
   acc_args = Term.accumulatingArgs fix
   [arg_n] = acc_args

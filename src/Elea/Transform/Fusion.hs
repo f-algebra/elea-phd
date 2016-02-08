@@ -68,13 +68,13 @@ applyM = Transform.compose all_steps
 
 steps :: Env m => [Transform.NamedStep m]
 steps = 
-  [ Transform.visible "fix-fix fusion" fixfix
-  , Transform.visible "fix-con fusion" fixCon
-  , Transform.visible "accumulator fusion" accumulation
-  , Transform.visible "free-var fusion" decreasingFreeVar
-  , Transform.visible "repeated-argument fusion" repeatedArg
-  , Transform.visible "assertion fusion" matchFix
-  , Transform.visible "fold discovery" discoverFold ]
+  [ Transform.step "fix-fix fusion" fixfix
+  , Transform.step "fix-con fusion" fixCon
+  , Transform.step "accumulator fusion" accumulation
+  , Transform.step "free-var fusion" decreasingFreeVar
+  , Transform.step "repeated-argument fusion" repeatedArg
+  , Transform.step "assertion fusion" matchFix
+  , Transform.step "fold discovery" discoverFold ]
 
 
 fusion :: (?loc :: CallStack, Step m) => Term -> Term -> m Term
@@ -86,7 +86,6 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
         temp_fix = Fix temp_i fix_b fix_t
     rewrite_from <- id
       . Env.bind fix_b
-      . Transform.clearContext
       . Simp.applyWithoutUnfoldM
       -- We cannot use unfold because it will break fixCon fusion
       -- but we need constArg for free-arg fusion
@@ -99,9 +98,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
     new_fix_t <- id  
       . Env.bind new_fix_b
       . Fusion.local temp_idx rewrite_from (Var 0 new_fix_b)
-      . Transform.whenTraceSteps (printf "<fusing> %n" orig_t)
-      . Transform.clearContext
-      . Transform.continue
+      . Transform.restart
       . WellFormed.check
       . Indices.lift
       -- ^ Make room for our new variables we are rewriting to
@@ -125,7 +122,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
       Just new_t -> do
         Discovery.rewritesTo orig_t new_t
    --     trace (printf "[Success, fusing] %s\n[into] %s\n[yielded] %s" fix ctx_t new_t)
-        return new_t
+        Transform.finish new_t
   where
   orig_t = id
     . WellFormed.check
@@ -146,22 +143,12 @@ fixCon orig_t@(App fix@(Fix _ fix_b _) args) = do
   -- ^ Only applicable if unrolling is not
   Fail.when (Type.isRecursive (Type.fromBase (Type.get orig_t)))
   -- ^ I can't envisage this being useful to recursively typed return values
-  mby_result <- id
-    . Fail.catch
+  term' <- id
     . Fail.choose
     . map (conArg . enum)
     . filter (Term.isCon . Term.leftmost . (args !!))
     $ Term.decreasingArgs fix
-    
-  Fail.fromMaybe mby_result
-    {-
-  case mby_result of
-    Just res_t -> return res_t
-    Nothing -> 
-      History.check Name.Unfold orig_t
-        . Transform.continue 
-        $ Term.reduce (Term.unfoldFix fix) args
-        -}
+  Transform.finish term'
   where
   dec_args = map (args !!) (Term.decreasingArgs fix) 
   
@@ -191,13 +178,13 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
     . Assert.augment "fixfix given non lambda floated outer fixed-point" 
     $ Assert.bool (Term.isLambdaFloated o_fix)
   -- Pick the first one which does not fail
-  new_t <- id
+  term' <- id
     . Fail.choose
     -- Run fixfixArg on every decreasing fixpoint argument position
     . map (fixArg o_free_bs . enum)
     . filter (Term.isFix . Term.leftmost . (o_args !!))
     $ reverse o_dec_idxs
-  return new_t
+  Transform.finish term'
   where  
   o_dec_idxs = Term.decreasingArgs o_fix
   o_free_vars = Set.toList (Term.freeVarSet $ error "hi") --- o_fix)
@@ -356,7 +343,8 @@ repeatedArg term@(App fix@(Fix _ fix_b fix_t) args) = do
   Fail.unless (length args == length fix_bs)
   Fail.unless (Term.inductivelyTyped term)
   Fail.when (Term.beingFused fix)
-  Fail.choose (map fuseRepeated rep_arg_is)
+  term' <- Fail.choose (map fuseRepeated rep_arg_is)
+  Transform.finish term'
   where
   rep_arg_is :: [[Int]]
   rep_arg_is = id 
@@ -591,9 +579,7 @@ discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
       . Env.bindMany c_bs       
       . Memo.memo Name.FoldDiscovery prop 
       . Direction.prover
-      . Transform.whenTraceSteps (printf "<fold-discovery> %n" prop)
-      . Transform.clearContext
-      . Transform.continue
+      . Transform.restart
       $ Tag.map (const Tag.omega) prop
     unis <- id             
       . Env.trackOffsetT
@@ -604,8 +590,7 @@ discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
     hopefully_true <- id
       . Env.bindMany c_bs 
       . Direction.prover
-      . Transform.clearContext
-      . Transform.continue
+      . Transform.restart
       . Unifier.apply uni 
       . ungeneraliseProp 
       $ prop'

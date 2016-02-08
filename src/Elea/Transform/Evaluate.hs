@@ -221,7 +221,7 @@ traverseFix fix@(Fix inf b t) = do
     . Env.bind b
     $ Transform.traverse (\t -> Fix inf b t) t
   Fail.when (t == t')
-  Transform.continue
+  Transform.finish
     . Term.dirtyFix
     $ Fix inf b t'
     
