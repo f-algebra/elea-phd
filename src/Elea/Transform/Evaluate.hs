@@ -67,23 +67,23 @@ apply = id
 
 transformSteps :: Env m => [Transform.NamedStep m]
 transformSteps =
-  [ Transform.visible "normalise app" normaliseApp
-  , Transform.visible "propagate _|_" strictness
-  , Transform.visible "beta reduction" beta
-  , Transform.visible "case-of reduction" caseOfCon
-  , Transform.visible "commute case-app" caseApp
-  , Transform.visible "commute app-case" appCase
-  , Transform.visible "commute case-case" caseCase
-  , Transform.visible "seq reduction" reduceSeq
-  , Transform.invisible "clean fix" cleanFix ]
+  [ Transform.step "normalise app" normaliseApp
+  , Transform.step "propagate _|_" strictness
+  , Transform.step "beta reduction" beta
+  , Transform.step "case-of reduction" caseOfCon
+  , Transform.step "commute case-app" caseApp
+  , Transform.step "commute app-case" appCase
+  , Transform.step "commute case-case" caseCase
+  , Transform.step "seq reduction" reduceSeq
+  , Transform.step "clean fix" cleanFix ]
 
 traverseSteps :: Env m => [Transform.NamedStep m]
 traverseSteps = 
-  [ Transform.invisible "traverse match" traverseMatch
-  , Transform.invisible "traverse branches" traverseBranches
-  , Transform.invisible "traverse fun" traverseFun
-  , Transform.invisible "traverse app" traverseApp
-  , Transform.invisible "traverse fix" traverseFix ]
+  [ Transform.step "traverse match" traverseMatch
+  , Transform.step "traverse branches" traverseBranches
+  , Transform.step "traverse fun" traverseFun
+  , Transform.step "traverse app" traverseApp
+  , Transform.step "traverse fix" traverseFix ]
   
 unwrapDepth :: Nat
 unwrapDepth = 2
@@ -95,7 +95,7 @@ unwrapDepth = 2
 strictness :: Step m => Term -> m Term
 strictness term 
   | isUndef term = 
-    return (Bot (Type.get term))
+    Transform.finish (Bot (Type.get term))
   where 
   isUndef (App (Bot _) _) = True
   isUndef (Case (Bot _) _) = True
@@ -152,9 +152,7 @@ caseOfCon _ = Fail.here
 traverseMatch :: Step m => Term -> m Term
 traverseMatch term@(Case cse_t alts) = 
   History.check Name.TraverseMatch term $ do 
-    cse_t' <- id
-      . Transform.augmentContext (\t -> Case t alts)
-      $ Transform.continue cse_t  
+    cse_t' <- Transform.traverse (\t -> Case t alts) cse_t  
     Fail.when (cse_t == cse_t')
     Transform.continue (Case cse_t' alts)
 traverseMatch _ = Fail.here
@@ -170,10 +168,9 @@ traverseBranches term@(Case cse_t alts) =
   where
   traverseAlt n alt@(Alt con bs t) = do
     t' <- id
-      . Transform.augmentContext altContext
       . Env.bindMany bs
       . Env.matched (Term.matchFromCase n term)
-      . Transform.continue 
+      . Transform.traverse altContext 
       $ substituteVar t
     return (Alt con bs t')
     where
@@ -193,13 +190,12 @@ traverseBranches _ = Fail.here
 traverseFun :: Step m => Term -> m Term
 traverseFun (Lam b t) = do
   t' <- id
-    . Transform.augmentContext (\t -> Lam b t)
     . Env.bind b 
-    $ Transform.continue t
+    $ Transform.traverse (\t -> Lam b t) t
   Fail.when (t == t')
   if t' == Term.truth || t' == Term.falsity
-  then return t'
-  else return (Lam b t')
+  then Transform.finish t'
+  else Transform.finish (Lam b t')
 traverseFun _ = Fail.here
 
 
@@ -208,16 +204,13 @@ traverseApp term@(App f xs) =
   History.check Name.TraverseApp term $ do
     xs' <- mapM traverseArg (range xs)
     f' <- id
-      . Transform.augmentContext (\f -> App f xs)
-      $ Transform.continue f
+      $ Transform.traverse (\f -> App f xs) f
     let term' = App f' xs'
     Fail.when (term == term')
     Transform.continue term'
   where
   traverseArg :: Nat -> m Term
-  traverseArg n = id
-    . Transform.augmentContext (\t -> App f (setAt (enum n) t xs))
-    $ Transform.continue (xs !! n)
+  traverseArg n = Transform.traverse (\t -> App f (setAt (enum n) t xs)) (xs !! n)
   
 traverseApp _ = Fail.here
 
@@ -225,11 +218,10 @@ traverseApp _ = Fail.here
 traverseFix :: Step m => Term -> m Term
 traverseFix fix@(Fix inf b t) = do
   t' <- id
-    . Transform.augmentContext (\t -> Fix inf b t)
     . Env.bind b
-    $ Transform.continue t
+    $ Transform.traverse (\t -> Fix inf b t) t
   Fail.when (t == t')
-  return
+  Transform.continue
     . Term.dirtyFix
     $ Fix inf b t'
     
@@ -286,9 +278,9 @@ caseApp _ = Fail.here
 
 reduceSeq :: Step m => Term -> m Term
 reduceSeq (Seq (Bot _) t) = 
-  return (Bot (Type.get t))
+  Transform.finish (Bot (Type.get t))
 reduceSeq (Seq (leftmost -> Con {}) t) =
-  return t
+  Transform.finish t
 reduceSeq _ = Fail.here
 
 
@@ -338,6 +330,7 @@ cleanFix fix_t@Fix{ fixInfo = fix_info, inner = fix_body }
           . set fixIsDirty False
           . set fixIsClosed (Set.null (Term.freeVarSet fix_t))
           $ fix_info
-    return fix_t { fixInfo = fix_info' }
+    Transform.traverse id (fix_t { fixInfo = fix_info' })
+    -- ^ traverse makes the step invisible in tracing
 cleanFix _ = 
   Fail.here

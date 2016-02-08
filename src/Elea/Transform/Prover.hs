@@ -45,25 +45,26 @@ type Step m = ( Env m , Simp.Step m )
 
 steps :: Env m => [Transform.NamedStep m]
 steps = 
-  [ Transform.visible "reflexivity of =<" reflexivity
-  , Transform.visible "forall a . _|_ =< A" bottom
-  , Transform.visible "=< as reverse implication" implication
-  , Transform.visible "double negation" doubleNeg
-  , Transform.visible "function to forall" forAll
-  , Transform.visible "remove forall" removeForAll
-  , Transform.visible "left transitivity of =<" leftTrans
-  , Transform.visible "right transitivity of =<" rightTrans
-  , Transform.visible "case-split =<" caseSplitInc
-  , Transform.visible "case-split >=" caseSplitDec
-  , Transform.visible "=< constructor" constructor
-  , Transform.visible "least fixed-point rule" lfp
-  , Transform.visible "productive unfold =<" unfoldProductive
-  , Transform.visible "case-of =<" leqMatch
-  , Transform.visible "prove branch absurd" absurdBranch ]
+  [ Transform.step "reflexivity of =<" reflexivity
+  , Transform.step "forall a . _|_ =< A" bottom
+  , Transform.step "=< as reverse implication" implication
+  , Transform.step "double negation" doubleNeg
+  , Transform.step "function to forall" forAll
+  , Transform.step "remove forall" removeForAll
+  , Transform.step "left transitivity of =<" leftTrans
+  , Transform.step "right transitivity of =<" rightTrans
+  , Transform.step "case-split =<" caseSplitInc
+  , Transform.step "case-split >=" caseSplitDec
+  , Transform.step "=< constructor" constructor
+  , Transform.step "least fixed-point rule" lfp
+  , Transform.step "productive unfold =<" unfoldProductive
+  , Transform.step "case-of =<" leqMatch
+  , Transform.step "prove branch absurd" absurdBranch ]
 
 -- | Theorem prover without fusion; use Fusion.run for the full prover  
 applyM :: Env m => Term -> m Term
 applyM = id
+  . Transform.clearContext
   . Transform.compose all_steps
   . WellFormed.check
   where
@@ -73,32 +74,29 @@ applyM = id
     ++ Simp.steps
     ++ steps 
     
-check :: (Fail.Can m, Step m) => Term -> m ()
+check :: Step m => Term -> m ()
 check prop_t = do
-  prop_t' <- id
-    . Transform.whenTraceSteps (printf "<checking property> %n" prop_t)
-    . Transform.clearContext
-    $ Transform.continue prop_t
+  prop_t' <- Transform.restart prop_t
   Fail.unless (prop_t' == Term.truth)
   
-reflexivity :: Fail.Can m => Term -> m Term
+reflexivity :: Step m => Term -> m Term
 reflexivity (Leq x y) 
-  | x == y = return truth
+  | x == y = Transform.finish truth
 reflexivity _ = Fail.here
 
 
-bottom :: Fail.Can m => Term -> m Term
-bottom (Leq (Bot _) _) = return truth
+bottom :: Step m => Term -> m Term
+bottom (Leq (Bot _) _) = Transform.finish truth
 bottom (Leq x (Bot _)) 
-  | isCon (leftmost x) = return falsity
+  | isCon (leftmost x) = Transform.finish falsity
 bottom _ = Fail.here
 
 
-implication :: Fail.Can m => Term -> m Term
+implication :: Step m => Term -> m Term
 implication (Leq x y)
-  | x == truth = return truth
+  | x == truth = Transform.finish truth
   -- ^ anything implies true
-  | y == truth = return falsity
+  | y == truth = Transform.finish falsity
   -- ^ true does not imply false
 implication _  = Fail.here
 
@@ -113,7 +111,7 @@ doubleNeg _ = Fail.here
 
 constructor :: Step m => Term -> m Term
 constructor (Leq (flattenApp -> Con tc : xs) (flattenApp -> Con tc' : xs'))
-  | Tag.untag tc /= Tag.untag tc' = return falsity
+  | Tag.untag tc /= Tag.untag tc' = Transform.finish falsity
   | otherwise = id
     . Transform.continue 
     . conj 
@@ -141,9 +139,7 @@ unfoldProductive _ =
 leftTrans :: Step m => Term -> m Term
 leftTrans leq@(Leq x y) = 
   History.check Name.LeftTrans leq $ do
-    x' <- id
-      . Transform.augmentContext (\t -> Leq t y)
-      $ Transform.continue x  
+    x' <- Transform.traverse (\t -> Leq t y) x  
     Fail.when (x' == x)
     Transform.continue (Leq x' y)
 leftTrans _ = Fail.here
@@ -153,9 +149,8 @@ rightTrans :: Step m => Term -> m Term
 rightTrans leq@(Leq x y) = do
   History.check Name.RightTrans leq $ do
     y' <- id
-      . Direction.invert 
-      . Transform.augmentContext (\t -> Leq x t)
-      $ Transform.continue y
+      . Direction.invert  
+      $ Transform.traverse (\t -> Leq x t) y
     Fail.when (y' == y)
     Transform.continue (Leq x y')
 rightTrans _ = Fail.here
@@ -175,8 +170,8 @@ forAll _ = Fail.here
 -- | forall x . tt == tt, forall x . ff == ff
 removeForAll :: Step m => Term -> m Term 
 removeForAll (Lam _ t)
-  | t == Term.truth = return t
-  | t == Term.falsity = return t
+  | t == Term.truth = Transform.finish t
+  | t == Term.falsity = Transform.finish t
 removeForAll _ = Fail.here
     
 
@@ -219,7 +214,6 @@ caseSplitInc leq@(Leq left_t (Case cse_t@(Var x _) alts)) = do
   Direction.requireInc
   Fail.unless (x `Indices.freeWithin` left_t)
   left_t_bot <- id
-    . Transform.clearContext
     . Simp.applyM 
     $ Indices.replaceAt x (Bot cse_ty) left_t
   Fail.unless (isBot left_t_bot)
@@ -256,7 +250,7 @@ leqMatch :: Step m => Term -> m Term
 leqMatch (Leq t (Case cse_t alts)) = do
   Direction.requireInc
   Fail.unless (t == cse_t)
-  return (Case cse_t (map mkAlt alts))
+  Transform.finish (Case cse_t (map mkAlt alts))
   where
   mkAlt alt@(Alt tc bs alt_t) = 
     Alt tc bs (Leq pat_t alt_t)
@@ -307,7 +301,7 @@ absurdBranch orig_t@(Case (Var x b) alts) = do
         . Direction.local Direction.Dec
         . Memo.memo Name.AbsurdEnv prop
         . Fusion.disable
-        $ Transform.continue prop
+        $ Transform.restart prop
         -- ^ Using our prover backwards 
         -- performs proof by contradiction
       return (prop' == Term.falsity)
@@ -317,36 +311,3 @@ absurdBranch orig_t@(Case (Var x b) alts) = do
       prop = Leq pat_t cse_t
     
 absurdBranch _ = Fail.here
-
-
-generalise :: Step m => Term -> m Term
-generalise leq@(Leq (flattenApp -> Fix {} : args) right_t) 
-  | not (null to_gen) = do
-    Transform.continue 
-      $ foldr Term.tryGeneralise leq to_gen
-  where 
-  to_gen = id
-    . filter (\t -> t `Term.isSubterm` right_t)
-    . filter isFix
-    $ args 
-    {-
-generalise leq@(Leq (flattenApp -> fix@(Fix {}) : args) right_t) 
-  | not (null free_vars) = do
-    leq' <- Term.tryGeneraliseInFix (head free_vars) leq
-    leq_s <- showM leq'
-    id
-      . tracE [("gen leq", leq_s)]
-      $ Transform.continue leq'
-  where
-  free_vars = id
-    . filter (\x -> freeInFix x fix)
-    . map fromVar
-    . filter isVar
-    $ args
-  
-  freeInFix :: Index -> Term -> Bool
-  freeInFix var fix =
-    isFix fix && Indices.freeWithin var fix
-    -}
-generalise _ =
-  Fail.here

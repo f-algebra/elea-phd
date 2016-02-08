@@ -55,6 +55,7 @@ apply = Fedd.eval . applyM
     
 applyM :: (Steps.Limiter m, Env m) => Term -> m Term
 applyM = id
+  . Transform.clearContext
   . Transform.compose all_steps
   . WellFormed.check 
   where
@@ -66,25 +67,26 @@ applyM = id
 -- Bit of a hack which is needed for free-arg fusion
 applyWithoutUnfoldM :: Env m => Term -> m Term
 applyWithoutUnfoldM = id
+  . Transform.clearContext
   . Transform.compose eval_and_constArg
   . WellFormed.check
   where
   eval_and_constArg = []
     ++ Eval.transformSteps
     ++ Eval.traverseSteps
-    ++ [ Transform.visible "constant argument fusion" constArg ]
+    ++ [ Transform.step "constant argument fusion" constArg ]
 
 {-# SPECIALISE steps :: [Transform.NamedStep (Fedd.FeddT IO)] #-}
 {-# INLINEABLE steps #-}  
     
 steps :: Env m => [Transform.NamedStep m]
 steps =
-  [ Transform.visible "lambda branch" caseFun
-  , Transform.visible "constant argument fusion" constArg
-  , Transform.visible "identity case-of" identityCase
-  , Transform.visible "subterm fission" constantFix
-  , Transform.visible "unfold" unfold
-  , Transform.visible "unfold case-of term" unfoldCase
+  [ Transform.step "lambda branch" caseFun
+  , Transform.step "constant argument fusion" constArg
+  , Transform.step "identity case-of" identityCase
+  , Transform.step "subterm fission" constantFix
+  , Transform.step "unfold" unfold
+  , Transform.step "unfold case-of term" unfoldCase
   {-
  -- , floatVarMatch
   , propagateMatch
@@ -140,7 +142,7 @@ constArg term@(App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
     
     -- Might as well simplify the constant argument before pushing it inside
     -- and possible duplicating it
-    arg' <- Transform.continue (args !! pos)
+    arg' <- Transform.restart (args !! pos)
     let args' = setAt (enum pos) arg' args
     
     -- Run evaluation to reduce all the new lambdas
@@ -220,10 +222,10 @@ identityCase _ = Fail.here
 
 -- | Dunno if this ever comes up but if we have a fix without any occurrence
 -- of the fix variable in the body we can just drop it.
-uselessFix :: Fail.Can m => Term -> m Term
+uselessFix :: Step m => Term -> m Term
 uselessFix (Fix _ _ fix_t)
   | not (0 `Set.member` Indices.free fix_t) = 
-    return (Indices.lower fix_t)
+    Transform.finish (Indices.lower fix_t)
 uselessFix _ = Fail.here
 
 
@@ -241,7 +243,7 @@ constantFix t@(flattenApp -> Fix _ fix_b fix_t : args)
   | Just [] <- mby_results
   , correctGuess (Bot result_ty) = do
     Direction.requireInc
-    return (Bot result_ty)
+    Transform.finish (Bot result_ty)
   
   where
   (arg_bs, _) = flattenLam fix_t
@@ -344,13 +346,10 @@ unfold term@(App fix@(Fix {}) args)
   || cant_fix_con_fuse =
     History.check Name.Unfold term $ do
       term' <- id
-        . Transform.continue
+        . Transform.restart
         $ Term.reduce (Term.unfoldFix fix) args
-      when (term Quasi.<= term') $ do
-     --   trace ("\n\n[failed unfold] " ++ show term ++ "\n\n[into] " ++ show term') 
-          Fail.here 
-      return 
-        $ term'
+      Fail.when (term Quasi.<= term')
+      Transform.finish term'
   where
   needsUnroll t = 
     Term.isBot t
@@ -401,9 +400,9 @@ unfoldCase term@(Case (flattenApp -> fix@(Fix {}) : xs) alts)
   | assert_fun || only_prod  =
     History.check Name.UnfoldCase term $ do
       let term' = Case (Term.reduce (Term.unfoldFix fix) xs) alts
-      term'' <- Transform.continue term'
+      term'' <- Transform.restart term'
       Fail.when (term Quasi.<= term'')
-      return term''
+      Transform.finish term''
   where
   assert_fun = 
     any (isCon . leftmost) xs
