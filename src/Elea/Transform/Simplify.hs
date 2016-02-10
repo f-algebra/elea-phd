@@ -142,7 +142,7 @@ constArg term@(App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
     
     -- Might as well simplify the constant argument before pushing it inside
     -- and possible duplicating it
-    arg' <- Transform.restart (args !! pos)
+    arg' <- Transform.restart "constant argument fusion" (args !! pos)
     let args' = setAt (enum pos) arg' args
     
     -- Run evaluation to reduce all the new lambdas
@@ -347,7 +347,7 @@ unfold term@(App fix@(Fix {}) args)
   || cant_fix_con_fuse =
     History.check Name.Unfold term $ do
       term' <- id
-        . Transform.restart
+        . Transform.restart "fixed-point unfolding"
         $ Term.reduce (Term.unfoldFix fix) args
       Fail.when (term Quasi.<= term')
       Transform.noMoreRewrites
@@ -402,7 +402,7 @@ unfoldCase term@(Case (flattenApp -> fix@(Fix {}) : xs) alts)
   | assert_fun || only_prod  =
     History.check Name.UnfoldCase term $ do
       let term' = Case (Term.reduce (Term.unfoldFix fix) xs) alts
-      term'' <- Transform.restart term'
+      term'' <- Transform.restart "case-of fixed-point unfolding" term'
       Fail.when (term Quasi.<= term'')
       Transform.noMoreRewrites
       return term''

@@ -8,6 +8,7 @@ module Elea.Monad.Transform
   Env (..),
   NamedStep, 
   step,
+  silentStep,
   compose,
   mapRewriteT,
   whenTraceSteps,
@@ -45,9 +46,15 @@ class (Env m, Fail.Can m) => Step m where
 traverse :: Step m => (Term -> Term) -> Term -> m Term
 traverse ctx = augmentContext ctx . apply
 
-restart :: Step m => Term -> m Term
-restart = clearContext . apply
-
+restart :: Step m => String -> Term -> m Term
+restart name term = do
+  term' <- id
+    . clearContext 
+    . (>>= apply)
+    . whenTraceSteps (printf "\n<entering %s> %n" name term)
+    $ return term
+  whenTraceSteps (printf "\n<finished %s>" name)
+    $ return term'
 
 -- | Carry around a call to a simplification function
 newtype RewriteT m a 
@@ -56,11 +63,19 @@ newtype RewriteT m a
   
 data NamedStep m = NamedStep 
   { rewriteStepName :: !String
+  , rewriteStepSilent :: !Bool
   , rewriteStep :: Term -> RewriteT m Term }
 
 step :: Monad m => String -> (Term -> RewriteT m Term) -> NamedStep m
 step name rewrite = NamedStep 
   { rewriteStepName = name
+  , rewriteStepSilent = False
+  , rewriteStep = rewrite }
+
+silentStep :: String -> (Term -> RewriteT m Term) -> NamedStep m
+silentStep name rewrite = NamedStep
+  { rewriteStepName = name
+  , rewriteStepSilent = True
   , rewriteStep = rewrite }
 
 mapRewriteT :: forall m a b . Monad m 
@@ -83,7 +98,7 @@ compose all_steps = apply
   applyOneStep (named_step : steps) term = do
     mby_term' <- id
       . runMaybeT 
-      $ runReaderT (rewriteT (rewriteStep named_step term)) recursiveCall
+      $ runReaderT (rewriteT (rewriteStep named_step term)) apply
     continue <- continueRewriting
     yesMoreRewrites  -- gotta switch this flag back on
     case mby_term' of
@@ -94,19 +109,15 @@ compose all_steps = apply
         Assert.checkM
           . Assert.augment (printf "within step \"%s\"" step_name)
           $ Term.assertValidRewrite full_term full_term'
-        whenTraceSteps (printf "<step %s> %n" step_name full_term') $ do
+        let traceStep
+              | rewriteStepSilent named_step = id
+              | otherwise = whenTraceSteps (printf "\n<applied %s> %n" step_name full_term')
+        traceStep $ do
           if continue 
           then apply term'  -- fingers crossed for tail-call optimisation
           else return term' 
     where
     step_name = rewriteStepName named_step
-
-    recursiveCall :: Term -> m Term
-    recursiveCall = id
-      . whenTraceSteps (printf "<leaving %s>" step_name)
-      . (>>= apply)
-      . whenTraceSteps (printf "<entering %s>" step_name)
-      . return
 
 liftCatch :: Monad m 
   => (m (Maybe a) -> (e -> m (Maybe a)) -> m (Maybe a))

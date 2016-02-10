@@ -83,7 +83,8 @@ expressSteps =
   , Transform.step "accumulation fission" expressAccumulation
   , Transform.step "unfold var match for fix-con fusion" matchVar    
   , Transform.step "unfold finitely used fix" finiteCaseFix
-  , Transform.step "identity fission" identityFix ]
+ -- , Transform.step "identity fission" identityFix
+  ]
   
 
 rewritePattern :: Step m => Term -> m Term
@@ -194,7 +195,7 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
 
   term' <- id
     . History.check Name.ExpressCon fix
-    . Transform.restart
+    . Transform.restart "constructor fission"
     $ app fix' args
     
   Fail.when (term Quasi.<= term')
@@ -381,7 +382,7 @@ finiteCaseFix term@(Case cse_t@(App fix@(Fix _ _ fix_t) args) alts) = do
  
   History.memoCheck Name.FiniteCaseFix term $ do
     term' <- id
-      . Transform.restart 
+      . Transform.restart "case-of finite fixed-point unfolding"
       $ Case (Term.reduce (Term.unfoldFix fix) args) alts
     -- standard progress check
     Fail.when (term Quasi.<= term')
@@ -418,7 +419,7 @@ expressAccumulation fix@(Fix fix_i fix_b fix_t) = do
   simp_t <- id
     . Assert.check (Type.assertEq body_t trans_t)
     . Env.bindMany (fix_b : arg_bs) 
-    $ Transform.restart trans_t
+    $ Transform.restart "accumulation fission" trans_t
   let replaced_t = Term.replace acc_t (Var Indices.omega acc_b) simp_t
   Fail.when (acc_idx `Indices.freeWithin` replaced_t)
   let new_fix = id

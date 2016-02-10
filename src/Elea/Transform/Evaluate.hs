@@ -75,15 +75,15 @@ transformSteps =
   , Transform.step "commute app-case" appCase
   , Transform.step "commute case-case" caseCase
   , Transform.step "seq reduction" reduceSeq
-  , Transform.step "clean fix" cleanFix ]
+  , Transform.silentStep "clean fix" cleanFix ]
 
 traverseSteps :: Env m => [Transform.NamedStep m]
 traverseSteps = 
-  [ Transform.step "traverse match" traverseMatch
-  , Transform.step "traverse branches" traverseBranches
-  , Transform.step "traverse fun" traverseFun
-  , Transform.step "traverse app" traverseApp
-  , Transform.step "traverse fix" traverseFix ]
+  [ Transform.silentStep "traverse match" traverseMatch
+  , Transform.silentStep "traverse branches" traverseBranches
+  , Transform.silentStep "traverse fun" traverseFun
+  , Transform.silentStep "traverse app" traverseApp
+  , Transform.silentStep "traverse fix" traverseFix ]
   
 unwrapDepth :: Nat
 unwrapDepth = 2

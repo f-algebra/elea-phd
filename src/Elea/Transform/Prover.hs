@@ -45,20 +45,20 @@ type Step m = ( Env m , Simp.Step m )
 
 steps :: Env m => [Transform.NamedStep m]
 steps = 
-  [ Transform.step "reflexivity of =<" reflexivity
-  , Transform.step "forall a . _|_ =< A" bottom
-  , Transform.step "=< as reverse implication" implication
+  [ Transform.step "reflexivity of (=<)" reflexivity
+  , Transform.step "(forall a . _|_ =< A)" bottom
+  , Transform.step "(=<) as reverse implication" implication
   , Transform.step "double negation" doubleNeg
   , Transform.step "function to forall" forAll
   , Transform.step "remove forall" removeForAll
-  , Transform.step "left transitivity of =<" leftTrans
-  , Transform.step "right transitivity of =<" rightTrans
-  , Transform.step "case-split =<" caseSplitInc
-  , Transform.step "case-split >=" caseSplitDec
-  , Transform.step "=< constructor" constructor
+  , Transform.step "left transitivity of (=<)" leftTrans
+  , Transform.step "right transitivity of (=<)" rightTrans
+  , Transform.step "case-split (=<)" caseSplitInc
+  , Transform.step "case-split (>=)" caseSplitDec
+  , Transform.step "(=<) constructor" constructor
   , Transform.step "least fixed-point rule" lfp
   , Transform.step "productive unfold =<" unfoldProductive
-  , Transform.step "case-of =<" leqMatch
+  , Transform.step "case-of (=<)" leqMatch
   , Transform.step "prove branch absurd" absurdBranch ]
 
 -- | Theorem prover without fusion; use Fusion.run for the full prover  
@@ -76,7 +76,7 @@ applyM = id
     
 check :: Step m => Term -> m ()
 check prop_t = do
-  prop_t' <- Transform.restart prop_t
+  prop_t' <- Transform.restart "property check" prop_t
   Fail.unless (prop_t' == Term.truth)
   
 reflexivity :: Step m => Term -> m Term
@@ -303,7 +303,7 @@ absurdBranch orig_t@(Case (Var x b) alts) = do
         . Direction.local Direction.Dec
         . Memo.memo Name.AbsurdEnv prop
         . Fusion.disable
-        $ Transform.restart prop
+        $ Transform.restart "absurdity checking" prop
         -- ^ Using our prover backwards 
         -- performs proof by contradiction
       return (prop' == Term.falsity)

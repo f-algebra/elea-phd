@@ -98,7 +98,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
     new_fix_t <- id  
       . Env.bind new_fix_b
       . Fusion.local temp_idx rewrite_from (Var 0 new_fix_b)
-      . Transform.restart
+      . Transform.restart "fixed-point fusion"
       . WellFormed.check
       . Indices.lift
       -- ^ Make room for our new variables we are rewriting to
@@ -570,7 +570,7 @@ discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
       . Env.bindMany c_bs       
       . Memo.memo Name.FoldDiscovery prop 
       . Direction.prover
-      . Transform.restart
+      . Transform.restart "fold-invention property simplification"
       $ Tag.map (const Tag.omega) prop
     unis <- id             
       . Env.trackOffsetT
@@ -581,7 +581,7 @@ discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
     hopefully_true <- id
       . Env.bindMany c_bs 
       . Direction.prover
-      . Transform.restart
+      . Transform.restart "fold-invention property verification"
       . Unifier.apply uni 
       . ungeneraliseProp 
       $ prop'
