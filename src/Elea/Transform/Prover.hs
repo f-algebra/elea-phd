@@ -81,22 +81,22 @@ check prop_t = do
   
 reflexivity :: Step m => Term -> m Term
 reflexivity (Leq x y) 
-  | x == y = Transform.finish truth
+  | x == y = return truth
 reflexivity _ = Fail.here
 
 
 bottom :: Step m => Term -> m Term
-bottom (Leq (Bot _) _) = Transform.finish truth
+bottom (Leq (Bot _) _) = return truth
 bottom (Leq x (Bot _)) 
-  | isCon (leftmost x) = Transform.finish falsity
+  | isCon (leftmost x) = return falsity
 bottom _ = Fail.here
 
 
 implication :: Step m => Term -> m Term
 implication (Leq x y)
-  | x == truth = Transform.finish truth
+  | x == truth = return truth
   -- ^ anything implies true
-  | y == truth = Transform.finish falsity
+  | y == truth = return falsity
   -- ^ true does not imply false
 implication _  = Fail.here
 
@@ -105,15 +105,15 @@ doubleNeg :: Step m => Term -> m Term
 doubleNeg (Leq x (Leq y z)) 
   | x == falsity
   , y == falsity = 
-    Transform.continue z
+    return z
 doubleNeg _ = Fail.here
 
 
 constructor :: Step m => Term -> m Term
 constructor (Leq (flattenApp -> Con tc : xs) (flattenApp -> Con tc' : xs'))
-  | Tag.untag tc /= Tag.untag tc' = Transform.finish falsity
+  | Tag.untag tc /= Tag.untag tc' = return falsity
   | otherwise = id
-    . Transform.continue 
+    . return 
     . conj 
     $ zipWith Leq xs xs'
 constructor _ = Fail.here
@@ -124,13 +124,13 @@ unfoldProductive leq@(Leq con_t (flattenApp -> fix@(Fix {}) : args))
   | isCon (leftmost con_t)
   , Term.isProductive fix = do
     History.check Name.UnfoldProductive leq 
-      . Transform.continue
+      . return
       $ Leq con_t (Term.reduce (Term.unfoldFix fix) args)
 unfoldProductive leq@(Leq (flattenApp -> fix@(Fix {}) : args) con_t)
   | isCon (leftmost con_t) 
   , Term.isProductive fix = do
     History.check Name.UnfoldProductive leq
-      . Transform.continue
+      . return
       $ Leq (Term.reduce (Term.unfoldFix fix) args) con_t
 unfoldProductive _ = 
   Fail.here
@@ -141,7 +141,7 @@ leftTrans leq@(Leq x y) =
   History.check Name.LeftTrans leq $ do
     x' <- Transform.traverse (\t -> Leq t y) x  
     Fail.when (x' == x)
-    Transform.continue (Leq x' y)
+    return (Leq x' y)
 leftTrans _ = Fail.here
   
 
@@ -152,14 +152,14 @@ rightTrans leq@(Leq x y) = do
       . Direction.invert  
       $ Transform.traverse (\t -> Leq x t) y
     Fail.when (y' == y)
-    Transform.continue (Leq x y')
+    return (Leq x y')
 rightTrans _ = Fail.here
 
 
 forAll :: Step m => Term -> m Term
 forAll leq@(Leq x y) = do
   Fail.unless (isLam x || isLam y)
-  Transform.continue (Lam b leq')
+  return (Lam b leq')
   where
   (leq', b) 
     | Lam b x' <- x = (Leq x' (Term.reduce (Indices.lift y) [Var 0 b]), b)
@@ -170,8 +170,9 @@ forAll _ = Fail.here
 -- | forall x . tt == tt, forall x . ff == ff
 removeForAll :: Step m => Term -> m Term 
 removeForAll (Lam _ t)
-  | t == Term.truth = Transform.finish t
-  | t == Term.falsity = Transform.finish t
+  | t == Term.truth || t == Term.falsity = do
+    Transform.noMoreRewrites
+    return t
 removeForAll _ = Fail.here
     
 
@@ -184,7 +185,7 @@ lfp (Leq x y) = do
     && Unifier.exists y x 
     && not (Unifier.alphaEq x y)
   History.check Name.LFP (Leq x y)
-    $ Transform.continue (Leq x' y)
+    $ return (Leq x' y)
   where
   x' = fixInduction x y
 
@@ -203,7 +204,7 @@ caseSplitInc leq@(Leq (Case cse_t alts) y) = do
   Direction.requireInc
   History.check Name.CaseSplit leq $ do
     let leq' = Case cse_t (map leqAlt alts)
-    Transform.continue leq'
+    return leq'
   where
   leqAlt (Alt tc bs alt_t) =
     Alt tc bs (Leq alt_t y')
@@ -219,7 +220,7 @@ caseSplitInc leq@(Leq left_t (Case cse_t@(Var x _) alts)) = do
   Fail.unless (isBot left_t_bot)
   History.check Name.CaseSplit leq $ do
     let leq' = Case cse_t (map leqAlt alts)
-    Transform.continue leq'
+    return leq'
   where 
   cse_ty = Type.get cse_t
 
@@ -236,7 +237,7 @@ caseSplitDec leq@(Leq x (Case cse_t alts)) = do
   Direction.requireDec
   History.check Name.CaseSplit leq $ do
     let leq' = Case cse_t (map leqAlt alts)
-    Transform.continue leq'
+    return leq'
   where
   leqAlt (Alt tc bs alt_t) =
     Alt tc bs (Leq x' alt_t)
@@ -250,7 +251,8 @@ leqMatch :: Step m => Term -> m Term
 leqMatch (Leq t (Case cse_t alts)) = do
   Direction.requireInc
   Fail.unless (t == cse_t)
-  Transform.finish (Case cse_t (map mkAlt alts))
+  Transform.noMoreRewrites
+  return (Case cse_t (map mkAlt alts))
   where
   mkAlt alt@(Alt tc bs alt_t) = 
     Alt tc bs (Leq pat_t alt_t)
@@ -265,7 +267,7 @@ absurdBranch orig_t@(Case (Var x b) alts) = do
   Fail.unless (Type.Base Type.prop == orig_ty)
   alts' <- zipWithM absurdAlt [0..] alts
   Fail.when (alts' == alts)
-  Transform.continue (Case (Var x b) alts')
+  return (Case (Var x b) alts')
   where
   orig_ty = Type.get orig_t
 

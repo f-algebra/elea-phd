@@ -44,8 +44,11 @@ check assert
   | otherwise = error (show (fromFailure assert'))
   where
   assert' = augment (showCallStack ?loc) assert
-checkM assert =
-  check assert (if isSuccess assert then return () else fail "")
+checkM assert
+  | isSuccess assert = return ()
+  | otherwise = fail (show (fromFailure assert'))
+  where
+  assert' = augment (showCallStack ?loc) assert
 #endif
 
 toError :: (Err.Throws m, Err.Err m ~ Err.Stack) => Assert -> m ()

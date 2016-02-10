@@ -105,7 +105,7 @@ caseFun :: Step m => Term -> m Term
 caseFun cse@(Case t alts) 
   | Just new_b <- mby_new_b = id
     . History.check Name.CaseFun cse 
-    . Transform.continue
+    . return
     . Lam new_b
     . Case (Indices.lift t) 
     $ map appAlt alts
@@ -147,7 +147,7 @@ constArg term@(App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
     
     -- Run evaluation to reduce all the new lambdas
     let term' = Term.reduce fix' args'
-    Transform.continue term' 
+    return term' 
   where
   arg_idxs = Term.constantArgs fix ++ Term.unusedArgs fix
   pos = head arg_idxs
@@ -212,7 +212,7 @@ constArg _ = Fail.here
 -- | Removes a pattern match which just returns the term it is matching upon.
 identityCase :: Step m => Term -> m Term
 identityCase (Case cse_t alts)
-  | all isIdAlt alts = Transform.continue cse_t
+  | all isIdAlt alts = return cse_t
   where
   isIdAlt :: Alt -> Bool
   isIdAlt alt@(Alt con _ alt_t) = 
@@ -224,8 +224,9 @@ identityCase _ = Fail.here
 -- of the fix variable in the body we can just drop it.
 uselessFix :: Step m => Term -> m Term
 uselessFix (Fix _ _ fix_t)
-  | not (0 `Set.member` Indices.free fix_t) = 
-    Transform.finish (Indices.lower fix_t)
+  | not (0 `Set.member` Indices.free fix_t) = do
+    Transform.noMoreRewrites
+    return (Indices.lower fix_t)
 uselessFix _ = Fail.here
 
 
@@ -238,12 +239,12 @@ constantFix t@(flattenApp -> Fix _ fix_b fix_t : args)
   | Just [result] <- mby_results
   , correctGuess result = do
     Direction.requireInc
-    Transform.continue result
+    return result
   
   | Just [] <- mby_results
   , correctGuess (Bot result_ty) = do
     Direction.requireInc
-    Transform.finish (Bot result_ty)
+    return (Bot result_ty)
   
   where
   (arg_bs, _) = flattenLam fix_t
@@ -334,7 +335,7 @@ constantCase (Case _ alts) = do
   Direction.requireInc
   (alt_t:alt_ts) <- mapM loweredAltTerm alts
   Fail.unless (all (== alt_t) alt_ts)
-  Transform.continue alt_t
+  return alt_t
     
 constantCase _ = Fail.here
 
@@ -349,7 +350,8 @@ unfold term@(App fix@(Fix {}) args)
         . Transform.restart
         $ Term.reduce (Term.unfoldFix fix) args
       Fail.when (term Quasi.<= term')
-      Transform.finish term'
+      Transform.noMoreRewrites
+      return term'
   where
   needsUnroll t = 
     Term.isBot t
@@ -372,7 +374,7 @@ floatVarMatch term@(Case (App fix@(Fix {}) xs) _)
     History.check Name.FloatVarMatch term $ do
       let term' = Term.applyCases useful_ms term
       Assert.check (Type.assertEq term term')
-        $ Transform.continue term'
+        $ return term'
   where
   dec_xs = map (xs !!) (Term.decreasingArgs fix) 
   dec_ixs = (Set.fromList . map fromVar . filter isVar) dec_xs
@@ -402,7 +404,8 @@ unfoldCase term@(Case (flattenApp -> fix@(Fix {}) : xs) alts)
       let term' = Case (Term.reduce (Term.unfoldFix fix) xs) alts
       term'' <- Transform.restart term'
       Fail.when (term Quasi.<= term'')
-      Transform.finish term''
+      Transform.noMoreRewrites
+      return term''
   where
   assert_fun = 
     any (isCon . leftmost) xs

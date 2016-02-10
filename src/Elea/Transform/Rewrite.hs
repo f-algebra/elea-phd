@@ -87,10 +87,8 @@ expressSteps =
   
 
 rewritePattern :: Step m => Term -> m Term
-rewritePattern t = do
-  t' <- Env.findMatch t
-  Transform.continue t'
-  -- ^ Might be variables in pattern which we can rewrite
+rewritePattern t = Env.findMatch t
+-- TODO ^ there might be variables in pattern which we can rewrite
 
 
 rewrite :: forall m . Step m => Term -> m Term
@@ -98,7 +96,8 @@ rewrite term@(App {}) = do
   term' <- Term.revertMatches term
   rs <- Fusion.findTags (Set.delete Tag.omega (Tag.tags term'))
   term' <- Fail.choose (map (apply term') rs)
-  Transform.finish term'
+  Transform.noMoreRewrites
+  return term'
   where
   apply :: Term -> (Term, Term) -> m Term
   apply term (from_t, h) = do
@@ -122,7 +121,8 @@ matchVar term@(App fix@(Fix {}) xs) = do
   -- ^ Make sure this is for a fixCon rewrite
   Fail.unless (length (Term.arguments from_t) == length xs) 
   term' <- Fail.choose (map (tryMatch from_t . enum) dec_idxs)
-  Transform.finish term'
+  Transform.noMoreRewrites
+  return term'
   where
   tag = get fixIndex (fixInfo fix)
   dec_idxs = Term.decreasingArgs fix
@@ -132,7 +132,7 @@ matchVar term@(App fix@(Fix {}) xs) = do
     Fail.unless (isCon (leftmost (xs' !! arg_i)))
     Fail.unless (isVar (xs !! arg_i))
     History.check Name.MatchVar new_t
-      $ Transform.continue new_t
+      $ return new_t
     where
     new_t = Term.buildCase (xs !! arg_i) term
     
@@ -148,7 +148,8 @@ identityFix orig_t@(App fix@(Fix _ _ fix_t) xs) = do
       . map tryArg
       . filter potentialArg
       $ [0..length xs - 1]
-  Transform.finish term'
+  Transform.noMoreRewrites
+  return term'
   where
   (arg_bs, body_t) = flattenLam fix_t
   (arg_tys, body_ty) = Type.split (Type.get fix)
@@ -198,7 +199,8 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
     
   Fail.when (term Quasi.<= term')
   Discovery.rewritesTo term term'
-  Transform.finish term'
+  Transform.noMoreRewrites
+  return term'
   where
   (arg_bs, _) = Term.flattenLam fix_t
   gap_b = Bind "gap" term_ty 
@@ -321,7 +323,7 @@ expressMatch term@(App fix@(Fix {}) _) = do
     $ Fold.findM freeCase fix
       
   History.check Name.ExpressMatch free_cse
-    $ Transform.continue free_cse
+    $ return free_cse
   where
   freeCase :: Term -> Env.TrackOffset (Maybe Term)
   freeCase cse@(Case cse_t alts) = do
@@ -353,7 +355,7 @@ commuteConstraint term@(Case (leftmost -> Fix {}) _)
   | Constraint.splittable term
   , isCase inner_t 
   , not looping =
-    Transform.continue (Case cse_t (map applyCt alts))
+    return (Case cse_t (map applyCt alts))
   where
   (ct, inner_t, ty) = Constraint.split term
   Case cse_t alts = inner_t
@@ -383,7 +385,8 @@ finiteCaseFix term@(Case cse_t@(App fix@(Fix _ _ fix_t) args) alts) = do
       $ Case (Term.reduce (Term.unfoldFix fix) args) alts
     -- standard progress check
     Fail.when (term Quasi.<= term')
-    Transform.finish term'
+    Transform.noMoreRewrites
+    return term'
   where  
   cse_ind = Type.fromBase (Type.get cse_t)
   
@@ -424,7 +427,8 @@ expressAccumulation fix@(Fix fix_i fix_b fix_t) = do
         . Indices.replaceAt Indices.omega (Var acc_idx acc_b)
         $ replaced_t
   let final_t = Term.reduce ctx_t [new_fix]
-  Transform.finish final_t
+  Transform.noMoreRewrites
+  return final_t
   where
   acc_args = Term.accumulatingArgs fix
   [arg_n] = acc_args

@@ -122,7 +122,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
       Just new_t -> do
         Discovery.rewritesTo orig_t new_t
    --     trace (printf "[Success, fusing] %s\n[into] %s\n[yielded] %s" fix ctx_t new_t)
-        Transform.finish new_t
+        return new_t
   where
   orig_t = id
     . WellFormed.check
@@ -143,12 +143,10 @@ fixCon orig_t@(App fix@(Fix _ fix_b _) args) = do
   -- ^ Only applicable if unrolling is not
   Fail.when (Type.isRecursive (Type.fromBase (Type.get orig_t)))
   -- ^ I can't envisage this being useful to recursively typed return values
-  term' <- id
-    . Fail.choose
+  Fail.choose
     . map (conArg . enum)
     . filter (Term.isCon . Term.leftmost . (args !!))
     $ Term.decreasingArgs fix
-  Transform.finish term'
   where
   dec_args = map (args !!) (Term.decreasingArgs fix) 
   
@@ -164,7 +162,7 @@ fixCon orig_t@(App fix@(Fix _ fix_b _) args) = do
     let gen_t = Term.reduce ctx_t (fix:full_args)
     History.check Name.ConFusion gen_t $ do
       fused_t <- fusion ctx_t fix
-      Transform.continue (Term.reduce fused_t full_args)
+      return (Term.reduce fused_t full_args)
         
 fixCon _ = Fail.here
 
@@ -178,13 +176,11 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
     . Assert.augment "fixfix given non lambda floated outer fixed-point" 
     $ Assert.bool (Term.isLambdaFloated o_fix)
   -- Pick the first one which does not fail
-  term' <- id
-    . Fail.choose
+  Fail.choose
     -- Run fixfixArg on every decreasing fixpoint argument position
     . map (fixArg o_free_bs . enum)
     . filter (Term.isFix . Term.leftmost . (o_args !!))
     $ reverse o_dec_idxs
-  Transform.finish term'
   where  
   o_dec_idxs = Term.decreasingArgs o_fix
   o_free_vars = Set.toList (Term.freeVarSet $ error "hi") --- o_fix)
@@ -215,7 +211,7 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
 
     History.check Name.FixFixFusion gen_t $ do
       new_fix <- fusion ctx_t i_fix
-      Transform.continue (app new_fix full_args)
+      return (app new_fix full_args)
     where
     
     i_term = o_args !! arg_i
@@ -308,11 +304,8 @@ decreasingFreeVar orig_t@(App fix@(Fix _ _ fix_t) args) = do
     . Assert.augment (printf "context term %s" ctx_t)
     $ Type.assertEq orig_t full_t
 
-  new_fix <- id
-    . History.check Name.FreeArgFusion full_t
+  History.check Name.FreeArgFusion full_t
     $ fusion ctx_t expr_fix
-    
-  Transform.continue (app new_fix args)
   where
   var_args = zipWith Var var_arg_idxs var_arg_bs
   var_arg_bs = map (\i -> binding (args !! i)) var_arg_is
@@ -343,8 +336,7 @@ repeatedArg term@(App fix@(Fix _ fix_b fix_t) args) = do
   Fail.unless (length args == length fix_bs)
   Fail.unless (Term.inductivelyTyped term)
   Fail.when (Term.beingFused fix)
-  term' <- Fail.choose (map fuseRepeated rep_arg_is)
-  Transform.finish term'
+  Fail.choose (map fuseRepeated rep_arg_is)
   where
   rep_arg_is :: [[Int]]
   rep_arg_is = id 
@@ -365,7 +357,7 @@ repeatedArg term@(App fix@(Fix _ fix_b fix_t) args) = do
       . History.check Name.RepArgFusion full_t
       $ fusion ctx_t fix
       
-    Transform.continue (app new_fix args)
+    return (app new_fix args)
     where
     Just var_i = find (Term.isVar . (args !!)) arg_is
     Var arg_x _ = args !! var_i
@@ -500,8 +492,7 @@ accumulation orig_t@(App fix@(Fix {}) args) = do
   Fail.when (Term.beingFused fix)
   Fail.when (null acc_args)
   History.check Name.AccFusion orig_t $ do
-    new_t <- Fail.choose (map (tryArg arg_tys) acc_args)
-    Transform.continue new_t
+    Fail.choose (map (tryArg arg_tys) acc_args)
   where
   acc_args = Term.accumulatingArgs fix
   arg_tys = map Type.get args

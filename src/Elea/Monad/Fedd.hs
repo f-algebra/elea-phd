@@ -40,27 +40,19 @@ data FeddState
   = FS  { _fsDefs :: !Defs.Data
         , _fsMemo :: !MemoDB.Data
         , _fsTagGen :: !Int
-        , _fsStepsRemaining :: !CoNat }
-
-data FeddWriter
-  = FW  { _fwDiscoveries :: !EqSet.EqSet
-        , _fwStepsTaken :: !Nat }
-
-instance Monoid FeddWriter where
-  mempty = FW mempty 0
-  mappend (FW x1 y1) (FW x2 y2) = FW (x1 ++ x2) (y1 + y2)
+        , _fsStepsRemaining :: !CoNat
+        , _fsFinishedSignal :: !Bool }
 
 newtype FeddT m a 
   = FeddT { 
-    runFeddT :: RWST EnvDB.Data FeddWriter FeddState m a }
+    runFeddT :: RWST EnvDB.Data () FeddState m a }
   deriving 
   ( Functor, Applicative 
   , Monad, MonadTrans
   , MonadReader EnvDB.Data
-  , MonadWriter FeddWriter
   , MonadState FeddState )
         
-mkLabels [ ''FeddState, ''FeddWriter ]
+mkLabels [ ''FeddState ]
 
 evalT :: Monad m => FeddT m a -> m a
 evalT fedd = do
@@ -68,7 +60,7 @@ evalT fedd = do
   return x
 
 instance Empty FeddState where
-  empty = FS empty empty 1 Nat.omega
+  empty = FS empty empty 1 Nat.omega False
 
 eval :: Fedd a -> a
 eval = runIdentity . evalT
@@ -81,12 +73,6 @@ getDefinitions = State.gets (get fsDefs)
 
 instance Runnable FeddT where
   runM = evalT
-
-stepTaken :: FeddWriter 
-stepTaken = FW mempty 1
-
-discovery :: Prop -> FeddWriter
-discovery prop = FW (EqSet.singleton prop) 0
   
 instance Monad m => Env.Write (FeddT m) where
   bindAt at b = local (EnvDB.bindAt at b)
@@ -100,10 +86,10 @@ instance Monad m => Env.MatchRead (FeddT m) where
   matches = asks EnvDB.matches
   
 instance Monad m => Disc.Tells (FeddT m) where
-  tell = Writer.tell . discovery
+  tell _ = return ()
 
 instance Monad m => Disc.Listens (FeddT m) where
-  listen = liftM (second (EqSet.toList . get fwDiscoveries)) . Writer.listen
+  listen = liftM (\x -> (x, [])) 
   
 instance Monad m => Defs.Write (FeddT m) where
   defineTerm n t = State.modify (modify fsDefs (Defs.putTerm n t))
@@ -141,7 +127,6 @@ instance Monad m => Memo.Can (FeddT m) where
         -- then error (show memo_t ++ "\n\nactually\n\n" ++ show mby_t')
        -- else return memo_t
 
-  
 instance Monad m => Fusion.Env (FeddT m) where
   rewrites = asks EnvDB.rewrites
   local a t x = local (EnvDB.addRewrite a t x) 
@@ -164,15 +149,8 @@ instance Monad m => Direction.Has (FeddT m) where
   local d = local (set EnvDB.direction d)
 
 instance Monad m => Steps.Counter (FeddT m) where
-  take = do
-    tell stepTaken
-    State.modify (modify fsStepsRemaining safePred)
-    where
-    safePred :: CoNat -> CoNat
-    safePred n | n == 0 = n
-               | otherwise = pred n
-
-  listen = Writer.listens (get fwStepsTaken)
+  take = return ()
+  listen = liftM (\x -> (x, 0))
 
 instance Monad m => Steps.Limiter (FeddT m) where
   limit n continue = do
@@ -195,3 +173,7 @@ instance Monad m => Transform.Env (FeddT m) where
 
   traceSteps = asks (get EnvDB.traceStepsFlag)
   enableTraceSteps = local (set EnvDB.traceStepsFlag True)
+
+  noMoreRewrites = State.modify (set fsFinishedSignal True)
+  yesMoreRewrites = State.modify (set fsFinishedSignal False)
+  continueRewriting = State.gets (not . get fsFinishedSignal)

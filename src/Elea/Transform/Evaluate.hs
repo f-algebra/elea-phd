@@ -94,8 +94,9 @@ unwrapDepth = 2
 -- Need to add pattern matching over absurdity, but how to find the type?
 strictness :: Step m => Term -> m Term
 strictness term 
-  | isUndef term = 
-    Transform.finish (Bot (Type.get term))
+  | isUndef term = do
+    Transform.noMoreRewrites
+    return (Bot (Type.get term))
   where 
   isUndef (App (Bot _) _) = True
   isUndef (Case (Bot _) _) = True
@@ -108,9 +109,9 @@ strictness _ =
   
 normaliseApp :: Step m => Term -> m Term
 normaliseApp (App f []) = 
-  Transform.continue f
+  return f
 normaliseApp (App (App f ts1) ts2) = 
-  Transform.continue (App f (ts1 ++ ts2))
+  return (App f (ts1 ++ ts2))
 normaliseApp _ = 
   Fail.here
   
@@ -118,7 +119,7 @@ normaliseApp _ =
 beta :: Step m => Term -> m Term
 beta t@(App f@(Lam _ rhs) xs) = id
   . History.check Name.Beta t
-  . Transform.continue
+  . return
   $ Term.reduce f xs
 beta _ = Fail.here
 
@@ -127,7 +128,7 @@ caseOfCon :: Step m => Term -> m Term
 caseOfCon term@(Case cse_t alts)
   | (isCon . leftmost) cse_t = id
     . History.check Name.CaseOfCon term
-    . Transform.continue
+    . return
     -- We fold substitute over the arguments to the constructor
     -- starting with the return value of the pattern match (alt_t).
     -- So we substitute each argument in one by one to the alt term.
@@ -154,7 +155,7 @@ traverseMatch term@(Case cse_t alts) =
   History.check Name.TraverseMatch term $ do 
     cse_t' <- Transform.traverse (\t -> Case t alts) cse_t  
     Fail.when (cse_t == cse_t')
-    Transform.continue (Case cse_t' alts)
+    return (Case cse_t' alts)
 traverseMatch _ = Fail.here
 
 
@@ -164,7 +165,7 @@ traverseBranches term@(Case cse_t alts) =
     alts' <- zipWithM traverseAlt [0..] alts
     let term' = Case cse_t alts'
     Fail.when (term == term')
-    Transform.continue (Case cse_t alts')
+    return (Case cse_t alts')
   where
   traverseAlt n alt@(Alt con bs t) = do
     t' <- id
@@ -193,9 +194,10 @@ traverseFun (Lam b t) = do
     . Env.bind b 
     $ Transform.traverse (\t -> Lam b t) t
   Fail.when (t == t')
+  Transform.noMoreRewrites
   if t' == Term.truth || t' == Term.falsity
-  then Transform.finish t'
-  else Transform.finish (Lam b t')
+  then return t'
+  else return (Lam b t')
 traverseFun _ = Fail.here
 
 
@@ -207,7 +209,7 @@ traverseApp term@(App f xs) =
       $ Transform.traverse (\f -> App f xs) f
     let term' = App f' xs'
     Fail.when (term == term')
-    Transform.continue term'
+    return term'
   where
   traverseArg :: Nat -> m Term
   traverseArg n = Transform.traverse (\t -> App f (setAt (enum n) t xs)) (xs !! n)
@@ -221,7 +223,8 @@ traverseFix fix@(Fix inf b t) = do
     . Env.bind b
     $ Transform.traverse (\t -> Fix inf b t) t
   Fail.when (t == t')
-  Transform.finish
+  Transform.noMoreRewrites
+  return
     . Term.dirtyFix
     $ Fix inf b t'
     
@@ -268,7 +271,7 @@ floatVarMatches = id
 -- then float it out.
 caseApp :: Step m => Term -> m Term
 caseApp (App (Case t alts) args) =
-  Transform.continue (Case t (map appArg alts))
+  return (Case t (map appArg alts))
   where
   appArg (Alt con bs alt_t) =
     Alt con bs (app alt_t (Indices.liftMany (nlength bs) args))
@@ -277,10 +280,11 @@ caseApp _ = Fail.here
 
 
 reduceSeq :: Step m => Term -> m Term
-reduceSeq (Seq (Bot _) t) = 
-  Transform.finish (Bot (Type.get t))
+reduceSeq (Seq (Bot _) t) = do
+  Transform.noMoreRewrites
+  return (Bot (Type.get t))
 reduceSeq (Seq (leftmost -> Con {}) t) =
-  Transform.finish t
+  return t
 reduceSeq _ = Fail.here
 
 
@@ -289,7 +293,7 @@ reduceSeq _ = Fail.here
 appCase :: Step m => Term -> m Term
 appCase term@(App f@(Fix {}) xs) = do
   cse_i <- Fail.fromMaybe (findIndex isCase xs)
-  Transform.continue (applyCase cse_i)
+  return (applyCase cse_i)
   where
   applyCase cse_i = 
     Case cse_t (map applyAlt alts)
@@ -311,7 +315,7 @@ appCase _ = Fail.here
 -- using distributivity.
 caseCase :: Step m => Term -> m Term
 caseCase outer_cse@(Case inner_cse@(Case inner_t inner_alts) outer_alts) =
-  Transform.continue (Case inner_t (map newOuterAlt inner_alts))
+  return (Case inner_t (map newOuterAlt inner_alts))
   where
   newOuterAlt :: Alt -> Alt
   newOuterAlt (Alt con bs t) = 
