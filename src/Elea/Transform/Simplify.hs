@@ -30,6 +30,7 @@ import qualified Elea.Monad.Transform as Transform
 import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.StepCounter as Steps
 import qualified Elea.Monad.Fedd as Fedd  
+import qualified Elea.Monad.Transform.Signals as Signals
 
 import qualified Data.Monoid as Monoid
 import qualified Data.Set as Set
@@ -142,7 +143,7 @@ constArg term@(App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
     
     -- Might as well simplify the constant argument before pushing it inside
     -- and possible duplicating it
-    arg' <- Transform.restart "constant argument fusion" (args !! pos)
+    arg' <- Transform.restart (args !! pos)
     let args' = setAt (enum pos) arg' args
     
     -- Run evaluation to reduce all the new lambdas
@@ -225,7 +226,7 @@ identityCase _ = Fail.here
 uselessFix :: Step m => Term -> m Term
 uselessFix (Fix _ _ fix_t)
   | not (0 `Set.member` Indices.free fix_t) = do
-    Transform.noMoreRewrites
+    Signals.tellStopRewriting
     return (Indices.lower fix_t)
 uselessFix _ = Fail.here
 
@@ -347,10 +348,10 @@ unfold term@(App fix@(Fix {}) args)
   || cant_fix_con_fuse =
     History.check Name.Unfold term $ do
       term' <- id
-        . Transform.restart "fixed-point unfolding"
+        . Transform.restart
         $ Term.reduce (Term.unfoldFix fix) args
       Fail.when (term Quasi.<= term')
-      Transform.noMoreRewrites
+      Signals.tellStopRewriting
       return term'
   where
   needsUnroll t = 
@@ -402,9 +403,9 @@ unfoldCase term@(Case (flattenApp -> fix@(Fix {}) : xs) alts)
   | assert_fun || only_prod  =
     History.check Name.UnfoldCase term $ do
       let term' = Case (Term.reduce (Term.unfoldFix fix) xs) alts
-      term'' <- Transform.restart "case-of fixed-point unfolding" term'
+      term'' <- Transform.restart term'
       Fail.when (term Quasi.<= term'')
-      Transform.noMoreRewrites
+      Signals.tellStopRewriting
       return term''
   where
   assert_fun = 

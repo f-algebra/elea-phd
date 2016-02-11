@@ -35,6 +35,7 @@ import qualified Elea.Monad.StepCounter as Steps
 import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Foldable.WellFormed as WellFormed
 import qualified Elea.Foldable as Fold
+import qualified Elea.Monad.Transform.Signals as Signals
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Monoid as Monoid
@@ -98,7 +99,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
     new_fix_t <- id  
       . Env.bind new_fix_b
       . Fusion.local temp_idx rewrite_from (Var 0 new_fix_b)
-      . Transform.restart "fixed-point fusion"
+      . Transform.restart
       . WellFormed.check
       . Indices.lift
       -- ^ Make room for our new variables we are rewriting to
@@ -570,7 +571,7 @@ discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
       . Env.bindMany c_bs       
       . Memo.memo Name.FoldDiscovery prop 
       . Direction.prover
-      . Transform.restart "fold-invention property simplification"
+      . Transform.restart
       $ Tag.map (const Tag.omega) prop
     unis <- id             
       . Env.trackOffsetT
@@ -581,7 +582,7 @@ discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
     hopefully_true <- id
       . Env.bindMany c_bs 
       . Direction.prover
-      . Transform.restart "fold-invention property verification"
+      . Transform.restart 
       . Unifier.apply uni 
       . ungeneraliseProp 
       $ prop'

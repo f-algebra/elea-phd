@@ -36,6 +36,7 @@ import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.StepCounter as Steps
 import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Monad.Error.Assertion as Assert
+import qualified Elea.Monad.Transform.Signals as Signals
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -83,7 +84,7 @@ expressSteps =
   , Transform.step "accumulation fission" expressAccumulation
   , Transform.step "unfold var match for fix-con fusion" matchVar    
   , Transform.step "unfold finitely used fix" finiteCaseFix
- -- , Transform.step "identity fission" identityFix
+  , Transform.step "identity fission" identityFix
   ]
   
 
@@ -97,7 +98,7 @@ rewrite term@(App {}) = do
   term' <- Term.revertMatches term
   rs <- Fusion.findTags (Set.delete Tag.omega (Tag.tags term'))
   term' <- Fail.choose (map (apply term') rs)
-  Transform.noMoreRewrites
+  Signals.tellStopRewriting
   return term'
   where
   apply :: Term -> (Term, Term) -> m Term
@@ -122,7 +123,7 @@ matchVar term@(App fix@(Fix {}) xs) = do
   -- ^ Make sure this is for a fixCon rewrite
   Fail.unless (length (Term.arguments from_t) == length xs) 
   term' <- Fail.choose (map (tryMatch from_t . enum) dec_idxs)
-  Transform.noMoreRewrites
+  Signals.tellStopRewriting
   return term'
   where
   tag = get fixIndex (fixInfo fix)
@@ -149,7 +150,7 @@ identityFix orig_t@(App fix@(Fix _ _ fix_t) xs) = do
       . map tryArg
       . filter potentialArg
       $ [0..length xs - 1]
-  Transform.noMoreRewrites
+  Signals.tellStopRewriting
   return term'
   where
   (arg_bs, body_t) = flattenLam fix_t
@@ -170,7 +171,8 @@ identityFix orig_t@(App fix@(Fix _ _ fix_t) xs) = do
   
   tryArg :: Int -> m Term
   tryArg n = do
-    Prover.check (Leq (Indices.subst id_n fix_t) id_n)
+    prop <- Transform.restart (Leq (Indices.subst id_n fix_t) id_n)
+    Fail.unless (prop == Term.truth)
     return (xs !! n)
     where       
     id_n = id
@@ -195,12 +197,12 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
 
   term' <- id
     . History.check Name.ExpressCon fix
-    . Transform.restart "constructor fission"
+    . Transform.restart
     $ app fix' args
     
   Fail.when (term Quasi.<= term')
   Discovery.rewritesTo term term'
-  Transform.noMoreRewrites
+  Signals.tellStopRewriting
   return term'
   where
   (arg_bs, _) = Term.flattenLam fix_t
@@ -382,11 +384,11 @@ finiteCaseFix term@(Case cse_t@(App fix@(Fix _ _ fix_t) args) alts) = do
  
   History.memoCheck Name.FiniteCaseFix term $ do
     term' <- id
-      . Transform.restart "case-of finite fixed-point unfolding"
+      . Transform.restart
       $ Case (Term.reduce (Term.unfoldFix fix) args) alts
     -- standard progress check
     Fail.when (term Quasi.<= term')
-    Transform.noMoreRewrites
+    Signals.tellStopRewriting
     return term'
   where  
   cse_ind = Type.fromBase (Type.get cse_t)
@@ -419,7 +421,7 @@ expressAccumulation fix@(Fix fix_i fix_b fix_t) = do
   simp_t <- id
     . Assert.check (Type.assertEq body_t trans_t)
     . Env.bindMany (fix_b : arg_bs) 
-    $ Transform.restart "accumulation fission" trans_t
+    $ Transform.restart trans_t
   let replaced_t = Term.replace acc_t (Var Indices.omega acc_b) simp_t
   Fail.when (acc_idx `Indices.freeWithin` replaced_t)
   let new_fix = id
@@ -428,7 +430,7 @@ expressAccumulation fix@(Fix fix_i fix_b fix_t) = do
         . Indices.replaceAt Indices.omega (Var acc_idx acc_b)
         $ replaced_t
   let final_t = Term.reduce ctx_t [new_fix]
-  Transform.noMoreRewrites
+  Signals.tellStopRewriting
   return final_t
   where
   acc_args = Term.accumulatingArgs fix

@@ -1195,7 +1195,7 @@ instance Show Term where
 runShowTerm :: (Term -> Reader [Bind] String) -> Term -> String
 runShowTerm runM term 
   | null free_vars = term_str
-  | otherwise = printf "env %s in %s" (showBinds new_binds') term_str
+  | otherwise = printf "env %s in\n%s" (showBinds new_binds') (indent term_str)
   where
   free_vars = Set.toDescList (freeVarSet term)
   complete_var_binds 

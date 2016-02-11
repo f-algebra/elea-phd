@@ -26,6 +26,8 @@ import qualified Elea.Monad.Env.Data as EnvDB
 import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.StepCounter as Steps
 import qualified Elea.Monad.Transform as Transform
+import qualified Elea.Monad.Transform.TraceSteps as TraceSteps
+import qualified Elea.Monad.Transform.Signals as Signals
 import qualified Control.Monad.RWS.Strict as RWS
 import qualified Control.Monad.State.Class as State
 import qualified Control.Monad.Writer.Class as Writer
@@ -41,7 +43,8 @@ data FeddState
         , _fsMemo :: !MemoDB.Data
         , _fsTagGen :: !Int
         , _fsStepsRemaining :: !CoNat
-        , _fsFinishedSignal :: !Bool }
+        , _fsTraceStepsFlag :: !Bool
+        , _fsSignals :: !Signals.Signals }
 
 newtype FeddT m a 
   = FeddT { 
@@ -60,7 +63,7 @@ evalT fedd = do
   return x
 
 instance Empty FeddState where
-  empty = FS empty empty 1 Nat.omega False
+  empty = FS empty empty 1 Nat.omega False empty
 
 eval :: Fedd a -> a
 eval = runIdentity . evalT
@@ -170,10 +173,21 @@ instance Monad m => Transform.Env (FeddT m) where
   applyContext term = asks (EnvDB.applyContext term)
   augmentContext with = local (EnvDB.augmentContext with)
   clearContext = local EnvDB.clearContext
+  localStepName name = local (set EnvDB.stepName name)
+  askStepName = asks (get EnvDB.stepName)
 
-  traceSteps = asks (get EnvDB.traceStepsFlag)
-  enableTraceSteps = local (set EnvDB.traceStepsFlag True)
+instance Monad m => TraceSteps.Env (FeddT m) where
+  enabled = asks (get EnvDB.traceStepsFlag)
+  enable = local (set EnvDB.traceStepsFlag True)
 
-  noMoreRewrites = State.modify (set fsFinishedSignal True)
-  yesMoreRewrites = State.modify (set fsFinishedSignal False)
-  continueRewriting = State.gets (not . get fsFinishedSignal)
+instance Monad m => Signals.Env (FeddT m) where
+  tellStopRewriting =
+    State.modify (set (Signals.stopRewriting . fsSignals) True)
+  tellUsedAntecentRewrite = 
+    State.modify (set (Signals.usedAntecedentRewrite . fsSignals) True)
+
+  consume run = do
+    x <- run
+    signals <- State.gets (get fsSignals)
+    State.modify (set fsSignals empty)
+    return (x, signals)

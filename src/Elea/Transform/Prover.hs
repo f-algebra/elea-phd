@@ -3,7 +3,6 @@ module Elea.Transform.Prover
   Step, Env,
   steps,
   applyM,
-  check,
 )
 where
 
@@ -30,6 +29,7 @@ import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Monad.Fedd as Fedd  
+import qualified Elea.Monad.Transform.Signals as Signals
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Poset as Partial
@@ -74,11 +74,6 @@ applyM = id
     ++ Simp.steps
     ++ steps 
     
-check :: Step m => Term -> m ()
-check prop_t = do
-  prop_t' <- Transform.restart "property check" prop_t
-  Fail.unless (prop_t' == Term.truth)
-  
 reflexivity :: Step m => Term -> m Term
 reflexivity (Leq x y) 
   | x == y = return truth
@@ -171,7 +166,7 @@ forAll _ = Fail.here
 removeForAll :: Step m => Term -> m Term 
 removeForAll (Lam _ t)
   | t == Term.truth || t == Term.falsity = do
-    Transform.noMoreRewrites
+    Signals.tellStopRewriting
     return t
 removeForAll _ = Fail.here
     
@@ -251,7 +246,7 @@ leqMatch :: Step m => Term -> m Term
 leqMatch (Leq t (Case cse_t alts)) = do
   Direction.requireInc
   Fail.unless (t == cse_t)
-  Transform.noMoreRewrites
+  Signals.tellStopRewriting
   return (Case cse_t (map mkAlt alts))
   where
   mkAlt alt@(Alt tc bs alt_t) = 
@@ -303,7 +298,7 @@ absurdBranch orig_t@(Case (Var x b) alts) = do
         . Direction.local Direction.Dec
         . Memo.memo Name.AbsurdEnv prop
         . Fusion.disable
-        $ Transform.restart "absurdity checking" prop
+        $ Transform.restart prop
         -- ^ Using our prover backwards 
         -- performs proof by contradiction
       return (prop' == Term.falsity)

@@ -30,6 +30,7 @@ import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Monad.Transform as Transform
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Definitions.Class as Defs
+import qualified Elea.Monad.Transform.Signals as Signals
 import qualified Elea.Transform.Names as Name
 import qualified Elea.Monad.History as History
 
@@ -95,7 +96,7 @@ unwrapDepth = 2
 strictness :: Step m => Term -> m Term
 strictness term 
   | isUndef term = do
-    Transform.noMoreRewrites
+    Signals.tellStopRewriting
     return (Bot (Type.get term))
   where 
   isUndef (App (Bot _) _) = True
@@ -194,7 +195,7 @@ traverseFun (Lam b t) = do
     . Env.bind b 
     $ Transform.traverse (\t -> Lam b t) t
   Fail.when (t == t')
-  Transform.noMoreRewrites
+  Signals.tellStopRewriting
   if t' == Term.truth || t' == Term.falsity
   then return t'
   else return (Lam b t')
@@ -223,7 +224,7 @@ traverseFix fix@(Fix inf b t) = do
     . Env.bind b
     $ Transform.traverse (\t -> Fix inf b t) t
   Fail.when (t == t')
-  Transform.noMoreRewrites
+  Signals.tellStopRewriting
   return
     . Term.dirtyFix
     $ Fix inf b t'
@@ -281,7 +282,7 @@ caseApp _ = Fail.here
 
 reduceSeq :: Step m => Term -> m Term
 reduceSeq (Seq (Bot _) t) = do
-  Transform.noMoreRewrites
+  Signals.tellStopRewriting
   return (Bot (Type.get t))
 reduceSeq (Seq (leftmost -> Con {}) t) =
   return t

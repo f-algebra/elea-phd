@@ -11,7 +11,6 @@ module Elea.Monad.Transform
   silentStep,
   compose,
   mapRewriteT,
-  whenTraceSteps,
 )
 where
 
@@ -29,6 +28,8 @@ import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Error.Assertion as Assert
+import qualified Elea.Monad.Transform.TraceSteps as TraceSteps
+import qualified Elea.Monad.Transform.Signals as Signals
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Monad.StepCounter as Steps
 import qualified Control.Monad.Reader.Class as Reader
@@ -46,15 +47,11 @@ class (Env m, Fail.Can m) => Step m where
 traverse :: Step m => (Term -> Term) -> Term -> m Term
 traverse ctx = augmentContext ctx . apply
 
-restart :: Step m => String -> Term -> m Term
-restart name term = do
-  term' <- id
-    . clearContext 
-    . (>>= apply)
-    . whenTraceSteps (printf "\n<entering %s> %n" name term)
-    $ return term
-  whenTraceSteps (printf "\n<finished %s>" name)
-    $ return term'
+restart :: Step m => Term -> m Term
+restart term = do
+  step_name <- askStepName
+  TraceSteps.traceM (printf "\n<< within \"%s\" >>\n\n%s" step_name term)
+  clearContext (apply term)
 
 -- | Carry around a call to a simplification function
 newtype RewriteT m a 
@@ -84,8 +81,6 @@ mapRewriteT f = RewriteT . mapReaderT (mapMaybeT f) . rewriteT
     
 
 {-# INLINE compose #-}
--- TODO manually implement tail recursion in this method, see if you can
--- inspect continue vs traverse vs restart and don't build up a stack with continue
 compose :: forall m . Env m 
   => [NamedStep m] -> Term -> m Term
 compose all_steps = apply
@@ -96,26 +91,30 @@ compose all_steps = apply
   applyOneStep :: [NamedStep m] -> Term -> m Term
   applyOneStep [] term = return term
   applyOneStep (named_step : steps) term = do
-    mby_term' <- id
+    (mby_term', signals) <- id
+      . Signals.consume
+      . localStepName step_name
       . runMaybeT 
       $ runReaderT (rewriteT (rewriteStep named_step term)) apply
-    continue <- continueRewriting
-    yesMoreRewrites  -- gotta switch this flag back on
     case mby_term' of
-      Nothing -> applyOneStep steps term
+      Nothing -> do
+        when (get Signals.usedAntecedentRewrite signals) $ do
+          TraceSteps.traceM (printf "\n<< failed \"%s\" on >>\n\n%s" step_name term)
+        applyOneStep steps term
+
       Just term' -> do
         full_term <- applyContext term
         full_term' <- applyContext term'
         Assert.checkM
           . Assert.augment (printf "within step \"%s\"" step_name)
           $ Term.assertValidRewrite full_term full_term'
-        let traceStep
-              | rewriteStepSilent named_step = id
-              | otherwise = whenTraceSteps (printf "\n<applied %s> %n" step_name full_term')
-        traceStep $ do
-          if continue 
-          then apply term'  -- fingers crossed for tail-call optimisation
-          else return term' 
+        when (get Signals.usedAntecedentRewrite signals) $ do
+          TraceSteps.traceM (printf "\n<< success \"%s\" on >>\n\n%s" step_name term)
+        unless (rewriteStepSilent named_step) $ do
+          TraceSteps.traceM (printf "\n< applying \"%s\" yielded >\n\n%s" step_name full_term')
+        if get Signals.stopRewriting signals 
+        then return term' 
+        else apply term'   -- fingers crossed for tail-call optimisation
     where
     step_name = rewriteStepName named_step
 
@@ -205,34 +204,21 @@ instance Env m => Env (RewriteT m) where
   clearContext = mapRewriteT clearContext
   augmentContext = mapRewriteT . augmentContext
   applyContext = Trans.lift . applyContext
-  traceSteps = Trans.lift traceSteps
-  enableTraceSteps = mapRewriteT enableTraceSteps
+  localStepName = mapRewriteT . localStepName
+  askStepName = Trans.lift askStepName
 
-  noMoreRewrites = Trans.lift noMoreRewrites
-  yesMoreRewrites = Trans.lift yesMoreRewrites
-  continueRewriting = Trans.lift continueRewriting
+instance TraceSteps.Env m => TraceSteps.Env (RewriteT m) where
+  enabled = Trans.lift TraceSteps.enabled
+  enable = mapRewriteT TraceSteps.enable
 
+instance Signals.Env m => Signals.Env (RewriteT m) where
+  tellStopRewriting = Trans.lift Signals.tellStopRewriting
+  tellUsedAntecentRewrite = Trans.lift Signals.tellUsedAntecentRewrite
+  consume = mapRewriteT (liftM sequenceFst . Signals.consume)
 
-class Monad m => Env m where
+class (TraceSteps.Env m, Signals.Env m) => Env m where
   applyContext :: Term -> m Term
   augmentContext :: (Term -> Term) -> m a -> m a
   clearContext :: m a -> m a
-  traceSteps :: m Bool
-  enableTraceSteps :: m a -> m a
-
-  noMoreRewrites :: m ()
-  yesMoreRewrites :: m ()
-  continueRewriting :: m Bool  
-
-
-{-# INLINE whenTraceSteps #-}
-whenTraceSteps :: Env m => String -> m a -> m a
-#ifndef TRACE
-whenTraceSteps _ = id
-#else
-whenTraceSteps msg run = do
-  should <- traceSteps
-  if should
-  then trace msg run
-  else run
-#endif
+  localStepName :: String -> m a -> m a
+  askStepName :: m String

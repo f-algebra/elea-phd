@@ -9,6 +9,7 @@ module Elea.Monad.Env.Data
   disableFlag,
   clearContext, augmentContext, applyContext,
   traceStepsFlag,
+  stepName,
 )
 where
 
@@ -32,12 +33,13 @@ data Data
           , _dbDirection :: !Direction
           , _flagDisable :: !Bool
           , _dbTermContext :: !(Term -> Term)
-          , _flagTraceSteps :: !Bool }
+          , _flagTraceSteps :: !Bool
+          , _dbStepName :: !String }
           
 mkLabels [ ''Data ]
 
 instance Empty Data where
-  empty = Data mempty mempty mempty empty Direction.Inc False id False
+  empty = Data mempty mempty mempty empty Direction.Inc False id False "top-level"
 
 matches :: Data -> [Match]
 matches = get dbMatches
@@ -104,3 +106,6 @@ applyContext gap_term = ($ gap_term) . get dbTermContext
 
 traceStepsFlag :: Data :-> Bool
 traceStepsFlag = flagTraceSteps
+
+stepName :: Data :-> String
+stepName = dbStepName

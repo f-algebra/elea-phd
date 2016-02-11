@@ -9,8 +9,9 @@ module Elea.Prelude
         Maximum(..), Minimum(..), sconcatMap, length, maximum, maximum1,
         invert, intersects, liftMaybe, maybeT, nth, drop, take, screen,
         isSubsequenceOf, evalWriter, evalWriterT, removeAll, tracE,
-        findIndicesM, trace, error, errorf,
+        findIndicesM, trace, error, errorf, traceM,
         Empty (..), Runnable (..), run, readf,
+        sequenceFst,
         __trace__,
         module X)
 where
@@ -419,6 +420,11 @@ trace :: String -> a -> a
 trace | __trace__ = Debug.trace
       | otherwise  = \_ -> id
 
+{-# INLINE traceM #-}
+traceM :: Monad m => String -> m ()
+traceM | __trace__ = Debug.traceM
+       | otherwise = \_ -> return ()
+
 findIndicesM :: Monad m => (a -> m Bool) -> [a] -> m [Nat]
 findIndicesM p = id
   . liftM concat 
@@ -462,3 +468,6 @@ instance Monoid w => Runnable (ReaderT w) where
 
 readf :: (Read a, PrintfArg r) => String -> r -> a
 readf str args = read (printf str args)
+
+sequenceFst :: Monad m => (m a, b) -> m (a, b)
+sequenceFst (m, b) = liftM (\x -> (x,b)) m

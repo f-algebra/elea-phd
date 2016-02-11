@@ -14,6 +14,7 @@ import qualified Elea.Testing as Test
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Transform.Fusion as Fusion
 import qualified Elea.Monad.Definitions as Defs
+import qualified Elea.Monad.Transform.TraceSteps as TraceSteps
 
 testProp :: String -> Test 
 testProp prop_name = id
@@ -22,7 +23,7 @@ testProp prop_name = id
     let Just (Prop _ prop_t) = find ((== prop_name) . get propName) all_props
     prop_t' <- id
       . Test.recordTimeTaken prop_name 
-      . Transform.enableTraceSteps
+      . TraceSteps.enable
       $ Fusion.applyM prop_t
     Test.assertTermEq "" truth prop_t'
 
