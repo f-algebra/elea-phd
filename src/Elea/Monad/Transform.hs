@@ -50,6 +50,7 @@ traverse ctx = augmentContext ctx . apply
 restart :: Step m => Term -> m Term
 restart term = do
   step_name <- askStepName
+  Signals.tellUsedAntecentRewrite
   TraceSteps.traceM (printf "\n<< within \"%s\" >>\n\n%s" step_name term)
   clearContext (apply term)
 

@@ -13,12 +13,12 @@ power:
 	xcopy /y /F .\dist\build\elea\elea.exe .\elea.exe
 
 trace: 
-	cabal configure --enable-optimization --ghc-options="-DTRACE"
+	cabal configure --enable-optimization --ghc-options="-DTRACE -DASSERT"
 	cabal build
 	xcopy /y .\dist\build\elea\elea.exe .\elea.exe
 
 debug:
-	cabal configure --ghc-options="-DASSERT -DTRACE"
+	cabal configure --enable-optimization --ghc-options="-DASSERT -DTRACE"
 	cabal build
 	xcopy /y .\dist\build\elea\elea.exe .\elea.exe
 

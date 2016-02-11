@@ -186,8 +186,10 @@ instance Monad m => Signals.Env (FeddT m) where
   tellUsedAntecentRewrite = 
     State.modify (set (Signals.usedAntecedentRewrite . fsSignals) True)
 
-  consume run = do
-    x <- run
-    signals <- State.gets (get fsSignals)
+  consume run = do  -- Sort of a fake Writer instance
+    starting_signals <- State.gets (get fsSignals)
     State.modify (set fsSignals empty)
-    return (x, signals)
+    x <- run
+    new_signals <- State.gets (get fsSignals)
+    State.modify (set fsSignals starting_signals)
+    return (x, new_signals)
