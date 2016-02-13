@@ -5,6 +5,7 @@ dist/*
 *.hi
 *.out
 *.exe
+*.log
 #*
 *.marks
 *.txt
