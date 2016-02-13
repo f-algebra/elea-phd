@@ -110,8 +110,7 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
       Fail.when (Set.member temp_idx (Tag.tags new_fix_t))
       return (Indices.lower new_fix_t)
     else id
-      . return
-      . Term.dirtyFix
+      . Term.lookupFixName
       . Fix fix_i new_fix_b 
       $ Tag.replace temp_idx orig_idx new_fix_t
   where

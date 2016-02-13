@@ -43,7 +43,6 @@ module Elea.Term
   isFixPromoted,
   loweredAltTerm,
   bindsToVars, bindsToVar,
-  dirtyFix,
 )
 where
 
@@ -125,8 +124,8 @@ type Constraint = Match
 data Prop 
   = Prop  { _propName :: !String
           , _propTerm :: !Term }
-          
-            
+         
+             
 -- | Information stored about fixpoints, to add efficiency.
 data FixInfo
   = FixInfo { _fixIndex :: !Tag
@@ -702,6 +701,7 @@ bindsToVars bs = zipWith (Var . enum) (reverse (range bs)) bs
 bindsToVar :: Enum a => [Bind] -> a -> Term
 bindsToVar bs i = bindsToVars bs !! i
 
+{-
 -- | Declares that a fixed-point's definition has been modified
 -- and hence some of its fields need to be updated
 dirtyFix :: Term -> Term
@@ -722,3 +722,4 @@ instance WellFormed FixInfo where
     invalid = not (get fixIsDirty info)
       && isJust (get fixName info)
       && not (get fixIsClosed info)
+-}

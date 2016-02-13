@@ -53,6 +53,7 @@ module Elea.Term.Ext
   buildCase,
   isProductive,
   assertValidRewrite,
+  lookupFixName,
 )
 where
 
@@ -1031,7 +1032,7 @@ instance WF.LocallyWellFormed Term where
   assertLocal (Con tcon) =
     WF.assert (Tag.untag tcon)
   assertLocal Fix{ fixInfo = fix_info, binding = bind, inner = fix_t } = do
-    WF.assert fix_info
+--    WF.assert fix_info
     wellFormedVar 0 bind fix_t
   assertLocal _ = 
     Assert.success
@@ -1226,3 +1227,13 @@ instance PrintfArg Term where
 instance Show Prop where
   show (Prop name term) = 
     printf "prop %s %s" name (show term)
+
+
+lookupFixName :: Defs.Read m => Term -> m Term
+lookupFixName term@(flattenApp -> fix@Fix{ fixInfo = fix_info } : args) = do
+  mby_name <- Defs.lookupName term
+  return (app fix { fixInfo = set fixName (getName mby_name) fix_info } args)
+  where
+  getName (Just (name, args'))
+    | args == args' = Just name
+  getName _ = Nothing

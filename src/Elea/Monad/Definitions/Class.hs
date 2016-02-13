@@ -67,4 +67,3 @@ instance (Monoid w, Read m) => Read (WriterT w m) where
 instance (Monoid w, Write m) => Write (WriterT w m) where
   defineTerm n = lift . defineTerm n
   defineType n = lift . defineType n
-  

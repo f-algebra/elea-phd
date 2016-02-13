@@ -68,8 +68,8 @@ apply = id
 
 transformSteps :: Env m => [Transform.NamedStep m]
 transformSteps =
-  [ Transform.silentStep "clean fix" cleanFix 
-  , Transform.step "normalise app" normaliseApp
+  [ -- Transform.silentStep "clean fix" cleanFix 
+    Transform.step "normalise app" normaliseApp
   , Transform.step "propagate _|_" strictness
   , Transform.step "beta reduction" beta
   , Transform.step "case-of reduction" caseOfCon
@@ -232,9 +232,7 @@ traverseFix fix@(Fix inf b t) = do
     $ Transform.traverse (\t -> Fix inf b t) t
   Fail.unless (get Signals.didRewrite signals)
   Signals.tellStopRewriting
-  return
-    . Term.dirtyFix
-    $ Fix inf b t'
+  Term.lookupFixName (Fix inf b t')
     
 traverseFix _ = Fail.here
 
@@ -332,7 +330,7 @@ caseCase outer_cse@(Case inner_cse@(Case inner_t inner_alts) outer_alts) =
     alts_here = map (Indices.liftMany (nlength bs)) outer_alts
 caseCase _ = Fail.here
 
-
+{-
 cleanFix :: Step m => Term -> m Term
 cleanFix fix_t@Fix{ fixInfo = fix_info, inner = fix_body } 
   | get fixIsDirty fix_info = do
@@ -346,3 +344,4 @@ cleanFix fix_t@Fix{ fixInfo = fix_info, inner = fix_body }
     -- ^ traverse makes the step invisible in tracing
 cleanFix _ = 
   Fail.here
+-}
