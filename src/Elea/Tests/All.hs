@@ -29,6 +29,6 @@ all = id
  -- , Constraints.tests
  -- , Context.tests
  -- , Inventor.tests
-  , Simplifier.tests
---  , Fusion.tests  
+ -- , Simplifier.tests
+  , Fusion.tests  
   ]

@@ -46,7 +46,7 @@ check assert
   assert' = augment (showCallStack ?loc) assert
 checkM assert
   | isSuccess assert = return ()
-  | otherwise = fail (show (fromFailure assert'))
+  | otherwise = error (show (fromFailure assert'))
   where
   assert' = augment (showCallStack ?loc) assert
 #endif

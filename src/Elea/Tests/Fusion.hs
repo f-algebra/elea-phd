@@ -34,6 +34,7 @@ tests = do
     . Test.label "Fusion"
     . Test.list 
     . map testProp 
+    . filter (== "zeno55")
     $ prop_names
 
 properties_file :: String

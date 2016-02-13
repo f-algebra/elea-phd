@@ -74,7 +74,7 @@ steps =
   , Transform.step "accumulator fusion" accumulation
   , Transform.step "free-var fusion" decreasingFreeVar
   , Transform.step "repeated-argument fusion" repeatedArg
-  , Transform.step "assertion fusion" matchFix
+ -- , Transform.step "assertion fusion" matchFix
   , Transform.step "fold discovery" discoverFold ]
 
 
@@ -268,27 +268,22 @@ decreasingFreeVar orig_t@(App fix@(Fix _ _ fix_t) args) = do
   Fusion.checkEnabled
   Fail.unless (length var_arg_is > 0)
   Fail.when (Term.beingFused fix)
-  Fail.assert "dec-free-var given non lambda floated fixed-point"
-    $ Term.isLambdaFloated fix
+  Assert.checkM
+    . Assert.augment "dec-free-var given non lambda floated fixed-point"
+    $ Assert.bool (Term.isLambdaFloated fix)
   
   App expr_fix@(Fix _ expr_b _) expr_args <- 
     Term.expressFreeVariables var_arg_idxs fix
 
-  let (orig_bs, _) = flattenLam fix_t
-  
-  Fail.assert ("expressFreeVariables failed in dec-free-var " 
-              ++ "\n[expressing] " ++ show var_args
-              ++ "\n[in] " ++ show fix
-              ++ "\n[yielded] " ++ show expr_fix)
-    $ expr_args ==  var_args
-    
-  let ctx_vars = var_args ++ reverse (zipWith (Var . enum) (range orig_bs) (reverse orig_bs))
-      ctx_t = id
-        . WellFormed.check
+  let ctx_t = id
         . unflattenLam (expr_b : orig_bs)
-        $ app (Var (elength orig_bs) expr_b) ctx_vars
-        
-      full_t = Term.reduce ctx_t (expr_fix : args)
+        $ app (Var (elength orig_bs) expr_b) ctx_vars    
+      full_t = Term.reduce ctx_t (expr_fix : args)  
+
+  Assert.checkM
+    . Assert.augment "dec-free-var generated a malformed context"
+    . Assert.augment (printf "when simplifying %s" orig_t)
+    $ WellFormed.assert ctx_t
        
   Assert.checkM
     . Assert.augment "dec-free-var generated an incorrectly typed context"
@@ -299,9 +294,11 @@ decreasingFreeVar orig_t@(App fix@(Fix _ _ fix_t) args) = do
     new_fix <- fusion ctx_t expr_fix
     return (app new_fix args)
   where
-  var_args = zipWith Var var_arg_idxs var_arg_bs
+  (orig_bs, _) = flattenLam fix_t
   var_arg_bs = map (\i -> binding (args !! i)) var_arg_is
   var_arg_idxs = nubOrd (map (fromVar . (args !!)) var_arg_is)
+  new_args = map (\i -> Var (enum (nlength orig_bs - succ i)) (orig_bs !! i)) var_arg_is
+  ctx_vars = new_args ++ zipWith (Var . enum) (reverse (range orig_bs)) orig_bs
 
   -- The variable arguments we should attempt this technique on.
   -- They must be a decreasing argument, and free within the fixpoint itself. 
