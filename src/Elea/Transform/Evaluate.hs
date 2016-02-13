@@ -154,8 +154,10 @@ caseOfCon _ = Fail.here
 traverseMatch :: Step m => Term -> m Term
 traverseMatch term@(Case cse_t alts) = 
   History.check Name.TraverseMatch term $ do 
-    cse_t' <- Transform.traverse (\t -> Case t alts) cse_t  
-    Fail.when (cse_t == cse_t')
+    (cse_t', signals) <- id
+      . Signals.listen
+      $ Transform.traverse (\t -> Case t alts) cse_t  
+    Fail.unless (get Signals.didRewrite signals)
     return (Case cse_t' alts)
 traverseMatch _ = Fail.here
 
@@ -163,9 +165,10 @@ traverseMatch _ = Fail.here
 traverseBranches :: forall m . Step m => Term -> m Term
 traverseBranches term@(Case cse_t alts) = 
   History.check Name.TraverseBranch term $ do
-    alts' <- zipWithM traverseAlt [0..] alts
-    let term' = Case cse_t alts'
-    Fail.when (term == term')
+    (alts', signals) <- id
+      . Signals.listen
+      $ zipWithM traverseAlt [0..] alts
+    Fail.unless (get Signals.didRewrite signals)
     return (Case cse_t alts')
   where
   traverseAlt n alt@(Alt con bs t) = do
@@ -191,10 +194,11 @@ traverseBranches _ = Fail.here
 
 traverseFun :: Step m => Term -> m Term
 traverseFun (Lam b t) = do
-  t' <- id
+  (t', signals) <- id
+    . Signals.listen
     . Env.bind b 
     $ Transform.traverse (\t -> Lam b t) t
-  Fail.when (t == t')
+  Fail.unless (get Signals.didRewrite signals)
   Signals.tellStopRewriting
   if t' == Term.truth || t' == Term.falsity
   then return t'
@@ -205,12 +209,14 @@ traverseFun _ = Fail.here
 traverseApp :: forall m . Step m => Term -> m Term
 traverseApp term@(App f xs) = 
   History.check Name.TraverseApp term $ do
-    xs' <- mapM traverseArg (range xs)
-    f' <- id
+    (xs', xs_signals) <- id
+      . Signals.listen
+      $ mapM traverseArg (range xs)
+    (f', f_signals) <- id
+      . Signals.listen
       $ Transform.traverse (\f -> App f xs) f
-    let term' = App f' xs'
-    Fail.when (term == term')
-    return term'
+    Fail.unless (get Signals.didRewrite (xs_signals ++ f_signals))
+    return (App f' xs')
   where
   traverseArg :: Nat -> m Term
   traverseArg n = Transform.traverse (\t -> App f (setAt (enum n) t xs)) (xs !! n)
@@ -220,10 +226,11 @@ traverseApp _ = Fail.here
 
 traverseFix :: Step m => Term -> m Term
 traverseFix fix@(Fix inf b t) = do
-  t' <- id
+  (t', signals) <- id
+    . Signals.listen
     . Env.bind b
     $ Transform.traverse (\t -> Fix inf b t) t
-  Fail.when (t == t')
+  Fail.unless (get Signals.didRewrite signals)
   Signals.tellStopRewriting
   return
     . Term.dirtyFix
