@@ -63,7 +63,7 @@ evalT fedd = do
   return x
 
 instance Empty FeddState where
-  empty = FS empty empty 1 Nat.omega False empty
+  empty = FS empty empty 1 Nat.omega False mempty
 
 eval :: Fedd a -> a
 eval = runIdentity . evalT
@@ -185,11 +185,21 @@ instance Monad m => Signals.Env (FeddT m) where
     State.modify (set (Signals.stopRewriting . fsSignals) True)
   tellUsedAntecentRewrite = 
     State.modify (set (Signals.usedAntecedentRewrite . fsSignals) True)
+  tellDidRewrite = 
+    State.modify (set (Signals.didRewrite . fsSignals) True)
 
   consume run = do  -- Sort of a fake Writer instance
     starting_signals <- State.gets (get fsSignals)
-    State.modify (set fsSignals empty)
+    State.modify (set fsSignals mempty)
     x <- run
     new_signals <- State.gets (get fsSignals)
     State.modify (set fsSignals starting_signals)
+    return (x, new_signals)
+
+  listen run = do
+    starting_signals <- State.gets (get fsSignals)
+    State.modify (set fsSignals mempty)
+    x <- run
+    new_signals <- State.gets (get fsSignals)
+    State.modify (modify fsSignals (++ starting_signals))
     return (x, new_signals)

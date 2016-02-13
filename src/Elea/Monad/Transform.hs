@@ -104,6 +104,7 @@ compose all_steps = apply
         applyOneStep steps term
 
       Just term' -> do
+        Signals.tellDidRewrite
         full_term <- applyContext term
         full_term' <- applyContext term'
         Assert.checkM
@@ -215,7 +216,9 @@ instance TraceSteps.Env m => TraceSteps.Env (RewriteT m) where
 instance Signals.Env m => Signals.Env (RewriteT m) where
   tellStopRewriting = Trans.lift Signals.tellStopRewriting
   tellUsedAntecentRewrite = Trans.lift Signals.tellUsedAntecentRewrite
+  tellDidRewrite = Trans.lift Signals.tellDidRewrite
   consume = mapRewriteT (liftM sequenceFst . Signals.consume)
+  listen = mapRewriteT (liftM sequenceFst . Signals.listen)
 
 class (TraceSteps.Env m, Signals.Env m) => Env m where
   applyContext :: Term -> m Term
