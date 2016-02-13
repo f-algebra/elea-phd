@@ -51,8 +51,8 @@ steps =
   , Transform.step "double negation" doubleNeg
   , Transform.step "function to forall" forAll
   , Transform.step "remove forall" removeForAll
-  , Transform.step "left transitivity of (=<)" leftTrans
-  , Transform.step "right transitivity of (=<)" rightTrans
+  , Transform.silentStep "left transitivity of (=<)" leftTrans
+  , Transform.silentStep "right transitivity of (=<)" rightTrans
   , Transform.step "case-split (=<)" caseSplitInc
   , Transform.step "case-split (>=)" caseSplitDec
   , Transform.step "(=<) constructor" constructor

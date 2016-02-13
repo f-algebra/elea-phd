@@ -105,22 +105,15 @@ fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
       -- ^ Make room for our new variables we are rewriting to
       $ app ctx_t [Term.unfoldFix temp_fix]
       
-    mby_new_t <- Fail.catch $ do
-      if not (0 `Indices.freeWithin` new_fix_t) 
-      then do 
-        Fail.when (Set.member temp_idx (Tag.tags new_fix_t))
-        Simp.applyM
-          $ Indices.lower new_fix_t
-      else id
-        . Rewrite.applyM
-        . Term.dirtyFix
-        . Fix fix_i new_fix_b 
-        $ Tag.replace temp_idx orig_idx new_fix_t
-    case mby_new_t of
-      Nothing -> Fail.here
-      Just new_t -> do
-        Discovery.rewritesTo orig_t new_t
-        return new_t
+    if not (0 `Indices.freeWithin` new_fix_t) 
+    then do 
+      Fail.when (Set.member temp_idx (Tag.tags new_fix_t))
+      return (Indices.lower new_fix_t)
+    else id
+      . return
+      . Term.dirtyFix
+      . Fix fix_i new_fix_b 
+      $ Tag.replace temp_idx orig_idx new_fix_t
   where
   orig_t = id
     . WellFormed.check
@@ -302,8 +295,9 @@ decreasingFreeVar orig_t@(App fix@(Fix _ _ fix_t) args) = do
     . Assert.augment (printf "context term %s" ctx_t)
     $ Type.assertEq orig_t full_t
 
-  History.check Name.FreeArgFusion full_t
-    $ fusion ctx_t expr_fix
+  History.check Name.FreeArgFusion full_t $ do
+    new_fix <- fusion ctx_t expr_fix
+    return (app new_fix args)
   where
   var_args = zipWith Var var_arg_idxs var_arg_bs
   var_arg_bs = map (\i -> binding (args !! i)) var_arg_is

@@ -68,15 +68,15 @@ apply = id
 
 transformSteps :: Env m => [Transform.NamedStep m]
 transformSteps =
-  [ Transform.step "normalise app" normaliseApp
+  [ Transform.silentStep "clean fix" cleanFix 
+  , Transform.step "normalise app" normaliseApp
   , Transform.step "propagate _|_" strictness
   , Transform.step "beta reduction" beta
   , Transform.step "case-of reduction" caseOfCon
   , Transform.step "commute case-app" caseApp
   , Transform.step "commute app-case" appCase
   , Transform.step "commute case-case" caseCase
-  , Transform.step "seq reduction" reduceSeq
-  , Transform.silentStep "clean fix" cleanFix ]
+  , Transform.step "seq reduction" reduceSeq ]
 
 traverseSteps :: Env m => [Transform.NamedStep m]
 traverseSteps = 
@@ -335,7 +335,7 @@ cleanFix fix_t@Fix{ fixInfo = fix_info, inner = fix_body }
           . set fixIsDirty False
           . set fixIsClosed (Set.null (Term.freeVarSet fix_t))
           $ fix_info
-    Transform.traverse id (fix_t { fixInfo = fix_info' })
+    return (fix_t { fixInfo = fix_info' })
     -- ^ traverse makes the step invisible in tracing
 cleanFix _ = 
   Fail.here
