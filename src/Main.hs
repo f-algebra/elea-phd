@@ -47,6 +47,8 @@ main = do
         "test" -> do
           tests <- liftM TestFramework.hUnitTestToTests Tests.all
           TestFramework.defaultMainWithArgs tests (tail args)
+        "inc" -> do
+           apply (args !! 2)
 
   printMessages = do
     putStrLn "Test runtimes"

@@ -189,7 +189,7 @@ prop zeno51 <A> (xs: list<A>) (x: A) ->
 // Unfold fail
 // prop zeno54 (m n: nat) ->
 //  minus (add m n) n =< m
-
+/*
 prop zeno55 <A> (n: nat) (xs ys: list<A>) ->
   append<A> (drop<A> n xs) (drop<A> (minus n (length<A> xs)) ys)
   == drop<A> n (append<A> xs ys)
@@ -541,3 +541,4 @@ prop coind7 <A> (f: A -> A) (x: A) ->
   
 prop coind8 (n: nat) ->
   is_sorted (repeat<nat> n) == _|_ bool
+*/

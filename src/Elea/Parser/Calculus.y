@@ -38,6 +38,7 @@ import qualified Data.Map as Map
 
 %token
   name        { TokenName $$ }
+  global      { TokenGlobal $$ }
   '|'         { TokenBar }
   ':'         { TokenTypeOf }
   '->'        { TokenRArr }
@@ -130,6 +131,7 @@ Bindings :: { [RawBind] }
   
 Term :: { RawTerm }
   : ParamCall                         { TVar $1 }
+  | ParamGlobal                       { TGlobal $1 }
   | '_|_' Type                        { TUnr $2 }
   | Term ParamCall                    { TApp $1 (TVar $2) }
   | Term '(' Term ')'                 { TApp $1 $3 }
@@ -157,6 +159,10 @@ TermDef :: { TermDef }
 ParamCall :: { ParamCall }
   : name                              { ($1, []) }
   | name '<' TypeList '>'             { ($1, $3) }
+
+ParamGlobal :: { ParamGlobal }
+  : global                            { ($1, []) }
+  | global '<' TypeList '>'           { ($1, $3) }
   
 ParamName :: { ParamName }
   : name                              { ($1, []) }
@@ -183,6 +189,7 @@ type TypeArgs = [String]
 -- A parameterised variable call can have type arguments.
 -- > append<list<nat>>
 type ParamCall = (String, [RawType])
+type ParamGlobal = (String, [RawType])
 
 type ParamName = (String, [String])
 
@@ -213,6 +220,7 @@ data RawBind
 
 data RawTerm
   = TVar ParamCall
+  | TGlobal ParamGlobal
   | TApp RawTerm RawTerm
   | TFix [RawBind] RawTerm
   | TLam [RawBind] RawTerm
@@ -487,6 +495,14 @@ parseRawTerm (TSeq rt1 rt2) = do
   return (Term.Seq t1 t2)
 parseRawTerm (TVar var) = 
   lookupTerm var
+parseRawTerm (TGlobal (name, raw_ty_args)) = do
+  ty_args <- mapM parseRawType raw_ty_args
+  mby_term <- Defs.lookupTerm name ty_args
+  case mby_term of
+    Nothing -> Err.throwf "undefined name %s" ('$' : name)
+    Just Con {} -> 
+      Err.throwf "cannot refer to constructors with global syntax %s" ('$' : name)
+    Just other_t -> return other_t
 parseRawTerm (TUnr rty) = do
   ty <- parseRawType rty
   return (Term.Bot ty)
@@ -546,6 +562,7 @@ parseRawTerm (TCase rt ralts) = do
 data Token
   = TokenBar
   | TokenName String
+  | TokenGlobal String
   | TokenTypeOf
   | TokenSet
   | TokenLArr
@@ -620,9 +637,10 @@ lexer (',':cs) = TokenComma : lexer cs
 lexer ('\"':cs) = TokenName name : lexer rest
   where
   (name, '\"':rest) = span (/= '\"') cs
-lexer ('{':cs) = TokenName ("{" ++ name ++ "}") : lexer rest
+lexer ('$':cs) 
+  | length global_name > 0 = TokenGlobal global_name : lexer rest
   where
-  (name, '}':rest) = span (/= '}') cs
+  (global_name, rest) = span isNameChar cs
 lexer (c:cs) 
   | isSpace c = lexer cs
   | isNameChar c = lexVar (c : cs)
@@ -654,6 +672,7 @@ lexer cs = error $ "Unrecognized symbol " ++ take 1 cs
 instance Show Token where
   show TokenBar = "|"
   show (TokenName x) = x
+  show (TokenGlobal x) = '$' : x
   show TokenTypeOf = ":"
   show TokenRArr = "->"
   show TokenLArr = "<-"
