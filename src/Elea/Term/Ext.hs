@@ -1231,9 +1231,8 @@ instance Show Prop where
 
 lookupFixName :: Defs.Read m => Term -> m Term
 lookupFixName term@(flattenApp -> fix@Fix{ fixInfo = fix_info } : args) = do
-  mby_name <- Defs.lookupName term
+  mby_name <- Defs.lookupName fix
   return (app fix { fixInfo = set fixName (getName mby_name) fix_info } args)
   where
-  getName (Just (name, args'))
-    | args == args' = Just name
+  getName (Just (name, [])) = Just name
   getName _ = Nothing

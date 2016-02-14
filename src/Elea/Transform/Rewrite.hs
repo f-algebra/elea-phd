@@ -188,7 +188,7 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
   Fail.when (Set.null suggestions)
   Fail.assert "express-constructor suggestions not correctly typed"
     $ all (== sugg_ty) sugg_tys
-   -- ^ Check all the suggestions are correctly typed
+   -- ^ Check all the suggestions are correctly typed 
     
   fix' <- id
     . Fail.choose 

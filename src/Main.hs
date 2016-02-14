@@ -22,6 +22,7 @@ import qualified Elea.Transform.Fusion as Fusion
 import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Monad.StepCounter as Steps
+import qualified Elea.Monad.Transform.TraceSteps as TraceSteps
 import qualified Data.Poset as Quasi
 import qualified Test.Framework as TestFramework
 import qualified Test.Framework.Providers.HUnit as TestFramework
@@ -48,7 +49,7 @@ main = do
           tests <- liftM TestFramework.hUnitTestToTests Tests.all
           TestFramework.defaultMainWithArgs tests (tail args)
         "inc" -> do
-           apply (args !! 2)
+           apply (args !! 1)
 
   printMessages = do
     putStrLn "Test runtimes"
@@ -59,7 +60,7 @@ test = withArgs ["test"] main
 
 applyM :: String -> Test.M String
 applyM (read -> term) = do
-  term' <- Fusion.applyM term
+  term' <- TraceSteps.enable (Fusion.applyM term)
   return 
     $ printf "\n%s\n\n:%s" term' (Type.get term')
     

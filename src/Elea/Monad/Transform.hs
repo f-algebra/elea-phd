@@ -111,7 +111,7 @@ compose all_steps = apply
           . Assert.augment (printf "within step \"%s\"" step_name)
           $ Term.assertValidRewrite full_term full_term'
         when (get Signals.usedAntecedentRewrite signals) $ do
-          TraceSteps.traceM (printf "\n<< success \"%s\" on >>\n\n%s" step_name term)
+          TraceSteps.traceM (printf "\n<< success \"%s\" on >>\n\n%s" step_name full_term)
         unless (rewriteStepSilent named_step) $ do
           TraceSteps.traceM (printf "\n< applying \"%s\" yielded >\n\n%s" step_name full_term')
         if get Signals.stopRewriting signals 
