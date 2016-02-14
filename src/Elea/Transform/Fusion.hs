@@ -74,7 +74,7 @@ steps =
   , Transform.step "accumulator fusion" accumulation
   , Transform.step "free-var fusion" decreasingFreeVar
   , Transform.step "repeated-argument fusion" repeatedArg
- -- , Transform.step "assertion fusion" matchFix
+  , Transform.step "assertion fusion" matchFix
   , Transform.step "fold discovery" discoverFold ]
 
 
