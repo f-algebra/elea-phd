@@ -37,6 +37,7 @@ import qualified Data.Set as Set
 import qualified Data.Poset as Quasi
 
 -- TODO am missing the bot arg of strict function case in strictness step
+-- TODO remember -DFAST_AND_LOOSE which will switch off homeo checking for most steps
 
 type Step m = (Env m, Transform.Step m)
 

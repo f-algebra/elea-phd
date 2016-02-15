@@ -5,7 +5,7 @@ MAIN = src/Main.hs
 .PHONY : ghci happy clean
 
 ghci:
-	ghci -fobject-code -O -DASSERT -DTRACE $(FLAGS) $(EXTS) $(MAIN)
+	ghci -fobject-code -O -DASSERT $(FLAGS) $(EXTS) $(MAIN)
 
 power:
 	cabal configure --enable-optimization

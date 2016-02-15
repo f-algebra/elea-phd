@@ -136,7 +136,7 @@ constArg term@(App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
     
     -- Run evaluation to reduce all the new lambdas
     let term' = Term.reduce fix' args'
-    return term' 
+    Term.lookupFixName term' 
   where
   arg_idxs = Term.constantArgs fix ++ Term.unusedArgs fix
   pos = head arg_idxs

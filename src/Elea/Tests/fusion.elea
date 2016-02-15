@@ -197,7 +197,7 @@ prop zeno55 <A> (n: nat) (xs ys: list<A>) ->
 // Had to rev 'm' and 'n' to make this hold
 prop zeno56 <A> (n m: nat) (xs: list<A>) ->
   drop<A> n (drop<A> m xs) == drop<A> (add m n) xs  
-  
+  s
 // Does not hold
 // prop zeno57 <A> (n m: nat) (xs: list<A>) ->
 //   drop<A> n (take<A> m xs) == take<A> (minus m n) (drop<A> n xs)

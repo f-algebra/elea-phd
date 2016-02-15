@@ -1234,5 +1234,13 @@ lookupFixName term@(flattenApp -> fix@Fix{ fixInfo = fix_info } : args) = do
   mby_name <- Defs.lookupName fix
   return (app fix { fixInfo = set fixName (getName mby_name) fix_info } args)
   where
-  getName (Just (name, [])) = Just name
+  free_vars = freeVarSet fix
+
+  getName (Just (name, [])) 
+    | null args = Just name
+  --getName (Just (name, args'))
+  --  | args_left == free_vars = 
+  --    Just (printf "%s[%s]" name (intercalate "," (map show (Set.toList free_vars))))
+  --  where
+  --  args_left = Set.fromList args' Set.\\ Set.fromList args
   getName _ = Nothing

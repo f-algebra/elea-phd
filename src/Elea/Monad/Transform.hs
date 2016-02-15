@@ -98,25 +98,20 @@ compose all_steps = apply
     then do
       TraceSteps.traceM (printf "\n<< blocked \"%s\" (to ensure termination) on >>\n\n%s" step_name term)
       applyOneStep steps term
-    else History.see step_name term $ do 
+    else do
       (mby_term', signals) <- id
         . Signals.consume
         . localStepName step_name
+        . History.see step_name term
         . runMaybeT 
         $ runReaderT (rewriteT (rewriteStep named_step term)) apply
       case mby_term' of
-        -- We shouldn't really be extending the History with the seen term in this Nothing
-        -- branch, since we didn't actually apply the step (it failed).
-        -- However, it might be a decent optimisation, relying on the assumption that
-        -- the failing rewrite means that any subsequently seen term which would embed 
-        -- into this term would also fail. This is not the case in general, but might
-        -- be the case for everything useful (the standard termination ordering assumption).
         Nothing -> do
           when (get Signals.usedAntecedentRewrite signals) $ do
             TraceSteps.traceM (printf "\n<< failed \"%s\" on >>\n\n%s" step_name term)
           applyOneStep steps term
 
-        Just term' -> do
+        Just term' -> History.see step_name term $ do
           Signals.tellDidRewrite
           full_term <- applyContext term
           full_term' <- applyContext term'
@@ -129,7 +124,7 @@ compose all_steps = apply
             TraceSteps.traceM (printf "\n< applying \"%s\" yielded >\n\n%s" step_name full_term')
           if get Signals.stopRewriting signals 
           then return term' 
-          else apply term'   -- fingers crossed for tail-call optimisation
+          else apply term'
     where
     step_name = rewriteStepName named_step
 
