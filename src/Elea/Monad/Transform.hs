@@ -16,6 +16,7 @@ where
 
 import Elea.Prelude hiding ( liftCatch, traverse )
 import Elea.Term
+import Elea.Transform.Names
 import qualified Elea.Type as Type
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Monad.Failure.Class as Fail
@@ -60,17 +61,17 @@ newtype RewriteT m a
   deriving ( Functor, Applicative, Monad )
   
 data NamedStep m = NamedStep 
-  { rewriteStepName :: !String
+  { rewriteStepName :: !Name
   , rewriteStepSilent :: !Bool
   , rewriteStep :: Term -> RewriteT m Term }
 
-step :: Monad m => String -> (Term -> RewriteT m Term) -> NamedStep m
+step :: Monad m => Name -> (Term -> RewriteT m Term) -> NamedStep m
 step name rewrite = NamedStep 
   { rewriteStepName = name
   , rewriteStepSilent = False
   , rewriteStep = rewrite }
 
-silentStep :: String -> (Term -> RewriteT m Term) -> NamedStep m
+silentStep :: Name -> (Term -> RewriteT m Term) -> NamedStep m
 silentStep name rewrite = NamedStep
   { rewriteStepName = name
   , rewriteStepSilent = True
@@ -92,31 +93,43 @@ compose all_steps = apply
   applyOneStep :: [NamedStep m] -> Term -> m Term
   applyOneStep [] term = return term
   applyOneStep (named_step : steps) term = do
-    (mby_term', signals) <- id
-      . Signals.consume
-      . localStepName step_name
-      . runMaybeT 
-      $ runReaderT (rewriteT (rewriteStep named_step term)) apply
-    case mby_term' of
-      Nothing -> do
-        when (get Signals.usedAntecedentRewrite signals) $ do
-          TraceSteps.traceM (printf "\n<< failed \"%s\" on >>\n\n%s" step_name term)
-        applyOneStep steps term
+    looping <- History.seen step_name term
+    if looping 
+    then do
+      TraceSteps.traceM (printf "\n<< blocked \"%s\" (to ensure termination) on >>\n\n%s" step_name term)
+      applyOneStep steps term
+    else History.see step_name term $ do 
+      (mby_term', signals) <- id
+        . Signals.consume
+        . localStepName step_name
+        . runMaybeT 
+        $ runReaderT (rewriteT (rewriteStep named_step term)) apply
+      case mby_term' of
+        -- We shouldn't really be extending the History with the seen term in this Nothing
+        -- branch, since we didn't actually apply the step (it failed).
+        -- However, it might be a decent optimisation, relying on the assumption that
+        -- the failing rewrite means that any subsequently seen term which would embed 
+        -- into this term would also fail. This is not the case in general, but might
+        -- be the case for everything useful (the standard termination ordering assumption).
+        Nothing -> do
+          when (get Signals.usedAntecedentRewrite signals) $ do
+            TraceSteps.traceM (printf "\n<< failed \"%s\" on >>\n\n%s" step_name term)
+          applyOneStep steps term
 
-      Just term' -> do
-        Signals.tellDidRewrite
-        full_term <- applyContext term
-        full_term' <- applyContext term'
-        Assert.checkM
-          . Assert.augment (printf "within step \"%s\"" step_name)
-          $ Term.assertValidRewrite full_term full_term'
-        when (get Signals.usedAntecedentRewrite signals) $ do
-          TraceSteps.traceM (printf "\n<< success \"%s\" on >>\n\n%s" step_name full_term)
-        unless (rewriteStepSilent named_step) $ do
-          TraceSteps.traceM (printf "\n< applying \"%s\" yielded >\n\n%s" step_name full_term')
-        if get Signals.stopRewriting signals 
-        then return term' 
-        else apply term'   -- fingers crossed for tail-call optimisation
+        Just term' -> do
+          Signals.tellDidRewrite
+          full_term <- applyContext term
+          full_term' <- applyContext term'
+          Assert.checkM
+            . Assert.augment (printf "within step \"%s\"" step_name)
+            $ Term.assertValidRewrite full_term full_term'
+          when (get Signals.usedAntecedentRewrite signals) $ do
+            TraceSteps.traceM (printf "\n<< success \"%s\" on >>\n\n%s" step_name full_term)
+          unless (rewriteStepSilent named_step) $ do
+            TraceSteps.traceM (printf "\n< applying \"%s\" yielded >\n\n%s" step_name full_term')
+          if get Signals.stopRewriting signals 
+          then return term' 
+          else apply term'   -- fingers crossed for tail-call optimisation
     where
     step_name = rewriteStepName named_step
 
@@ -220,9 +233,10 @@ instance Signals.Env m => Signals.Env (RewriteT m) where
   consume = mapRewriteT (liftM sequenceFst . Signals.consume)
   listen = mapRewriteT (liftM sequenceFst . Signals.listen)
 
-class (TraceSteps.Env m, Signals.Env m) => Env m where
+class (TraceSteps.Env m, Signals.Env m, History.Env m) 
+    => Env m where
   applyContext :: Term -> m Term
   augmentContext :: (Term -> Term) -> m a -> m a
   clearContext :: m a -> m a
-  localStepName :: String -> m a -> m a
-  askStepName :: m String
+  localStepName :: Name -> m a -> m a
+  askStepName :: m Name

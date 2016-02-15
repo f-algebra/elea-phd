@@ -15,14 +15,13 @@ import qualified Elea.Term.Ext as Term
 import qualified Elea.Term.Constraint as Constraint
 import qualified Elea.Type as Type
 import qualified Elea.Unification as Unifier
-import qualified Elea.Transform.Names as Name
+import qualified Elea.Transform.Names as Step
 import qualified Elea.Transform.Evaluate as Eval
 import qualified Elea.Transform.Simplify as Simp
 import qualified Elea.Transform.Rewrite as Rewrite
 import qualified Elea.Transform.Prover as Prover
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Index as Indices
-import qualified Elea.Monad.History as History
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Error.Assertion as Assert
 import qualified Elea.Monad.Failure.Class as Fail
@@ -69,19 +68,18 @@ applyM = Transform.compose all_steps
 
 steps :: Env m => [Transform.NamedStep m]
 steps = 
-  [ Transform.step "fix-fix fusion" fixfix
-  , Transform.step "fix-con fusion" fixCon
-  , Transform.step "accumulator fusion" accumulation
-  , Transform.step "free-var fusion" decreasingFreeVar
-  , Transform.step "repeated-argument fusion" repeatedArg
-  , Transform.step "assertion fusion" matchFix
-  , Transform.step "fold discovery" discoverFold ]
+  [ Transform.step Step.FixFixFusion fixfix
+  , Transform.step Step.FixConFusion fixCon
+  , Transform.step Step.AccumulatorFusion accumulation
+  , Transform.step Step.FreeVarFusion decreasingFreeVar
+  , Transform.step Step.RepeatedArgFusion repeatedArg
+  , Transform.step Step.AssertionFusion matchFix
+  , Transform.step Step.FoldDiscovery discoverFold ]
 
 
 fusion :: (?loc :: CallStack, Step m) => Term -> Term -> m Term
 fusion ctx_t fix@(Fix fix_i fix_b fix_t) = id
-  . Env.forgetAllMatches 
-  . Memo.memo Name.Fusion orig_t $ do
+  . Env.forgetAllMatches $ do
     temp_idx <- Tag.make
     let temp_i = set fixIndex temp_idx fix_i
         temp_fix = Fix temp_i fix_b fix_t
@@ -150,9 +148,8 @@ fixCon orig_t@(App fix@(Fix _ fix_b _) args) = do
           $ App gen_fix built_xs
         
     let gen_t = Term.reduce ctx_t (fix:full_args)
-    History.check Name.ConFusion gen_t $ do
-      fused_t <- fusion ctx_t fix
-      return (Term.reduce fused_t full_args)
+    fused_t <- fusion ctx_t fix
+    return (Term.reduce fused_t full_args)
         
 fixCon _ = Fail.here
 
@@ -199,9 +196,8 @@ fixfix o_term@(App o_fix@(Fix fix_i _ o_fix_t) o_args) = do
       . Assert.augment "fix-fix created an incorrectly typed context"
       $ Type.assertEq o_term full_t
 
-    History.check Name.FixFixFusion gen_t $ do
-      new_fix <- fusion ctx_t i_fix
-      return (app new_fix full_args)
+    new_fix <- fusion ctx_t i_fix
+    return (app new_fix full_args)
     where
     
     i_term = o_args !! arg_i
@@ -289,9 +285,8 @@ decreasingFreeVar orig_t@(App fix@(Fix _ _ fix_t) args) = do
     . Assert.augment (printf "context term %s" ctx_t)
     $ Type.assertEq orig_t full_t
 
-  History.check Name.FreeArgFusion full_t $ do
-    new_fix <- fusion ctx_t expr_fix
-    return (app new_fix args)
+  new_fix <- fusion ctx_t expr_fix
+  return (app new_fix args)
   where
   (orig_bs, _) = flattenLam fix_t
   var_arg_bs = map (\i -> binding (args !! i)) var_arg_is
@@ -341,10 +336,7 @@ repeatedArg term@(App fix@(Fix _ fix_b fix_t) args) = do
   
   fuseRepeated :: [Int] -> m Term
   fuseRepeated arg_is = do
-    new_fix <- id
-      . History.check Name.RepArgFusion full_t
-      $ fusion ctx_t fix
-      
+    new_fix <- fusion ctx_t fix
     return (app new_fix args)
     where
     Just var_i = find (Term.isVar . (args !!)) arg_is
@@ -416,17 +408,16 @@ matchFix term@(App fix@(Fix {}) xs)
     Fail.assert "fix-match somehow generated a null set of matching variables" 
       $ length matched_is > 0
     
-    fused_t <- id
-      . Assert.check (Type.assertEq (app ctx_t (ofix:new_args)) oterm)
-      . History.check Name.MatchFixFusion full_t $ do
-        new_fix <- fusion ctx_t ofix  
-        let new_fix' 
-             -- | isFix (leftmost new_fix) = Constraint.restrictFixDomain ct new_fix
-              | otherwise = cleanupResult new_fix
-        Fail.when (ofix Quasi.<= new_fix')
-        return new_fix'
- 
-    return (Term.reduce fused_t new_args)
+    Assert.checkM 
+      . Type.assertEq oterm
+      $ app ctx_t (ofix:new_args)
+
+    new_fix <- fusion ctx_t ofix  
+    let new_fix' 
+         -- | isFix (leftmost new_fix) = Constraint.restrictFixDomain ct new_fix
+          | otherwise = cleanupResult new_fix
+    Fail.when (ofix Quasi.<= new_fix')
+    return (Term.reduce new_fix' new_args)
     where
     App mfix@(Fix _ _ mfix_t) margs = matchedTerm ct
     Con con : pargs = (flattenApp . matchedTo) ct
@@ -479,8 +470,7 @@ accumulation orig_t@(App fix@(Fix {}) args) = do
   Fusion.checkEnabled
   Fail.when (Term.beingFused fix)
   Fail.when (null acc_args)
-  History.check Name.AccFusion orig_t $ do
-    Fail.choose (map (tryArg arg_tys) acc_args)
+  Fail.choose (map (tryArg arg_tys) acc_args)
   where
   acc_args = Term.accumulatingArgs fix
   arg_tys = map Type.get args
@@ -510,7 +500,6 @@ accumulation _ = Fail.here
 
 discoverFold :: forall m . Step m => Term -> m Term
 discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
-  . History.check Name.FoldDiscovery orig_t
   . Env.forgetAllMatches $ do
     Fusion.checkEnabled
    -- Direction.requireInc
@@ -555,8 +544,7 @@ discoverFold orig_t@(App orig_fix@(Fix {}) orig_args) = id
       . Leq orig_t' 
       $ Term.reduce fold_t (c_vars ++ [from_t'])
     prop' <- id
-      . Env.bindMany c_bs       
-      . Memo.memo Name.FoldDiscovery prop 
+      . Env.bindMany c_bs
       . Direction.prover
       . Transform.restart
       $ Tag.map (const Tag.omega) prop

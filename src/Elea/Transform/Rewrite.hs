@@ -18,8 +18,7 @@ import qualified Elea.Term.Ext as Term
 import qualified Elea.Type as Type
 import qualified Elea.Term.Constraint as Constraint
 import qualified Elea.Term.Index as Indices
-import qualified Elea.Monad.History as History
-import qualified Elea.Transform.Names as Name
+import qualified Elea.Transform.Names as Step
 import qualified Elea.Transform.Evaluate as Eval
 import qualified Elea.Transform.Simplify as Simp
 import qualified Elea.Transform.Prover as Prover
@@ -71,20 +70,20 @@ applyM = id
     
 rewriteSteps :: Env m => [Transform.NamedStep m]
 rewriteSteps =
-  [ Transform.step "rewrite pattern" rewritePattern
-  , Transform.step "rewrite" rewrite ] 
+  [ Transform.step Step.RewritePattern rewritePattern
+  , Transform.step Step.Rewrite rewrite ] 
 
 {-# SPECIALISE expressSteps :: [Transform.NamedStep (Fedd.FeddT IO)] #-}
 {-# INLINEABLE expressSteps #-}    
 
 expressSteps :: Env m => [Transform.NamedStep m]
 expressSteps = 
-  [ Transform.step "constructor fission" expressConstructor
-  , Transform.step "commute constraint" commuteConstraint
-  , Transform.step "accumulation fission" expressAccumulation
-  , Transform.step "unfold var match for fix-con fusion" matchVar    
-  , Transform.step "unfold finitely used fix" finiteCaseFix
-  , Transform.step "identity fission" identityFix
+  [ Transform.step Step.ConstructorFission expressConstructor
+  , Transform.step Step.CommuteConstraint commuteConstraint
+  , Transform.step Step.AccumulationFission expressAccumulation
+  , Transform.step Step.CaseOfMatchVar matchVar    
+  , Transform.step Step.UnfoldFiniteFix finiteCaseFix
+  , Transform.step Step.IdentityFission identityFix
   ]
   
 
@@ -133,10 +132,7 @@ matchVar term@(App fix@(Fix {}) xs) = do
   tryMatch (App _ xs') arg_i = do
     Fail.unless (isCon (leftmost (xs' !! arg_i)))
     Fail.unless (isVar (xs !! arg_i))
-    History.check Name.MatchVar new_t
-      $ return new_t
-    where
-    new_t = Term.buildCase (xs !! arg_i) term
+    return (Term.buildCase (xs !! arg_i) term)
     
 matchVar _ = Fail.here
 
@@ -145,11 +141,11 @@ identityFix :: forall m . Step m => Term -> m Term
 identityFix orig_t@(App fix@(Fix _ _ fix_t) xs) = do
   Direction.requireInc
   Fail.unless (worthATry fix_t) 
-  term' <- Memo.memo Name.IdFix orig_t $ do    
-    Fail.choose 
-      . map tryArg
-      . filter potentialArg
-      $ [0..length xs - 1]
+  term' <- id
+    . Fail.choose 
+    . map tryArg
+    . filter potentialArg
+    $ [0..length xs - 1]
   Signals.tellStopRewriting
   return term'
   where
@@ -196,7 +192,6 @@ expressConstructor term@(App fix@(Fix fix_i fix_b fix_t) args) = do
     $ toList suggestions
 
   term' <- id
-    . History.check Name.ExpressCon fix
     . Transform.restart
     $ app fix' args
     
@@ -319,14 +314,10 @@ expressConstructor _ = Fail.here
 
 -- | Unsound cos I'm an idiot
 expressMatch :: Step m => Term -> m Term
-expressMatch term@(App fix@(Fix {}) _) = do
-  free_cse@(Case cse_t _) <- id
-    . Fail.fromMaybe
-    . Env.trackOffset
-    $ Fold.findM freeCase fix
-      
-  History.check Name.ExpressMatch free_cse
-    $ return free_cse
+expressMatch term@(App fix@(Fix {}) _) = id
+  . Fail.fromMaybe
+  . Env.trackOffset
+  $ Fold.findM freeCase fix
   where
   freeCase :: Term -> Env.TrackOffset (Maybe Term)
   freeCase cse@(Case cse_t alts) = do
@@ -381,15 +372,13 @@ finiteCaseFix term@(Case cse_t@(App fix@(Fix _ _ fix_t) args) alts) = do
   Fail.when (Term.beingFused fix)
   Fail.unless (Type.isRecursive cse_ind)
   Fail.unless (all finiteAlt alts)
- 
-  History.memoCheck Name.FiniteCaseFix term $ do
-    term' <- id
-      . Transform.restart
-      $ Case (Term.reduce (Term.unfoldFix fix) args) alts
-    -- standard progress check
-    Fail.when (term Quasi.<= term')
-    Signals.tellStopRewriting
-    return term'
+  term' <- id
+    . Transform.restart
+    $ Case (Term.reduce (Term.unfoldFix fix) args) alts
+  -- standard progress check
+  Fail.when (term Quasi.<= term')
+  Signals.tellStopRewriting
+  return term'
   where  
   cse_ind = Type.fromBase (Type.get cse_t)
   

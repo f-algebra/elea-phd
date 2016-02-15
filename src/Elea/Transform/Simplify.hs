@@ -13,10 +13,9 @@ import qualified Elea.Type as Type
 import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Term.Constraint as Constraint
-import qualified Elea.Monad.History as History
 import qualified Elea.Monad.Env as Env
 import qualified Elea.Unification as Unifier
-import qualified Elea.Transform.Names as Name
+import qualified Elea.Transform.Names as Step
 import qualified Elea.Transform.Evaluate as Eval
 import qualified Elea.Foldable as Fold
 import qualified Elea.Foldable.WellFormed as WellFormed
@@ -38,8 +37,9 @@ import qualified Data.Map as Map
 import qualified Data.Poset as Quasi
 import qualified Control.Monad.Trans as Trans
 
--- TODO strip out Transform.continue where possible!
 -- TODO properly tweak step order
+-- TODO awareness of being inside a pattern match to guide unrolling eagerness
+
 
 type Env m = 
   ( Eval.Env m
@@ -75,37 +75,25 @@ applyWithoutUnfoldM = id
   eval_and_constArg = []
     ++ Eval.transformSteps
     ++ Eval.traverseSteps
-    ++ [ Transform.step "constant argument fusion" constArg ]
+    ++ [ Transform.step Step.ConstArgFusion constArg ]
 
 {-# SPECIALISE steps :: [Transform.NamedStep (Fedd.FeddT IO)] #-}
 {-# INLINEABLE steps #-}  
     
 steps :: Env m => [Transform.NamedStep m]
 steps =
-  [ Transform.step "lambda branch" caseFun
-  , Transform.step "constant argument fusion" constArg
-  , Transform.step "identity case-of" identityCase
-  , Transform.step "subterm fission" constantFix
-  , Transform.step "unfold" unfold
-  , Transform.step "unfold case-of term" unfoldCase
-  {-
- -- , floatVarMatch
-  , propagateMatch
-  , finiteArgFix
-  , unfoldFixInj
-  , freeCaseFix   
-  , unfoldWithinFix
- -- , finiteCaseFix
-  , unsafeUnfoldFixInj
-  -}
-  ] 
+  [ Transform.step Step.LambdaBranch caseFun
+  , Transform.step Step.ConstArgFusion constArg
+  , Transform.step Step.IdentityCase identityCase
+  , Transform.step Step.SubtermFission constantFix
+  , Transform.step Step.Unfold unfold
+  , Transform.step Step.UnfoldCase unfoldCase ] 
 
 -- | We do not want pattern matches to return function typed values,
 -- so we add a new lambda above one if this is the case.
 caseFun :: Step m => Term -> m Term
 caseFun cse@(Case t alts) 
   | Just new_b <- mby_new_b = id
-    . History.check Name.CaseFun cse 
     . return
     . Lam new_b
     . Case (Indices.lift t) 
@@ -345,14 +333,13 @@ unfold :: Step m => Term -> m Term
 unfold term@(App fix@(Fix {}) args)
   | any needsUnroll dec_args
   || all (isCon . leftmost) dec_args
-  || cant_fix_con_fuse =
-    History.check Name.Unfold term $ do
-      term' <- id
-        . Transform.restart
-        $ Term.reduce (Term.unfoldFix fix) args
-      Fail.when (term Quasi.<= term')
-      Signals.tellStopRewriting
-      return term'
+  || cant_fix_con_fuse = do
+    term' <- id
+      . Transform.restart
+      $ Term.reduce (Term.unfoldFix fix) args
+    Fail.when (term Quasi.<= term')
+    Signals.tellStopRewriting
+    return term'
   where
   needsUnroll t = 
     Term.isBot t
@@ -371,11 +358,10 @@ unfold _ = Fail.here
 floatVarMatch :: Step m => Term -> m Term
 floatVarMatch term@(Case (App fix@(Fix {}) xs) _)
   | (not . any (isCon . leftmost)) dec_xs
-  , (not . null) useful_ms =
-    History.check Name.FloatVarMatch term $ do
-      let term' = Term.applyCases useful_ms term
-      Assert.check (Type.assertEq term term')
-        $ return term'
+  , (not . null) useful_ms = do
+    let term' = Term.applyCases useful_ms term
+    Assert.check (Type.assertEq term term')
+      $ return term'
   where
   dec_xs = map (xs !!) (Term.decreasingArgs fix) 
   dec_ixs = (Set.fromList . map fromVar . filter isVar) dec_xs
@@ -400,13 +386,12 @@ floatVarMatch _ = Fail.here
 
 unfoldCase :: Step m => Term -> m Term
 unfoldCase term@(Case (flattenApp -> fix@(Fix {}) : xs) alts)
-  | assert_fun || only_prod  =
-    History.check Name.UnfoldCase term $ do
-      let term' = Case (Term.reduce (Term.unfoldFix fix) xs) alts
-      term'' <- Transform.restart term'
-      Fail.when (term Quasi.<= term'')
-      Signals.tellStopRewriting
-      return term''
+  | assert_fun || only_prod  = do
+    let term' = Case (Term.reduce (Term.unfoldFix fix) xs) alts
+    term'' <- Transform.restart term'
+    Fail.when (term Quasi.<= term'')
+    Signals.tellStopRewriting
+    return term''
   where
   assert_fun = 
     any (isCon . leftmost) xs

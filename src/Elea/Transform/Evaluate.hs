@@ -31,24 +31,18 @@ import qualified Elea.Monad.Transform as Transform
 import qualified Elea.Monad.Error.Class as Err
 import qualified Elea.Monad.Definitions.Class as Defs
 import qualified Elea.Monad.Transform.Signals as Signals
-import qualified Elea.Transform.Names as Name
-import qualified Elea.Monad.History as History
+import qualified Elea.Transform.Names as Step
 
 import qualified Data.Set as Set
 import qualified Data.Poset as Quasi
 
--- TODO absurdity needs to properly evaluate strictness of arguments
--- TODO traverses should be successively applied to 
-  -- the tallest branch downwards
--- TODO SPECIALISE  
--- TODO equality checking after traverse steps is ridiculous
+-- TODO am missing the bot arg of strict function case in strictness step
 
 type Step m = (Env m, Transform.Step m)
 
 type Env m = 
   ( Env.Write m
   , Defs.Read m
-  , History.Env m
   , Transform.Env m )
 
 apply :: Term -> Term
@@ -68,32 +62,32 @@ apply = id
 
 transformSteps :: Env m => [Transform.NamedStep m]
 transformSteps =
-  [ -- Transform.silentStep "clean fix" cleanFix 
-    Transform.step "normalise app" normaliseApp
-  , Transform.step "propagate _|_" strictness
-  , Transform.step "beta reduction" beta
-  , Transform.step "case-of reduction" caseOfCon
-  , Transform.step "commute case-app" caseApp
-  , Transform.step "commute app-case" appCase
-  , Transform.step "commute case-case" caseCase
-  , Transform.step "seq reduction" reduceSeq ]
+  [ Transform.step Step.NormaliseApp normaliseApp
+  , Transform.step Step.Strictness strictness
+  , Transform.step Step.BetaReduce beta
+  , Transform.step Step.CaseOfCon caseOfCon
+  , Transform.step Step.CaseAsFun caseApp
+  , Transform.step Step.CaseAsArg appCase
+  , Transform.step Step.CommuteCases caseCase ]
 
 traverseSteps :: Env m => [Transform.NamedStep m]
 traverseSteps = 
-  [ Transform.silentStep "traverse match" traverseMatch
-  , Transform.silentStep "traverse branches" traverseBranches
-  , Transform.silentStep "traverse fun" traverseFun
-  , Transform.silentStep "traverse app" traverseApp
-  , Transform.silentStep "traverse fix" traverseFix ]
-  
-unwrapDepth :: Nat
-unwrapDepth = 2
-  
+  [ Transform.silentStep Step.TraverseMatch traverseMatch
+  , Transform.silentStep Step.TraverseBranches traverseBranches
+  , Transform.silentStep Step.TraverseLam traverseLam
+  , Transform.silentStep Step.TraverseApp traverseApp
+  , Transform.silentStep Step.TraverseFix traverseFix ]
+
   
 -- | Finds terms that are undefined and sets them that way.
 -- So far it detects applying arguments to an absurd function.
 -- Need to add pattern matching over absurdity, but how to find the type?
 strictness :: Step m => Term -> m Term
+strictness (Seq (Bot _) t) = do
+  Signals.tellStopRewriting
+  return (Bot (Type.get t))
+strictness (Seq (leftmost -> Con {}) t) =
+  return t
 strictness term 
   | isUndef term = do
     Signals.tellStopRewriting
@@ -118,17 +112,14 @@ normaliseApp _ =
   
 
 beta :: Step m => Term -> m Term
-beta t@(App f@(Lam _ rhs) xs) = id
-  . History.check Name.Beta t
-  . return
-  $ Term.reduce f xs
+beta t@(App f@(Lam _ rhs) xs) =
+  return (Term.reduce f xs)
 beta _ = Fail.here
 
 
 caseOfCon :: Step m => Term -> m Term
 caseOfCon term@(Case cse_t alts)
   | (isCon . leftmost) cse_t = id
-    . History.check Name.CaseOfCon term
     . return
     -- We fold substitute over the arguments to the constructor
     -- starting with the return value of the pattern match (alt_t).
@@ -152,24 +143,22 @@ caseOfCon _ = Fail.here
 
 
 traverseMatch :: Step m => Term -> m Term
-traverseMatch term@(Case cse_t alts) = 
-  History.check Name.TraverseMatch term $ do 
-    (cse_t', signals) <- id
-      . Signals.listen
-      $ Transform.traverse (\t -> Case t alts) cse_t  
-    Fail.unless (get Signals.didRewrite signals)
-    return (Case cse_t' alts)
+traverseMatch term@(Case cse_t alts) = do 
+  (cse_t', signals) <- id
+    . Signals.listen
+    $ Transform.traverse (\t -> Case t alts) cse_t  
+  Fail.unless (get Signals.didRewrite signals)
+  return (Case cse_t' alts)
 traverseMatch _ = Fail.here
 
 
 traverseBranches :: forall m . Step m => Term -> m Term
-traverseBranches term@(Case cse_t alts) = 
-  History.check Name.TraverseBranch term $ do
-    (alts', signals) <- id
-      . Signals.listen
-      $ zipWithM traverseAlt [0..] alts
-    Fail.unless (get Signals.didRewrite signals)
-    return (Case cse_t alts')
+traverseBranches term@(Case cse_t alts) = do
+  (alts', signals) <- id
+    . Signals.listen
+    $ zipWithM traverseAlt [0..] alts
+  Fail.unless (get Signals.didRewrite signals)
+  return (Case cse_t alts')
   where
   traverseAlt n alt@(Alt con bs t) = do
     t' <- id
@@ -192,8 +181,8 @@ traverseBranches term@(Case cse_t alts) =
 traverseBranches _ = Fail.here
 
 
-traverseFun :: Step m => Term -> m Term
-traverseFun (Lam b t) = do
+traverseLam :: Step m => Term -> m Term
+traverseLam (Lam b t) = do
   (t', signals) <- id
     . Signals.listen
     . Env.bind b 
@@ -203,20 +192,19 @@ traverseFun (Lam b t) = do
   if t' == Term.truth || t' == Term.falsity
   then return t'
   else return (Lam b t')
-traverseFun _ = Fail.here
+traverseLam _ = Fail.here
 
 
 traverseApp :: forall m . Step m => Term -> m Term
-traverseApp term@(App f xs) = 
-  History.check Name.TraverseApp term $ do
-    (xs', xs_signals) <- id
-      . Signals.listen
-      $ mapM traverseArg (range xs)
-    (f', f_signals) <- id
-      . Signals.listen
-      $ Transform.traverse (\f -> App f xs) f
-    Fail.unless (get Signals.didRewrite (xs_signals ++ f_signals))
-    return (App f' xs')
+traverseApp term@(App f xs) = do
+  (xs', xs_signals) <- id
+    . Signals.listen
+    $ mapM traverseArg (range xs)
+  (f', f_signals) <- id
+    . Signals.listen
+    $ Transform.traverse (\f -> App f xs) f
+  Fail.unless (get Signals.didRewrite (xs_signals ++ f_signals))
+  return (App f' xs')
   where
   traverseArg :: Nat -> m Term
   traverseArg n = Transform.traverse (\t -> App f (setAt (enum n) t xs)) (xs !! n)
@@ -237,42 +225,6 @@ traverseFix fix@(Fix inf b t) = do
 traverseFix _ = Fail.here
 
 
-{-
--- | Moves all pattern matches over variables topmost in a term. 
--- Be careful with this, it can cause loops if combined with all sorts 
--- of things.
-floatVarMatches :: Term -> Term
-floatVarMatches = id
-  -- Then, we recurse down the top level of pattern matches,
-  -- which the 'Term.recursionScheme' isomorphism restricts us to,
-  -- and we float all matches over variables to the top
-  . Fold.isoRewrite Term.recursionScheme float 
-  -- First we run evaluation
-  . run
-  where
-  float :: forall m . Fail.Can m => Term -> m Term
-  float outer_t@(Case (leftmost -> Fix {}) alts) = do
-    inner_case <- Fail.choose (map caseOfVarAlt alts)
-    return  
-      . run
-      $ Term.applyCase inner_case outer_t
-    where
-    caseOfVarAlt :: Alt -> m Term
-    -- We return the inner alt case-of if it is over a variable
-    -- which is not from the pattern match, viz. it can be lowered
-    -- to outside the match.
-    caseOfVarAlt (Alt _ bs alt_t@(Case cse_t i_alts)) 
-      | isVar cse_t = do
-        cse_t' <- Indices.tryLowerMany (length bs) cse_t
-        return (Case cse_t' i_alts)
-    caseOfVarAlt _ = 
-      Fail.here
-      
-  float _ = Fail.here
--}
-
-
-
 -- | If we have a case statement on the left of term 'App'lication
 -- then float it out.
 caseApp :: Step m => Term -> m Term
@@ -283,15 +235,6 @@ caseApp (App (Case t alts) args) =
     Alt con bs (app alt_t (Indices.liftMany (nlength bs) args))
     
 caseApp _ = Fail.here
-
-
-reduceSeq :: Step m => Term -> m Term
-reduceSeq (Seq (Bot _) t) = do
-  Signals.tellStopRewriting
-  return (Bot (Type.get t))
-reduceSeq (Seq (leftmost -> Con {}) t) =
-  return t
-reduceSeq _ = Fail.here
 
 
 -- | If we have a case statement on the right of term 'App'lication
@@ -329,19 +272,3 @@ caseCase outer_cse@(Case inner_cse@(Case inner_t inner_alts) outer_alts) =
     where
     alts_here = map (Indices.liftMany (nlength bs)) outer_alts
 caseCase _ = Fail.here
-
-{-
-cleanFix :: Step m => Term -> m Term
-cleanFix fix_t@Fix{ fixInfo = fix_info, inner = fix_body } 
-  | get fixIsDirty fix_info = do
-    mby_name <- (liftM (map fst) . Defs.lookupName) fix_t
-    let fix_info' = id
-          . set fixName mby_name 
-          . set fixIsDirty False
-          . set fixIsClosed (Set.null (Term.freeVarSet fix_t))
-          $ fix_info
-    return (fix_t { fixInfo = fix_info' })
-    -- ^ traverse makes the step invisible in tracing
-cleanFix _ = 
-  Fail.here
--}

@@ -137,7 +137,7 @@ data FixInfo
             , _fixIsDirty :: !Bool }
   deriving ( Eq, Ord )
 
- 
+
 -- * Base types for generalised cata/para morphisms.
   
 type instance Fold.Base Term = Term'

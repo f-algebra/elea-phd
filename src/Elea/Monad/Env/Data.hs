@@ -23,6 +23,7 @@ import qualified Elea.Term.Ext as Term
 import qualified Elea.Term.Index as Indices
 import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Monad.Direction as Direction
+import qualified Elea.Transform.Names as Step
 import qualified Elea.Type as Type
 
 data Data
@@ -34,12 +35,12 @@ data Data
           , _flagDisable :: !Bool
           , _dbTermContext :: !(Term -> Term)
           , _flagTraceSteps :: !Bool
-          , _dbStepName :: !String }
+          , _dbStepName :: !Step.Name }
           
 mkLabels [ ''Data ]
 
 instance Empty Data where
-  empty = Data mempty mempty mempty empty Direction.Inc False id False "top-level"
+  empty = Data mempty mempty mempty empty Direction.Inc False id False empty
 
 matches :: Data -> [Match]
 matches = get dbMatches
@@ -107,5 +108,5 @@ applyContext gap_term = ($ gap_term) . get dbTermContext
 traceStepsFlag :: Data :-> Bool
 traceStepsFlag = flagTraceSteps
 
-stepName :: Data :-> String
+stepName :: Data :-> Step.Name
 stepName = dbStepName

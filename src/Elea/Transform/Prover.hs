@@ -14,11 +14,9 @@ import qualified Elea.Term.Tag as Tag
 import qualified Elea.Term.Ext as Term
 import qualified Elea.Type as Type
 import qualified Elea.Term.Index as Indices
-import qualified Elea.Monad.History as History
-import qualified Elea.Transform.Names as Name
+import qualified Elea.Transform.Names as Step
 import qualified Elea.Transform.Evaluate as Eval
 import qualified Elea.Transform.Simplify as Simp
-import qualified Elea.Transform.Names as Name
 import qualified Elea.Unification as Unifier
 import qualified Elea.Foldable.WellFormed as WellFormed
 import qualified Elea.Monad.Env as Env
@@ -45,21 +43,20 @@ type Step m = ( Env m , Simp.Step m )
 
 steps :: Env m => [Transform.NamedStep m]
 steps = 
-  [ Transform.step "reflexivity of (=<)" reflexivity
-  , Transform.step "(forall a . _|_ =< A)" bottom
-  , Transform.step "(=<) as reverse implication" implication
-  , Transform.step "double negation" doubleNeg
-  , Transform.step "function to forall" forAll
-  , Transform.step "remove forall" removeForAll
-  , Transform.silentStep "left transitivity of (=<)" leftTrans
-  , Transform.silentStep "right transitivity of (=<)" rightTrans
-  , Transform.step "case-split (=<)" caseSplitInc
-  , Transform.step "case-split (>=)" caseSplitDec
-  , Transform.step "(=<) constructor" constructor
-  , Transform.step "least fixed-point rule" lfp
-  , Transform.step "productive unfold =<" unfoldProductive
-  , Transform.step "case-of (=<)" leqMatch
-  , Transform.step "prove branch absurd" absurdBranch ]
+  [ Transform.step Step.LeqReflexive reflexivity
+  , Transform.step Step.BotLeq bottom
+  , Transform.step Step.DoubleNegation doubleNeg
+  , Transform.step Step.ForAll forAll
+  , Transform.step Step.UnusedForAll removeForAll
+  , Transform.silentStep Step.LeqLeftTrans leftTrans
+  , Transform.silentStep Step.LeqRightTrans rightTrans
+  , Transform.step Step.CaseSplitInc caseSplitInc
+  , Transform.step Step.CaseSplitDec caseSplitDec
+  , Transform.step Step.LeqConstructor constructor
+  , Transform.step Step.LeastFixedPoint lfp
+  , Transform.step Step.LeqProductive unfoldProductive
+  , Transform.step Step.CaseOfLeq leqMatch
+  , Transform.step Step.AbsurdBranch absurdBranch ]
 
 -- | Theorem prover without fusion; use Fusion.run for the full prover  
 applyM :: Env m => Term -> m Term
@@ -87,15 +84,6 @@ bottom (Leq x (Bot _))
 bottom _ = Fail.here
 
 
-implication :: Step m => Term -> m Term
-implication (Leq x y)
-  | x == truth = return truth
-  -- ^ anything implies true
-  | y == truth = return falsity
-  -- ^ true does not imply false
-implication _  = Fail.here
-
-
 doubleNeg :: Step m => Term -> m Term
 doubleNeg (Leq x (Leq y z)) 
   | x == falsity
@@ -117,37 +105,36 @@ constructor _ = Fail.here
 unfoldProductive :: Step m => Term -> m Term
 unfoldProductive leq@(Leq con_t (flattenApp -> fix@(Fix {}) : args)) 
   | isCon (leftmost con_t)
-  , Term.isProductive fix = do
-    History.check Name.UnfoldProductive leq 
-      . return
-      $ Leq con_t (Term.reduce (Term.unfoldFix fix) args)
+  , Term.isProductive fix = id
+    . return
+    $ Leq con_t (Term.reduce (Term.unfoldFix fix) args)
 unfoldProductive leq@(Leq (flattenApp -> fix@(Fix {}) : args) con_t)
   | isCon (leftmost con_t) 
-  , Term.isProductive fix = do
-    History.check Name.UnfoldProductive leq
-      . return
-      $ Leq (Term.reduce (Term.unfoldFix fix) args) con_t
+  , Term.isProductive fix = id
+    . return
+    $ Leq (Term.reduce (Term.unfoldFix fix) args) con_t
 unfoldProductive _ = 
   Fail.here
 
   
 leftTrans :: Step m => Term -> m Term
-leftTrans leq@(Leq x y) = 
-  History.check Name.LeftTrans leq $ do
-    x' <- Transform.traverse (\t -> Leq t y) x  
-    Fail.when (x' == x)
-    return (Leq x' y)
+leftTrans leq@(Leq x y) = do
+  (x', signals) <- id
+    . Signals.listen
+    $ Transform.traverse (\t -> Leq t y) x  
+  Fail.unless (get Signals.didRewrite signals)
+  return (Leq x' y)
 leftTrans _ = Fail.here
   
 
 rightTrans :: Step m => Term -> m Term
 rightTrans leq@(Leq x y) = do
-  History.check Name.RightTrans leq $ do
-    y' <- id
-      . Direction.invert  
-      $ Transform.traverse (\t -> Leq x t) y
-    Fail.when (y' == y)
-    return (Leq x y')
+  (y', signals) <- id
+    . Signals.listen
+    . Direction.invert  
+    $ Transform.traverse (\t -> Leq x t) y
+  Fail.unless (get Signals.didRewrite signals)
+  return (Leq x y')
 rightTrans _ = Fail.here
 
 
@@ -179,8 +166,7 @@ lfp (Leq x y) = do
     && not (isVar y) 
     && Unifier.exists y x 
     && not (Unifier.alphaEq x y)
-  History.check Name.LFP (Leq x y)
-    $ return (Leq x' y)
+  return (Leq x' y)
   where
   x' = fixInduction x y
 
@@ -197,9 +183,7 @@ lfp _ = Fail.here
 caseSplitInc :: Step m => Term -> m Term
 caseSplitInc leq@(Leq (Case cse_t alts) y) = do
   Direction.requireInc
-  History.check Name.CaseSplit leq $ do
-    let leq' = Case cse_t (map leqAlt alts)
-    return leq'
+  return (Case cse_t (map leqAlt alts))
   where
   leqAlt (Alt tc bs alt_t) =
     Alt tc bs (Leq alt_t y')
@@ -213,9 +197,7 @@ caseSplitInc leq@(Leq left_t (Case cse_t@(Var x _) alts)) = do
     . Simp.applyM 
     $ Indices.replaceAt x (Bot cse_ty) left_t
   Fail.unless (isBot left_t_bot)
-  History.check Name.CaseSplit leq $ do
-    let leq' = Case cse_t (map leqAlt alts)
-    return leq'
+  return (Case cse_t (map leqAlt alts))
   where 
   cse_ty = Type.get cse_t
 
@@ -230,9 +212,7 @@ caseSplitInc _ = Fail.here
 caseSplitDec :: Step m => Term -> m Term
 caseSplitDec leq@(Leq x (Case cse_t alts)) = do
   Direction.requireDec
-  History.check Name.CaseSplit leq $ do
-    let leq' = Case cse_t (map leqAlt alts)
-    return leq'
+  return (Case cse_t (map leqAlt alts))
   where
   leqAlt (Alt tc bs alt_t) =
     Alt tc bs (Leq x' alt_t)
@@ -296,7 +276,6 @@ absurdBranch orig_t@(Case (Var x b) alts) = do
     isAbsurd match = do
       prop' <- id
         . Direction.local Direction.Dec
-        . Memo.memo Name.AbsurdEnv prop
         . Fusion.disable
         $ Transform.restart prop
         -- ^ Using our prover backwards 
