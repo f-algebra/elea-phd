@@ -128,6 +128,12 @@ prop "id nat" (n: nat) ->
   =< 
   n
 
+prop "butlast infinite loop" (n: nat) (xs: list<nat>) ->
+  Cons<nat> n (match xs with | Nil -> Nil<nat> | Cons x' xs' -> Cons<nat> x' (butlast<nat> xs) end)
+  =< 
+  Cons<nat> n (match xs with | Nil -> Nil<nat> | Cons x' xs' -> Cons<nat> x' (butlast<nat> (Cons<nat> x' xs')) end)
+
+
   /*
 let is_sorted2 = 
   fix (srtd: list<nat> -> bool) (xs: list<nat>) ->

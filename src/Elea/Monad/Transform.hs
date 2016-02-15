@@ -102,16 +102,16 @@ compose all_steps = apply
       (mby_term', signals) <- id
         . Signals.consume
         . localStepName step_name
-        . History.see step_name term
         . runMaybeT 
-        $ runReaderT (rewriteT (rewriteStep named_step term)) apply
+        . runReaderT (rewriteT (rewriteStep named_step term)) 
+        $ (History.see step_name term . apply)
       case mby_term' of
         Nothing -> do
           when (get Signals.usedAntecedentRewrite signals) $ do
             TraceSteps.traceM (printf "\n<< failed \"%s\" on >>\n\n%s" step_name term)
           applyOneStep steps term
 
-        Just term' -> History.see step_name term $ do
+        Just term' -> do
           Signals.tellDidRewrite
           full_term <- applyContext term
           full_term' <- applyContext term'
@@ -124,7 +124,7 @@ compose all_steps = apply
             TraceSteps.traceM (printf "\n< applying \"%s\" yielded >\n\n%s" step_name full_term')
           if get Signals.stopRewriting signals 
           then return term' 
-          else apply term'
+          else History.see step_name term (apply term')
     where
     step_name = rewriteStepName named_step
 
