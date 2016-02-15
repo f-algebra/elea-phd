@@ -162,7 +162,6 @@ prop zeno46 <A, B> (xs: list<B>) ->
 // prop zeno47 <A> (t: tree<A>) ->
 //   height<A> (mirror<A> t) == height<A> t
 
-/* loops now for some reason
 prop zeno48 <A> (xs: list<A>) ->
   assertBool not (null<A> xs) 
   in append<A> (butlast<A> xs) (Cons<A> (last<A> xs) Nil<A>) 
@@ -178,7 +177,6 @@ prop zeno50 <A> (xs: list<A>) ->
      
 prop zeno51 <A> (xs: list<A>) (x: A) ->
   butlast<A> (append<A> xs (Cons<A> x Nil<A>)) =< xs
-  */
   
 // Does not hold in either directon
 // prop zeno52 (n: nat) (xs: list<nat>) ->
