@@ -7,7 +7,7 @@ module Elea.Testing
   loadFile,
   loadPropertyNamesFromFile,
   term, _type,
-  simplifiedTerm,
+  simplified,
   assertTermEq,
   assertBool,
   assertEq,
@@ -102,8 +102,8 @@ loadPropertyNamesFromFile file_name = do
 term :: Monad m => String -> m Term
 term = return . read
 
-simplifiedTerm :: Monad m => String -> m Term
-simplifiedTerm = liftM Simp.apply . term
+simplified :: String -> Term
+simplified = Simp.apply . read
 
 _type :: (Tag.Gen m, Defs.Has m) => String -> m Type
 _type = Err.noneM . Parse._type

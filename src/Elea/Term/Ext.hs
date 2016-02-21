@@ -1079,7 +1079,7 @@ assertValidRewrite from to = id
   . Assert.augment (printf "<rewriting> %n\n<to> %n" from to) $ do
     WF.assert to
     Type.assertEq from to
-
+ 
 
 showBinds :: [Bind] -> String
 showBinds = id
@@ -1142,6 +1142,7 @@ showTermNewlineM term = do
 
 showTermM :: Env.Read m => Term -> m String
 showTermM (Con c) = return (show c)
+showTermM tt | tt == truth = return "tt"
 showTermM Fix { fixInfo = fix_info}
   | Just fix_name <- get fixName fix_info = return fix_name
 showTermM Var { varIndex = var_index, binding = bind } = do

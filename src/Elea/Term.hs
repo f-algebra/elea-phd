@@ -73,6 +73,7 @@ data Term
             
   | Bot     { botType :: !Type }
   
+  -- TODO remove me, not good for semantics!
   | Seq     { seqOf :: !Term
             , inner :: !Term }
   

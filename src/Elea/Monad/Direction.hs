@@ -13,12 +13,13 @@ import Elea.Prelude hiding ( get, set, local, reverse, invert )
 import qualified Elea.Monad.Failure.Class as Fail
 
 -- | Whether this rewrite can make terms less or more defined
-data Direction = Inc | Dec
+data Direction = Inc | Dec | Eq
   deriving ( Eq )
 
 reverse :: Direction -> Direction
 reverse Dec = Inc
 reverse Inc = Dec
+reverse Eq = Eq
 
 
 class Monad m => Has m where
@@ -41,3 +42,4 @@ requireDec = require Dec
 
 prover :: Has m => m a -> m a
 prover = local Inc
+

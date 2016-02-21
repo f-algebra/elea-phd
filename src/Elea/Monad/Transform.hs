@@ -41,6 +41,29 @@ import qualified Control.Monad.Trans.Class as Trans
 import qualified Data.Poset as Quasi
 import qualified Data.Map as Map
 
+{-
+new plan
+
+1. Drive
+2. Seek out non FPPF terms and apply supercompilation to them
+3. Prover is a separate system on top of everything (parameterised by term simplifier),
+
+* Driver can unfold terms if it yields a term which embeds into the original,
+  viz. it entirely consumes the input
+
+Supercompiler:
+* Apply MSG first, then supercompile the MSG, apply this to both terms (memoised term and unfolded term)
+* Fail if the result of supercompiling is not in FPPF
+* If the unification is blocked: apply PUG, and supercompile just the unfolded term
+* If the unification is still blocked: apply solver, including fission steps and fold discovery
+
+* Assertion fusion should probably be replaced with a fast branch absurdity checker,
+  which would definitely benefit from memoisation, needs a fast (Set Term) is unifiable check
+
+* Unfolding step uses critical paths to decide whether to unfold or restart supercompilation
+
+-}
+
 
 class (Env m, Fail.Can m) => Step m where
   apply :: Term -> m Term

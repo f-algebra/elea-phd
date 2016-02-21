@@ -11,6 +11,7 @@ import qualified Elea.Tests.Prelude as Prelude
 import qualified Elea.Tests.Type as Type
 import qualified Elea.Tests.Term as Term
 import qualified Elea.Tests.Simplifier as Simplifier 
+import qualified Elea.Tests.Rewrite.Drive as Drive
 --import qualified Elea.Tests.Inventor as Inventor
 -- import qualified Elea.Tests.Constraints as Constraints
 import qualified Elea.Tests.Fusion as Fusion
@@ -23,7 +24,7 @@ all = id
   $ sequence 
   [ return Prelude.tests
 --  , return Type.tests
-  , return Term.tests
+--  , return Term.tests
 --  , UMap.tests
 --  , Checker.tests 
  -- , Constraints.tests
@@ -31,4 +32,5 @@ all = id
  -- , Inventor.tests
  -- , Simplifier.tests
  -- , Fusion.tests  
+  , Drive.tests
   ]

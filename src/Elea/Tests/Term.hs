@@ -28,6 +28,34 @@ tests = id
     , testConjunction, testSubterms, testAbstract
     , testFindArgs, testRecursiveId, testEquateArgs, testStrictWithin ]
 
+-- testMSG :: Test
+-- whateva
+
+testPUG :: Test 
+testPUG = Test.test "generalisation" $ do
+  return ()
+  -- test (x + x) PUG (x + (Suc x))
+  --    ==> ([x + y], x + (Suc y))
+  -- test (rev (rev xs)) PUG (rev (snoc y (rev xs))) 
+  --    ==> ([rev ys], rev (snoc y ys))
+  -- test $(flatten t) PUG $(flatten t1 ++ [x] ++ flatten t2)
+  --    ==> ([$(xs), $(ys)], $(xs ++ [x] ++ ys))
+  -- test (q xs []) PUG (q xs [x]) 
+  --    ==> ([q xs ys], q xs (x:ys))
+-- should also test unfolding metrics, for example, whether a fixed point can
+--  be immediately unrolled (whether it is consumed)
+-- also test critical pair code with insertsort example
+--  $(x:(xs ++ [n] ++ ys)) example
+--  and div3/double
+--  also even(Suc x)
+
+-- critical pair code should NOT unfold
+--    le x (Suc y)  for le-filter
+--    le (Suc x) y  for parity with the above
+
+-- separately test fissioning code, since it is now a completely separate function
+--  or, it should be
+
 testBuildFold :: Test
 testBuildFold = 
   Test.testWithPrelude "build fold" $ do
