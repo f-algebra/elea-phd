@@ -5,6 +5,7 @@ module Elea.Monad.Env.Class
   Write (..), Read (..), All,
   bind, bindMany, isBound,
   boundAt, bindingDepth,
+  bindBranch,
   forgetMatch,
   
   MatchRead (..), 
@@ -57,6 +58,13 @@ bind = bindAt 0
 
 bindMany :: Write m => [Bind] -> m a -> m a
 bindMany = concatEndos . map bind
+
+bindBranch :: (Indexed Term, Write m) => Term -> Nat -> m a -> m a
+bindBranch cse_of@(Case _ alts) branch_n = id
+  . bindMany binds 
+  . matched (matchFromCase branch_n cse_of)
+  where
+  Alt { _altBindings = binds } = alts !! branch_n
 
 
 -- | Whether you can read variable bindings from the environment. 

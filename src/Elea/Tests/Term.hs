@@ -23,7 +23,7 @@ import qualified Data.Set as Set
 tests = id
   . Test.label "Term" 
   . Test.list 
-  $ [ testBuildFold
+  $ [ testBuildFold, testDecreasing
     -- , testRead   doesn't hold due to $names not having type args
     , testConjunction, testSubterms, testAbstract
     , testFindArgs, testRecursiveId, testEquateArgs, testStrictWithin ]
@@ -77,6 +77,14 @@ testBuildFold =
     $ "fun (v: list<nat>) (k: list<nat> -> nat -> list<nat> -> list<nat>) -> "
     ++  "fix (f: tree<nat> -> list<nat>) (t: tree<nat>) -> "
     ++  "match t with | Leaf -> v | Node t1 x t2 -> k (f t1) x (f t2) end"
+
+testDecreasing :: Test
+testDecreasing = Test.test "decreasing args" $ do
+  Test.assertEq "eq decreases in all args" [0, 1] (decreasingAppArgs eq_n_0)
+  Test.assertBool "zero is finite" (isFinite (read "0")) 
+  Test.assertBool "eq n 0 should unfold" (any (isFinite . (args !!)) [0, 1])
+  where
+  eq_n_0@(App eq args) = read "env (n: nat) in eq n 0"
 
 testRead :: Test
 testRead = Test.test "read terms" $ do

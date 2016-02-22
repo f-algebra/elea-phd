@@ -1,5 +1,5 @@
 module Elea.Rewrite.Drive (
-  rewrite
+  rewrite, inc
 ) where
 
 import Elea.Prelude
@@ -23,6 +23,12 @@ import qualified Elea.Monad.Error.Assertion as Assert
 
 -- TODO closed fixed-points don't need to be descended into
 -- on a similar note, precompute strict/decreasing/increasing argument indices
+
+inc :: Term -> Term
+inc = id
+  . flip runReader Direction.Inc
+  . runDrive
+  . apply
 
 rewrite :: Direction.Has m => Term -> m Term
 rewrite term = do
@@ -76,17 +82,18 @@ apply term = do
     f' <- apply f
     xs' <- mapM apply xs
     return $ App f' xs'
-  applySubterms term@(Case cse_t alts) = do
+  applySubterms cse_of@(Case cse_t alts) = do
     cse_t' <- apply cse_t
     alts' <- zipWithM applyAlt [0..] alts
     return $ Case cse_t' alts'
     where
-    applyAlt n alt@Alt { _altBindings = binds, _altInner = alt_t } = do
+    applyAlt branch_n alt@Alt { _altInner = alt_t } = do
       alt_t' <- id
-        . Env.bindMany binds
-        . Env.matched (matchFromCase n term)
-        $ apply alt_t
+        . Env.bindBranch cse_of branch_n
+        . apply
+        $ alt_t
       return $ alt { _altInner = alt_t' }
+
   applySubterms other =
     return other
 
@@ -142,25 +149,40 @@ applyHead (Case (flattenApp -> Con tcon : args) alts)
     $ zipWith Indices.liftMany [0..] args
 
 -- case-of as a function
-applyHead (App (Case cse_t alts) args) = do
-  alts' <- mapM applyAlt alts
+applyHead (App cse_of@(Case cse_t alts) args) = do
+  alts' <- zipWithM applyAlt [0..] alts
   applyHead $ Case cse_t alts'
   where
-  applyAlt alt@Alt { _altBindings = binds, _altInner = alt_t } = do
-    alt_t' <- applyHead (App alt_t args')
+  applyAlt branch_n alt@Alt { _altBindings = binds, _altInner = alt_t } = do
+    alt_t' <- id
+      . Env.bindBranch cse_of branch_n
+      . applyHead 
+      $ App alt_t args'
     return $ alt { _altInner = alt_t' }
     where
     args' = Indices.liftMany (nlength binds) args
 
+-- unfold a fixed-point if any decreasing arguments are finite (no variables)
+applyHead term@(App fix@Fix {} args) 
+  | any (Term.isFinite . (args !!)) dec_is =
+    apply $ Term.reduce (Term.unfoldFix fix) args
+  where
+  dec_is = Term.decreasingAppArgs term
+
 -- case-of as a strict argument
 applyHead (App func@Fix {} args) 
-  | Just cse_i <- findIndex isCase args = do
-    let Case cse_t alts = args !! cse_i 
-    alts' <- mapM (applyAlt cse_i) alts
+  | isJust mby_cse = do
+    alts' <- zipWithM applyAlt [0..] alts
     applyHead $ Case cse_t alts'
   where
-  applyAlt cse_i alt@Alt { _altInner = alt_t, _altBindings = binds } = do
-    alt_t' <- applyHead (App func' args')
+  mby_cse@(~(Just cse_i)) = findIndex isCase args
+  cse_of@(Case cse_t alts) = args !! cse_i 
+
+  applyAlt branch_n alt@Alt { _altInner = alt_t, _altBindings = binds } = do
+    alt_t' <- id
+      . Env.bindBranch cse_of branch_n
+      . applyHead 
+      $ App func' args'
     return $ alt { _altInner = alt_t' }
     where
     func' = Indices.liftMany (nlength binds) func
@@ -169,14 +191,45 @@ applyHead (App func@Fix {} args)
       $ Indices.liftMany (nlength binds) args
 
 -- case-case distributivity
-applyHead outer_cse@(Case inner_cse@(Case inner_t inner_alts) outer_alts) =
-  applyHead (Case inner_t (map newOuterAlt inner_alts))
+applyHead outer_cse@(Case inner_cse@(Case inner_t inner_alts) outer_alts) = do
+  inner_alts' <- zipWithM applyAlt [0..] inner_alts
+  applyHead $ Case inner_t inner_alts'
   where
-  newOuterAlt :: Alt -> Alt
-  newOuterAlt alt@Alt { _altBindings = binds, _altInner = alt_t } = 
-    alt { _altInner = Case alt_t outer_alts' }
+  applyAlt branch_n alt@Alt { _altBindings = binds, _altInner = alt_t } = do
+    alt_t' <- id
+      . Env.bindBranch inner_cse branch_n
+      . applyHead 
+      $ Case alt_t outer_alts'
+    return $ alt { _altInner = alt_t' }
     where
     outer_alts' = map (Indices.liftMany (nlength binds)) outer_alts 
+
+-- identity case removal
+applyHead (Case cse_t alts) 
+  | all isIdAlt alts = return cse_t
+  where
+  isIdAlt :: Alt -> Bool
+  isIdAlt alt@Alt { _altInner = alt_t } =
+    alt_t == (patternTerm . altPattern) alt
+
+-- applying pattern matches over variables as a rewrite
+applyHead term@(Case cse_t@Var { varIndex = var } alts) 
+  | any (Indices.freeWithin var) alts = do
+    alts' <- zipWithM applyAlt [0..] alts
+    applyHead $ Case cse_t alts'
+    where
+    applyAlt branch_n alt@Alt { _altBindings = binds, _altInner = alt_t } = do
+      alt_t' <- id
+        . Env.bindBranch term branch_n
+        . apply 
+        . replaceVarWithPattern
+        $ alt_t
+      return $ alt { _altInner = alt_t' }
+      where
+      pat_t = (patternTerm . altPattern) alt
+      replaceVarWithPattern = 
+        Indices.replaceAt (Indices.liftMany (nlength binds) var) pat_t
+
 
 -- theorem prover steps start here
 
@@ -201,10 +254,9 @@ applyHead (Leq ff1 (Leq ff2 t))
 applyHead (Leq (flattenApp -> Con tc : xs) (flattenApp -> Con tc' : xs'))
   | Tag.untag tc /= Tag.untag tc' = return falsity
   | otherwise = do
-    leqs <- id
-      . mapM applyHead 
+    apply
+      . conj
       $ zipWith Leq xs xs'
-    applyHead $ conj leqs
 
 -- floating lambdas out of the left and right hand side of (=<)
 applyHead leq@(Leq (Lam bind left) right) = do
@@ -239,13 +291,15 @@ applyHead term = do
 applyHeadInc :: Env m => Term -> m Term
 
 -- least fixed-point rule
-applyHeadInc (Leq fix@Fix {} right) 
-  | isFixPromoted fix
-  , not (isVar right) 
-  , Unifier.exists right fix
-  , not (Unifier.alphaEq fix right) = do
-    fix' <- apply $ Indices.subst (Term.abstractVars args right) fix_t
-    applyHead (Leq fix' right)
+applyHeadInc t@(Leq fix right) 
+  | isFix (leftmost fix)
+  , isFixPromoted fix = do
+    fix' <- id
+      . apply 
+      . (\f -> Term.reduce f args)
+      . Indices.subst (Term.abstractVars args right) 
+      $ fix_t
+    applyHead $ Leq fix' right
   where
   Fix { inner = fix_t } : args = flattenApp fix
 

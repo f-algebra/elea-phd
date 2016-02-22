@@ -24,7 +24,7 @@ all = id
   $ sequence 
   [ return Prelude.tests
 --  , return Type.tests
---  , return Term.tests
+  , return Term.tests
 --  , UMap.tests
 --  , Checker.tests 
  -- , Constraints.tests

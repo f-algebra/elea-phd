@@ -4,7 +4,8 @@ module Main
   main,
   test,
   apply,
-  dec
+  dec,
+  drive
 )
 where
 
@@ -23,6 +24,7 @@ import qualified Elea.Monad.Direction as Direction
 import qualified Elea.Monad.Fedd as Fedd
 import qualified Elea.Monad.StepCounter as Steps
 import qualified Elea.Monad.Transform.TraceSteps as TraceSteps
+import qualified Elea.Rewrite.Drive as Drive
 import qualified Data.Poset as Quasi
 import qualified Test.Framework as TestFramework
 import qualified Test.Framework.Providers.HUnit as TestFramework
@@ -76,3 +78,10 @@ dec term_def = time $ do
     . Direction.local Direction.Dec
     $ applyM term_def
   putStrLn result
+
+drive :: String -> IO ()
+drive = id
+  . putStrLn 
+  . show
+  . Drive.inc
+  . read

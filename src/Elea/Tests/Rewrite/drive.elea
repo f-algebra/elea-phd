@@ -29,7 +29,7 @@ prop "unr1" ->
     match x with
     | 0 -> True
     | Suc x' -> 
-      if _|_ (nat -> bool) x'
+      if _|_ (nat -> bool) x' 
       then False
       else False
     end)
@@ -50,11 +50,6 @@ prop "case-app" (x: nat) ->
   Suc (match x with | 0 -> 0 | Suc x -> x end)
   >=
   (match x with | 0 -> Suc 0 | Suc x -> Suc x end)
-  
-prop "unfold1"<A> (xs: list<A>) (n: A) ->
-  rev<A> (Cons<A> n xs)
-  ==
-  append<A> (rev<A> xs) (Cons<A> n Nil<A>)
   
 prop "eq1" (x: nat) ->
   if (eq x 0)
@@ -110,30 +105,6 @@ let always_true =
 prop "always true" (n m: nat) -> 
   always_true n m =< True 
  
-prop "constant fix 1" (n m x: nat) ->
-  (fix (f: nat -> bool) (x: nat) ->
-  match x with
-  | 0 -> eq n m
-  | Suc x' -> f x'
-  end) x 
-  =<
-  eq n m
-  
-prop "constant fix 2" (xs: list<nat>) ->
-  (fix (f: list<nat> -> bool) (xs: list<nat>) ->
-  match xs with
-  | Nil -> True
-  | Cons y ys ->
-    or (f ys) (eq 1 y)
-  end) xs
-  =< 
-  True
- 
-prop "id nat" (n: nat) ->
-  (fix (id: nat -> nat) (n: nat) -> 
-    match n with | 0 -> 0 | Suc n' -> Suc (id n') end) n
-  =< 
-  n
 
 /*
 reenable me pls
@@ -157,7 +128,7 @@ let is_sorted2 =
     end
     
 
-prop "unfold within fix": forall (xs: list<nat>) ->
+prop "unfold within fix": forall (xs: list<nat>) ->p
   is_sorted xs = is_sorted2 xs
     */
   /*
