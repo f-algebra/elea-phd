@@ -20,10 +20,11 @@ import qualified Elea.Foldable as Fold
 import qualified Elea.Foldable.WellFormed as WellFormed
 import qualified Data.Set as Set
 
-tests = id
+tests :: IO Test
+tests = return
   . Test.label "Term" 
   . Test.list 
-  $ [ testBuildFold, testDecreasing
+  $ [ testBuildFold, testDecreasing, testMakeContext
     -- , testRead   doesn't hold due to $names not having type args
     , testConjunction, testSubterms, testAbstract
     , testFindArgs, testRecursiveId, testEquateArgs, testStrictWithin ]
@@ -118,12 +119,15 @@ testSubterms = Test.test "subterms" $ do
   removed_ts = removeSubterms [add_stuff, one, two, y]
 
 testAbstract :: Test
-testAbstract = Test.test "abstract" $ do
-  Test.assertTermEq "abstract" abs_xy abs_xy'
+testAbstract = Test.test "abstraction" $ do
+  Test.assertTermEq "abstract vars" abs_xy abs_xy'
+  Test.assertTermEq "abstract term" abs_xxy abs_xxy'
   where
-  [xy, x, y, abs_xy] = Test.withEnv "(x y: nat)" 
-    ["add x y", "x", "y", "fun (x y: nat) -> add y x"]
+  [xy, x, y, abs_xy, xxy, abs_xxy] = Test.withEnv "(x y: nat)" 
+    [ "add x y", "x", "y", "fun (x y: nat) -> add y x"
+    , "add x (add x y)", "fun (n: nat) -> add x n"]
   abs_xy' = abstractVars [y, x] xy
+  abs_xxy' = abstractTerm xy xxy 
     
 testFindArgs :: Test
 testFindArgs = Test.test "find args" $ do
@@ -172,6 +176,20 @@ testStrictWithin = Test.test "strictWithin" $ do
   where
   [t1, x, y, t2] = Test.withEnv "(x y z: nat)"
     [ def_strict_test, "x", "y", "not (eq x y)" ]
+
+
+testMakeContext :: Test 
+testMakeContext = Test.test "makeContext" $ do
+  let add = read "add"
+      mul = read "mul"
+      id_ctx = makeContext id (toBind add)
+  Test.assertEq "identity context" mul (reduce id_ctx [mul])
+
+  let mkAddCtx gap_t = reduce (read "fun (y x: nat) -> add x y") [gap_t]
+      add_ctx = makeContext mkAddCtx (toBind (read "env (x: nat) in x"))  
+  Test.assertEq "add x (add y z) context" 
+    (read "env (y z: nat) in fun (x: nat) -> add x (add y z)") 
+    (reduce add_ctx [read "env (y z: nat) in add y z"])
 
 
 def_eq_unit, def_eq_bool, def_eq, def_eq_ntree :: String

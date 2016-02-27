@@ -1,11 +1,4 @@
 
-prop "count append - match propagation and knowably finite unfolding" 
-  (n: nat) (xs ys: list<nat>) ->
-    assert Cons x xs' <- xs in
-      le (count n xs) (count n (append<nat> xs ys)) 
-      =< 
-      le (count n xs') (count n (append<nat> xs' ys))
-
 prop "beta1" (x: nat) ->
   (fun (y: nat) -> add x y) x
   ==
@@ -63,34 +56,7 @@ prop "eq1" (x: nat) ->
     | 0 -> ff
     | Suc x' -> tt
     end
- 
-let append3<A> =
-  fix (app3: list<A> -> list<A> -> list<A> -> list<A>) ->
-    fun (xs: list<A>) (ys: list<A>) (zs: list<A>) ->
-    match xs with   
-    | Nil -> append<A> ys zs
-    | Cons x xs' -> Cons<A> x (app3 xs' ys zs)
-    end
-    
-prop "append3-simp"<A> (xs ys zs: list<A>) ->
-  append3<A> xs ys zs 
-  ==
-  append<A> xs (append<A> ys zs) 
-    
-  
-let dneppa<A> =
-  fix (ppa: list<A> -> list<A> -> list<A>) (zs xs: list<A>) ->
-    match xs with
-    | Nil -> zs
-    | Cons y ys -> Cons<A> y (ppa zs ys)
-    end
-   
-prop "non-rec first arg"<A> (xs ys: list<A>) ->
-  dneppa<A> ys xs 
-  ==
-  append<A> xs ys
-    
-  
+
 let always_true = 
   fix (true: nat -> nat -> bool) (x y: nat) ->
     match x with
@@ -105,82 +71,3 @@ let always_true =
 prop "always true" (n m: nat) -> 
   always_true n m =< True 
  
-
-/*
-reenable me pls
-prop "butlast infinite loop" (n: nat) (xs: list<nat>) ->
-  Cons<nat> n (match xs with | Nil -> Nil<nat> | Cons x' xs' -> Cons<nat> x' (butlast<nat> xs) end)
-  =< 
-  Cons<nat> n (match xs with | Nil -> Nil<nat> | Cons x' xs' -> Cons<nat> x' (butlast<nat> (Cons<nat> x' xs')) end)
-*/
-
-
-  /*
-let is_sorted2 = 
-  fix (srtd: list<nat> -> bool) (xs: list<nat>) ->
-    match xs with
-    | Nil -> True
-    | Cons y ys ->
-      match ys with
-      | Nil -> srtd Nil<nat>
-      | Cons z zs -> and (le y z) (srtd ys)
-      end
-    end
-    
-
-prop "unfold within fix": forall (xs: list<nat>) ->p
-  is_sorted xs = is_sorted2 xs
-    */
-  /*
-  
-prop "propagate match 1": forall (xs: list<nat>) (x y: nat) ->
-  match is_sorted xs with
-  | True -> True
-  | False -> not (is_sorted xs)
-  end
-  
-
-
-prop "unfold productive fix": forall (xs: list<nat>) ->
-  (match append<nat> xs (Cons<nat> 1 Nil<nat>) with
-   | Nil -> 0 | Cons y ys -> y end)
-  =
-  (match xs with
-   | Nil -> 1 | Cons y ys -> y end)
-   
-prop "unfold branching fix"<A>: forall (t: tree<A>) ->
-  (match flatten<A> t with
-   | Nil -> 0 | Cons y ys -> 1 end)
-  = 
-  (match t with
-   | Leaf -> 0 | Node t1 x t2 -> 1 end)
-   
-prop "unfold branching fix 2": forall (t: tree<nat>) (n: nat) ->
-  (match tree_insert n t with
-    | Leaf -> 1
-    | Node t1 x t2 -> 2 
-    end) = 2
-  */
-   /*
-let super_loopy = fun (t: tree<nat>) (n: nat) ->
-  match t with
-  | Leaf -> False
-  | Node ta m tb -> 
-    match ta with
-    | Leaf -> False
-    | Node taa m tab ->
-      match tb with
-      | Leaf -> False
-      | Node tba m tbb -> 
-        match rightmost_le t n with
-        | False -> False
-        | True -> sorted_tree t
-        end
-      end
-    end
-  end
-   
-prop "loopy mc looperson": forall (t: tree<nat>) (n: nat) ->
-  super_loopy t n = super_loopy t n
-  */
-

@@ -39,6 +39,8 @@ module Elea.Term.Ext
   findConstrainedArgs,
   abstractVar,
   abstractVars,
+  abstractTerm,
+  abstractTerms,
   mapFixInfo,
   equateArgs,
   equateArgsMany,
@@ -54,6 +56,9 @@ module Elea.Term.Ext
   isProductive,
   assertValidRewrite,
   lookupFixName,
+  makeContext,
+  toBind,
+  appSubterms, strictAppSubterms,
 )
 where
 
@@ -648,6 +653,15 @@ isSubterm t = Env.trackIndices t . Fold.anyM (\t -> Env.trackeds (== t))
 isStrictSubterm :: Term -> Term -> Bool
 isStrictSubterm t t' = t `isSubterm` t' && t /= t'
 
+appSubterms :: Term -> [Term]
+appSubterms !term@(App f xs) = 
+  term : appSubterms f ++ concatMap appSubterms xs
+appSubterms !other = [other]
+
+strictAppSubterms :: Term -> [Term]
+strictAppSubterms = tail . appSubterms
+
+
 {-
 -- | Finds a context which will turn the first term into the second.
 -- Basically takes the first term and replaces all instances of it 
@@ -791,8 +805,7 @@ abstractVar t _ =
   errorf "Gave abstractVar a non variable term to abstract: %s" t
 
 abstractVars :: [Term] -> Term -> Term
-abstractVars ts xs = 
-  concatEndos (map abstractVar ts) xs
+abstractVars ts = concatEndos (map abstractVar ts)
   
 abstractTerm :: Term -> Term -> Term
 abstractTerm abs_t in_t = id
@@ -800,7 +813,10 @@ abstractTerm abs_t in_t = id
   . replace (Indices.lift abs_t) (Var 0 abs_b) 
   $ Indices.lift in_t
   where
-  abs_b = Bind "g" (Type.get abs_t)
+  abs_b = Bind "t" (Type.get abs_t)
+
+abstractTerms :: [Term] -> Term -> Term
+abstractTerms ts = concatEndos (map abstractTerm ts)
 
 mapFixInfo :: (FixInfo -> FixInfo) -> Term -> Term
 mapFixInfo f = Fold.transform mp
@@ -1147,7 +1163,7 @@ showTermM Fix { fixInfo = fix_info}
   | Just fix_name <- get fixName fix_info = return fix_name
 showTermM Var { varIndex = var_index, binding = bind } = do
   b <- Env.boundAt var_index
-  return (printf "%s" (get Type.bindLabel b))
+  return (printf "%s[%s]" (get Type.bindLabel b) (show var_index))
 showTermM (Leq x y) = do
   x_s <- showTermBracketedM x
   y_s <- showTermBracketedM y
@@ -1245,3 +1261,17 @@ lookupFixName term@(flattenApp -> fix@Fix{ fixInfo = fix_info } : args) = do
   --  where
   --  args_left = Set.fromList args' Set.\\ Set.fromList args
   getName _ = Nothing
+
+
+-- | t = Term.makeContext f b ==> forall (y : b) . Term.reduce t y == f y
+makeContext :: (Term -> Term) -> Bind -> Term
+makeContext mkCtx bind = id
+  . Lam bind 
+  . Indices.replaceAt Indices.omega (Var 0 bind)
+  . Indices.lift
+  . mkCtx 
+  $ Var Indices.omega bind
+
+toBind :: Term -> Bind
+toBind (Var { binding = bind }) = bind
+toBind term = Bind "t" (Type.get term)

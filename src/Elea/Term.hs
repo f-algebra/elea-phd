@@ -42,7 +42,7 @@ module Elea.Term
   recursiveId,
   isFixPromoted,
   loweredAltTerm,
-  bindsToVars, bindsToVar,
+  bindsToVars, bindsToVar, 
 )
 where
 
@@ -701,6 +701,7 @@ bindsToVars bs = zipWith (Var . enum) (reverse (range bs)) bs
 -- | The variable at a given deBruijn index given the topmost bindings
 bindsToVar :: Enum a => [Bind] -> a -> Term
 bindsToVar bs i = bindsToVars bs !! i
+
 
 {-
 -- | Declares that a fixed-point's definition has been modified

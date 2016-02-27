@@ -31,7 +31,7 @@ inc = id
   . apply
 
 rewrite :: Direction.Has m => Term -> m Term
-rewrite term = do
+rewrite !term = do
   direction <- Direction.get
   return 
     . flip runReader direction
@@ -58,7 +58,7 @@ type Env m = (Env.Write m, Direction.Has m)
 -- | Apply driving, the monad will eventually carry information 
 -- about strictness, totality, and termination checking
 apply :: forall m . Env m => Term -> m Term 
-apply term = do
+apply !term = do
   term' <- (applyHead <=< applySubterms) term
   Assert.checkM $ Term.assertValidRewrite term term' 
   return term'
