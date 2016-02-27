@@ -23,6 +23,9 @@ testFindUnfolding = Test.test "find unfolding" $ do
   Test.assertEq "context for zeno3" le_count_ctx le_count_ctx'
   Test.assertEq "unfold term 1 for zeno3" append_xs_ys append_xs_ys'
   Test.assertEq "unfold term 2 for zeno3" count_xs count_xs'
+
+  Test.assertEq "context for it_rev xs (ys ++ zs)" it_rev_ctx it_rev_ctx'
+  Test.assertEq "unfold term for it_rev xs (ys ++ zs)" it_rev_append it_rev_append'
   where
   [add_xyz, add_xy, add_ctx] = Test.withEnv "(x y z: nat)"
     [ "add (add x y) z", "add x y", "fun (n: nat) -> add n z" ]
@@ -37,3 +40,9 @@ testFindUnfolding = Test.test "find unfolding" $ do
     , "fun (zs: list<nat>) (k: nat) -> le k (count n zs)" ]
 
   (le_count_ctx', [append_xs_ys', count_xs']) = Supercompiler.findUnfolding le_count_app
+
+  [it_rev_append, it_rev_ctx] = Test.withEnv "(xs ys zs: list<nat>)"
+    [ "it_rev<nat> xs (append<nat> ys zs)"
+    , "fun (xs: list<nat>) -> xs" ]
+
+  (it_rev_ctx', [it_rev_append']) = Supercompiler.findUnfolding it_rev_append
