@@ -151,7 +151,7 @@ constArg term@(App fix@(Fix fix_info (Bind fix_name fix_ty) fix_t) args)
   -- Remove an argument to the function at the given position.
   removeConstArg :: Nat -> Term
   removeConstArg arg_i = id
-    -- Add new outer lambdas to keep the type of the term the same
+    -- Add new outer lambdas to keep these` type of the term the same
     . unflattenLam (left_bs ++ [dropped_b])
     . flip app outer_args
     

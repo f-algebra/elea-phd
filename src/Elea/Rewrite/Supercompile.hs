@@ -18,7 +18,6 @@ import qualified Elea.Foldable.WellFormed as WellFormed
 import qualified Elea.Rewrite.Drive as Drive
 import qualified Elea.Monad.Env.Class as Env
 import qualified Elea.Monad.Direction as Direction
-import qualified Elea.Monad.Fusion as Fusion
 import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Monad.Error.Assertion as Assert
@@ -26,8 +25,7 @@ import qualified Data.Set as Set
 
 
 type Env m = 
-  ( Fusion.Env m 
-  , Memo.Can m
+  ( Memo.Can m
   , Env.MatchRead m
   , Direction.Has m 
   , Tag.Gen m )
@@ -43,7 +41,7 @@ apply !term
 -- | (f, xs) = findUnfolding t ==> Term.reduce f xs == t /\ all isFix xs
 findUnfolding :: Term -> (Term, [Term])
 findUnfolding !term@(flattenApp -> fix@Fix {} : args)
-  |  all (not . any isFix . Term.appSubterms) args 
+  | all (not . any isFix . Term.appSubterms) args 
   || null arg_fix_calls =
     (Term.makeContext id (Term.toBind term), [term])
     -- ^ If there are no fixed-points in the term arguments,

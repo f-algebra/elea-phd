@@ -156,7 +156,7 @@ removeForAll (Lam _ t)
     Signals.tellStopRewriting
     return t
 removeForAll _ = Fail.here
-    
+     
 
 lfp :: forall m . Step m => Term -> m Term
 lfp (Leq x y) = do

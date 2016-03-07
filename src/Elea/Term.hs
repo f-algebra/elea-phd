@@ -91,7 +91,8 @@ data Term
 
   | Con     { constructor :: !(Tagged Constructor) }
 
-  | Case    { caseOf :: !Term
+  | Case    { caseTag :: !Tag
+            , caseOf :: !Term
             , caseAlts :: ![Alt] }
   deriving ( Eq, Ord )
 
