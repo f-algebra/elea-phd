@@ -23,7 +23,7 @@ class Tells m => Listens m where
 rewritesTo :: (Env.Read m, Tells m) => Term -> Term -> m ()
 rewritesTo t1 t2 = do
   bs <- Env.bindings
-  tell (Prop "" (unflattenLam (reverse bs) (Leq t1 t2)))
+  tell (Prop "" (unflattenLam (reverse bs) (Leq t1 t2)) True)
   
 rewritesToM :: (Env.Read m, Tells m) => Term -> m Term -> m Term
 rewritesToM t1 mt2 = do

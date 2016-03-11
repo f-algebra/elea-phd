@@ -20,7 +20,7 @@ testProp :: String -> Test
 testProp prop_name = id
   . Test.testWithPrelude prop_name $ do
     all_props <- Test.loadFile properties_file
-    let Just (Prop _ prop_t) = find ((== prop_name) . get propName) all_props
+    let Just (Prop _ prop_t _) = find ((== prop_name) . get propName) all_props
     prop_t' <- id
       . Test.recordTimeTaken prop_name 
       . TraceSteps.enable

@@ -12,9 +12,11 @@ testProp :: String -> Test
 testProp prop_name = id
   . Test.testWithPrelude prop_name $ do
     all_props <- Test.loadFile properties_file
-    let Just (Prop _ prop_t) = find ((== prop_name) . get propName) all_props
+    let Just (Prop _ prop_t expects_proof) = find ((== prop_name) . get propName) all_props
     prop_t' <- Test.recordTimeTaken prop_name (Drive.rewrite prop_t)
-    Test.assertTermEq "" truth prop_t'
+    if expects_proof
+    then Test.assertTermEq "" truth prop_t'
+    else Test.assertBool "proved an unprovable property" (truth /= prop_t')
   
 tests :: IO Test
 tests = do

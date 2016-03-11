@@ -62,8 +62,6 @@ import qualified Elea.Foldable as Fold
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Poset as Quasi
-
-{-# ANN module "HLint: ignore Redundant id" #-}
   
 -- TODO remove tags from constructors
 
@@ -91,8 +89,7 @@ data Term
 
   | Con     { constructor :: !(Tagged Constructor) }
 
-  | Case    { caseTag :: !Tag
-            , caseOf :: !Term
+  | Case    { caseOf :: !Term
             , caseAlts :: ![Alt] }
   deriving ( Eq, Ord )
 
@@ -125,7 +122,8 @@ type Constraint = Match
 -- | Properties are just named terms of unit type
 data Prop 
   = Prop  { _propName :: !String
-          , _propTerm :: !Term }
+          , _propTerm :: !Term
+          , _propExpectsProof :: !Bool }
          
              
 -- | Information stored about fixpoints, to add efficiency.

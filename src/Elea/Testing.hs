@@ -78,7 +78,7 @@ assertTermEq msg (stripTags -> t1) (stripTags -> t2) = do
            | otherwise = printf "[%s]\n" msg
   let prop_s = printf "%sexpected: %s\nbut got: %s" msg' t1 t2
   assertEq prop_s t1 t2
-
+  
 assertSimpEq :: String -> Term -> Term -> M ()
 assertSimpEq msg t1 t2 = do
   t1' <- Simp.applyM t1

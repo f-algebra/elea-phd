@@ -1242,8 +1242,11 @@ instance PrintfArg Term where
       'n' -> runShowTerm showTermNewlineM term ++ rest
 
 instance Show Prop where
-  show (Prop name term) = 
-    printf "prop %s %s" name (show term)
+  show (Prop name term expects_proof) = 
+    printf "%sprop %s %s" 
+      (if expects_proof then "" else "unprovable ")
+      name 
+      (show term)
 
 
 lookupFixName :: Defs.Read m => Term -> m Term

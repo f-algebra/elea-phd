@@ -22,6 +22,7 @@ import qualified Elea.Monad.Failure.Class as Fail
 import qualified Elea.Monad.Memo.Class as Memo
 import qualified Elea.Monad.Error.Assertion as Assert
 import qualified Data.Set as Set
+import qualified Data.Poset as Homeo
 
 
 type Env m = 
@@ -36,6 +37,35 @@ apply !term
   | not . isFix . leftmost $ term = return term
   | isFixPromoted term = return term
   | otherwise = return term
+
+
+data Action 
+  = CaseSplit !Term
+  | Induction !Term
+  | Unfold !Term
+  | Rewrite !Term !Term
+
+
+nextAction :: (Direction.Has m) => Term -> m Action
+nextAction !term@(flattenApp -> fix@Fix {} : args)
+  | isFixPromoted term = return . Unfold $ term
+  | otherwise = do 
+    term' <- Drive.apply (App (Term.unfoldFix fix) args)
+    case term' of 
+      Case { caseOf = cse_of }
+        | 
+      _ -> return . Unfold $ term
+  where
+  unblockCaseOf :: Term -> Action
+  unblockCaseOf !term = do
+    mby_match <- runMaybeT . Env.findMatch $ cse_t
+    case mby_match of
+      Just match_t -> caseOfTerm match_t
+
+
+
+
+
 
 
 -- | (f, xs) = findUnfolding t ==> Term.reduce f xs == t /\ all isFix xs

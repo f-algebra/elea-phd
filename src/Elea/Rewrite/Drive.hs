@@ -24,9 +24,38 @@ import qualified Elea.Monad.Error.Assertion as Assert
 -- TODO closed fixed-points don't need to be descended into
 -- on a similar note, precompute strict/decreasing/increasing argument indices
 
+data DriveEnv = DriveEnv { 
+  _driveDirection :: !Direction,
+  _driveMatches :: ![Match] 
+}
+
+newtype Drive a = Drive { 
+  runDrive :: Reader DriveEnv a
+} deriving ( Functor, Applicative, Monad, MonadReader DriveEnv )
+
+type Env m = (Env.MatchRead m, Direction.Has m)
+
+mkLabels [ ''DriveEnv ]
+
+instance Empty DriveEnv where
+  empty = DriveEnv Direction.Inc []
+
+instance Env.Write Drive where
+  bindAt _ _ = id
+  matched m = local (modify driveMatches (m :))
+  forgetMatches _ = id
+
+instance Env.MatchRead Drive where
+  matches = asks (get driveMatches)
+
+instance Direction.Has Drive where
+  local new_dir = local (set driveDirection new_dir)
+  get = asks (get driveDirection)
+
+
 inc :: Term -> Term
 inc = id
-  . flip runReader Direction.Inc
+  . flip runReader empty
   . runDrive
   . apply
 
@@ -34,26 +63,9 @@ rewrite :: Direction.Has m => Term -> m Term
 rewrite !term = do
   direction <- Direction.get
   return 
-    . flip runReader direction
+    . flip runReader (DriveEnv direction [])
     . runDrive 
     $ apply term
-
-newtype Drive a = Drive { 
-  runDrive :: Reader Direction a
-} deriving ( Functor, Applicative, Monad, MonadReader Direction )
-
-
-instance Env.Write Drive where
-  bindAt _ _ = id
-  matched _ = id
-  forgetMatches _ = id
-
-instance Direction.Has Drive where
-  local new_dir = local (const new_dir)
-  get = ask
-
-
-type Env m = (Env.Write m, Direction.Has m)
 
 -- | Apply driving, the monad will eventually carry information 
 -- about strictness, totality, and termination checking
@@ -230,6 +242,13 @@ applyHead term@(Case cse_t@Var { varIndex = var } alts)
       replaceVarWithPattern = 
         Indices.replaceAt (Indices.liftMany (nlength binds) var) pat_t
 
+-- apply earlier matches to reduce case-of
+applyHead term@Case { caseOf = cse_t } = do
+  mby_pattern_t <- runMaybeT . Env.findMatch $ cse_t
+  case mby_pattern_t of
+    Nothing -> applyHeadNotApplicable term
+    Just pattern_t -> applyHead $ term { caseOf = pattern_t }
+
 
 -- theorem prover steps start here
 
@@ -277,8 +296,14 @@ applyHead (Lam _ t)
 applyHead (Leq x y) 
   | x == y = return truth
 
+applyHead term = 
+  applyHeadNotApplicable term
+
+
 -- otherwise, apply the steps which require a specific rewrite direction
-applyHead term = do
+-- this method is not just the last case of applyHead, because of failures within the monad
+applyHeadNotApplicable :: Env m => Term -> m Term
+applyHeadNotApplicable term = do
   direction <- Direction.get
   case direction of
     Direction.Inc -> applyHeadInc term

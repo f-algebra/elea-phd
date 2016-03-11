@@ -77,6 +77,7 @@ import qualified Data.Map as Map
   'fold['     { TokenFold  }
   assert      { TokenAssert }
   assertBool  { TokenAssBool }
+  unprovable  { TokenUnprovable }
   
 %right '->'
   
@@ -175,11 +176,15 @@ PropDef :: { PropDef }
                                        { (("", $3), $5, $7) }
   | prop Bindings '->' Term            { (("", []), $2, $4) }
 
+FullPropDef :: { FullPropDef }
+  : unprovable PropDef                { ($2, False) }
+  | PropDef                           { ($1, True) }
+
 Program :: { RawProgram }
   : {- empty -}                       { RawProgram [] [] [] }
   | Program TypeDef                   { modify programTypes (++ [$2]) $1 }
   | Program TermDef                   { modify programTerms (++ [$2]) $1 }
-  | Program PropDef                   { modify programProps (++ [$2]) $1 }
+  | Program FullPropDef               { modify programProps (++ [$2]) $1 }
 
 {
 
@@ -201,11 +206,12 @@ type TermDef = (ParamName, RawTerm)
 
 -- Declarations to decide equality between terms
 type PropDef = (ParamName, [RawBind], RawTerm)
+type FullPropDef = (PropDef, Bool)  -- Definition + expectation of proof
 
 data RawProgram 
   = RawProgram  { _programTypes :: [TypeDef]
                 , _programTerms :: [TermDef]
-                , _programProps :: [PropDef] }
+                , _programProps :: [FullPropDef] }
 
 data RawType 
   = TyBase ParamCall
@@ -257,7 +263,7 @@ programTerms :: RawProgram :-> [TermDef]
 programTerms = lens _programTerms
   (\f x -> x { _programTerms = f (_programTerms x) })  
   
-programProps :: RawProgram :-> [PropDef]
+programProps :: RawProgram :-> [FullPropDef]
 programProps = lens _programProps
   (\f x -> x { _programProps = f (_programProps x) }) 
   
@@ -349,14 +355,14 @@ program text =
   where
   RawProgram types terms props = happyProgram (lexer text)
     
-  parseProp :: PropDef -> ParserMonad m (Polymorphic Prop)
-  parseProp ((name, ty_args), rbs, rt) = 
+  parseProp :: FullPropDef -> ParserMonad m (Polymorphic Prop)
+  parseProp (((name, ty_args), rbs, rt), expects_proof) = 
     localTypeArgs ty_args $ do
       bs <- mapM parseRawBind rbs
       t <- Env.bindMany bs (parseAndCheckTerm rt)
       let t' | Type.returnType (Type.get t) == Type.bool = Term.Leq t (Term.true)
              | otherwise = t
-      return (Prop name (unflattenLam bs t'))
+      return (Prop name (unflattenLam bs t') expects_proof)
   
   defineType :: TypeDef -> ParserMonad m ()
   defineType ((ind_name, ty_arg_names), raw_cons) = do
@@ -600,6 +606,7 @@ data Token
   | TokenAssert
   | TokenAssBool
   | TokenEnv
+  | TokenUnprovable
   
 happyError :: [Token] -> a
 happyError tokens = error $ "Parse error\n" ++ (show tokens)
@@ -666,6 +673,7 @@ lexer (c:cs)
       ("assertBool", rest) -> TokenAssBool : lexer rest
       ("assert", rest) -> TokenAssert : lexer rest
       ("env", rest) -> TokenEnv : lexer rest
+      ("unprovable", rest) -> TokenUnprovable : lexer rest
       (name, rest) -> TokenName name : lexer rest
 lexer cs = error $ "Unrecognized symbol " ++ take 1 cs
 
@@ -707,6 +715,7 @@ instance Show Token where
   show TokenAssert = "assert"
   show TokenSeq = "seq"
   show TokenEnv = "env"
+  show TokenUnprovable = "unprovable"
   
   showList = (++) . intercalate " " . map show
 }

@@ -202,8 +202,8 @@ instance Substitutable Term where
       return other
       
 instance ContainsTypes Prop where
-  mapTypesM f (Prop n t) = 
-    return (Prop n) `ap` mapTypesM f t
+  mapTypesM f (Prop n t p) = 
+    return (\t -> Prop n t p) `ap` mapTypesM f t
 
 instance ContainsTypes Term where
   mapTypesM f = runIdentityT . Fold.transformM mapTy

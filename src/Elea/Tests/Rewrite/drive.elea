@@ -71,3 +71,8 @@ let always_true =
 prop "always true" (n m: nat) -> 
   always_true n m =< True 
  
+prop "apply match as rewrite" (x y: nat) -> 
+  and (eq x y) (not (eq x y)) =< False
+
+unprovable prop "strictness when applying match as rewrite" (x y: nat) -> 
+  and (eq x y) (not (eq x y)) == False
