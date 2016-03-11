@@ -41,7 +41,7 @@ instance Empty DriveEnv where
   empty = DriveEnv Direction.Inc []
 
 instance Env.Write Drive where
-  bindAt _ _ = id
+  bindAt at _ = local (modify driveMatches (map (Indices.liftAt at)))
   matched m = local (modify driveMatches (m :))
   forgetMatches _ = id
 
@@ -161,16 +161,14 @@ applyHead (Case (flattenApp -> Con tcon : args) alts)
     $ zipWith Indices.liftMany [0..] args
 
 -- case-of as a function
-applyHead (App cse_of@(Case cse_t alts) args) = do
-  alts' <- zipWithM applyAlt [0..] alts
-  applyHead $ Case cse_t alts'
+applyHead (App cse_of@(Case cse_t alts) args) = id
+  . apply 
+  . Case cse_t 
+  . zipWith applyAlt [0..] 
+  $ alts
   where
-  applyAlt branch_n alt@Alt { _altBindings = binds, _altInner = alt_t } = do
-    alt_t' <- id
-      . Env.bindBranch cse_of branch_n
-      . applyHead 
-      $ App alt_t args'
-    return $ alt { _altInner = alt_t' }
+  applyAlt branch_n alt@Alt { _altBindings = binds, _altInner = alt_t } = 
+    alt { _altInner = App alt_t args' }
     where
     args' = Indices.liftMany (nlength binds) args
 
@@ -183,19 +181,17 @@ applyHead term@(App fix@Fix {} args)
 
 -- case-of as a strict argument
 applyHead (App func@Fix {} args) 
-  | isJust mby_cse = do
-    alts' <- zipWithM applyAlt [0..] alts
-    applyHead $ Case cse_t alts'
+  | isJust mby_cse = id
+    . apply 
+    . Case cse_t 
+    . zipWith applyAlt [0..] 
+    $ alts
   where
   mby_cse@(~(Just cse_i)) = findIndex isCase args
   cse_of@(Case cse_t alts) = args !! cse_i 
 
-  applyAlt branch_n alt@Alt { _altInner = alt_t, _altBindings = binds } = do
-    alt_t' <- id
-      . Env.bindBranch cse_of branch_n
-      . applyHead 
-      $ App func' args'
-    return $ alt { _altInner = alt_t' }
+  applyAlt branch_n alt@Alt { _altInner = alt_t, _altBindings = binds } =
+    alt { _altInner = App func' args' }
     where
     func' = Indices.liftMany (nlength binds) func
     args' = id 
@@ -203,16 +199,14 @@ applyHead (App func@Fix {} args)
       $ Indices.liftMany (nlength binds) args
 
 -- case-case distributivity
-applyHead outer_cse@(Case inner_cse@(Case inner_t inner_alts) outer_alts) = do
-  inner_alts' <- zipWithM applyAlt [0..] inner_alts
-  applyHead $ Case inner_t inner_alts'
+applyHead outer_cse@(Case inner_cse@(Case inner_t inner_alts) outer_alts) = id
+  . apply
+  . Case inner_t 
+  . zipWith applyAlt [0..] 
+  $ inner_alts
   where
-  applyAlt branch_n alt@Alt { _altBindings = binds, _altInner = alt_t } = do
-    alt_t' <- id
-      . Env.bindBranch inner_cse branch_n
-      . applyHead 
-      $ Case alt_t outer_alts'
-    return $ alt { _altInner = alt_t' }
+  applyAlt branch_n alt@Alt { _altBindings = binds, _altInner = alt_t } = 
+    alt { _altInner = Case alt_t outer_alts' }
     where
     outer_alts' = map (Indices.liftMany (nlength binds)) outer_alts 
 
@@ -223,25 +217,7 @@ applyHead (Case cse_t alts)
   isIdAlt :: Alt -> Bool
   isIdAlt alt@Alt { _altInner = alt_t } =
     alt_t == (patternTerm . altPattern) alt
-
--- applying pattern matches over variables as a rewrite
-applyHead term@(Case cse_t@Var { varIndex = var } alts) 
-  | any (Indices.freeWithin var) alts = do
-    alts' <- zipWithM applyAlt [0..] alts
-    applyHead $ Case cse_t alts'
-    where
-    applyAlt branch_n alt@Alt { _altBindings = binds, _altInner = alt_t } = do
-      alt_t' <- id
-        . Env.bindBranch term branch_n
-        . apply 
-        . replaceVarWithPattern
-        $ alt_t
-      return $ alt { _altInner = alt_t' }
-      where
-      pat_t = (patternTerm . altPattern) alt
-      replaceVarWithPattern = 
-        Indices.replaceAt (Indices.liftMany (nlength binds) var) pat_t
-
+    
 -- apply earlier matches to reduce case-of
 applyHead term@Case { caseOf = cse_t } = do
   mby_pattern_t <- runMaybeT . Env.findMatch $ cse_t
@@ -328,13 +304,14 @@ applyHeadInc t@(Leq fix right)
   where
   Fix { inner = fix_t } : args = flattenApp fix
 
-applyHeadInc leq@(Leq (Case cse_t alts) right) = do
-  alts' <- mapM leqAlt alts
-  applyHead $ Case cse_t alts'
+applyHeadInc leq@(Leq (Case cse_t alts) right) = id
+  . apply 
+  . Case cse_t 
+  . map leqAlt 
+  $ alts
   where
-  leqAlt alt@Alt { _altBindings = binds, _altInner = alt_t } = do
-    alt_t' <- applyHead $ Leq alt_t right'
-    return $ alt { _altInner = alt_t' }
+  leqAlt alt@Alt { _altBindings = binds, _altInner = alt_t } =
+    alt { _altInner = Leq alt_t right' }
     where
     right' = Indices.liftMany (nlength binds) right
 
@@ -345,13 +322,14 @@ applyHeadInc other =
 -- | Drive a term, assuming all subterms are already driven, 
 -- and we are decreasing definedness
 applyHeadDec :: Env m => Term -> m Term
-applyHeadDec leq@(Leq left (Case cse_t alts)) = do
-  alts' <- mapM leqAlt alts
-  applyHead $ Case cse_t alts'
+applyHeadDec leq@(Leq left (Case cse_t alts)) = id
+  . apply
+  . Case cse_t
+  . map leqAlt
+  $ alts
   where
   leqAlt alt@Alt { _altBindings = binds, _altInner = alt_t } = do
-    alt_t' <- applyHead $ Leq left' alt_t
-    return $ alt { _altInner = alt_t' }
+    alt { _altInner = Leq left' alt_t }
     where
     left' = Indices.liftMany (nlength binds) left
 

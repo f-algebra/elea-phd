@@ -38,6 +38,9 @@ prop "1<=2" ->
   
 prop "not-not" (p: bool) ->
   not (not p) == p
+
+unprovable prop "not is not id" (p: bool) ->
+  not p == p
   
 prop "case-app" (x: nat) ->
   Suc (match x with | 0 -> 0 | Suc x -> x end)
@@ -72,7 +75,7 @@ prop "always true" (n m: nat) ->
   always_true n m =< True 
  
 prop "apply match as rewrite" (x y: nat) -> 
-  and (eq x y) (not (eq x y)) =< False
+  and (eq x y) (match x with | 0 -> not (eq x y) | Suc x' -> not (eq x y) end)  =< False
 
 unprovable prop "strictness when applying match as rewrite" (x y: nat) -> 
   and (eq x y) (not (eq x y)) == False
