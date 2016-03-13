@@ -463,8 +463,8 @@ class MonadTrans t => Runnable t where
 run :: Runnable t => t Identity a -> a
 run = runIdentity . runM
 
-instance Monoid w => Runnable (ReaderT w) where
-  runM = ($ mempty) . runReaderT
+instance Empty w => Runnable (ReaderT w) where
+  runM = ($ empty) . runReaderT
 
 readf :: (Read a, PrintfArg r) => String -> r -> a
 readf str args = read (printf str args)

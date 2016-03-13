@@ -11,6 +11,7 @@ where
 
 import Elea.Prelude hiding ( get, set, local, reverse, invert )
 import qualified Elea.Monad.Failure.Class as Fail
+import qualified Control.Monad.Reader.Class as Reader
 
 -- | Whether this rewrite can make terms less or more defined
 data Direction = Inc | Dec | Eq
@@ -20,6 +21,13 @@ reverse :: Direction -> Direction
 reverse Dec = Inc
 reverse Inc = Dec
 reverse Eq = Eq
+
+instance Empty Direction where
+  empty = Eq
+
+instance Monad m => Has (ReaderT Direction m) where
+  get = Reader.ask
+  local = Reader.local . const
 
 
 class Monad m => Has m where

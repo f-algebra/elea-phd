@@ -1,6 +1,7 @@
 module Elea.Rewrite.Supercompile (
+  Action (..),
   apply,
-  findUnfolding
+  nextAction,
 ) where
 
 import Elea.Prelude
@@ -27,7 +28,6 @@ import qualified Data.Poset as Homeo
 
 type Env m = 
   ( Memo.Can m
-  , Env.MatchRead m
   , Direction.Has m 
   , Tag.Gen m )
 
@@ -44,93 +44,29 @@ data Action
   | Induction !Term
   | Unfold !Term
   | Rewrite !Term !Term
+  deriving ( Eq, Show )
 
 
-nextAction :: (Direction.Has m) => Term -> m Action
+nextAction :: Direction.Has m => Term -> m Action
 nextAction !term@(flattenApp -> fix@Fix {} : args)
-  | isFixPromoted term = return . Unfold $ term
+  | isFixPromoted term = return $ Unfold term
   | otherwise = do 
-    term' <- Drive.apply (App (Term.unfoldFix fix) args)
+    term' <- Drive.rewrite (App (Term.unfoldFix fix) args)
     case term' of 
       Case { caseOf = cse_of }
-        | 
-      _ -> return . Unfold $ term
-  where
-  unblockCaseOf :: Term -> Action
-  unblockCaseOf !term = do
-    mby_match <- runMaybeT . Env.findMatch $ cse_t
-    case mby_match of
-      Just match_t -> caseOfTerm match_t
+        | not (Term.isStrictSubterm cse_of term) ->
+          return $ CaseSplit cse_of
+        | Just cse_of' <- findRewrite cse_of ->
+          return $ Rewrite cse_of cse_of'
+        | not . isFix . leftmost $ cse_of ->
+          return $ Induction cse_of
+        | otherwise -> 
+          nextAction cse_of
+
+      not_case -> 
+        return $ Unfold term
 
 
+findRewrite :: Fail.Can m => Term -> m Term
+findRewrite _ = Fail.here
 
-
-
-
-
--- | (f, xs) = findUnfolding t ==> Term.reduce f xs == t /\ all isFix xs
-findUnfolding :: Term -> (Term, [Term])
-findUnfolding !term@(flattenApp -> fix@Fix {} : args)
-  | all (not . any isFix . Term.appSubterms) args 
-  || null arg_fix_calls =
-    (Term.makeContext id (Term.toBind term), [term])
-    -- ^ If there are no fixed-points in the term arguments,
-    -- we can only unfold the outermost fixed-point
-
-  | otherwise = 
-    Assert.check 
-      (mapM_ WellFormed.assert (new_ctx : new_fix_calls))
-      (new_ctx, new_fix_calls) 
-  where
-  (new_ctx, new_fix_calls) = mergeUnfoldings pre_merged
-
-  pre_merged :: (Term, [(Term, [Term])])
-  pre_merged = ( Term.abstractTerms arg_fix_calls term
-               , map findUnfolding arg_fix_calls )
-
-  arg_fix_calls :: [Term]
-  arg_fix_calls = id
-    . filter (`Set.member` arg_subterms)
-    . nubOrd
-    . matchedFixCalls 
-    $ unfolded_t
-    where
-    unfolded_t = Drive.inc $ App (Term.unfoldFix fix) args
-
-    arg_subterms :: Set Term
-    arg_subterms = id
-      . Set.fromList 
-      . concatMap Term.appSubterms 
-      $ args
-
-  matchedFixCalls :: Term -> [Term]
-  matchedFixCalls (Case cse_of alts) 
-    | isFix (leftmost cse_of) = cse_of : alt_matches
-    | otherwise = alt_matches
-    where
-    alt_matches = concatMap matchedInAlt alts
-
-    matchedInAlt :: Alt -> [Term]
-    matchedInAlt Alt { _altBindings = binds, _altInner = alt_t } = id
-      . catMaybes
-      . map (Indices.tryLowerMany (nlength binds))
-      $ matchedFixCalls alt_t
-  matchedFixCalls _ = []
-
-  mergeUnfoldings :: (Term, [(Term, [Term])]) -> (Term, [Term])
-  mergeUnfoldings (outer_ctx, inner_unfoldings) =
-    (foldr merge outer_ctx inner_unfoldings, concatMap snd inner_unfoldings)
-    where
-    merge :: (Term, [Term]) -> Term -> Term
-    merge (inner_ctx, inner_fix_ts) full_ctx = id
-      . unflattenLam inner_binds
-      . (\f -> Term.reduce f [inner_app])
-      . liftHere
-      $ full_ctx
-      where
-      liftHere = Indices.liftMany (nlength inner_binds) 
-      inner_binds = map Term.toBind inner_fix_ts
-      inner_app = id
-        . Term.reduce (liftHere inner_ctx)
-        . Term.bindsToVars 
-        $ inner_binds

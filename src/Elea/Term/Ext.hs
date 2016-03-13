@@ -29,6 +29,7 @@ module Elea.Term.Ext
   commuteMatchesWhenM,
   occurrences,
   isSubterm,
+  isStrictSubterm,
   removeSubterms,
   freeSubtermsOf,
   freeVars,

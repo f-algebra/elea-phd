@@ -5,6 +5,7 @@ module Elea.Tests.Rewrite.Supercompile (
 import Elea.Prelude
 import Elea.Term
 import Elea.Testing ( Test )
+import Elea.Monad.Direction ( Direction )
 import qualified Elea.Testing as Test
 import qualified Elea.Rewrite.Supercompile as Supercompiler
 
@@ -12,37 +13,27 @@ tests :: IO Test
 tests = return
   . Test.label "Supercompiler"
   . Test.list
-  $ [ testFindUnfolding ]
+  $ [ testNextAction ]
 
 
-testFindUnfolding :: Test 
-testFindUnfolding = Test.test "find unfolding" $ do
-  Test.assertEq "context for add (add x y) z" add_ctx add_ctx'
-  Test.assertEq "unfold term for add (add x y) z" add_xy add_xy'
-
-  Test.assertEq "context for zeno3" le_count_ctx le_count_ctx'
-  Test.assertEq "unfold term 1 for zeno3" append_xs_ys append_xs_ys'
-  Test.assertEq "unfold term 2 for zeno3" count_xs count_xs'
-
-  Test.assertEq "context for it_rev xs (ys ++ zs)" it_rev_ctx it_rev_ctx'
-  Test.assertEq "unfold term for it_rev xs (ys ++ zs)" it_rev_append it_rev_append'
+testNextAction :: Test 
+testNextAction = Test.test "next action" $ do
+  Test.assertEq "rev (rev xs)" rev_rev_action rev_rev_action'
+  Test.assertEq "minus (add n (Suc m)) (Suc m)" minus_add_action minus_add_action'
   where
-  [add_xyz, add_xy, add_ctx] = Test.withEnv "(x y z: nat)"
-    [ "add (add x y) z", "add x y", "fun (n: nat) -> add n z" ]
+  getNextAction :: Term -> Supercompiler.Action
+  getNextAction = id
+    . (run :: Reader Direction a -> a) 
+    . Supercompiler.nextAction
 
-  (add_ctx', [add_xy']) = Supercompiler.findUnfolding add_xyz
+  rev_rev_action = Supercompiler.Unfold rev
+  rev_rev_action' = getNextAction rev_rev
 
-  [le_count_app, count_xs, append_xs_ys, le_count_ctx] = 
-    Test.withEnv "(n: nat) (xs ys: list<nat>)"
-    [ "le (count n xs) (count n (append<nat> xs ys))"
-    , "count n xs"
-    , "append<nat> xs ys" 
-    , "fun (zs: list<nat>) (k: nat) -> le k (count n zs)" ]
+  minus_add_action = Supercompiler.Induction n
+  minus_add_action' = getNextAction minus_add
 
-  (le_count_ctx', [append_xs_ys', count_xs']) = Supercompiler.findUnfolding le_count_app
-
-  [it_rev_append, it_rev_ctx] = Test.withEnv "(xs ys zs: list<nat>)"
-    [ "it_rev<nat> xs (append<nat> ys zs)"
-    , "fun (xs: list<nat>) -> xs" ]
-
-  (it_rev_ctx', [it_rev_append']) = Supercompiler.findUnfolding it_rev_append
+  [ rev_rev, rev, n, minus_add ] = Test.withEnv "(xs: list<nat>) (n m: nat)"
+    [ "rev<nat> (rev<nat> xs)"
+    , "rev<nat> xs"
+    , "n"
+    , "minus (add n (Suc m)) (Suc m)" ]
